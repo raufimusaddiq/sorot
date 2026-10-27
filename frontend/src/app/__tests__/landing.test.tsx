@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Landing from '../page';
 
 describe('landing page', () => {
@@ -117,6 +117,29 @@ describe('landing page', () => {
     } finally {
       delete (window as { matchMedia?: unknown }).matchMedia;
     }
+  });
+
+  it('shows the real install command per system and copies it', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<Landing />);
+    expect(screen.getByRole('heading', { name: 'What it needs' })).toBeInTheDocument();
+    const panel = screen.getByRole('tabpanel');
+    expect(panel).toHaveTextContent('start.ps1 -Build');
+    fireEvent.click(screen.getByRole('tab', { name: 'Linux' }));
+    expect(screen.getByRole('tab', { name: 'Linux' })).toHaveAttribute('aria-selected', 'true');
+    expect(panel).toHaveTextContent('scripts/install.sh');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('git clone https://github.com/raufimusaddiq/sorot.git'));
+    fireEvent.click(screen.getByRole('tab', { name: 'Docker' }));
+    expect(panel).toHaveTextContent('docker compose --env-file .env.docker up -d --build backend');
+    // a blocked clipboard leaves the command on screen, no crash
+    writeText.mockRejectedValueOnce(new Error('denied'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    expect(screen.getByText('sorotan')).toBeInTheDocument();
   });
 
   it('answers the questions before install', () => {
