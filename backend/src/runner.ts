@@ -44,6 +44,7 @@ export const SCRIPT_TIMEOUT_MINUTES: Record<string, number> = {
   "analytics.py": 5,
   "segment.py": 2,
   "discover.py": 5,
+  "channel_crawler.py": 10,
   "captions.py": 1,
   "youtube_captions.py": 5,
 };

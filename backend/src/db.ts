@@ -129,6 +129,29 @@ CREATE TABLE IF NOT EXISTS discovery_query (
     created_at TEXT NOT NULL
 );
 
+-- Tracked source channels (discovery v2). trust_score is an EMA seeded at 0.5;
+-- clip-farm / short-form channels are kept as REJECTED rows for dedup.
+CREATE TABLE IF NOT EXISTS discovery_channel (
+    id TEXT PRIMARY KEY,
+    youtube_channel_id TEXT NOT NULL,
+    channel_name TEXT NOT NULL,
+    channel_url TEXT NOT NULL,
+    primary_category TEXT,
+    avg_duration_sec INTEGER,
+    median_view_count BIGINT,
+    uploads_per_week REAL,
+    subscriber_count BIGINT,
+    is_likely_clipper_channel INTEGER DEFAULT 0,
+    trust_score REAL DEFAULT 0.5,
+    trust_samples INTEGER DEFAULT 0,
+    poll_cadence_hours INTEGER DEFAULT 24,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    first_seen_at TEXT NOT NULL,
+    last_crawled_at TEXT,
+    last_profile_refresh_at TEXT,
+    UNIQUE(youtube_channel_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_job_video ON job(video_id);
 CREATE INDEX IF NOT EXISTS idx_job_status ON job(status);
 CREATE INDEX IF NOT EXISTS idx_clip_video ON clip(video_id);
@@ -143,6 +166,15 @@ CREATE INDEX IF NOT EXISTS idx_discovered_status_score ON discovered_video(statu
 CREATE INDEX IF NOT EXISTS idx_discovered_status_relevance ON discovered_video(status, relevance_score DESC);
 CREATE INDEX IF NOT EXISTS idx_discovered_youtube_id ON discovered_video(youtube_id);
 CREATE INDEX IF NOT EXISTS idx_discovery_query_active ON discovery_query(active, last_run_at);
+CREATE INDEX IF NOT EXISTS idx_dc_status_poll ON discovery_channel(status, last_crawled_at);
+CREATE INDEX IF NOT EXISTS idx_dc_trust ON discovery_channel(trust_score DESC);
+CREATE INDEX IF NOT EXISTS idx_dc_category ON discovery_channel(primary_category);
+`;
+
+// Indexes on LEGACY_COLUMNS: created after the ALTERs so old databases have the columns.
+const LATE_INDEXES = `
+CREATE INDEX IF NOT EXISTS idx_discovered_channel ON discovered_video(channel_id);
+CREATE INDEX IF NOT EXISTS idx_discovered_content_type ON discovered_video(content_type);
 `;
 
 // Columns added after a table's first release: applied with ALTER TABLE when
@@ -158,6 +190,11 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["clip", "options", "TEXT"],
   ["clip", "caption_words", "TEXT"],
   ["clip", "updated_at", "TEXT"],
+  // discovery v2 (channel crawler)
+  ["discovered_video", "channel_id", "TEXT"],
+  ["discovered_video", "content_type", "TEXT"],
+  ["discovered_video", "speech_density_wpm", "REAL"],
+  ["discovered_video", "is_likely_clipped", "INTEGER DEFAULT 0"],
 ];
 
 export function openDatabase(path: string): Database {
@@ -172,5 +209,6 @@ export function openDatabase(path: string): Database {
       db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     }
   }
+  db.run(LATE_INDEXES);
   return db;
 }

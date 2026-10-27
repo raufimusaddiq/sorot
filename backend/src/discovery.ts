@@ -8,6 +8,9 @@ import type { DiscoveredVideo, Json } from "./types";
 const ENRICHMENT_CONCURRENCY = 3;
 const ENRICHMENT_TOP_N = 10;
 const ENRICHMENT_BACKLOG = 100;
+// Default candidates view hides anything older than this (and rows of unknown
+// age). An explicit status filter (IMPORTED, SKIPPED…) shows every age.
+export const DEFAULT_MAX_AGE_HOURS = 90 * 24;
 
 const nullableNum = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const text = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -43,6 +46,10 @@ export function candidateToMap(d: DiscoveredVideo) {
     jobId: d.jobId,
     sourceMode: d.sourceMode,
     sourceQuery: d.sourceQuery,
+    channelId: d.channelId,
+    contentType: d.contentType,
+    speechDensityWpm: d.speechDensityWpm,
+    isLikelyClipped: d.isLikelyClipped === 1,
   };
 }
 
@@ -82,11 +89,11 @@ export class DiscoveryService {
     return { mode: responseMode, query, count: rows.length, videos: rows.map(candidateToMap) };
   }
 
-  /** status unset → NEW+QUEUED ranked by predicted (else relevance) score. */
+  /** status unset → recent NEW+QUEUED ranked by predicted (else relevance) score. */
   listCandidates(status?: string | null) {
     return status && status.trim()
       ? this.store.discoveredByStatus(status.toUpperCase())
-      : this.store.discoveredActiveRanked();
+      : this.store.discoveredActiveRanked(DEFAULT_MAX_AGE_HOURS);
   }
 
   updateStatus(id: string, status: string) {
@@ -127,6 +134,7 @@ export class DiscoveryService {
           sourceQuery: null, relevanceScore: null, transcriptScore: null, predictedScore: null,
           transcriptSample: null, status: "NEW", jobId: null, videoId: null,
           discoveredAt: now(), enrichedAt: null,
+          channelId: null, contentType: null, speechDensityWpm: null, isLikelyClipped: 0,
         };
         d.url = text(v.url);
         d.title = text(v.title);
@@ -138,6 +146,9 @@ export class DiscoveryService {
         d.sourceMode = mode;
         d.sourceQuery = query;
         d.relevanceScore = nullableNum(v.relevanceScore) ?? 0;
+        d.channelId = text(v.channelId) || d.channelId;
+        d.contentType = text(v.contentType) || d.contentType;
+        d.isLikelyClipped = v.isLikelyClipped === true ? 1 : 0;
         // Re-flag against the library; QUEUED/SKIPPED/IMPORTED are user decisions, kept.
         if (!existing || d.status === "NEW") d.status = imported.has(ytId) ? "IMPORTED" : "NEW";
         out.push(this.store.saveDiscovered(d));

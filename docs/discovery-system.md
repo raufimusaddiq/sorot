@@ -147,3 +147,15 @@ New section in the UI:
 3. Add frontend Discovery tab
 4. Add auto-queue with batch processing
 5. Test E2E: discover → queue → process → clips
+
+## Discovery v2 (implemented)
+
+- The duration curve now favours long-form source material (30–180 min = full
+  fit) and re-clipped titles are filtered before scoring.
+- Search/channel default to the last 90 days; the default candidates view hides
+  rows of unknown or older age.
+- Source channels: `channel_crawler.py` seeds channels from anchor queries and
+  profiles them; clip farms and short-form channels are stored as `REJECTED`.
+  Endpoints: `/api/discover/channels*` in [api-spec.md](api-spec.md#source-channels).
+- Not built yet: trust-score updates from clip feedback and polling channels on
+  their `pollCadenceHours`.

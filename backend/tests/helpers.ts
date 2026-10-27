@@ -100,9 +100,10 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
         mode: argAfter(args, "--mode"),
         videos: [
           { videoId: "abcdefghijk", title: "Test", url: "https://youtube.com/watch?v=abcdefghijk", duration: 300,
-            channel: "Ch", viewCount: 1000, uploadDate: "20260401", relevanceScore: 0.75, age_hours: 12.5 },
+            channel: "Ch", viewCount: 1000, uploadDate: "20260401", relevanceScore: 0.75, age_hours: 12.5,
+            channelId: "UCch", contentType: "PODCAST", isLikelyClipped: false },
           { videoId: "zyxwvutsrqp", title: "Two", url: "https://youtu.be/zyxwvutsrqp", duration: 200,
-            channel: "Ch2", viewCount: null, uploadDate: "20260402", relevanceScore: 0.5 },
+            channel: "Ch2", viewCount: null, uploadDate: "20260402", relevanceScore: 0.5, isLikelyClipped: true },
           { videoId: "", title: "no id" },
         ],
       };

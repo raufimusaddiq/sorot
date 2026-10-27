@@ -119,6 +119,32 @@ export interface DiscoveredVideo {
   videoId: string | null;
   discoveredAt: string;
   enrichedAt: string | null;
+  // discovery v2: heuristic labels from discover.py
+  channelId: string | null;
+  contentType: string | null;
+  speechDensityWpm: number | null;
+  isLikelyClipped: number | null;
+}
+
+/** A source channel found by channel_crawler.py (category seed + profile). */
+export interface DiscoveryChannel {
+  id: string;
+  youtubeChannelId: string;
+  channelName: string;
+  channelUrl: string;
+  primaryCategory: string | null;
+  avgDurationSec: number | null;
+  medianViewCount: number | null;
+  uploadsPerWeek: number | null;
+  subscriberCount: number | null;
+  isLikelyClipperChannel: number;
+  trustScore: number;
+  trustSamples: number;
+  pollCadenceHours: number;
+  status: string;
+  firstSeenAt: string;
+  lastCrawledAt: string | null;
+  lastProfileRefreshAt: string | null;
 }
 
 export const STAGES = [

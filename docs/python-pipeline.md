@@ -306,6 +306,23 @@ absolute seconds for the clip editor:
 `python captions.py --transcript t.json --start 30 --end 55` →
 `{"success": true, "data": {"words": [...]}}`.
 
+### `discover.py` and `channel_crawler.py` (discovery)
+
+discover.py modes `search | trending | channel | enrich` return candidate
+videos. Long-form wins: the duration fit is 0 under 5 min, 0.15 / 0.4 / 0.7 up
+to 30 min, and 1.0 above that. Titles that look re-clipped ("clip", "highlight",
+"best of", "potongan"…) are dropped, search and channel default to the last 90
+days, and each row carries `channelId`, a regex `contentType` and
+`isLikelyClipped`. An unknown upload date is the sentinel `age_hours = 99999`.
+
+channel_crawler.py finds source channels:
+- `--mode category_seed [--per-query 15]` runs 12 Indonesian long-form anchor
+  queries in parallel → `{"count": n, "channels": [{youtubeChannelId, channelName, channelUrl, discoveredViaQuery}]}`.
+- `--mode profile --channel-url URL [--count 30]` profiles the last uploads →
+  `avgDurationSec`, `medianViewCount`, `uploadsPerWeek`, `shortShareRatio`,
+  `clippedShareRatio`, `isLikelyClipperChannel` (≥ 70 % short or clip-titled),
+  `primaryCategory` (majority content type with ≥ 40 % share, else `MIXED`).
+
 ---
 
 ## Python Environment

@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { AppConfig } from "./config";
+import { CHANNEL_STATUSES, ChannelCrawler, channelToMap } from "./channels";
 import { openDatabase } from "./db";
 import { candidateToMap, DiscoveryService } from "./discovery";
 import { FeedbackService, ValidationError } from "./feedback";
@@ -41,6 +42,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const videos = new VideoService(config, store);
   const clips = new ClipService(config, store);
   const discovery = new DiscoveryService(store, runScript);
+  const channels = new ChannelCrawler(store, runScript);
   const feedback = new FeedbackService(config, store, runScript);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
 
@@ -226,6 +228,23 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     return ok({ started, failed });
   });
 
+  // ---- source channels ----
+  router.on("GET", "/api/discover/channels", (c) => {
+    const rows = channels.list(c.url.searchParams.get("status")).map(channelToMap);
+    return ok({ count: rows.length, channels: rows });
+  });
+  router.on("POST", "/api/discover/channels/reseed", async () => ok(await channels.reseed()));
+  router.on("POST", "/api/discover/channels/:id/refresh", async (c) => {
+    const r = await channels.refresh(c.params.id as string);
+    return r ? ok(r) : fail(404, "not found");
+  });
+  router.on("POST", "/api/discover/channels/:id/status", async (c) => {
+    const status = strArg(await c.body(), "status").trim().toUpperCase();
+    if (!CHANNEL_STATUSES.includes(status)) return fail(400, `status must be one of ${CHANNEL_STATUSES.join(", ")}`);
+    const ch = channels.setStatus(c.params.id as string, status);
+    return ch ? ok(channelToMap(ch)) : fail(404, "not found");
+  });
+
   const allowedOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000", config.frontendUrl]);
 
   async function fetch(req: Request): Promise<Response> {
@@ -245,7 +264,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   return {
     fetch,
-    store, jobs, discovery, orchestrator,
+    store, jobs, discovery, channels, orchestrator,
     start() { jobs.startMaintenance(); },
     close() {
       jobs.shutdown();
