@@ -70,7 +70,7 @@ describe("auto-discover with an LLM", () => {
     expect(ytSearch[0]).toBe("ytsearch15:podcast viral");
 
     const [a, b] = run.videos;
-    expect(a).toMatchObject({ videoId: "abcdefghijk", sourceMode: "auto", sourceQuery: "drama artis", reason: "Hot topic, 3 strong moments" });
+    expect(a).toMatchObject({ videoId: "abcdefghijk", sourceMode: "auto", sourceQuery: "drama artis", reason: "Hot topic, 3 strong moments", pickedBy: "qwen" });
     expect(a.why[0]).toBe("Hot topic, 3 strong moments");
     expect(a.transcriptScore).toBeGreaterThan(0);              // analyzed by the agent, stored with the pick
     expect(b).toMatchObject({ videoId: "zyxwvutsrqp", reason: "Picked by the discovery agent", transcriptScore: null });
@@ -112,7 +112,7 @@ describe("auto-discover with an LLM", () => {
     scriptLlm([{ tool_calls: [call("1", "youtube_search", { query: "x" })] }, new LlmError("timeout")]);
     const after = await runAuto();
     expect(after).toMatchObject({ mode: "algorithm", llmError: "timeout" });
-    expect(after.videos[0].reason).toBe("Algorithm pick (no LLM), found via the agent's searches");
+    expect(after.videos[0]).toMatchObject({ reason: "Algorithm pick (no LLM), found via the agent's searches", pickedBy: "algorithm" });
 
     scriptLlm([new Error("bug")]);
     expect(await runAuto()).toMatchObject({ status: "FAILED", error: "bug", finishedAt: expect.any(String) });

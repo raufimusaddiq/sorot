@@ -550,7 +550,11 @@ describe('discovery panel', () => {
       expect(await screen.findByText('web_search viral → 6 results')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Researching…' })).toBeDisabled();
 
-      state.candidates = [makeCandidate('9', 'NEW', { title: 'Agent pick', sourceMode: 'auto', why: ['Hot topic', '3 strong moments, best at 4:38'] })];
+      state.candidates = [
+        makeCandidate('9', 'NEW', { title: 'Agent pick', sourceMode: 'auto', pickedBy: 'qwen', why: ['Hot topic', '3 strong moments, best at 4:38'] }),
+        makeCandidate('8', 'NEW', { title: 'Algo pick', sourceMode: 'auto', pickedBy: 'algorithm' }),
+        makeCandidate('7', 'NEW', { title: 'Re-found by search', sourceMode: 'search', pickedBy: 'algorithm' }),
+      ];
       await act(async () => { jest.advanceTimersByTime(2000); });
       expect(await screen.findByText('source_channels → 2 results')).toBeInTheDocument();
       await act(async () => { jest.advanceTimersByTime(2000); });
@@ -559,6 +563,9 @@ describe('discovery panel', () => {
       const pick = row('Agent pick');
       expect(within(pick).getByText('Hot topic')).toBeInTheDocument();
       expect(within(pick).getByText('3 strong moments, best at 4:38')).toBeInTheDocument();
+      expect(within(pick).getByTitle('Picked by the LLM agent (qwen)')).toHaveTextContent('🤖 qwen');
+      expect(within(row('Algo pick')).getByTitle('Picked by the algorithm (no LLM)')).toHaveTextContent('algorithm');
+      expect(within(row('Re-found by search')).queryByTitle(/Picked by/)).toBeNull();
       expect(screen.getByRole('button', { name: 'Auto-discover' })).toBeEnabled();
     } finally {
       jest.useRealTimers();

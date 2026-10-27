@@ -142,6 +142,7 @@ export class DiscoveryAgent {
         const a = analyzed.get(p.videoId);
         extra.set(p.videoId, {
           reason: p.reason,
+          pickedBy: run.mode === "agent" ? run.model : "algorithm",
           ...(a ? {
             transcriptScore: a.analysis?.transcriptScore ?? 0,
             predictedScore: a.predictedScore,

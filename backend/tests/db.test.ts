@@ -61,6 +61,28 @@ describe("openDatabase", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("labels auto picks made before picked_by existed", () => {
+    const dir = mkdtempSync(join(tmpdir(), "vc-db-"));
+    const path = join(dir, "sorot.db");
+    try {
+      openDatabase(path).close();
+      const raw = new Database(path);
+      raw.run("ALTER TABLE discovered_video DROP COLUMN picked_by");
+      const row = "INSERT INTO discovered_video (id, youtube_id, url, source_mode, reason, discovered_at) VALUES (?, ?, 'u', ?, ?, 't')";
+      raw.run(row, ["a", "y1", "auto", "Algorithm pick (no LLM), found via \"x\""]);
+      raw.run(row, ["b", "y2", "auto", "Hot topic"]);
+      raw.run(row, ["c", "y3", "search", null]);
+      raw.close();
+      const db = openDatabase(path);
+      expect(db.query("SELECT id, picked_by FROM discovered_video ORDER BY id").all()).toEqual([
+        { id: "a", picked_by: "algorithm" }, { id: "b", picked_by: "LLM" }, { id: "c", picked_by: null },
+      ]);
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("defaultDbPath", () => {

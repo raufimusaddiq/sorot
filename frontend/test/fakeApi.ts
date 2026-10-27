@@ -8,7 +8,7 @@ export type Candidate = {
   id: string; youtubeId: string; videoId: string; title: string; url: string;
   duration: number; channel: string; viewCount: number | null; uploadDate: string;
   relevanceScore: number; transcriptScore: number | null; predictedScore: number | null;
-  status: string; jobId: string | null; sourceMode: string; sourceQuery: string; why?: string[];
+  status: string; jobId: string | null; sourceMode: string; sourceQuery: string; pickedBy?: string | null; why?: string[];
 };
 
 export interface FakeState {
