@@ -102,6 +102,19 @@ class TestAss:
         assert "LAGI" in events[2] and "HALO" not in events[2]  # sentence end + pause → new group
         assert "\\fscx" not in doc                             # no scale pop → no line jitter
 
+    def test_events_never_overlap(self):
+        # quick words (< MIN_EVENT_SEC apart) inside a group and across groups —
+        # overlapping events are stacked by libass and the line shows twice
+        words = [w("kayak", 2.36, 2.50), w("un", 2.50, 2.68), w("milk", 2.68, 2.92), w("gitu.", 2.92, 3.08),
+                 w("malem", 3.24, 3.88), w("gue", 3.88, 4.00), w("suka", 4.00, 4.10), w("x", 4.10, 4.10), w("lagi", 4.10, 4.5)]
+        events = [l.split(",", 3) for l in captions.build_ass(words).splitlines() if l.startswith("Dialogue:")]
+        times = [(e[1], e[2]) for e in events]
+        for (s1, e1), (s2, _) in zip(times, times[1:]):
+            assert e1 <= s2 and s1 < e1
+        assert times[0] == ("0:00:02.36", "0:00:02.50")
+        assert times[-1][1] == "0:00:04.50"          # last word keeps its own end
+        assert len(events) == len(words) - 1          # "x" starts with "lagi": zero length, dropped
+
     def test_mixed_case_preset_and_custom_dict(self):
         doc = captions.build_ass([w("Halo", 0, 1)], "storyteller")
         assert "Halo{\\r}" in doc and "HALO" not in doc

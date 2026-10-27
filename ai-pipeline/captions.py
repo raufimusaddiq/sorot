@@ -189,17 +189,23 @@ def build_ass(words, preset=DEFAULT_PRESET):
     p = get_preset(preset) if isinstance(preset, str) else preset
     hl = ass_color(p["highlight"])
     case = (lambda s: s.upper()) if p["uppercase"] else (lambda s: s)
-    lines = [_header(p)]
+    events = []
     for group in group_words(words, p["max_words"], p["max_chars"], p["gap"]):
         for i, w in enumerate(group):
             start = w["start"]
             end = group[i + 1]["start"] if i + 1 < len(group) else min(w["end"], start + MAX_WORD_HOLD_SEC)
-            end = max(end, start + MIN_EVENT_SEC)
             text = " ".join(
                 f"{{\\c{hl}}}{case(x['text'])}{{\\r}}" if j == i else case(x["text"])
                 for j, x in enumerate(group)
             )
-            lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,,{text}")
+            events.append([start, max(end, start + MIN_EVENT_SEC), text])
+    # The minimum hold must never run into the next event: libass stacks
+    # overlapping events, which showed the caption line twice.
+    for ev, nxt in zip(events, events[1:]):
+        ev[1] = min(ev[1], nxt[0])
+    lines = [_header(p)]
+    lines += [f"Dialogue: 0,{ass_time(s)},{ass_time(e)},Caption,,0,0,0,,{t}"
+              for s, e, t in events if round(e * 100) > round(s * 100)]   # drop events < 1 cs
     return "\n".join(lines) + "\n"
 
 
