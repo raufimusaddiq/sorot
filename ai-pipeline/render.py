@@ -13,6 +13,8 @@ import subprocess
 import sys
 import tempfile
 
+from captions import is_trimmed, keep_intervals, select_expr, words_for_clip
+
 
 _NVENC_CACHE = None
 
@@ -69,20 +71,25 @@ def _detect_nvenc(ffmpeg_path):
     return _probe_nvenc(ffmpeg_path)
 
 
-def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc):
+def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, keep=None):
     # Seek before -i so ffmpeg jumps to the nearest keyframe instead of
     # decoding the whole upstream video — this is the single biggest win on
     # long YouTube sources.
     # ``format=yuv420p`` at the tail of the filter chain is the fix for
     # 10-bit / yuv444p sources that NVENC H.264 rejects.
+    vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
     cmd = [
         ffmpeg_path, "-hide_banner", "-loglevel", "error",
         "-ss", str(start), "-to", str(end),
         "-i", video_path,
-        "-vf",
-        "scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,format=yuv420p",
     ]
+    if keep:
+        # Silence trim: keep only the speech spans (clip-relative; input-side
+        # -ss resets timestamps to 0) and re-time both streams gaplessly.
+        expr = select_expr(keep)
+        vf = f"select='{expr}',setpts=N/FRAME_RATE/TB," + vf
+        cmd.extend(["-af", f"aselect='{expr}',asetpts=N/SR/TB"])
+    cmd.extend(["-vf", vf])
     if use_nvenc:
         cmd.extend([
             "-c:v", "h264_nvenc",
@@ -96,13 +103,13 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
     return cmd
 
 
-def render_clip(video_path, start, end, output_path, ffmpeg_path=None):
+def render_clip(video_path, start, end, output_path, ffmpeg_path=None, keep=None):
     if ffmpeg_path is None:
         ffmpeg_path = find_ffmpeg()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     use_nvenc = _probe_nvenc(ffmpeg_path)
-    cmd = _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc)
+    cmd = _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, keep)
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     # Per-clip NVENC failure → retry once on libx264 so a driver hiccup or an
@@ -114,7 +121,7 @@ def render_clip(video_path, start, end, output_path, ffmpeg_path=None):
             file=sys.stderr,
         )
         cmd = _build_render_cmd(
-            ffmpeg_path, video_path, start, end, output_path, use_nvenc=False,
+            ffmpeg_path, video_path, start, end, output_path, use_nvenc=False, keep=keep,
         )
         result = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -132,6 +139,9 @@ def main():
     parser.add_argument("--output-dir", required=True, help="Directory for rendered clips")
     parser.add_argument("--tiers", default="PRIMARY,BACKUP", help="Comma-separated tiers to render")
     parser.add_argument("--clip-index", type=int, default=-1, help="Render only this clip index (0-based)")
+    parser.add_argument("--transcript", default="", help="Transcript JSON (needed for --silence-trim)")
+    parser.add_argument("--silence-trim", action="store_true", help="Cut pauses longer than --silence-gap")
+    parser.add_argument("--silence-gap", type=float, default=0.6, help="Pause length (s) that gets cut")
     args = parser.parse_args()
 
     try:
@@ -148,18 +158,34 @@ def main():
             else:
                 to_render = []
 
+        transcript_segments = []
+        if args.silence_trim:
+            if not args.transcript:
+                raise ValueError("--silence-trim requires --transcript")
+            with open(args.transcript, "r", encoding="utf-8") as f:
+                transcript_segments = json.load(f).get("segments", [])
+
         os.makedirs(args.output_dir, exist_ok=True)
         rendered = []
 
         for seg in to_render:
             clip_id = seg.get("rank", seg.get("index", 0))
             output_path = os.path.join(args.output_dir, f"clip_{clip_id}.mp4")
+            keep = None
+            if args.silence_trim:
+                # subtitle.py derives the same intervals from the same inputs,
+                # so captions stay in sync with the cut video.
+                duration = seg["endTime"] - seg["startTime"]
+                words = words_for_clip(transcript_segments, seg["startTime"], seg["endTime"])
+                intervals = keep_intervals(words, duration, min_gap=args.silence_gap)
+                keep = intervals if is_trimmed(intervals, duration) else None
             try:
                 render_clip(
                     args.video,
                     seg["startTime"],
                     seg["endTime"],
                     output_path,
+                    keep=keep,
                 )
                 if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                     rendered.append({
@@ -176,6 +202,7 @@ def main():
                     "status": "COMPLETED",
                     "startTime": seg["startTime"],
                     "endTime": seg["endTime"],
+                    "trimmedDuration": round(sum(b - a for a, b in keep), 3) if keep else None,
                 })
             except Exception as e:
                 if os.path.exists(output_path) and os.path.getsize(output_path) == 0:

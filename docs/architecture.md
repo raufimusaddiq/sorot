@@ -83,7 +83,8 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
 | Frontend | Next.js | User preference, good DX for interactive UIs |
 | Video download | yt-dlp | Standard tool, handles all YouTube formats |
 | Video processing | FFmpeg + OpenCV | FFmpeg for codec/crop, OpenCV for face detection/crop |
-| Subtitle burn-in | FFmpeg drawtext | Simple, no external subtitle library needed |
+| Subtitle burn-in | ASS + libass (`ffmpeg -vf ass=`) | Real per-word timing from Whisper, active-word highlight, editable `.ass` kept next to each export |
+| Silence trim | ffmpeg `select`/`aselect` from transcript gaps | One pass, no re-transcribe; render and subtitle derive identical keep-intervals (`ai-pipeline/captions.py`) |
 | Content language | Indonesian | Target audience is Indonesian TikTok |
 
 ## Pipeline Stages
@@ -98,7 +99,7 @@ Each stage reads from `data/` subfolder and writes output to the next subfolder.
 | 4. Segment | transcript JSON | Python segment logic | `data/segments/{videoId}.json` |
 | 5. Score | segments JSON | Python scoring | updates segments JSON |
 | 6. Render | raw video + segments | ffmpeg center-crop | `data/renders/{clipId}.mp4` |
-| 7. Subtitle | render + transcript | ffmpeg drawtext | `data/exports/{clipId}.mp4` |
+| 7. Subtitle | render + transcript | ASS karaoke captions (libass) | `data/exports/clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` |
 
 ## Error Handling
 

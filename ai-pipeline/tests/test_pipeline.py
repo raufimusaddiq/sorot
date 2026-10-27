@@ -951,11 +951,7 @@ class TestRenderNvencFallback:
 # -- Subtitle tests --
 
 
-from subtitle import (
-    build_word_timeline,
-    build_subtitle_filter,
-    escape_drawtext as subtitle_escape,
-)
+from captions import words_for_clip as build_word_timeline
 
 
 class TestSubtitleNvencFallback:
@@ -963,22 +959,23 @@ class TestSubtitleNvencFallback:
         import subtitle as sub_mod
         sub_mod._NVENC_CACHE = None
 
-    def test_burn_cmd_null_filter_still_applies_format(self):
+    def test_burn_cmd_without_captions_still_applies_format(self):
         import subtitle as sub_mod
         cmd = sub_mod._build_burn_cmd(
-            "ffmpeg", "/tmp/in.mp4", "null", "/tmp/out.mp4", use_nvenc=True,
+            "ffmpeg", "/tmp/in.mp4", None, "/tmp/out.mp4", use_nvenc=True,
         )
         vf = cmd[cmd.index("-vf") + 1]
         assert vf == "format=yuv420p"
         assert "h264_nvenc" in cmd
 
-    def test_burn_cmd_appends_format_after_filter(self):
+    def test_burn_cmd_appends_format_after_ass(self):
         import subtitle as sub_mod
         cmd = sub_mod._build_burn_cmd(
-            "ffmpeg", "/tmp/in.mp4", "drawtext=text='x'", "/tmp/out.mp4", use_nvenc=False,
+            "ffmpeg", "/tmp/in.mp4", r"C:\data\clip_1.ass", "/tmp/out.mp4", use_nvenc=False,
         )
         vf = cmd[cmd.index("-vf") + 1]
-        assert vf.endswith(",format=yuv420p")
+        # Windows path → forward slashes, drive colon escaped for the filter parser.
+        assert vf == r"ass='C\:/data/clip_1.ass',format=yuv420p"
         assert "libx264" in cmd
 
     def test_burn_falls_back_to_libx264_on_nvenc_failure(self, monkeypatch, tmp_path):
@@ -1002,7 +999,7 @@ class TestSubtitleNvencFallback:
 
         monkeypatch.setattr(sub_mod.subprocess, "run", fake_run)
         sub_mod.burn_subtitles(
-            "/tmp/clip.mp4", "null", str(tmp_path / "out.mp4"), ffmpeg_path="ffmpeg",
+            "/tmp/clip.mp4", None, str(tmp_path / "out.mp4"), ffmpeg_path="ffmpeg",
         )
 
         assert len(calls) == 2
@@ -1011,13 +1008,15 @@ class TestSubtitleNvencFallback:
 
 
 class TestBuildWordTimeline:
+    """Legacy transcripts (no per-word timing) fall back to an even split."""
+
     def test_basic_timeline(self):
         segments = [
             {"start": 0.0, "end": 5.0, "text": "hello world foo bar"},
             {"start": 5.5, "end": 10.0, "text": "test words here now"},
         ]
         words = build_word_timeline(segments, 0.0, 10.0)
-        assert len(words) > 0
+        assert len(words) == 8
         for w in words:
             assert "text" in w
             assert "start" in w
@@ -1031,7 +1030,7 @@ class TestBuildWordTimeline:
             {"start": 10.0, "end": 15.0, "text": "after"},
         ]
         words = build_word_timeline(segments, 5.0, 10.0)
-        assert len(words) > 0
+        assert [w["text"] for w in words] == ["within", "range"]
 
     def test_empty_segments(self):
         words = build_word_timeline([], 0.0, 10.0)
@@ -1043,45 +1042,6 @@ class TestBuildWordTimeline:
         ]
         words = build_word_timeline(segments, 0.0, 10.0)
         assert words == []
-
-
-class TestBuildSubtitleFilter:
-    def test_with_words(self):
-        words = [
-            {"text": "hello", "start": 0.0, "end": 0.5},
-            {"text": "world", "start": 0.5, "end": 1.0},
-        ]
-        result = build_subtitle_filter(words)
-        assert "drawtext" in result
-        assert "hello" in result
-
-    def test_empty_words(self):
-        result = build_subtitle_filter([])
-        assert result == "null"
-
-    def test_chunking(self):
-        words = [
-            {"text": f"w{i}", "start": float(i), "end": float(i + 1)}
-            for i in range(12)
-        ]
-        result = build_subtitle_filter(words, max_chars=5)
-        parts = result.split("drawtext")
-        assert len(parts) > 2
-
-
-class TestSubtitleEscape:
-    def test_escape_colons(self):
-        result = subtitle_escape("test:value")
-        assert "\\:" in result
-
-    def test_escape_commas(self):
-        result = subtitle_escape("test,value")
-        assert "\\," in result
-
-    def test_escape_brackets(self):
-        result = subtitle_escape("test[1]")
-        assert "\\[" in result
-        assert "\\]" in result
 
 
 class TestSubtitleScript:

@@ -65,7 +65,8 @@ class TestTranscribe:
         assert FakeWhisper.created == [("large-v3-turbo", "cpu", "int8")]
         data = env["data"]
         assert data["videoId"] == "vid" and data["language"] == "id"
-        assert data["segments"][0] == {"index": 0, "start": 0.0, "end": 1.23, "text": "halo", "confidence": -0.12}
+        assert data["segments"][0] == {"index": 0, "start": 0.0, "end": 1.23, "text": "halo", "confidence": -0.12,
+                                         "words": []}
         assert data["segments"][1]["confidence"] is None
         assert json.loads(out.read_text(encoding="utf-8")) == data
 
@@ -144,7 +145,7 @@ class TestRender:
     def test_main_reports_per_clip_outcomes(self, monkeypatch, capsys, tmp_path):
         out_dir = tmp_path / "renders"
 
-        def fake_render(video, start, end, output_path):
+        def fake_render(video, start, end, output_path, keep=None):
             if start == 0:
                 open(output_path, "wb").write(b"mp4")
             elif start == 10:
@@ -161,7 +162,7 @@ class TestRender:
     def test_main_clip_index_and_exception_cleanup(self, monkeypatch, capsys, tmp_path):
         out_dir = tmp_path / "renders"
 
-        def fake_render(video, start, end, output_path):
+        def fake_render(video, start, end, output_path, keep=None):
             open(output_path, "wb").close()
             raise RuntimeError("nvenc died")
         monkeypatch.setattr(render, "render_clip", fake_render)
@@ -184,7 +185,7 @@ class TestRender:
 
 class TestSubtitle:
     def test_word_timeline_skips_empty_and_out_of_range(self):
-        words = subtitle.build_word_timeline(
+        words = subtitle.words_for_clip(
             [{"start": 0, "end": 2, "text": "  "}, {"start": 50, "end": 60, "text": "jauh"},
              {"start": 10, "end": 12, "text": "halo dunia"}], 10, 20)
         assert [w["text"] for w in words] == ["halo", "dunia"]
@@ -194,7 +195,7 @@ class TestSubtitle:
         cmds = []
         monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: (cmds.append(cmd), proc(1, stderr="x"))[1])
         with pytest.raises(RuntimeError, match="subtitle burn failed"):
-            subtitle.burn_subtitles("r.mp4", "null", str(tmp_path / "o" / "s.mp4"))
+            subtitle.burn_subtitles("r.mp4", None, str(tmp_path / "o" / "s.mp4"))
         assert "h264_nvenc" in cmds[0] and "libx264" in cmds[1]   # NVENC then CPU retry
         assert cmds[0][cmds[0].index("-vf") + 1] == "format=yuv420p"
 
@@ -218,6 +219,9 @@ class TestSubtitle:
         code, env = run_main(subtitle, monkeypatch, capsys, *args)
         assert [c["status"] for c in env["data"]["clips"]] == ["COMPLETED", "FAILED"]
         assert env["data"]["clips"][0]["wordCount"] == 3
+        ass = (tmp_path / "exports" / "clip_1.ass").read_text(encoding="utf-8")
+        assert "PlayResX: 1080" in ass and "HALO" in ass       # default preset is uppercase
+        assert env["data"]["clips"][0]["assPath"].endswith("clip_1.ass")
 
         (renders / "clip_1.mp4").unlink()
 
