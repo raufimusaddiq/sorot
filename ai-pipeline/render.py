@@ -50,7 +50,7 @@ def _probe_nvenc(ffmpeg_path):
                 [
                     ffmpeg_path, "-hide_banner", "-loglevel", "error",
                     "-f", "lavfi",
-                    "-i", "testsrc=size=128x128:rate=1:duration=1",
+                    "-i", "testsrc=size=256x256:rate=1:duration=1",   # NVENC minimum is above 128x128
                     "-vf", "format=yuv420p",
                     "-c:v", "h264_nvenc", "-preset", "p4",
                     "-frames:v", "1", "-y", probe_out,

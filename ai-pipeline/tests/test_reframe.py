@@ -41,6 +41,15 @@ class TestPlanTrack:
         track = reframe.plan_track([(0, 0.2), (1, 0.5), (2, 0.8), (3, 0.8)], hold=2)
         assert track == [(0.0, 0.2), (2, 0.8)]
 
+    def test_move_snaps_to_the_scene_cut(self):
+        # wide shot (face at 0.7) until a cut at 2.16, then a close-up at 0.47
+        samples = [(0.0, 0.7), (0.5, 0.7), (1.0, None), (1.5, 0.7), (2.0, 0.5), (2.5, 0.47)]
+        assert reframe.plan_track(samples)[1][0] == 2.0
+        assert reframe.plan_track(samples, cuts=[2.16]) == [(0.0, 0.7), (2.16, pytest.approx(0.485))]
+        # nearest cut inside the window wins; cuts outside it are ignored
+        assert reframe.plan_track(samples, cuts=[0.4, 1.7, 2.4, 2.9])[1][0] == 1.7
+        assert reframe.plan_track(samples, cuts=[1.2, 3.0])[1][0] == 2.0
+
     def test_downsample_merges_closest_neighbours(self):
         track = [(0, 0.1), (1, 0.5), (2, 0.52), (3, 0.9)]
         assert reframe.downsample_track(track, limit=3) == [(0, 0.1), (1, 0.5), (3, 0.9)]
@@ -88,21 +97,29 @@ class TestDetectors:
         assert out == [(pytest.approx(132 / 640), pytest.approx(0.1))]
         assert all(type(v) is float for v in out[0])
 
-    def test_haar_adds_profiles_both_ways_without_duplicates(self, monkeypatch):
+    def test_haar_falls_back_to_profiles_both_ways(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "mediapipe", None)
-        frontal = types.SimpleNamespace(detectMultiScale=lambda g, **kw: [(100, 10, 64, 64)])
+        frontal_hits = {"faces": []}
+        frontal = types.SimpleNamespace(detectMultiScale=lambda g, **kw: frontal_hits["faces"])
         import features.visual as visual
         monkeypatch.setattr(visual, "_get_haar_cascades", lambda: (frontal, None))
-        # a profile on the frontal face (dropped) and one at x=440; mirrored pass finds x=40 → 1 - 72/640
-        profile = types.SimpleNamespace(detectMultiScale=lambda g, **kw: (
-            [(40, 10, 64, 64)] if g[0, 0] == 1 else [(104, 10, 60, 60), (440, 10, 50, 50)]))
-        monkeypatch.setattr(cv2, "CascadeClassifier", lambda path: profile)
+        calls = []
+
+        def profile_detect(g, **kw):
+            calls.append(1)
+            # x=104 and x=440 facing one way; the mirrored pass finds x=616-ish (1 - 132/640, a repeat of 104) and x=40
+            return [(444, 10, 64, 64), (40, 10, 64, 64)] if g[0, 0] == 1 else [(104, 10, 64, 64), (440, 10, 50, 50)]
+        monkeypatch.setattr(cv2, "CascadeClassifier", lambda path: types.SimpleNamespace(detectMultiScale=profile_detect))
         gray = np.zeros((360, 640), np.uint8)
         gray[0, -1] = 1                                   # only the mirrored frame starts with 1
-        out = reframe.make_detector()(gray)
-        assert out == [(pytest.approx(132 / 640), pytest.approx(0.1)),
-                       (pytest.approx(465 / 640), pytest.approx(50 / 640)),
-                       (pytest.approx(1 - 72 / 640), pytest.approx(0.1))]
+        detect = reframe.make_detector()
+        assert detect(gray) == [(pytest.approx(136 / 640), pytest.approx(0.1)),
+                                (pytest.approx(465 / 640), pytest.approx(50 / 640)),
+                                (pytest.approx(1 - 72 / 640), pytest.approx(0.1))]
+        assert len(calls) == 2
+        frontal_hits["faces"] = [(100, 10, 64, 64)]       # a frontal face → no profile passes
+        assert detect(gray) == [(pytest.approx(132 / 640), pytest.approx(0.1))]
+        assert len(calls) == 2
 
     def test_mediapipe_detector_when_installed(self, monkeypatch):
         box = types.SimpleNamespace(xmin=0.2, width=0.1)
@@ -119,6 +136,13 @@ class TestDetectors:
         seq = iter([[(0.3, 0.05)]] * 3 + [[(0.75, 0.05)]] * 3)
         track = reframe.plan_face_track("v.mp4", 0, 3, detect=lambda g: next(seq))
         assert track == [(0.0, 0.3), (1.5, pytest.approx(0.75))]
+
+        def with_cut(*a, cuts=None, **k):                 # the sampling pass reports a cut at 1.2
+            cuts.append(1.2)
+            return frames
+        monkeypatch.setattr(reframe, "sample_frames", with_cut)
+        seq = iter([[(0.3, 0.05)]] * 3 + [[(0.75, 0.05)]] * 3)
+        assert reframe.plan_face_track("v.mp4", 0, 3, detect=lambda g: next(seq))[1][0] == 1.2
         monkeypatch.setattr(reframe, "sample_frames", lambda *a, **k: [])
         assert reframe.plan_face_track("v.mp4", 0, 3) == []
 
@@ -130,6 +154,20 @@ class TestDetectors:
             raise OSError("no ffprobe")
         monkeypatch.setattr(subprocess, "run", boom)
         assert reframe.probe_size("x.mp4") is None
+
+    def test_sample_frames_collects_cuts_from_the_same_decode(self, monkeypatch):
+        seen = {}
+
+        def run(cmd, **kw):
+            seen["cmd"] = cmd
+            return types.SimpleNamespace(returncode=0, stderr=b"[Parsed_showinfo_4] n:0 pts:54 pts_time:2.16 \n"
+                                                              b"[Parsed_showinfo_4] n:1 pts:140 pts_time:5.6 \n")
+        monkeypatch.setattr(subprocess, "run", run)
+        cuts = []
+        assert reframe.sample_frames("x.mp4", 10, 20, cuts=cuts) == []
+        assert cuts == [2.16, 5.6]
+        graph = seen["cmd"][seen["cmd"].index("-filter_complex") + 1]
+        assert "split" in graph and "select='gt(scene,0.3)'" in graph and "showinfo" in graph
 
     def test_sample_frames_failure(self, monkeypatch):
         monkeypatch.setattr(subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=1))
@@ -209,6 +247,20 @@ def wide_source(tmp_path_factory):
 
 
 class TestRealFfmpeg:
+    def test_sampling_finds_a_hard_cut(self, tmp_path):
+        if not HAS_FFMPEG:
+            pytest.skip("ffmpeg not installed")
+        out = str(tmp_path / "cut.mp4")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error",
+                        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25:duration=1.5",
+                        "-f", "lavfi", "-i", "mandelbrot=size=320x180:rate=25",
+                        "-filter_complex", "[1:v]trim=duration=1.5,setpts=PTS-STARTPTS[b];[0:v][b]concat=n=2:v=1",
+                        "-pix_fmt", "yuv420p", "-c:v", "libx264", out], check=True, capture_output=True)
+        cuts = []
+        frames = reframe.sample_frames(out, 0, 3, fps=2, width=160, cuts=cuts)
+        assert len(frames) >= 5
+        assert cuts and cuts[0] == pytest.approx(1.5, abs=0.05)
+
     def test_probe_and_sampling(self, wide_source):
         assert reframe.probe_size(wide_source) == (640, 360)
         frames = reframe.sample_frames(wide_source, 0, 3, fps=2, width=320)
