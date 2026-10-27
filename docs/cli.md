@@ -40,6 +40,8 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `rerender <clip> [--start S --end S] [options]` | Re-render one clip with new timing or options (the clip editor's action). |
 | `delete <video> --yes` | Delete a video with its clips and files. |
 | `options` | Caption styles, framing modes, music tracks and server defaults. |
+| `discover auto ["<goal>"]` | ✨ Auto-discover: prints each tool call as it happens, then the picks with their reasons (`--max 10`, `--no-wait` to return at once, `--json`). Uses the LLM when configured, otherwise the algorithm. |
+| `discover auto-status [<run>]` | Progress or result of the last (or given) auto-discover run; exit 1 if it failed. |
 | `discover search "<q>"`, `trending`, `channel <url>` | Find source videos (`--max`, `--min-length`, `--max-length` in seconds, `--region`). |
 | `discover candidates [--status S]`, `queue <id…>`, `skip <id…>`, `drain` | Work the candidate list; `drain` imports and starts everything queued. |
 | `channels [--status S]`, `channels reseed`, `refresh <id>`, `set <id> <STATUS>` | Source-channel crawler (see api-spec "Source channels"). |

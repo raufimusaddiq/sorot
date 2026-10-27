@@ -54,7 +54,7 @@ function ClipCard({
   const handleSubmitFeedback = async () => {
     setFeedbackError(null);
     if (!feedback.postedAt) {
-      setFeedbackError('Isi tanggal upload TikTok dulu — viral score butuh durasi di platform.');
+      setFeedbackError('Isi tanggal upload dulu — viral score butuh durasi di platform.');
       return;
     }
     const postedDate = new Date(feedback.postedAt);
@@ -191,7 +191,7 @@ function ClipCard({
         <div className="border-t border-line px-4 py-3 space-y-3">
           <div className="space-y-1">
             <label className="text-xs text-muted font-medium block">
-              Tanggal & jam upload ke TikTok
+              Tanggal & jam upload
               <span className="text-accent ml-1">*</span>
             </label>
             <input
@@ -202,11 +202,11 @@ function ClipCard({
               className="bg-surface border border-line rounded px-2 py-1.5 text-xs text-fg w-full"
             />
             <p className="text-xs text-subtle">
-              Viral score dihitung per-hari (velocity), jadi durasi di TikTok wajib diisi.
+              Viral score dihitung per-hari (velocity), jadi durasi di platform wajib diisi.
             </p>
           </div>
           <div className="space-y-1">
-            <span className="text-xs text-muted font-medium block">Metrik TikTok saat ini</span>
+            <span className="text-xs text-muted font-medium block">Metrik saat ini</span>
             <div className="grid grid-cols-5 gap-1">
               <input type="number" placeholder="Views" value={feedback.views} onChange={e => setFeedback(f => ({...f, views: e.target.value}))}
                 className="bg-surface border border-line rounded px-2 py-1 text-xs text-fg w-full" />
@@ -860,7 +860,7 @@ export default function Home() {
           Viral Clipper
         </h1>
         <p className="text-muted text-sm">
-          AI-powered video clip maker for Indonesian TikTok content
+          Long videos → vertical clips with word-timed captions, for Indonesian short-form
         </p>
       </header>
 
@@ -1137,9 +1137,9 @@ export default function Home() {
       {mainTab === 'learning' && (
         <section className="space-y-4">
           <div className="bg-surface rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-5 text-fg">Self-Learning Scoring</h2>
+            <h2 className="text-2xl font-semibold mb-5 text-fg">Learning from your posts</h2>
             <p className="text-sm text-muted mb-4">
-              Submit TikTok performance data for your clips to train the scoring weights. After enough feedback, the system will automatically adjust which features matter most.
+              Enter how your posted clips performed. After 5+ results, retraining re-weights the 13 scoring features by how well each one matched real performance.
             </p>
             {learningStats && (
               <div className="grid grid-cols-4 gap-4 mb-6">
@@ -1149,7 +1149,7 @@ export default function Home() {
                 </div>
                 <div className="bg-surface-2 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-success">{learningStats.with_actual_scores}</div>
-                  <div className="text-xs text-subtle">With TikTok Data</div>
+                  <div className="text-xs text-subtle">With Results</div>
                 </div>
                 <div className="bg-surface-2 rounded-lg p-4 text-center">
                   <div className="text-2xl font-bold text-accent">v{learningStats.version}</div>

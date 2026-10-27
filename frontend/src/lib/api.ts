@@ -153,7 +153,7 @@ export class ApiClient {
     clipId: string,
     metrics: {
       views: number; likes: number; comments: number; shares: number; saves: number;
-      /** ISO-8601 timestamp when the clip was uploaded to TikTok (required). */
+      /** ISO-8601 timestamp when the clip was posted (required). */
       postedAt: string;
     },
   ) {

@@ -34,14 +34,24 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
 - SQLite for all metadata (`src/db.ts` schema + migrations, `src/store.ts` repo)
 - Streams clip previews with HTTP Range support
 
-### Python AI Pipeline (`ai-pipeline/`)
-- Standalone CLI scripts, each doing one job
+### In the backend (Bun)
+- Segmenting, clip scoring (13 weighted signals, tiers, titles; `scoring.ts`,
+  `textRules.ts`), the optional LLM review (`llm.ts`, `clipReview.ts`),
+  analytics, feedback learning (`learning.ts`)
+- Discovery: yt-dlp feeds (`youtube.ts`), whole-caption scoring
+  (`captionAnalysis.ts`), channel crawler (`channels.ts`), auto-discover agent
+  with web search (`discoveryAgent.ts`, `webSearch.ts`)
+
+### Python media pipeline (`ai-pipeline/`)
+- Only what needs Python's media/ML libraries: `transcribe.py` (faster-whisper),
+  `media_features.py` (audio energy/onsets, faces, scene change, motion),
+  `render.py`, `subtitle.py`, `variation.py`, `captions.py`, `reframe.py`, and
+  the optional LightGBM model (`train_scorer.py`, `predict_supervised.py`)
 - Called by the Bun backend as subprocesses (`backend/src/runner.ts`)
-- **Input**: JSON on stdin + file paths as args
-- **Output**: JSON on stdout
-- **Exit code**: 0 = success, non-zero = failure
-- Scripts: `transcribe.py`, `segment.py`, `score.py`
-- Uses CUDA for faster-whisper and OpenCV GPU ops
+- **Input**: file paths as args · **Output**: JSON envelope on stdout · exit 0 = success
+- Uses CUDA for faster-whisper and NVENC when available
+
+What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 
 ### Next.js Frontend (`frontend/`)
 - `output: 'export'` → plain HTML/JS in `frontend/out`, served by the backend
@@ -76,11 +86,12 @@ See [linux-install.md](linux-install.md).
 4. Backend starts worker:
    a. yt-dlp downloads video → data/raw/{videoId}.mp4
    b. ffmpeg extracts audio → data/audio/{videoId}.wav
-   c. Python transcribe.py → data/transcripts/{videoId}.json
-   d. Python segment.py → data/segments/{videoId}.json
-   e. Python score.py → updates segments with scores
-   f. ffmpeg crops + renders each top clip → data/renders/{clipId}.mp4
-   g. ffmpeg burns subtitles → data/exports/{clipId}.mp4
+   c. Python transcribe.py → data/transcripts/{videoId}.json (or the video's YouTube captions)
+   d. Bun segments the transcript → data/segments/{videoId}.json
+   e. Python media_features.py measures each segment; Bun scores it (+ optional LLM review)
+   f. Python render.py crops + renders each top clip → data/renders/{videoId}/clip_{rank}.mp4
+   g. Python subtitle.py burns captions → data/exports/{videoId}/clip_{rank}_subtitled.mp4
+   h. variations, then the analytics report (Bun)
 5. Backend updates Job status=COMPLETED
 6. Frontend polls GET /api/jobs/{id} and shows results
 7. User previews clips, picks favorites, exports

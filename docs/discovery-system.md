@@ -1,5 +1,12 @@
 # YouTube Video Discovery System
 
+> **Status (2026-10-27): original design doc.** Discovery now runs in the Bun
+> backend, not a Python CLI: `youtube.ts` (yt-dlp feeds and filters),
+> `captionAnalysis.ts` (whole-video caption scoring), `channels.ts` (source-channel
+> crawler) and `discoveryAgent.ts` (✨ auto-discover: an LLM agent with web and
+> YouTube tools, or the algorithm without an LLM). Current behaviour and fields:
+> [api-spec.md → Discovery](api-spec.md#discovery). The plan below is kept for history.
+
 ## Problem
 Manual YouTube URL input is slow and imprecise. We need an automated discovery system that finds videos with high viral clip potential — specifically Indonesian content that matches our scoring keywords.
 

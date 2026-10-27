@@ -336,7 +336,12 @@ write_native_env() {
     echo "WHISPER_DEVICE=$([ "$GPU" -eq 1 ] && echo cuda || echo cpu)"
     echo "PATH=$venv/bin:/usr/local/bin:/usr/bin:/bin"
     if [ -n "$CUDA_LIBS" ]; then echo "LD_LIBRARY_PATH=$CUDA_LIBS"; fi
+    echo "# Hosted LLM key (Groq, OpenRouter, OpenAI…); Ollama needs none. LLM_BASE_URL / LLM_MODEL are above."
+    echo "LLM_API_KEY="
   } | write_root_file "$env"
+  # May hold an API key: readable by root and the app user only.
+  $SUDO chgrp "$(id -gn "$RUN_USER")" "$env"
+  $SUDO chmod 640 "$env"
   ok "Settings: $env"
 }
 

@@ -51,7 +51,7 @@ describe('shell', () => {
   it('renders title, tabs and the import form', async () => {
     await renderLoaded();
     expect(screen.getByText('Viral Clipper')).toBeInTheDocument();
-    expect(screen.getByText(/AI-powered video clip maker/i)).toBeInTheDocument();
+    expect(screen.getByText(/vertical clips with word-timed captions/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /import & clips/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /import & process/i })).toBeDisabled();
     expect(screen.getByText('No videos yet. Import a YouTube URL above to get started.')).toBeInTheDocument();
@@ -266,14 +266,14 @@ describe('clip list', () => {
     expect(document.querySelector('video')).toBeNull();
   });
 
-  it('validates and submits TikTok feedback', async () => {
+  it('validates and submits post feedback', async () => {
     await renderLoaded();
     const c1 = card('c1');
     fireEvent.click(within(c1).getByRole('button', { name: 'FB' }));
     const submit = within(c1).getByRole('button', { name: 'Submit feedback' });
 
     fireEvent.click(submit);
-    expect(within(c1).getByText(/Isi tanggal upload TikTok dulu/)).toBeInTheDocument();
+    expect(within(c1).getByText(/Isi tanggal upload dulu/)).toBeInTheDocument();
 
     const dateInput = c1.querySelector('input[type="datetime-local"]') as HTMLInputElement;
     const local = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);

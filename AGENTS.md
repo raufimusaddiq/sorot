@@ -7,7 +7,7 @@ YouTube/local video → 9:16 TikTok clips with auto-subtitles. Indonesian langua
 Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (static export) + SQLite + Docker
 
 ## Layout
-`backend/` Bun/TS API (also serves the UI) · `ai-pipeline/` Python · `frontend/` Next.js static export · `cli/` `vclip` client · `data/` media · `docs/` specs
+`backend/` Bun/TS API, orchestration, scoring, discovery, LLM (also serves the UI) · `ai-pipeline/` Python media/ML only · `frontend/` Next.js static export · `cli/` `vclip` client · `data/` media · `docs/` specs
 
 ## Build Order (strict)
 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
@@ -71,7 +71,12 @@ cd ai-pipeline
 - When code exists, prefer executable source over plan docs
 - Keep it personal-use simple
 - **KEEP MEMORY LEAN**: details → journal, memory = pointers only
-- Backend shells out to Python via `backend/src/runner.ts` (per-script timeouts, abort-on-cancel); tests inject fakes via `createApp(config, deps)`
+- Python is only for media/ML (Whisper, `media_features.py`, render/subtitle/variation, captions/reframe, LightGBM); segmenting, scoring rules, analytics, feedback learning, discovery and the LLM live in Bun. Don't add new Python for non-media logic
+- Ports from Python keep golden fixtures (`backend/tests/fixtures/*.json`, generated from the Python originals); `pyCompat.ts` reproduces Python rounding/splitting
+- LLM is optional: any OpenAI-compatible endpoint via `LLM_BASE_URL` + `LLM_MODEL`; every LLM path must fall back to the rules on `LlmError`. Secrets (`LLM_API_KEY`) go in gitignored `.env.llm`, never `.env.docker`
+- Web search for auto-discover defaults to Bing HTML (`WEB_SEARCH`): DuckDuckGo is blocked by Indonesian ISPs
+- Learned feature weights are written to `data/weights.json` (wins over shipped `ai-pipeline/weights.json`)
+- Backend shells out to Python via `backend/src/runner.ts` (per-script timeouts, abort-on-cancel); tests inject fakes via `createApp(config, deps)` (`exec`, `runScript`, `fetch`)
 - UI is same-origin in prod (backend serves `frontend/out`); CORS in `backend/src/app.ts` allows `localhost:3000` only for `next dev`
 - `frontend` must stay static-exportable: no API routes, rewrites, server actions or `next/image` optimization
 - API JSON keys = camelCase of SQLite columns (`backend/src/store.ts`); the frontend depends on them
@@ -122,6 +127,9 @@ cd ai-pipeline
 | GET | /api/music | Tracks in data/music |
 | GET | /api/clips/{id}/preview | Stream rendered clip |
 | GET | /api/clips/{id}/export | Download exported clip |
+| POST | /api/discover/auto | ✨ Auto-discover run (LLM agent or algorithm), background |
+| GET | /api/discover/auto[/{id}] | Auto-discover progress / picks |
+| GET | /api/discover/candidates | Ranked candidates with `why` reasons |
 
 ## Git Strategy
 - **Repo**: `raufimusaddiq/viral-clipper` (private monorepo)

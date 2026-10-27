@@ -5,7 +5,7 @@
 Viral Clipper turns long YouTube or local videos into vertical **9:16 short-form clips** for any social platform — transcribed, scored for viral potential, framed on the speaker, captioned word by word, and given a ready-to-paste title and description. Built for **Indonesian** content, runs **100% locally** on your own machine. No uploads, no subscriptions, no watermark. 🏠
 
 ```
-📺 YouTube / local video  →  🎙️ Whisper  →  🧠 viral scoring  →  📱 9:16 render  →  💬 karaoke captions  →  🚀 post-ready clips
+📺 YouTube / local video  →  🎙️ Whisper  →  🧠 clip scoring (+ optional LLM)  →  📱 9:16 render  →  💬 karaoke captions  →  🚀 post-ready clips
 ```
 
 ---
@@ -15,15 +15,16 @@ Viral Clipper turns long YouTube or local videos into vertical **9:16 short-form
 | | |
 |---|---|
 | 🎙️ **Hears every word** | faster-whisper (`large-v3-turbo`) with per-word timestamps — or the video's own YouTube captions when they're better |
-| 🧠 **Finds the gold** | 11-feature multimodal score (hooks, keywords, energy, faces, scene changes…) ranks every moment into **PRIMARY / BACKUP / SKIP** |
+| 🧠 **Finds the gold** | 13 hand-weighted signals from the words, the audio and the picture (hooks, keywords, energy, faces, motion…) rank every moment into **PRIMARY / BACKUP / SKIP** |
+| 🤖 **Optional LLM** | Point it at Ollama, Groq, OpenRouter or OpenAI and it reviews each clip, writes titles and runs an auto-discover agent — off by default, everything works without it |
 | 🎯 **Keeps the speaker in frame** | Face tracking moves the 9:16 crop with whoever's talking and switches exactly on scene cuts |
 | 💬 **Captions that pop** | Karaoke-style ASS captions — the spoken word lights up. Four looks: `default`, `hormozi`, `storyteller`, `cinematic` |
 | 🪝 **Hook first** | Optionally replays the clip's strongest line at the very start — stop the scroll |
 | 🤫 **Kills dead air** | Optional silence trim cuts pauses out of video, audio *and* captions in one pass |
 | 🎵 **Background music** | Drop tracks in `data/music`; they loop under the clip and duck while people talk |
 | ✏️ **Fix anything** | Clip editor: nudge start/end, fix a misheard word, change style — re-renders just that clip in ~20 s |
-| 🔎 **Finds source videos** | Discovery searches YouTube for long-form podcasts / talk shows and crawls the channels clippers harvest from |
-| 📈 **Learns what works** | Feed back real views and likes from your posts — the scoring weights retrain themselves |
+| 🔎 **Finds source videos** | ✨ Auto-discover researches what's trending, reads whole videos' captions and picks sources with a reason for each; plus search, trending and a crawler for the channels clippers harvest from |
+| 📈 **Learns what works** | Feed back real views and likes from your posts — after 5+ results the feature weights are re-fitted to what actually performed |
 | ⌨️ **Scriptable** | `vclip` CLI and a plain HTTP API for cron jobs, watched folders and your own tools |
 
 ---
@@ -174,7 +175,8 @@ vclip import ~/Videos/talk.mp4 --from 13:25 --to 25:00            # ✂️ a loc
 vclip clips <video> --tier PRIMARY                                # 🏆 the best clips
 vclip download --video <video> -o ~/clips                         # 💾 grab the .mp4s
 vclip rerender <clip> --start 61 --end 100                        # ✏️ fix one clip's timing
-vclip discover search "podcast indonesia"                         # 🔎 find source videos
+vclip discover auto "podcast bisnis"                             # ✨ let the agent find source videos
+vclip discover search "podcast indonesia"                         # 🔎 or search yourself
 vclip up | down | logs -f | doctor                                # 🛠️ run the app
 ```
 
@@ -196,7 +198,7 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      2. 🔊 Audio         ffmpeg
                      3. 🎙️ Transcribe    faster-whisper large-v3-turbo, word timestamps
                      4. ✂️ Segment       gap-based candidate clips
-                     5. 🧠 Score         11-feature multimodal formula + title/description
+                     5. 🧠 Score         13 weighted signals + optional LLM review, title/description
                      6. 📱 Render 9:16   face-tracking crop, silence trim, hook first
                      7. 💬 Captions      word-timed ASS burned in with libass
                      8. 🔁 Variations    zoom / crop presets of the top clips
@@ -205,41 +207,54 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
               Web UI · vclip · your scripts ◄── HTTP API (same origin, port 8080)
 ```
 
-### 🏅 Scoring engine v4
+### 🏅 Scoring
 
-Each clip is scored on 11 weighted features with Indonesian keyword heuristics:
+Each clip is scored on 13 weighted signals (weights from `ai-pipeline/weights.json`, or your learned `data/weights.json`):
 
 | Feature | Weight | Signal |
 |---------|--------|--------|
-| 🪝 Hook Strength | 18% | Question / hook phrase in the opening |
-| 🔑 Keyword Trigger | 9% | Indonesian viral keywords |
-| 💡 Novelty | 9% | Numbers, proper nouns, step / surprise words |
-| 🔍 Clarity | 10% | Duration + context words |
-| ⚡ Emotional Energy | 9% | Audio RMS energy (60%) + text emotion (40%) |
+| 🪝 Hook Strength | 17% | Question / hook phrase in the opening |
+| 🔑 Keyword Trigger | 8% | Indonesian viral keywords (TF-IDF when `data/corpus` has texts) |
+| 💡 Novelty | 8% | Numbers, proper nouns, step / surprise words |
+| 🔍 Clarity | 9% | Duration + context words |
+| ⚡ Emotional Energy | 8% | Audio RMS energy (60%) + text emotion (40%) |
 | 😊 Text Sentiment | 5% | Indonesian positive / negative word polarity |
-| ⏸️ Pause Structure | 7% | Actual silence gaps from the transcript |
-| 🙂 Face Presence | 10% | Faces (majority of 5 full-res frames) + smiles |
-| 🎬 Scene Change | 8% | Histogram diff + colour brightness / saturation |
-| 🎯 Topic Fit | 8% | Niche keyword match |
-| 📚 History Score | 7% | Similar past clips via feedback lookup |
+| ⏸️ Pause Structure | 6% | Actual silence gaps from the transcript |
+| 🙂 Face Presence | 9% | Faces (Haar cascade on sampled frames) + smiles |
+| 🎬 Scene Change | 7% | Histogram diff + colour brightness / saturation |
+| 🎯 Topic Fit | 7% | `NICHE_KEYWORDS` match |
+| 📚 History Score | 6% | Similar past clips via your feedback |
+| 🏃 Motion | 5% | Optical flow between frames |
+| 🥁 Onset Density | 5% | Audio onsets per second (laughs, claps, fast talk) |
 
 ➕ **Boosts:** sharp questions, opinion clashes, numbered lists, emotional moments, conversational tone
 ➖ **Penalties:** slow openings, too much silence, generic content, no face
 
 🏆 **PRIMARY** ≥ 0.80 · 🥈 **BACKUP** ≥ 0.65 · 💤 **SKIP** < 0.65
 
-### 📈 Self-learning
+With an LLM configured, each clip's final score is 50% this formula and 50% the LLM's judgement of the excerpt, and the LLM writes the title and description; if the LLM is unreachable the formula alone decides. Every clip records which one scored it and why.
 
-Weights live in `ai-pipeline/weights.json` and improve from real results:
+### 🔬 What's actually "AI" here?
+
+Honestly: the speech-to-text is a neural network (Whisper), and the LLM is one when you add it. Face detection is classic machine learning (OpenCV Haar cascades). The clip score itself is a **hand-tuned weighted formula** over rule-based and signal-processing features — fast, explainable and works offline, but not a trained model. A LightGBM model can take over once you've fed back 200+ real results. Details: **[docs/ai-audit.md](docs/ai-audit.md)**.
+
+### 📈 Learning from your posts
+
+The shipped weights are in `ai-pipeline/weights.json`; what you learn goes to `data/weights.json` (survives updates):
 
 1. 📤 Post a clip, enter its views / likes / comments / shares / saves
 2. 🧮 A viral score is computed from your numbers (time-normalised)
-3. 🔄 After 5+ results, **Retrain Weights** — Pearson correlation per feature + EMA blending (α = 0.3)
+3. 🔄 After 5+ results, **Retrain Weights** — each feature re-weighted by how well it correlated with real results (Pearson + EMA blend, α = 0.3)
 4. ✅ The next import scores with the improved weights
 
 ### 🔎 Discovery
 
-Searches YouTube for **long-form source material** (podcasts, talk shows, stand-up, livestream VODs) — not other people's clips: re-clipped titles are filtered out, 30–180 min videos score highest, and only uploads from the last 90 days show by default. A channel crawler finds and profiles source channels and rejects clip farms. Queue the best candidates and process them in one go.
+Finds **long-form source material** (podcasts, talk shows, stand-up, livestream VODs) — not other people's clips: re-clipped titles are filtered out, 30–180 min videos score highest, and only uploads from the last 90 days show by default.
+
+- ✨ **Auto-discover** — with an LLM, an agent searches the web for what Indonesians are talking about now, turns it into YouTube searches, reads the captions of promising videos and picks the best with a reason for each. Without one, the algorithm samples a few anchor queries at random and keeps the best-scoring videos (≤ 2 per channel).
+- 🧾 **Whole-video scoring** — every candidate's captions are scored in 45 s windows: strong moments, best timestamps, how much talking there is.
+- 🗣️ **Reasons** — each candidate says why it ranks where it does ("3 strong moments, best at 4:38", "Known source channel").
+- 📡 A channel crawler profiles source channels and rejects clip farms. Queue the best candidates and process them in one go.
 
 ### 📝 Titles & descriptions
 
@@ -263,6 +278,9 @@ Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc
 | `HOOK_FIRST` | `false` | Replay the best line at the start |
 | `YOUTUBE_CAPTIONS` / `YOUTUBE_AUTO_CAPTIONS` | `false` / `false` | Use the video's uploaded (and auto-generated) captions |
 | `BGM_FILE` / `BGM_VOLUME` | none / `0.12` | Default background music from `data/music` |
+| `LLM_BASE_URL` / `LLM_MODEL` | empty (off) | Any OpenAI-compatible endpoint, e.g. Ollama `http://host.docker.internal:11434/v1` + `qwen2.5:7b` |
+| `LLM_API_KEY` | empty | For hosted LLMs — put it in `.env.llm` (gitignored), not `.env.docker` |
+| `WEB_SEARCH` | `bing` | Auto-discover web search: `bing` (no key), a SearXNG URL, or `off` |
 
 ---
 
@@ -270,8 +288,9 @@ Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc
 
 | Part | Tech |
 |-----------|------|
-| 🟨 Backend API | Bun + TypeScript (`bun:sqlite`, zero runtime deps) — also serves the UI |
-| 🐍 AI pipeline | Python 3 · faster-whisper (CUDA) · OpenCV · NumPy · ffmpeg / libass · yt-dlp |
+| 🟨 Backend | Bun + TypeScript (`bun:sqlite`, zero runtime deps): API, orchestration, scoring, discovery, LLM agent — also serves the UI |
+| 🐍 Media pipeline | Python 3 · faster-whisper (CUDA) · OpenCV · NumPy · ffmpeg / libass · yt-dlp |
+| 🤖 LLM (optional) | Any OpenAI-compatible endpoint: Ollama, LM Studio, Groq, OpenRouter, OpenAI |
 | ⚛️ Frontend | Next.js 14, static export |
 | 🗄️ Database | SQLite |
 | ⌨️ CLI | `vclip` — one compiled Bun binary |
@@ -281,9 +300,9 @@ Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc
 ### 🗂️ Project layout
 
 ```
-├── backend/        🟨 Bun/TS API, pipeline orchestrator, static UI host (+ Dockerfile)
-├── ai-pipeline/    🐍 Python stage scripts: transcribe, segment, score, render, reframe,
-│                      subtitle, captions, variation, analytics, discover, feedback, learn_weights
+├── backend/        🟨 Bun/TS API, orchestrator, scoring, discovery + agent, static UI host (+ Dockerfile)
+├── ai-pipeline/    🐍 Python media scripts: transcribe, media_features, render, reframe,
+│                      subtitle, captions, variation, train_scorer / predict_supervised
 ├── frontend/       ⚛️ Next.js web UI (static export → frontend/out)
 ├── cli/            ⌨️ vclip command-line client
 ├── scripts/        🛠️ install.sh (Linux) · start/stop/verify/e2e .ps1 (Windows)
@@ -300,7 +319,7 @@ bun run start                      # backend on :8080, serves the UI
 cd backend && bun test --coverage  # 🧪 backend
 cd cli && bun test --coverage      # 🧪 CLI
 cd frontend && bun run test        # 🧪 UI (jest)
-cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~490 pipeline tests
+cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~200 media pipeline tests
 ```
 
 Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
@@ -317,6 +336,7 @@ Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
 | 🌐 [api-spec.md](docs/api-spec.md) | HTTP API reference |
 | 🏗️ [architecture.md](docs/architecture.md) | How the pieces fit |
 | 🏅 [scoring-spec.md](docs/scoring-spec.md) | Scoring formula in depth |
+| 🔬 [ai-audit.md](docs/ai-audit.md) | What is a model, what is a rule, what the LLM does |
 | 🐍 [python-pipeline.md](docs/python-pipeline.md) | Each pipeline script's inputs and outputs |
 
 ---

@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Viral Clipper',
-  description: 'AI-powered video clip maker for Indonesian TikTok content',
+  description: 'Long videos → vertical clips with word-timed captions, for Indonesian short-form',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

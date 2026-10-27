@@ -288,22 +288,26 @@ later submits update the same row.
 { "status": "ok", "data": { "clipId": "uuid", "viralScore": 0.42, "views": 12000,
   "likes": 800, "postedAt": "2026-10-20T10:00:00Z" } }
 ```
-`viralScore` is `null` if `feedback.py` failed; the metrics are still saved.
+`viralScore` (0-1, `backend/src/learning.ts`): views per day, log-scaled (35%),
+interactions per view (25%), saves per view (20%), comments per view (20%).
 400 `postedAt is required (…)` · `postedAt must be ISO-8601 (…)` ·
 `postedAt is in the future: …` · `Clip not found: {id}`.
 
 ### `POST /api/feedback/train`
-Exports scored feedback to `data/feedback/feedback_export.json` and runs
-`learn_weights.py --action train --min-samples 5`.
+Re-weights all 13 features from the clips that have a real viral score (at
+least 5): each feature's weight moves toward its Pearson correlation with the
+real scores (floored at 0.05), blended 70/30 with the current weights. The
+result is written to `data/weights.json`, which the scorer reads before the
+shipped `ai-pipeline/weights.json`.
 
 ```json
 { "status": "ok", "data": {
   "status": "trained", "version": 4, "trained_on": 6,
   "weight_changes": { "hookStrength": { "from": 0.17, "to": 0.18 } },
-  "new_weights": { "hookStrength": 0.18 },
-  "message": "…" } }
+  "new_weights": { "hookStrength": 0.18, "…": 0.05 } } }
 ```
-`weight_changes`, `new_weights` and `message` appear only when the script returns them.
+With too few results: `{ "status": "insufficient_data", "version": 0, "trained_on": 0,
+"message": "Need at least 5 records with actual scores, got 2" }`.
 
 ### `GET /api/feedback/weights`
 ```json
@@ -317,8 +321,12 @@ Exports scored feedback to `data/feedback/feedback_export.json` and runs
 ## Discovery
 
 Candidates are persisted in `discovered_video`, keyed by YouTube id. After a
-search, the top 10 new candidates are enriched in the background (3 at a time)
-with a transcript sample and `transcriptScore` / `predictedScore`.
+search, the top 10 new candidates are enriched in the background (3 at a time):
+their whole captions are scored in 45 s windows (`backend/src/captionAnalysis.ts`).
+`transcriptScore` is the mean of the 5 best windows, `strongMoments` counts
+windows ≥ 0.55, `topMoments` lists the best ones, and `predictedScore` =
+40% transcript + 15% strong moments per 10 captioned minutes + 10% speech
+density + 20% view velocity + 15% length fit (hand-set weights).
 
 Candidate object (every list below returns these):
 ```json
@@ -327,11 +335,16 @@ Candidate object (every list below returns these):
   "viewCount": 1000, "uploadDate": "20260401", "ageHours": 12.5,
   "relevanceScore": 0.75, "transcriptScore": 0.6, "predictedScore": 0.7,
   "status": "NEW", "jobId": null, "sourceMode": "search", "sourceQuery": "…",
-  "channelId": "UC…", "contentType": "PODCAST", "speechDensityWpm": null,
-  "isLikelyClipped": false }
+  "channelId": "UC…", "contentType": "PODCAST", "speechDensityWpm": 136,
+  "isLikelyClipped": false, "strongMoments": 3,
+  "topMoments": [{ "start": 278, "score": 0.7, "text": "…" }],
+  "reason": "Hot topic this week (agent picks only)",
+  "why": ["3 strong moments, best at 4:38", "Steady talk (136 wpm)", "Long-form (63 min)"] }
 ```
+`why` gives plain-language reasons for the rank (agent reason, caption analysis,
+length, view velocity, known source channel, a channel you've clipped before).
 `contentType` is a regex guess (`PODCAST`, `TALKSHOW`, `STANDUP`, `LIVESTREAM`,
-`NEWS`, `OTHER`). discover.py already drops titles that look re-clipped
+`NEWS`, `STORYTELLING`, `REVIEW`, `GAMING`, `OTHER`). Searches already drop titles that look re-clipped
 ("clip", "highlight", "best of"…) and defaults to uploads from the last 90 days.
 `videoId` is a legacy alias of `youtubeId`. Status values: `NEW`, `QUEUED`,
 `SKIPPED`, `IMPORTED` (any uppercase string is accepted). Re-running a search
@@ -347,15 +360,44 @@ keeps a status the user set; candidates already in the library come back as `IMP
 ### `POST /api/discover/trending`
 `{ "maxResults": 20, "region": "ID" }` (body optional) →
 `{ "mode": "trending", "query": "ID", "count": n, "videos": [...] }`.
+Merges YouTube hashtag feeds (`viralindonesia`, `viral`, …) with a few niche
+searches; a failing feed is skipped, so this never fails as a whole.
+`region` is kept for compatibility (hashtag feeds are not regional).
 
 ### `POST /api/discover/channel`
 `{ "channelUrl": "https://youtube.com/@x", "maxResults": 20, "minDuration": 0, "maxDuration": 0 }`
 → `{ "mode": "channel", … }`. 400 `channelUrl is required`.
 
+### `POST /api/discover/auto`
+Starts auto-discover in the background (one run at a time; 409
+`Auto-discover already running: {id}`).
+`{ "goal": "drama artis", "maxResults": 10 }` (both optional; at most 20 picks) → the run:
+```json
+{ "id": "uuid", "status": "RUNNING", "goal": "drama artis", "maxResults": 10,
+  "mode": null, "model": null, "startedAt": "…", "finishedAt": null,
+  "steps": [], "notes": null, "llmError": null, "error": null, "count": 0, "videos": [] }
+```
+With an LLM (`LLM_BASE_URL` + `LLM_MODEL`), an agent calls tools at temperature
+0.8 — `web_search` (`WEB_SEARCH`: `bing`, a SearXNG URL, or `off`),
+`youtube_search`, `analyze_video`, `channel_videos`, `source_channels` — and
+answers with picks and reasons; only videos its tools returned are accepted.
+Without an LLM, or if it fails (`llmError` says why), the algorithm runs: 3
+random anchor queries (the goal first), every new result analyzed, best
+predicted scores kept, at most 2 per channel. Picks are stored as candidates
+with `sourceMode: "auto"`.
+
+### `GET /api/discover/auto` · `GET /api/discover/auto/{id}`
+The latest run / a run by id (404 when none). `status`: `RUNNING`, `DONE`,
+`FAILED`; `mode`: `agent` or `algorithm`; `steps`: `[{ "tool", "args", "result" }]`
+(e.g. `"predicted 0.81, 3 strong moments"`); when `DONE`, `videos` holds the picks
+as Candidates and `notes` the agent's one-line read on what's trending.
+
 ### `GET /api/discover/candidates?status=QUEUED`
-Without `status`: `NEW` + `QUEUED` of known age up to 90 days, ranked by
-`predictedScore` (else `relevanceScore`); rows of unknown age stay hidden. With `status`: that status, ranked by predicted then
-relevance score. Returns `{ "count": n, "videos": [Candidate] }`.
+Without `status`: `NEW` + `QUEUED` of known age up to 90 days, without channels
+the crawler rejected, ranked by `predictedScore` (else `relevanceScore`) plus
+0.05 for a profiled source channel and 0.05 for a channel you've clipped
+before (`rankScore`); rows of unknown age stay hidden. With `status`: that
+status, ranked by predicted then relevance score. Returns `{ "count": n, "videos": [Candidate] }`.
 
 ### `POST /api/discover/candidates/{id}/status`
 `{ "status": "skipped" }` → the updated Candidate. 400 `status is required`, 404 `not found`.
@@ -375,7 +417,7 @@ For every `QUEUED` candidate: imports the video, starts a job, and marks the can
 
 ### Source channels
 
-`channel_crawler.py` finds long-form source channels (podcasts, talk shows,
+The crawler (`backend/src/channels.ts`) finds long-form source channels (podcasts, talk shows,
 stand-up, livestream VODs) with 12 Indonesian anchor queries, then profiles each
 from its last 30 uploads. Channels averaging under 15 min, or flagged as clip
 farms (≥ 70 % short or clip-titled uploads), are stored as `REJECTED`.

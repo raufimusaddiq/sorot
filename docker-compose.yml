@@ -10,7 +10,14 @@ services:
     volumes:
       - ./data:/app/data
       - hf-cache:/root/.cache/huggingface
-    env_file: .env.docker
+    env_file:
+      - path: .env.docker
+      # LLM_API_KEY (and any other secret) lives here; gitignored, optional.
+      - path: .env.llm
+        required: false
+    # Lets LLM_BASE_URL reach an Ollama running on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     deploy:
       resources:
         reservations:
