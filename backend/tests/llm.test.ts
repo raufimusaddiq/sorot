@@ -97,6 +97,11 @@ describe("tool loop", () => {
     const msgs = s.requests[1]!.body.messages;
     expect(msgs[1]).toMatchObject({ role: "tool", tool_call_id: "echo", content: "5" });
     expect(msgs[2].content).toHaveLength(MAX_TOOL_RESULT_CHARS);
+    // with a final prompt, the step limit ends in one tool-less answer instead of an error
+    const wrap = server({ tool_calls: [call("add", {})] }, { content: '{"picks":[]}' });
+    expect(await new Llm(CFG, wrap.fetchFn).runTools([], [], { add: () => 1 }, { maxSteps: 1, finalPrompt: "answer now" })).toBe('{"picks":[]}');
+    expect(wrap.requests[1]!.body.tools).toBeUndefined();
+    expect(wrap.requests[1]!.body.messages.at(-1)).toEqual({ role: "user", content: "answer now" });
     const empty = server({ tool_calls: [{ id: "e", function: { name: "nil", arguments: "" } }] }, { content: "fin" });
     expect(await new Llm(CFG, empty.fetchFn).runTools([], [], { nil: () => undefined })).toBe("fin");
     expect(empty.requests[1]!.body.messages[1].content).toBe("null");

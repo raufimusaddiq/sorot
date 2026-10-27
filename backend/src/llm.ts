@@ -106,12 +106,14 @@ export class Llm {
 
   /**
    * Chat with tools until the model answers without calling one. Tool errors
-   * go back to the model (it can recover); unreachable LLM or more than
-   * `maxSteps` rounds throw LlmError. Returns the final assistant text.
+   * go back to the model (it can recover). After `maxSteps` rounds the model
+   * gets `finalPrompt` and one last turn without tools (so its research isn't
+   * lost); without `finalPrompt` that throws LlmError, as does an unreachable
+   * LLM. Returns the final assistant text.
    */
   async runTools(
     messages: ChatMessage[], tools: ToolDef[], handlers: Record<string, ToolHandler>,
-    opts: { maxSteps?: number; temperature?: number; onCall?: (name: string, args: Json, result: unknown) => void } = {},
+    opts: { maxSteps?: number; temperature?: number; finalPrompt?: string; onCall?: (name: string, args: Json, result: unknown) => void } = {},
   ): Promise<string> {
     const history = [...messages];
     const maxSteps = opts.maxSteps ?? 8;
@@ -140,6 +142,8 @@ export class Llm {
         });
       }
     }
-    throw new LlmError(`LLM still calling tools after ${maxSteps} steps`);
+    if (!opts.finalPrompt) throw new LlmError(`LLM still calling tools after ${maxSteps} steps`);
+    history.push({ role: "user", content: opts.finalPrompt });
+    return (await this.chat(history, { temperature: opts.temperature })).content;
   }
 }
