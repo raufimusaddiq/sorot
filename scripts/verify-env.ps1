@@ -49,7 +49,7 @@ function Check-VenvImport($module, $required, $hint) {
 
 function Check-DockerGPU {
     Write-Host "  Checking Docker GPU passthrough..." -NoNewline
-    $null = docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi 2>&1
+    $null = docker run --rm --gpus all nvidia/cuda:12.6.3-base-ubuntu24.04 nvidia-smi 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host " OK" -ForegroundColor Green
         return $true

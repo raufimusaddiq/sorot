@@ -10,7 +10,7 @@
 set -euo pipefail
 
 BUN_VERSION=1.3.12
-CUDA_BASE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04   # GPU image base (backend/Dockerfile BASE_IMAGE)
+CUDA_BASE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04   # GPU image base (backend/Dockerfile BASE_IMAGE)
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF_DIR=/etc/sorot
 BIN=/usr/local/bin/sorot

@@ -118,7 +118,7 @@ services:
     image: ghcr.io/raufimusaddiq/sorot:${SOROT_VERSION:-latest}-cuda
     build:
       args:
-        BASE_IMAGE: nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04   # for --build
+        BASE_IMAGE: nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04   # for --build
     environment:
       WHISPER_DEVICE: cuda
     deploy:
@@ -359,7 +359,7 @@ Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
 ### 📦 CI and the published image
 
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Bun, UI and Python tests on every push to `master` and every PR. When a change can affect the image (anything except docs and the host-side install/start scripts), it also builds the **CPU** image — reusing cached layers, not pushed — and smoke-tests it: the API answers, the UI is served, the pipeline's Python packages, ffmpeg and yt-dlp load. The CUDA variant runs the same Dockerfile steps on another base, so it's left to releases.
-- [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml) builds `backend/Dockerfile` twice — on `ubuntu:22.04` (CPU) and, through the `BASE_IMAGE` build arg, on `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` (GPU) — and pushes both. It runs only:
+- [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml) builds `backend/Dockerfile` twice — on `ubuntu:24.04` (CPU) and, through the `BASE_IMAGE` build arg, on `nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04` (GPU) — and pushes both. It runs only:
   - when a **GitHub release** is published: `v1.2.3` → `:1.2.3`, `:1.2`, `:latest`, `:sha-<commit>` and the same with `-cuda` (a pre-release doesn't move `:latest`);
   - **by hand**: Actions → *Release image* → *Run workflow* on any branch → `:sha-<commit>`(`-cuda`), plus `:latest`(`-cuda`) unless you untick *latest*.
 

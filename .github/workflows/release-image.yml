@@ -36,10 +36,10 @@ jobs:
       matrix:
         include:
           - variant: cpu
-            base: ubuntu:22.04
+            base: ubuntu:24.04
             suffix: ""
           - variant: cuda
-            base: nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+            base: nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
             suffix: -cuda
     steps:
       # The CUDA variant is several GB while building; drop the runner's

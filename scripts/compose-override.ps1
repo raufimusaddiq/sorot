@@ -2,7 +2,7 @@
 # docker-compose.override.yml (gitignored). docker-compose.yml runs the CPU
 # image; with an NVIDIA GPU this switches to the -cuda image and reserves the GPU.
 
-$SorotCudaBase = "nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04"   # backend/Dockerfile BASE_IMAGE for -Build
+$SorotCudaBase = "nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04"   # backend/Dockerfile BASE_IMAGE for -Build
 
 function Write-SorotOverride {
     param([string]$Root, [int]$Port, [bool]$Gpu, [string]$Writer)

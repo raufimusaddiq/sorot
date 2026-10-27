@@ -1,9 +1,11 @@
 # One image: Bun API + statically-exported Next.js UI + Python AI pipeline.
 # Build from the repo root:  docker build -f backend/Dockerfile .
 # CPU by default; the NVIDIA (CUDA + cuDNN) variant:
-#   docker build -f backend/Dockerfile --build-arg BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 .
-# Both bases are Ubuntu 22.04, so the steps below are the same.
-ARG BASE_IMAGE=ubuntu:22.04
+#   docker build -f backend/Dockerfile --build-arg BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 .
+# Both bases are Ubuntu 24.04 (Python 3.12), so the steps below are the same.
+# Not 26.04: NVIDIA ships CUDA 13 only there, and CTranslate2 (faster-whisper)
+# is built for CUDA 12 (it loads libcublas.so.12).
+ARG BASE_IMAGE=ubuntu:24.04
 
 # ---- 1. Static UI (next build → frontend/out) ----
 # Next's build needs Node; Bun is copied in for the workspace install.
@@ -24,7 +26,7 @@ RUN cd frontend && bun run build
 # ---- 2. Runtime ----
 FROM ${BASE_IMAGE}
 
-# Ubuntu 22.04 LTS pins these de facto for the release's lifetime; yt-dlp
+# Ubuntu 24.04 LTS pins these de facto for the release's lifetime; yt-dlp
 # (pip, below) is left unpinned on purpose — YouTube changes break old ones.
 # curl is used by the docker-compose healthcheck.
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
