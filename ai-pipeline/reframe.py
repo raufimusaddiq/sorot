@@ -17,12 +17,15 @@ the plain centre crop.
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 
 OUT_W, OUT_H = 1080, 1920
 MODES = ("face", "center", "blur")
+# ffmpeg scene score (0-1) above which two frames are a cut.
+CUT_SCENE_SCORE = 0.3
 DEFAULT_MODE = "face"
 
 CENTER_VF = f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,crop={OUT_W}:{OUT_H},format=yuv420p"
@@ -55,18 +58,32 @@ def scaled_width(src_w, src_h):
     return OUT_W
 
 
-def sample_frames(video_path, start, end, fps=2.0, width=640, ffmpeg="ffmpeg"):
-    """Grayscale frames across [start, end] as ``[(t_rel, gray), ...]``."""
+def sample_frames(video_path, start, end, fps=2.0, width=640, ffmpeg="ffmpeg", cuts=None):
+    """Grayscale frames across [start, end] as ``[(t_rel, gray), ...]``.
+
+    Given a ``cuts`` list, the same decode also appends the scene-cut times
+    (seconds from ``start``) that ffmpeg's scene score finds.
+    """
     import cv2
 
     tmp = tempfile.mkdtemp(prefix="vc_reframe_")
     try:
-        cmd = [ffmpeg, "-hide_banner", "-loglevel", "error",
-               "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", video_path,
-               "-vf", f"fps={fps},scale={width}:-2", "-q:v", "4",
-               os.path.join(tmp, "f_%05d.jpg")]
-        if subprocess.run(cmd, capture_output=True, timeout=300).returncode != 0:
+        pattern = os.path.join(tmp, "f_%05d.jpg")
+        cmd = [ffmpeg, "-hide_banner", "-nostats", "-loglevel", "error" if cuts is None else "info",
+               "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", video_path]
+        if cuts is None:
+            cmd += ["-vf", f"fps={fps},scale={width}:-2", "-q:v", "4", pattern]
+        else:
+            cmd += ["-filter_complex",
+                    f"[0:v]split[a][b];[a]fps={fps},scale={width}:-2[f];"
+                    f"[b]scale=160:-2,select='gt(scene,{CUT_SCENE_SCORE})',showinfo[c]",
+                    "-map", "[f]", "-q:v", "4", pattern, "-map", "[c]", "-f", "null", "-"]
+        res = subprocess.run(cmd, capture_output=True, timeout=300)
+        if res.returncode != 0:
             return []
+        if cuts is not None:
+            log = res.stderr.decode("utf-8", "replace") if isinstance(res.stderr, bytes) else (res.stderr or "")
+            cuts.extend(float(t) for t in re.findall(r"pts_time:([0-9.]+)", log))
         frames = []
         for path in sorted(glob.glob(os.path.join(tmp, "f_*.jpg"))):
             img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
@@ -103,19 +120,21 @@ def make_detector():
     face_cascade, _ = _get_haar_cascades()
     # The frontal cascade misses people turned toward each other in wide
     # shots; the profile cascade (one facing direction, so also run on the
-    # mirrored frame) finds them.
+    # mirrored frame) finds them. Only run when the frontal pass found
+    # nobody: three passes per frame tripled tracking time on close-ups.
     profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml")
     params = dict(scaleFactor=1.1, minNeighbors=5, minSize=(24, 24))
 
     def detect(gray):
         w = gray.shape[1]
         found = [((x + fw / 2) / w, fw / w) for (x, y, fw, fh) in face_cascade.detectMultiScale(gray, **params)]
-        side = [((x + fw / 2) / w, fw / w) for (x, y, fw, fh) in profile_cascade.detectMultiScale(gray, **params)]
-        side += [(1 - (x + fw / 2) / w, fw / w)
-                 for (x, y, fw, fh) in profile_cascade.detectMultiScale(cv2.flip(gray, 1), **params)]
-        for c, fw in side:                       # skip faces the frontal pass already has
-            if all(abs(c - c2) > max(fw, fw2) / 2 for c2, fw2 in found):
-                found.append((c, fw))
+        if not found:
+            side = [((x + fw / 2) / w, fw / w) for (x, y, fw, fh) in profile_cascade.detectMultiScale(gray, **params)]
+            side += [(1 - (x + fw / 2) / w, fw / w)
+                     for (x, y, fw, fh) in profile_cascade.detectMultiScale(cv2.flip(gray, 1), **params)]
+            for c, fw in side:                   # a face both passes caught counts once
+                if all(abs(c - c2) > max(fw, fw2) / 2 for c2, fw2 in found):
+                    found.append((c, fw))
         return [(float(c), float(fw)) for c, fw in found]
     return detect
 
@@ -133,29 +152,40 @@ def frame_target(faces, window):
     return max(faces, key=lambda f: f[1])[0]
 
 
-def plan_track(samples, threshold=0.08, hold=2):
+def plan_track(samples, threshold=0.08, hold=2, cuts=()):
     """``samples``: ``[(t, target_or_None), ...]`` → ``[(t_start, centre), ...]``.
 
     Gaps (None) keep the current centre. A move needs ``hold`` consecutive
     samples away from the current centre by more than ``threshold``; the
-    jump is placed at the first of them. Returns [] when no face was seen.
+    jump is placed at the first of them — or, when a scene cut (``cuts``)
+    falls between the last sample on the old framing and the samples that
+    confirmed the move, on that cut, so the new framing starts with the new
+    shot. Returns [] when no face was seen.
     """
     seen = [(t, c) for t, c in samples if c is not None]
     if not seen:
         return []
     track = [(0.0, seen[0][1])]
     pending = []
+    prev = before = seen[0][0]
     for t, c in seen[1:]:
         if abs(c - track[-1][1]) > threshold:
             if pending and abs(c - pending[-1][1]) > threshold:
                 pending = []                     # moving target: restart the count
+            if not pending:
+                before = prev
             pending.append((t, c))
             if len(pending) >= hold:
                 centre = sum(p[1] for p in pending) / len(pending)
-                track.append((pending[0][0], centre))
+                at = pending[0][0]
+                near = [x for x in cuts if before < x <= pending[-1][0]]
+                if near:
+                    at = min(near, key=lambda x: abs(x - at))
+                track.append((at, centre))
                 pending = []
         else:
             pending = []
+        prev = t
     return track
 
 
@@ -233,11 +263,12 @@ def video_filter(mode, size=None, track=None):
 def plan_face_track(video_path, start, end, ffmpeg="ffmpeg", detect=None, fps=2.0):
     """Sample, detect and smooth: the face-following centre track for a clip
     ([] when no faces were found)."""
-    size_frames = sample_frames(video_path, start, end, fps=fps, ffmpeg=ffmpeg)
+    cuts = []
+    size_frames = sample_frames(video_path, start, end, fps=fps, ffmpeg=ffmpeg, cuts=cuts)
     if not size_frames:
         return []
     detect = detect or make_detector()
     h, w = size_frames[0][1].shape[:2]
     window = OUT_W / (OUT_H * w / h) if w * OUT_H > OUT_W * h else 1.0
     samples = [(t, frame_target(detect(g), window)) for t, g in size_frames]
-    return downsample_track(plan_track(samples))
+    return downsample_track(plan_track(samples, cuts=cuts))
