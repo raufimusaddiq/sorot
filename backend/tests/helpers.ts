@@ -103,8 +103,9 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
     return p;
   };
   return {
-    "transcribe.py": () => ({ videoId: "x", language: "id", segments: [{ index: 0, start: 0, end: 5, text: "halo" }] }),
-    "segment.py": () => ({ videoId: "x", segments: FAKE_SEGMENTS }),
+    // 30 s apart → segmenting turns each line into one FAKE_SEGMENTS clip
+    "transcribe.py": () => ({ videoId: "x", language: "id",
+      segments: FAKE_SEGMENTS.map((s) => ({ index: s.index, start: s.startTime, end: s.endTime, text: s.text })) }),
     "media_features.py": () => ({ videoId: "x", segments: FAKE_MEDIA }),
     "predict_supervised.py": () => ({ predictions: { 0: 0.99, 1: null, 2: 0.1 } }),
     "render.py": (args) => {
@@ -120,13 +121,6 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
       const start = Number(argAfter(args, "--start"));
       return { words: [{ text: "halo", start: start + 0.5, end: start + 1 }, { text: "dunia", start: start + 1.2, end: start + 2 }] };
     },
-    "analytics.py": () => ({ summary: { clips: 2 } }),
-    "feedback.py": () => ({ viralScore: 0.42 }),
-    "learn_weights.py": (args) =>
-      argAfter(args, "--action") === "train"
-        ? { status: "trained", version: 4, trained_on: 6, weight_changes: { hookStrength: { from: 0.1, to: 0.12 } },
-            new_weights: { hookStrength: 0.12 }, message: "ok" }
-        : { version: 3, trained_on: 5, last_updated: "2026-10-01", weights: { hookStrength: 0.1 } },
   };
 }
 

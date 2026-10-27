@@ -49,7 +49,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const clips = new ClipService(config, store);
   const discovery = new DiscoveryService(store, youtube, `${config.dataDir}/corpus`);
   const channels = new ChannelCrawler(store, youtube);
-  const feedback = new FeedbackService(config, store, runScript);
+  const feedback = new FeedbackService(config, store);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
 
   const router = new Router();

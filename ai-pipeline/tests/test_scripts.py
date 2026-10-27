@@ -11,7 +11,6 @@ import types
 
 import pytest
 
-import analytics
 import render
 import subtitle
 import transcribe
@@ -302,17 +301,3 @@ class TestVariation:
         code, env = run_main(variation, monkeypatch, capsys, "--segments", "nope.json", "--video", "v",
                              "--output-dir", str(tmp_path))
         assert code == 1 and env["success"] is False
-
-
-# --- analytics -----------------------------------------------------------------
-
-class TestAnalytics:
-    def test_top_features_skip_totals_and_short_clip_advice(self):
-        top = analytics.calc_top_features([{"scores": {"hookStrength": 0.8, "boostTotal": 0.5, "penaltyTotal": 0.1}}])
-        assert "boostTotal" not in json.dumps(top) and "penaltyTotal" not in json.dumps(top)
-        recs = analytics.generate_recommendations({"PRIMARY": 2}, {"avg": 0.7}, {"avg": 10})
-        assert recs == ["Clips are very short. May need more context for viewers."]
-
-
-# --- score ---------------------------------------------------------------------
-

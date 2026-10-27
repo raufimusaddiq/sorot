@@ -65,5 +65,13 @@ describe("scorer behaviour", () => {
     expect(loadWeights(dir)).toEqual(DEFAULT_WEIGHTS);
     writeFileSync(join(dir, "weights.json"), "{}");
     expect(loadWeights(dir)).toEqual(DEFAULT_WEIGHTS);
+    // learned weights (data dir) win; a broken learned file falls back to the shipped one
+    const data = mkdtempSync(join(tmpdir(), "d-"));
+    writeFileSync(join(dir, "weights.json"), JSON.stringify({ weights: { hookStrength: 0.3 } }));
+    expect(loadWeights(dir, data).hookStrength).toBe(0.3);
+    writeFileSync(join(data, "weights.json"), JSON.stringify({ weights: { hookStrength: 0.4 } }));
+    expect(loadWeights(dir, data).hookStrength).toBe(0.4);
+    writeFileSync(join(data, "weights.json"), "{broken");
+    expect(loadWeights(dir, data).hookStrength).toBe(0.3);
   });
 });

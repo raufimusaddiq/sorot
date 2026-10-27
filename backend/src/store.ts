@@ -26,7 +26,7 @@ const COLUMNS: Record<Table, string[]> = {
   clip_score: [
     "id", "clip_id", "hook_strength", "keyword_trigger", "novelty", "clarity",
     "emotional_energy", "text_sentiment", "pause_structure", "face_presence", "scene_change",
-    "topic_fit", "history_score", "boost_total", "penalty_total",
+    "topic_fit", "history_score", "boost_total", "penalty_total", "motion", "onset_density",
   ],
   clip_feedback: [
     "id", "clip_id", "video_id", "features", "predicted_score", "predicted_tier",

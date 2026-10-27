@@ -1,5 +1,5 @@
-"""Self-learning modules: features/supervised.py, train_scorer.py,
-learn_weights.py and feedback.py. LightGBM is stubbed, and every path that
+"""Supervised model: features/supervised.py and train_scorer.py (the linear
+re-weighting and viral score live in Bun: backend/src/learning.ts). LightGBM is stubbed, and every path that
 writes model/weight files is redirected to tmp_path — the real
 ai-pipeline/weights.json and model.lgb are never touched."""
 
@@ -10,8 +10,6 @@ import types
 import numpy as np
 import pytest
 
-import feedback
-import learn_weights
 import train_scorer
 from features import supervised
 
@@ -171,65 +169,3 @@ class TestEvaluate:
         assert code == 0 and out["data"]["status"] == "insufficient_data"
         code, out = run_main(train_scorer, monkeypatch, capsys, "--feedback", str(tmp / "missing.json"))
         assert code == 1 and out["success"] is False
-
-
-# --- learn_weights -------------------------------------------------------------
-
-@pytest.fixture
-def weights_file(monkeypatch, tmp_path):
-    p = tmp_path / "weights.json"
-    monkeypatch.setattr(learn_weights, "WEIGHTS_PATH", str(p))
-    return p
-
-
-class TestLearnWeights:
-    def test_defaults_when_no_weights_file(self, weights_file):
-        cur = learn_weights.load_current_weights()
-        assert cur["version"] == 0
-        assert set(cur["weights"]) == set(learn_weights.FEATURE_KEYS)
-
-    def test_string_features_and_sparse_features(self, weights_file):
-        weights_file.write_text(json.dumps({"version": 1, "weights": {k: 0.1 for k in learn_weights.FEATURE_KEYS}}))
-        recs = [{"features": json.dumps({"hookStrength": i / 10}), "actual_viral_score": i / 10} for i in range(6)]
-        recs.append({"features": "{broken", "actual_viral_score": 0.5})
-        out = learn_weights.train_weights(recs, min_samples=5)["data"]
-        assert out["status"] == "trained" and out["version"] == 2
-        assert "hookStrength" in out["weight_changes"]
-
-    def test_all_zero_weights_are_kept(self, weights_file):
-        weights_file.write_text(json.dumps({"version": 0, "weights": {k: 0.0 for k in learn_weights.FEATURE_KEYS}}))
-        recs = [{"features": {}, "actual_viral_score": 0.5}] * 5
-        out = learn_weights.train_weights(recs, min_samples=5)["data"]
-        assert out["new_weights"] == {k: 0.0 for k in learn_weights.FEATURE_KEYS}
-        assert out["weight_changes"] == {}
-
-    def test_cli(self, weights_file, monkeypatch, capsys, tmp_path):
-        weights_file.write_text(json.dumps({"version": 7, "trained_on": 3, "last_updated": "x", "weights": {"a": 1}}))
-        code, out = run_main(learn_weights, monkeypatch, capsys, "--action", "status")
-        assert code == 0 and out["data"]["version"] == 7
-
-        fb = tmp_path / "fb.json"
-        fb.write_text(json.dumps([{"features": {}, "actual_viral_score": 0.1}]))
-        code, out = run_main(learn_weights, monkeypatch, capsys, "--action", "train", "--feedback", str(fb))
-        assert out["data"]["status"] == "insufficient_data"
-
-        code, out = run_main(learn_weights, monkeypatch, capsys, "--action", "train")
-        assert code == 1 and "--feedback required" in out["error"]
-
-
-# --- feedback ------------------------------------------------------------------
-
-class TestFeedbackCli:
-    def test_calc_and_error(self, monkeypatch, capsys):
-        code, out = run_main(feedback, monkeypatch, capsys, "--action", "calc-viral-score", "--views", "1000",
-                             "--likes", "50", "--comments", "5", "--shares", "2", "--saves", "10",
-                             "--hours-since-post", "24")
-        assert code == 0
-        assert out["data"]["viralScore"] == feedback.calculate_viral_score(1000, 50, 5, 2, 10, 24)
-        assert out["data"]["hoursSincePost"] == 24.0
-
-        def boom(*a, **k):
-            raise ValueError("bad input")
-        monkeypatch.setattr(feedback, "calculate_viral_score", boom)
-        code, out = run_main(feedback, monkeypatch, capsys, "--action", "calc-viral-score")
-        assert code == 1 and out == {"success": False, "error": "bad input"}
