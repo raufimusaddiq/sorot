@@ -13,7 +13,6 @@ import pytest
 
 import analytics
 import render
-import score
 import subtitle
 import transcribe
 import variation
@@ -317,33 +316,3 @@ class TestAnalytics:
 
 # --- score ---------------------------------------------------------------------
 
-class TestScoreExtras:
-    def test_load_weights_fills_missing_and_falls_back(self, monkeypatch, tmp_path):
-        p = tmp_path / "w.json"
-        p.write_text(json.dumps({"weights": {"hookStrength": 0.5}}))
-        monkeypatch.setattr(score, "WEIGHTS_PATH", str(p))
-        w = score.load_weights()
-        assert w["hookStrength"] == 0.5 and set(score.DEFAULT_WEIGHTS) <= set(w)
-        monkeypatch.setattr(score, "WEIGHTS_PATH", str(tmp_path / "missing.json"))
-        assert score.load_weights() == dict(score.DEFAULT_WEIGHTS)
-
-    def test_title_skips_leading_punctuation(self):
-        # Regression: Whisper text opening with "..." gave a hashtag-only title.
-        title = score.generate_clip_title("...dan kemudian dia pergi", "SKIP", {})
-        assert title.startswith("dan kemudian dia pergi")
-
-    def test_title_and_description_trimming(self):
-        title = score.generate_clip_title("rahasia " + "a" * 120, "SKIP", {})
-        assert len(title) == 100 and title.endswith("...")
-        desc = score.generate_clip_description("x" * 200, "SKIP", {})
-        assert ("x" * 147 + "...") in desc
-
-    def test_hook_lines(self):
-        assert score._generate_hook_line("ini trik jitu", "SKIP") == "Trik yang harus kamu coba!"
-        assert score._generate_hook_line("cerita biasa", "PRIMARY") == "Wajib tahu ini!"
-        assert score._generate_hook_line("cerita biasa", "SKIP") is None
-
-    def test_supervised_prediction_replaces_linear_base(self, monkeypatch):
-        monkeypatch.setattr(score._supervised, "predict", lambda scores: 0.99)
-        out = score.score_segment({"text": "cerita biasa saja", "duration": 20})
-        assert out["finalScore"] >= 0.8 and out["tier"] == "PRIMARY"

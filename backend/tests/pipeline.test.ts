@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LlmError } from "../src/llm";
 import { mapPool } from "../src/orchestrator";
-import { argAfter, defaultExec, makeEnv, procOk, type TestEnv } from "./helpers";
+import { argAfter, defaultExec, FAKE_SEGMENTS, makeEnv, procOk, type TestEnv } from "./helpers";
 
 let env: TestEnv;
 beforeEach(() => { env = makeEnv(); });
@@ -34,11 +36,13 @@ describe("full pipeline", () => {
 
     const clips = (await env.json("GET", `/api/videos/${videoId}/clips`)).body.data.clips;
     expect(clips.map((c: any) => [c.rankPos, c.tier])).toEqual([[1, "PRIMARY"], [2, "BACKUP"], [3, "SKIP"]]);
-    expect(clips[0]).toMatchObject({ renderStatus: "COMPLETED", exportStatus: "COMPLETED", title: "Judul 0", textContent: "segmen 0" });
+    expect(clips[0]).toMatchObject({ renderStatus: "COMPLETED", exportStatus: "COMPLETED", textContent: FAKE_SEGMENTS[0]!.text,
+      scoredBy: "rules", reason: "Rule score: strong opening hook, viral keywords" });
+    expect(clips[0].title).toStartWith("Kenapa rahasia ini penting banget? #rahasia");
     expect(clips[0].exportPath).toEndWith("clip_1_subtitled.mp4");
     expect(clips[2]).toMatchObject({ renderStatus: "PENDING", renderPath: null });
     const score = (await env.json("GET", `/api/clips/${clips[0].id}`)).body.data.scoreBreakdown;
-    expect(score).toMatchObject({ hookStrength: 0.8, facePresence: 1, boostTotal: 0.05 });
+    expect(score).toMatchObject({ hookStrength: 1, keywordTrigger: 1, facePresence: 1, emotionalEnergy: 0.92, topicFit: 0.5, boostTotal: 0.18 });
 
     // Python call contract
     const scripts = env.calls.map((c) => c.script);
@@ -46,9 +50,13 @@ describe("full pipeline", () => {
     const t = env.calls.find((c) => c.script === "transcribe.py")!.args;
     expect(t).toEqual(["--audio", `${env.config.dataDir}/audio/${videoId}.wav`, "--output",
       `${env.config.dataDir}/transcripts/${videoId}.json`, "--language", "id", "--model", "medium", "--device", "cuda"]);
-    const s = env.calls.find((c) => c.script === "score.py")!.args;
-    expect(s).toContain("--audio");
-    expect(s).toContain("--transcript");
+    const s = env.calls.find((c) => c.script === "media_features.py")!.args;
+    expect(s).toEqual(["--segments", `${env.config.dataDir}/segments/${videoId}.json`, "--video", video.filePath,
+      "--audio", `${env.config.dataDir}/audio/${videoId}.wav`]);
+    expect(scripts).not.toContain("predict_supervised.py");          // no trained model
+    const saved = await Bun.file(`${env.config.dataDir}/segments/${videoId}.json`).json();
+    expect(saved).toMatchObject({ videoId, scoredBy: "rules" });
+    expect(saved.scoredSegments.map((x: any) => [x.index, x.rank, x.tier])).toEqual([[0, 1, "PRIMARY"], [1, 2, "BACKUP"], [2, 3, "SKIP"]]);
     expect(await Bun.file(`${env.config.dataDir}/analytics/${videoId}.json`).json()).toEqual({ summary: { clips: 2 } });
     for (const sub of ["input", "clips", "variations", "logs"]) expect(existsSync(`${env.config.dataDir}/${sub}`)).toBeTrue();
   });
@@ -167,6 +175,44 @@ describe("full pipeline", () => {
     expect(clips[0]).toMatchObject({ renderStatus: "FAILED", renderPath: null, exportStatus: "PENDING" });
   });
 
+  test("niche keywords, feedback history and a trained model feed the scorer", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pipe-"));
+    writeFileSync(join(dir, "model.lgb"), "model");
+    writeFileSync(join(dir, "weights.json"), JSON.stringify({ weights: { hookStrength: 1 } }));
+    env.config.pipelineDir = dir;
+    env.config.nicheKeywords = ["teh"];
+    const { videoId } = await importAndRun();
+    const feats = await Bun.file(`${env.config.dataDir}/segments/${videoId}.features.json`).json();
+    expect(feats[0].features).toMatchObject({ hookStrength: 1, topicFit: 0.3 });
+    const clips = env.app.store.clipsForVideo(videoId);
+    expect(clips.map((c) => [c.textContent!.slice(0, 5), c.tier])).toEqual([["Kenap", "PRIMARY"], ["Terny", "PRIMARY"], ["Hari ", "SKIP"]]);
+    expect(env.app.store.clipScore(clips[2]!.id)!.topicFit).toBe(1);              // "teh" is in the third text
+    env.scripts["predict_supervised.py"] = () => ({ predictions: {} });
+    const again = await importAndRun();
+    expect(env.app.store.clipsForVideo(again.videoId).map((c) => c.tier)).toEqual(["PRIMARY", "PRIMARY", "SKIP"]);
+  });
+
+  test("an LLM blends its judgement into the scores and writes the copy", async () => {
+    env.config.llmBaseUrl = "http://llm/v1";
+    env.config.llmModel = "qwen";
+    env.app.llm.chat = async (messages) => {
+      const ids = JSON.parse(messages[1]!.content).excerpts.map((e: any) => e.id);
+      return { role: "assistant", content: JSON.stringify({ clips: ids.map((id: number) => ({
+        id, score: id === 2 ? 95 : 10, reason: `llm ${id}`, title: `Judul LLM ${id}`, description: "Desk.", hashtags: ["seru"],
+      })) }) };
+    };
+    const { videoId } = await importAndRun();
+    const clips = env.app.store.clipsForVideo(videoId);
+    expect(clips.map((c) => [c.textContent!.slice(0, 5), c.scoredBy, c.reason])).toEqual([
+      ["Hari ", "llm+rules", "llm 2"], ["Kenap", "llm+rules", "llm 0"], ["Terny", "llm+rules", "llm 1"],
+    ]);
+    expect(clips[0]).toMatchObject({ title: "Judul LLM 2 #seru", description: "Desk.\n#seru" });
+    env.app.llm.chat = async () => { throw new LlmError("down"); };
+    const fallback = await importAndRun();
+    expect(env.app.store.clipsForVideo(fallback.videoId).map((c) => c.scoredBy)).toEqual(["rules", "rules", "rules"]);
+    expect((await Bun.file(`${env.config.dataDir}/segments/${fallback.videoId}.json`).json()).llmError).toBe("down");
+  });
+
   test("score with no scoredSegments yields no clips; re-score replaces clips", async () => {
     const { videoId } = await importAndRun();
     const before = env.app.store.clipsForVideo(videoId).map((c) => c.id);
@@ -281,8 +327,8 @@ describe("cancel / retry / queue", () => {
 
   test("retry re-runs a failed job to completion", async () => {
     let fail = true;
-    const orig = env.scripts["score.py"]!;
-    env.scripts["score.py"] = (args) => { if (fail) throw new Error("cuda OOM"); return orig(args); };
+    const orig = env.scripts["media_features.py"]!;
+    env.scripts["media_features.py"] = (args) => { if (fail) throw new Error("cuda OOM"); return orig(args); };
     const { jobId } = await importAndRun();
     expect((await detail(jobId)).job.status).toBe("FAILED");
     fail = false;

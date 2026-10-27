@@ -5,7 +5,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeEnv, type TestEnv } from "./helpers";
+import { analyzeCaptions, parseVttLines, predictScore } from "../src/captionAnalysis";
+import { CATEGORY_SEED_QUERIES } from "../src/channels";
+import { TRENDING_HASHTAGS, TRENDING_NICHE_QUERIES } from "../src/youtube";
+import { argAfter, defaultExec, FAKE_VTT, makeEnv, procOk, ytLines, type TestEnv } from "./helpers";
 
 let env: TestEnv;
 beforeEach(() => { env = makeEnv(); });
@@ -95,7 +98,7 @@ describe("videos (VideoControllerIT)", () => {
       emotionalEnergy: 0, textSentiment: 0, pauseStructure: 0, facePresence: 0, sceneChange: 0, topicFit: 0,
       historyScore: 0, boostTotal: 0, penaltyTotal: 0 });
     await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 10 });
-    env.scripts["score.py"] = () => { throw new Error("stop"); }; // let the job fail fast
+    env.scripts["media_features.py"] = () => { throw new Error("stop"); }; // let the job fail fast
     const job = (await env.json("POST", "/api/process", { videoId: "vc" })).body.data.jobId;
     await env.app.jobs.whenIdle();
 
@@ -346,6 +349,9 @@ describe("feedback", () => {
 });
 
 describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
+  const ytCalls = () => env.execCalls.filter((c) => c.cmd === "yt-dlp").map((c) => c.args);
+  const failYtDlp = () => { env.execHandler.fn = (cmd, args) => (cmd === "yt-dlp" ? { ...procOk("", "HTTP 429"), exitCode: 1 } : defaultExec(cmd, args)); };
+
   test("search/channel validation → 400", async () => {
     expect((await env.json("POST", "/api/discover/search", {})).body).toEqual({ status: "error", error: "query is required" });
     expect((await env.json("POST", "/api/discover/search", { query: "   " })).status).toBe(400);
@@ -353,47 +359,76 @@ describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
     expect((await env.json("POST", "/api/discover/channel", { channelUrl: "  " })).status).toBe(400);
   });
 
-  test("script failure → 5xx", async () => {
-    env.scripts["discover.py"] = () => { throw new Error("yt-dlp missing"); };
-    expect((await env.json("POST", "/api/discover/search", { query: "x" })).status).toBe(500);
-    expect((await env.req("POST", "/api/discover/trending")).status).toBe(500);
+  test("yt-dlp failure → 500 for search and channel; trending degrades to empty", async () => {
+    failYtDlp();
+    const r = await env.json("POST", "/api/discover/search", { query: "x" });
+    expect(r.status).toBe(500);
+    expect(r.body.error).toContain("HTTP 429");
     expect((await env.json("POST", "/api/discover/channel", { channelUrl: "https://youtube.com/@t" })).status).toBe(500);
+    expect((await env.req("POST", "/api/discover/trending")).status).toBe(200);
+    // a missing yt-dlp binary reads as a failed run, not a crash
+    env.execHandler.fn = () => { throw new Error("ENOENT"); };
+    expect((await env.json("POST", "/api/discover/search", { query: "x" })).body.error).toContain("yt-dlp not found");
   });
 
-  test("search builds args, persists, parses fields, enriches top candidates", async () => {
-    const r = await env.json("POST", "/api/discover/search", { query: "indonesian viral", maxResults: 10, minDuration: 120, maxDuration: "1800" });
-    expect(r.body.data.mode).toBe("search");
-    expect(r.body.data.count).toBe(2);
-    const v = r.body.data.videos[0];
-    expect(v).toMatchObject({ videoId: "abcdefghijk", youtubeId: "abcdefghijk", title: "Test", duration: 300,
-      relevanceScore: 0.75, viewCount: 1000, ageHours: 12.5, status: "NEW", sourceMode: "search", sourceQuery: "indonesian viral" });
-    expect(v).toMatchObject({ channelId: "UCch", contentType: "PODCAST", isLikelyClipped: false, speechDensityWpm: null });
-    expect(r.body.data.videos[1]).toMatchObject({ viewCount: null, channelId: null, contentType: null, isLikelyClipped: true });
-    expect(env.calls[0]!.args).toEqual(["--mode", "search", "--query", "indonesian viral", "--max-results", "10",
-      "--min-duration", "120", "--max-duration", "1800"]);
+  test("search filters, persists, then scores whole videos from their captions", async () => {
+    const r = await env.json("POST", "/api/discover/search", { query: "podcast", maxResults: 10, minDuration: 120, maxDuration: "7200" });
+    expect(r.body.data).toMatchObject({ mode: "search", query: "podcast", count: 2 });
+    const [v, two] = r.body.data.videos;
+    expect(v).toMatchObject({ videoId: "abcdefghijk", youtubeId: "abcdefghijk", title: "Podcast rahasia sukses", duration: 3600,
+      viewCount: 1000, status: "NEW", sourceMode: "search", sourceQuery: "podcast", channelId: "UCch", contentType: "PODCAST",
+      isLikelyClipped: false, speechDensityWpm: null, strongMoments: null, topMoments: [], reason: null });
+    expect(v.relevanceScore).toBeGreaterThan(two.relevanceScore);
+    expect(v.why).toEqual(["Long-form (60 min)"]);
+    expect(two).toMatchObject({ videoId: "zyxwvutsrqp", viewCount: null, channelId: null, contentType: "OTHER" });
+    expect(ytCalls()[0]).toEqual(["ytsearch10:podcast", "--dump-json", "--skip-download",
+      "--match-filters", "upload_date >=(today-90days)", "--no-warnings", "--no-check-certificates"]);
 
     await env.app.discovery.whenIdle();
-    const enrich = env.calls.filter((c) => c.args.includes("enrich"));
-    expect(enrich).toHaveLength(2);
-    expect(enrich[1]!.args).toContain("9999"); // missing age_hours default
-    const c = await env.json("GET", "/api/discover/candidates");
-    expect(c.body.data.count).toBe(1); // "Two" has no known age → hidden from the default view
-    expect(c.body.data.videos[0].predictedScore).toBe(0.7);
-    env.app.store.updateDiscovered(c.body.data.videos[0].id, { ageHours: 91 * 24 });
-    expect((await env.json("GET", "/api/discover/candidates")).body.data.count).toBe(0);
+    const subs = ytCalls().filter((a) => a.includes("--sub-format"));
+    expect(subs).toHaveLength(2);
+    expect(subs[0]).toContain("--write-auto-subs");
+    const row = env.app.store.discoveredByYoutubeId("abcdefghijk")!;
+    const analysis = analyzeCaptions(parseVttLines(FAKE_VTT))!;
+    expect(row).toMatchObject({ transcriptScore: analysis.transcriptScore, strongMoments: analysis.strongMoments,
+      speechDensityWpm: analysis.speechWpm, transcriptSample: analysis.topMoments[0]!.text });
+    expect(row.predictedScore).toBe(predictScore(analysis, 3600, 1000, row.ageHours!));
+    expect(row.enrichedAt).toBeString();
+
+    const c = (await env.json("GET", "/api/discover/candidates")).body.data;
+    expect(c.count).toBe(2);
+    const best = c.videos.find((x: { videoId: string }) => x.videoId === "abcdefghijk");
+    expect(best.topMoments).toHaveLength(analysis.topMoments.length);
+    expect(best.rankScore).toBe(row.predictedScore);
+    expect(best.why[0]).toMatch(/^(No standout moments|\d+ strong moments?, best at \d+:\d\d)/);
+    expect(best.why.some((w: string) => w.includes(`(${analysis.speechWpm} wpm)`))).toBeTrue();
+    env.app.store.updateDiscovered(best.id, { ageHours: 91 * 24 });
+    expect((await env.json("GET", "/api/discover/candidates")).body.data.count).toBe(1);
     expect((await env.json("GET", "/api/discover/candidates?status=new")).body.data.count).toBe(2);
-    expect(env.app.store.discoveredByYoutubeId("abcdefghijk")!.transcriptSample).toBe("contoh transkrip");
   });
 
-  test("trending and channel args; defaults", async () => {
-    await env.json("POST", "/api/discover/trending", { maxResults: 15, region: "US" });
-    expect(env.calls[0]!.args).toEqual(["--mode", "trending", "--max-results", "15", "--region", "US"]);
-    await env.req("POST", "/api/discover/trending");
-    expect(env.calls.at(-1)!.args).toEqual(["--mode", "trending", "--max-results", "20", "--region", "ID"]);
-    const r = await env.json("POST", "/api/discover/channel", { channelUrl: "https://youtube.com/@test", maxResults: 10, minDuration: 60, maxDuration: 600 });
-    expect(r.body.data.mode).toBe("channel");
-    expect(env.calls.at(-1)!.args).toEqual(["--mode", "channel", "--channel-url", "https://youtube.com/@test",
-      "--max-results", "10", "--min-duration", "60", "--max-duration", "600"]);
+  test("trending merges hashtag feeds and niche searches; channel reads the uploads tab", async () => {
+    const t = await env.json("POST", "/api/discover/trending", { maxResults: 15, region: "US" });
+    expect(t.body.data).toMatchObject({ mode: "trending", query: "US", count: 2 });
+    expect(t.body.data.videos[0].sourceMode).toBe("trending");
+    const feeds = ytCalls().filter((a) => a[0]!.startsWith("https://www.youtube.com/hashtag/")).map((a) => a[0]);
+    expect(feeds.sort()).toEqual(TRENDING_HASHTAGS.map((h) => `https://www.youtube.com/hashtag/${h}`).sort());
+    expect(ytCalls().filter((a) => a[0]!.startsWith("ytsearch3:"))).toHaveLength(TRENDING_NICHE_QUERIES.length);
+    await env.req("POST", "/api/discover/trending");   // defaults
+
+    env.execCalls.length = 0;
+    const r = await env.json("POST", "/api/discover/channel", { channelUrl: "https://youtube.com/@test/", maxResults: 1, minDuration: 60, maxDuration: 6000 });
+    expect(r.body.data).toMatchObject({ mode: "channel", count: 1 });
+    expect(r.body.data.videos[0].videoId).toBe("abcdefghijk");
+    expect(ytCalls()[0]!.slice(0, 2)).toEqual(["https://youtube.com/@test/videos", "--flat-playlist"]);
+    expect(argAfter(ytCalls()[0]!, "--playlist-end")).toBe("3");
+  });
+
+  test("channel falls back to the bare URL when the uploads tab fails", async () => {
+    env.execHandler.fn = (cmd, args) => (cmd === "yt-dlp" && args[0]!.endsWith("/videos") ? { ...procOk(), exitCode: 1 } : defaultExec(cmd, args));
+    const r = await env.json("POST", "/api/discover/channel", { channelUrl: "https://youtube.com/@test" });
+    expect(r.body.data.count).toBe(2);
+    expect(ytCalls()[1]![0]).toBe("https://youtube.com/@test");
   });
 
   test("re-search keeps user decisions; already-imported videos flagged", async () => {
@@ -407,15 +442,54 @@ describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
     expect((await env.json("GET", "/api/discover/candidates?status=skipped")).body.data.count).toBe(1);
   });
 
-  test("enrichment failure is swallowed", async () => {
-    env.scripts["discover.py"] = (args) => {
-      if (args.includes("enrich")) throw new Error("no captions");
-      return { videos: [{ videoId: "abcdefghijk", url: "u", relevanceScore: 1 }] };
-    };
-    const r = await env.json("POST", "/api/discover/search", { query: "x" });
-    expect(r.body.data.mode).toBe("search"); // falls back when script omits mode
+  test("no captions → ranked on views and length alone; enrichment errors are swallowed", async () => {
+    env.execHandler.fn = (cmd, args) => (args.includes("--sub-format") ? procOk() : defaultExec(cmd, args));
+    await env.json("POST", "/api/discover/search", { query: "x" });
     await env.app.discovery.whenIdle();
-    expect(env.app.store.discoveredByYoutubeId("abcdefghijk")!.enrichedAt).toBeNull();
+    const row = env.app.store.discoveredByYoutubeId("abcdefghijk")!;
+    expect(row).toMatchObject({ transcriptScore: 0, strongMoments: null, topMoments: null, transcriptSample: null });
+    expect(row.predictedScore).toBe(predictScore(null, 3600, 1000, row.ageHours!));
+    expect(ytCalls().filter((a) => a.includes("--sub-format") && a[0]!.includes("abcdefghijk")).map((a) => argAfter(a, "--sub-lang"))).toEqual(["id", "en", "*"]);
+    const map = (await env.json("GET", "/api/discover/candidates")).body.data.videos[0];
+    expect(map.why).toContain("No captions to analyze");
+
+    const fresh = makeEnv();
+    try {
+      fresh.app.discovery.analyze = () => { throw new Error("boom"); };
+      await fresh.json("POST", "/api/discover/search", { query: "x" });
+      await fresh.app.discovery.whenIdle();
+      expect(fresh.app.store.discoveredByYoutubeId("abcdefghijk")!.enrichedAt).toBeNull();
+    } finally {
+      fresh.cleanup();
+    }
+  });
+
+  test("ranking: rejected channels hidden, known and clipped channels lifted", async () => {
+    await env.json("POST", "/api/discover/search", { query: "x" });
+    await env.app.discovery.whenIdle();
+    const base = (await env.json("GET", "/api/discover/candidates")).body.data.videos;
+    const score = (vs: Array<{ videoId: string; rankScore: number }>, id: string) => vs.find((v) => v.videoId === id)?.rankScore;
+    const before = score(base, "abcdefghijk")!;
+
+    const ch = env.app.store.saveChannel({
+      id: "c1", youtubeChannelId: "UCch", channelName: "Ch", channelUrl: "https://yt/UCch", primaryCategory: "PODCAST",
+      avgDurationSec: 3600, medianViewCount: 1, uploadsPerWeek: 1, subscriberCount: 0, isLikelyClipperChannel: 0,
+      trustScore: 0.5, trustSamples: 0, pollCadenceHours: 24, status: "ACTIVE", firstSeenAt: "t", lastCrawledAt: null,
+      lastProfileRefreshAt: "t",
+    });
+    let vs = (await env.json("GET", "/api/discover/candidates")).body.data.videos;
+    expect(score(vs, "abcdefghijk")).toBeCloseTo(before + 0.05, 4);
+    expect(vs.find((v: { videoId: string }) => v.videoId === "abcdefghijk").why).toContain("Known source channel (PODCAST)");
+
+    // a clipped video from the same channel → second lift
+    const other = env.app.store.discoveredByYoutubeId("zyxwvutsrqp")!;
+    env.app.store.updateDiscovered(other.id, { channelId: "UCch", status: "IMPORTED" });
+    vs = (await env.json("GET", "/api/discover/candidates")).body.data.videos;
+    expect(score(vs, "abcdefghijk")).toBeCloseTo(before + 0.1, 4);
+    expect(vs[0].why).toContain("You've clipped this channel before");
+
+    env.app.store.updateChannel(ch.id, { status: "REJECTED" });
+    expect((await env.json("GET", "/api/discover/candidates")).body.data.count).toBe(0);
   });
 
   test("status update, queue and drain", async () => {
@@ -423,6 +497,9 @@ describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
     const [a, b] = r.body.data.videos;
     expect((await env.json("POST", `/api/discover/candidates/${a.id}/status`, {})).status).toBe(400);
     expect((await env.json("POST", "/api/discover/candidates/nope/status", { status: "NEW" })).status).toBe(404);
+    const s = await env.json("POST", `/api/discover/candidates/${b.id}/status`, { status: "new" });
+    expect(s.body.data).toMatchObject({ id: b.id, status: "NEW" });
+    expect(s.body.data.why).toBeArray();
 
     expect((await env.json("POST", "/api/discover/queue", {})).body.error).toBe("ids[] is required");
     expect((await env.json("POST", "/api/discover/queue", { ids: [null] })).body.error).toBe("ids[] is empty");
@@ -443,52 +520,55 @@ describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
   test("drain records per-candidate failures", async () => {
     const r = await env.json("POST", "/api/discover/search", { query: "x" });
     await env.json("POST", "/api/discover/queue", { ids: [r.body.data.videos[0].id] });
-    const env2 = env;
-    const origCreate = env2.app.jobs.createAndStartJob.bind(env2.app.jobs);
-    env2.app.jobs.createAndStartJob = () => { throw new Error("queue full"); };
+    const origCreate = env.app.jobs.createAndStartJob.bind(env.app.jobs);
+    env.app.jobs.createAndStartJob = () => { throw new Error("queue full"); };
     const d = await env.json("POST", "/api/discover/queue/drain");
     expect(d.body.data.failed[0].error).toBe("queue full");
-    env2.app.jobs.createAndStartJob = origCreate;
+    env.app.jobs.createAndStartJob = origCreate;
   });
 });
 
-describe("source channels (channel_crawler.py)", () => {
-  const seed = (...ids: string[]) => () => ({
-    count: ids.length,
-    channels: [...ids.map((id) => ({ youtubeChannelId: id, channelName: `name ${id}`, channelUrl: `https://yt/${id}` })),
-      { youtubeChannelId: "  ", channelName: "no id" }],
-  });
-  const profiles: Record<string, Record<string, unknown>> = {
-    "https://yt/UC1": { channelName: "Podcast One", avgDurationSec: 3600, medianViewCount: 50000.7, uploadsPerWeek: 2.5,
-      subscriberCount: 0, isLikelyClipperChannel: 0, primaryCategory: "PODCAST" },
-    "https://yt/UC2": { channelName: "", avgDurationSec: 240, isLikelyClipperChannel: 0, primaryCategory: "" },
-    "https://yt/UC3": { avgDurationSec: 0, isLikelyClipperChannel: 1 },
+describe("source channels (crawler)", () => {
+  // Seed searches return these channels (plus a row without a channel id).
+  const seedEntries = (...ids: string[]) => [
+    ...ids.map((id) => ({ id: `v${id}xxxxxxx`, channel_id: id, channel: `name ${id}`, channel_url: `https://yt/${id}` })),
+    { id: "noidxxxxxxx", channel: "no id" },
+  ];
+  // Upload listings per channel: a podcast, a 10-minute vlog channel, a clip farm.
+  const uploads: Record<string, object[]> = {
+    "https://yt/UC1/videos": [1, 2, 3].map((i) => ({ id: `p${i}xxxxxxxxx`, title: `Podcast eps ${i}`, duration: 3600,
+      view_count: 50000 + i, channel: "Podcast One", channel_id: "UC1" })),
+    "https://yt/UC2/videos": [1, 2].map((i) => ({ id: `s${i}xxxxxxxxx`, title: `Vlog harian ${i}`, duration: 600 })),
+    "https://yt/UC3/videos": [1, 2].map((i) => ({ id: `c${i}xxxxxxxxx`, title: `Best moments clip ${i}`, duration: 3600 })),
   };
-  const profile = (args: string[]) => {
-    const p = profiles[args[args.indexOf("--channel-url") + 1] as string];
-    if (!p) throw new Error("channel gone");
-    return p;
+  const crawler = (seed: string[], profiles = uploads) => (cmd: string, args: string[]) => {
+    if (cmd !== "yt-dlp") return defaultExec(cmd, args);
+    if (args[0]!.startsWith("ytsearch")) return procOk(ytLines(seedEntries(...seed)));
+    const rows = profiles[args[0]!];
+    return rows ? procOk(ytLines(rows)) : { ...procOk("", "channel gone"), exitCode: 1 };
   };
-  const crawler = (args: string[]) => (args.includes("category_seed") ? seed("UC1", "UC2", "UC3")() : profile(args));
 
   test("reseed stores new channels and profiles them in the background", async () => {
-    env.scripts["channel_crawler.py"] = crawler;
+    env.execHandler.fn = crawler(["UC1", "UC2", "UC3"]);
     const r = await env.json("POST", "/api/discover/channels/reseed");
     expect(r.body.data).toEqual({ upserted: 3, alreadyKnown: 0, queued: 3 });
+    const searches = env.execCalls.filter((c) => c.args[0]!.startsWith("ytsearch15:")).map((c) => c.args[0]!.slice(11));
+    expect(searches.sort()).toEqual([...CATEGORY_SEED_QUERIES].sort());
     await env.app.channels.whenIdle();
 
     const active = (await env.json("GET", "/api/discover/channels")).body.data;
     expect(active.count).toBe(1);
     expect(active.channels[0]).toMatchObject({
       youtubeChannelId: "UC1", channelName: "Podcast One", channelUrl: "https://yt/UC1", primaryCategory: "PODCAST",
-      avgDurationSec: 3600, medianViewCount: 50000, uploadsPerWeek: 2.5, isLikelyClipperChannel: false,
+      avgDurationSec: 3600, medianViewCount: 50002, uploadsPerWeek: 0, isLikelyClipperChannel: false,
       trustScore: 0.5, trustSamples: 0, pollCadenceHours: 24, status: "ACTIVE", lastCrawledAt: null,
     });
     expect(active.channels[0].lastProfileRefreshAt).toBeString();
     const rejected = (await env.json("GET", "/api/discover/channels?status=rejected")).body.data.channels;
     expect(rejected.map((c: { youtubeChannelId: string }) => c.youtubeChannelId).sort()).toEqual(["UC2", "UC3"]);
-    const short = rejected.find((c: { youtubeChannelId: string }) => c.youtubeChannelId === "UC2");
-    expect(short).toMatchObject({ channelName: "name UC2", primaryCategory: "MIXED", isLikelyClipperChannel: false });
+    const byId = (id: string) => rejected.find((c: { youtubeChannelId: string }) => c.youtubeChannelId === id);
+    expect(byId("UC2")).toMatchObject({ channelName: "name UC2", avgDurationSec: 600, primaryCategory: "MIXED", isLikelyClipperChannel: false });
+    expect(byId("UC3")).toMatchObject({ isLikelyClipperChannel: true });
 
     const again = await env.json("POST", "/api/discover/channels/reseed");
     expect(again.body.data).toEqual({ upserted: 0, alreadyKnown: 3, queued: 0 });
@@ -498,11 +578,13 @@ describe("source channels (channel_crawler.py)", () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
     let profileCalls = 0;
-    env.scripts["channel_crawler.py"] = async (args) => {
-      if (args.includes("category_seed")) return seed("UC9")();
-      profileCalls++;
-      await gate;
-      throw new Error("yt-dlp 429");
+    env.execHandler.fn = async (cmd, args) => {
+      if (args[0]!.startsWith("ytsearch")) return procOk(ytLines(seedEntries("UC9")));
+      if (args[0] === "https://yt/UC9/videos") {
+        profileCalls++;
+        await gate;
+      }
+      return { ...procOk("", "HTTP 429"), exitCode: 1 };   // uploads tab and bare URL both fail
     };
     await env.json("POST", "/api/discover/channels/reseed");
     const second = await env.json("POST", "/api/discover/channels/reseed");   // still profiling UC9
@@ -519,12 +601,12 @@ describe("source channels (channel_crawler.py)", () => {
   });
 
   test("refresh profiles one channel now; status can be changed by hand", async () => {
-    env.scripts["channel_crawler.py"] = (args) => (args.includes("category_seed") ? seed("UC3")() : { avgDurationSec: 3600 });
+    env.execHandler.fn = crawler(["UC3"], { "https://yt/UC3/videos": uploads["https://yt/UC1/videos"]! });
     await env.json("POST", "/api/discover/channels/reseed");
     await env.app.channels.whenIdle();
     const id = (await env.json("GET", "/api/discover/channels")).body.data.channels[0].id;
 
-    env.scripts["channel_crawler.py"] = crawler;
+    env.execHandler.fn = crawler(["UC3"]);
     const r = await env.json("POST", `/api/discover/channels/${id}/refresh`);
     expect(r.body.data).toMatchObject({ rejected: true, channel: { status: "REJECTED", isLikelyClipperChannel: true } });
     expect((await env.json("POST", "/api/discover/channels/nope/refresh")).status).toBe(404);
@@ -538,10 +620,8 @@ describe("source channels (channel_crawler.py)", () => {
     expect((await env.json("GET", "/api/discover/channels?status=PAUSED")).body.data.count).toBe(1);
   });
 
-  test("seed failure → 500; a seed without channels stores nothing", async () => {
-    env.scripts["channel_crawler.py"] = () => { throw new Error("yt-dlp missing"); };
-    expect((await env.json("POST", "/api/discover/channels/reseed")).status).toBe(500);
-    env.scripts["channel_crawler.py"] = () => ({ count: 0 });
+  test("failed seed searches store nothing", async () => {
+    env.execHandler.fn = () => ({ ...procOk("", "HTTP 429"), exitCode: 1 });
     expect((await env.json("POST", "/api/discover/channels/reseed")).body.data).toEqual({ upserted: 0, alreadyKnown: 0, queued: 0 });
   });
 });

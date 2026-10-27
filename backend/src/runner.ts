@@ -37,16 +37,14 @@ const DRAIN_GRACE_MS = 5_000;
 
 export const SCRIPT_TIMEOUT_MINUTES: Record<string, number> = {
   "transcribe.py": 20,
-  "score.py": 10,
+  "media_features.py": 10,
+  "predict_supervised.py": 2,
   "render.py": 30,
   "subtitle.py": 10,
   "variation.py": 10,
   "analytics.py": 5,
   "segment.py": 2,
-  "discover.py": 5,
-  "channel_crawler.py": 10,
   "captions.py": 1,
-  "youtube_captions.py": 5,
 };
 const DEFAULT_TIMEOUT_MINUTES = 15;
 

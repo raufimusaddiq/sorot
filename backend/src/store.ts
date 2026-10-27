@@ -21,6 +21,7 @@ const COLUMNS: Record<Table, string[]> = {
     "id", "video_id", "rank_pos", "score", "tier", "title", "description", "start_time",
     "end_time", "duration_sec", "text_content", "render_status", "render_path",
     "export_status", "export_path", "created_at", "options", "caption_words", "updated_at",
+    "reason", "scored_by",
   ],
   clip_score: [
     "id", "clip_id", "hook_strength", "keyword_trigger", "novelty", "clarity",
@@ -37,6 +38,7 @@ const COLUMNS: Record<Table, string[]> = {
     "age_hours", "source_mode", "source_query", "relevance_score", "transcript_score",
     "predicted_score", "transcript_sample", "status", "job_id", "video_id", "discovered_at",
     "enriched_at", "channel_id", "content_type", "speech_density_wpm", "is_likely_clipped",
+    "strong_moments", "top_moments", "reason",
   ],
   discovery_channel: [
     "id", "youtube_channel_id", "channel_name", "channel_url", "primary_category",
@@ -162,6 +164,14 @@ export class Store {
   saveClipScore(s: ClipScore) { return this.upsert("clip_score", s); }
   clipScore(clipId: string) {
     return this.one<ClipScore>("SELECT * FROM clip_score WHERE clip_id = ?", clipId);
+  }
+
+  /** Past clips with a measured viral score, for the scorer's history signal. */
+  feedbackHistory(): Array<{ text: string; viralScore: number | null }> {
+    return this.all<{ text: string; viralScore: number | null }>(
+      "SELECT c.text_content AS text, f.actual_viral_score AS viral_score FROM clip_feedback f " +
+        "JOIN clip c ON c.id = f.clip_id WHERE f.actual_viral_score IS NOT NULL AND c.text_content IS NOT NULL",
+    );
   }
 
   // ---- clip_feedback ----

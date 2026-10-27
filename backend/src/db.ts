@@ -190,11 +190,18 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["clip", "options", "TEXT"],
   ["clip", "caption_words", "TEXT"],
   ["clip", "updated_at", "TEXT"],
+  // scoring in Bun + optional LLM review (2026-10-27)
+  ["clip", "reason", "TEXT"],
+  ["clip", "scored_by", "TEXT"],
   // discovery v2 (channel crawler)
   ["discovered_video", "channel_id", "TEXT"],
   ["discovered_video", "content_type", "TEXT"],
   ["discovered_video", "speech_density_wpm", "REAL"],
   ["discovered_video", "is_likely_clipped", "INTEGER DEFAULT 0"],
+  // discovery in Bun: whole-video caption analysis + agent reasons
+  ["discovered_video", "strong_moments", "INTEGER"],
+  ["discovered_video", "top_moments", "TEXT"],
+  ["discovered_video", "reason", "TEXT"],
 ];
 
 export function openDatabase(path: string): Database {

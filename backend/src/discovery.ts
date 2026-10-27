@@ -1,19 +1,23 @@
-import type { ScriptRunner } from "./runner";
+import { analyzeCaptions, parseVttLines, predictScore, type Moment } from "./captionAnalysis";
 import { now, type Store } from "./store";
-import type { DiscoveredVideo, Json } from "./types";
+import type { DiscoveredVideo, DiscoveryChannel, Json } from "./types";
+import type { Video, YouTube } from "./youtube";
 
-// Transcript-sampling enrichment is yt-dlp + CPU text scoring (I/O bound).
-// Capped so a fresh search can't saturate the network; when the backlog is
-// full the oldest pending task is dropped.
+// Enrichment fetches each candidate's captions and scores the whole video
+// (network bound). Capped so a fresh search can't saturate the network; when
+// the backlog is full the oldest pending task is dropped.
 const ENRICHMENT_CONCURRENCY = 3;
 const ENRICHMENT_TOP_N = 10;
 const ENRICHMENT_BACKLOG = 100;
 // Default candidates view hides anything older than this (and rows of unknown
 // age). An explicit status filter (IMPORTED, SKIPPED…) shows every age.
 export const DEFAULT_MAX_AGE_HOURS = 90 * 24;
+// Ranking lift for candidates from known source channels / channels you've clipped before.
+const CHANNEL_BOOST = 0.05;
 
 const nullableNum = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const text = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /** Pull the 11-char YouTube id out of watch?v=, youtu.be/, /shorts/, /embed/ URLs. */
 export function extractYoutubeId(url: string | null): string | null {
@@ -27,7 +31,48 @@ export function extractYoutubeId(url: string | null): string | null {
   return null;
 }
 
-export function candidateToMap(d: DiscoveredVideo) {
+export function parseMoments(raw: string | null | undefined): Moment[] {
+  try {
+    const v = JSON.parse(raw ?? "[]");
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface CandidateContext {
+  channel?: DiscoveryChannel | null;
+  clippedChannel?: boolean;
+}
+
+/** Plain-language reasons behind a candidate's rank. */
+export function candidateReasons(d: DiscoveredVideo, ctx: CandidateContext = {}): string[] {
+  const why: string[] = [];
+  if (d.reason) why.push(d.reason);
+  const moments = parseMoments(d.topMoments);
+  if (d.enrichedAt) {
+    if (d.strongMoments == null && !moments.length) why.push("No captions to analyze");
+    else if ((d.strongMoments ?? 0) > 0) {
+      why.push(`${d.strongMoments} strong moment${d.strongMoments === 1 ? "" : "s"}${moments[0] ? `, best at ${clock(moments[0].start)}` : ""}`);
+    } else why.push("No standout moments in the captions");
+    if (d.speechDensityWpm != null) {
+      why.push(d.speechDensityWpm >= 110 ? `Steady talk (${d.speechDensityWpm} wpm)`
+        : d.speechDensityWpm < 60 ? `Little speech (${d.speechDensityWpm} wpm) — music or gameplay?` : `Some talk (${d.speechDensityWpm} wpm)`);
+    }
+  }
+  if ((d.durationSec ?? 0) >= 30 * 60) why.push(`Long-form (${Math.round((d.durationSec ?? 0) / 60)} min)`);
+  const age = d.ageHours ?? 99999;
+  if (age < 720 && (d.viewCount ?? 0) / Math.max(age, 1) > 1000) {
+    why.push(`Fast-growing (${Math.round((d.viewCount ?? 0) / Math.max(age, 1)).toLocaleString("en")} views/hour)`);
+  }
+  if (ctx.channel?.status === "ACTIVE" && ctx.channel.lastProfileRefreshAt) {
+    why.push(`Known source channel${ctx.channel.primaryCategory && ctx.channel.primaryCategory !== "MIXED" ? ` (${ctx.channel.primaryCategory})` : ""}`);
+  }
+  if (ctx.clippedChannel) why.push("You've clipped this channel before");
+  return why;
+}
+
+export function candidateToMap(d: DiscoveredVideo, ctx: CandidateContext = {}) {
   return {
     id: d.id,
     youtubeId: d.youtubeId,
@@ -50,6 +95,10 @@ export function candidateToMap(d: DiscoveredVideo) {
     contentType: d.contentType,
     speechDensityWpm: d.speechDensityWpm,
     isLikelyClipped: d.isLikelyClipped === 1,
+    strongMoments: d.strongMoments ?? null,
+    topMoments: parseMoments(d.topMoments),
+    reason: d.reason ?? null,
+    why: candidateReasons(d, ctx),
   };
 }
 
@@ -58,42 +107,70 @@ export class DiscoveryService {
   private inFlight = 0;
   private idleResolvers: Array<() => void> = [];
 
-  constructor(private readonly store: Store, private readonly runScript: ScriptRunner) {}
+  constructor(
+    private readonly store: Store,
+    private readonly youtube: YouTube,
+    private readonly corpusDir?: string,
+  ) {}
 
   async search(query: string, maxResults: number, minDuration: number, maxDuration: number) {
-    const args = ["--mode", "search", "--query", query, "--max-results", String(maxResults)];
-    if (minDuration > 0) args.push("--min-duration", String(minDuration));
-    if (maxDuration > 0) args.push("--max-duration", String(maxDuration));
-    const result = await this.runScript("discover.py", args);
-    return this.finish(text(result.mode) || "search", "search", query, result);
+    const videos = await this.youtube.search(query, maxResults, { minDuration, maxDuration });
+    return this.finish("search", query, videos);
   }
 
+  /** `region` is accepted for API compatibility; YouTube hashtag feeds aren't regional. */
   async trending(maxResults: number, region: string) {
-    const result = await this.runScript("discover.py", [
-      "--mode", "trending", "--max-results", String(maxResults), "--region", region,
-    ]);
-    return this.finish("trending", "trending", region, result);
+    return this.finish("trending", region, await this.youtube.trending(maxResults));
   }
 
   async channel(channelUrl: string, maxResults: number, minDuration: number, maxDuration: number) {
-    const args = ["--mode", "channel", "--channel-url", channelUrl, "--max-results", String(maxResults)];
-    if (minDuration > 0) args.push("--min-duration", String(minDuration));
-    if (maxDuration > 0) args.push("--max-duration", String(maxDuration));
-    const result = await this.runScript("discover.py", args);
-    return this.finish("channel", "channel", channelUrl, result);
+    const videos = await this.youtube.channel(channelUrl, maxResults, { minDuration, maxDuration });
+    return this.finish("channel", channelUrl, videos);
   }
 
-  private finish(responseMode: string, sourceMode: string, query: string, result: Json) {
-    const rows = this.persistResults(result, sourceMode, query);
+  /** Store results and queue enrichment; `extra` merges per-video fields (e.g. an agent's reason). */
+  finish(mode: string, query: string, videos: Video[], extra: Map<string, Partial<DiscoveredVideo>> = new Map()) {
+    const rows = this.persistResults(videos, mode, query, extra);
     this.scheduleEnrichment(rows);
-    return { mode: responseMode, query, count: rows.length, videos: rows.map(candidateToMap) };
+    return { mode, query, count: rows.length, videos: this.withContext(rows) };
   }
 
-  /** status unset → recent NEW+QUEUED ranked by predicted (else relevance) score. */
+  /** Candidate maps with channel context (trust, "clipped before"). */
+  withContext(rows: DiscoveredVideo[]) {
+    const clipped = this.clippedChannelIds();
+    return rows.map((d) => candidateToMap(d, this.contextFor(d, clipped)));
+  }
+
+  private clippedChannelIds(): Set<string> {
+    return new Set(this.store.discoveredByStatus("IMPORTED").map((d) => d.channelId).filter((x): x is string => !!x));
+  }
+
+  private contextFor(d: DiscoveredVideo, clipped: Set<string>): CandidateContext {
+    return {
+      channel: d.channelId ? this.store.channelByYoutubeId(d.channelId) : null,
+      clippedChannel: !!d.channelId && clipped.has(d.channelId),
+    };
+  }
+
+  /**
+   * status unset → recent NEW+QUEUED, best first: predicted (else relevance)
+   * score, lifted for known source channels and channels you've clipped,
+   * without channels the crawler rejected as clip farms / short-form.
+   */
   listCandidates(status?: string | null) {
-    return status && status.trim()
-      ? this.store.discoveredByStatus(status.toUpperCase())
-      : this.store.discoveredActiveRanked(DEFAULT_MAX_AGE_HOURS);
+    if (status && status.trim()) return this.withContext(this.store.discoveredByStatus(status.toUpperCase()));
+    const clipped = this.clippedChannelIds();
+    return this.store.discoveredActiveRanked(DEFAULT_MAX_AGE_HOURS)
+      .map((d) => ({ d, ctx: this.contextFor(d, clipped) }))
+      .filter(({ ctx }) => ctx.channel?.status !== "REJECTED")
+      .map(({ d, ctx }) => {
+        let rank = d.predictedScore ?? d.relevanceScore ?? 0;
+        if (ctx.channel?.status === "ACTIVE" && ctx.channel.lastProfileRefreshAt) rank += CHANNEL_BOOST;
+        if (ctx.clippedChannel) rank += CHANNEL_BOOST;
+        return { map: candidateToMap(d, ctx), rank };
+      })
+      .sort((a, b) => b.rank - a.rank)
+      .map(({ map, rank }) => ({ ...map, rankScore: Math.round(rank * 10000) / 10000 }));
   }
 
   updateStatus(id: string, status: string) {
@@ -117,8 +194,7 @@ export class DiscoveryService {
     this.store.updateDiscovered(id, { status: "IMPORTED", jobId, videoId });
   }
 
-  private persistResults(result: Json, mode: string, query: string): DiscoveredVideo[] {
-    const videos = Array.isArray(result.videos) ? (result.videos as Json[]) : [];
+  private persistResults(videos: Video[], mode: string, query: string, extra: Map<string, Partial<DiscoveredVideo>>): DiscoveredVideo[] {
     const imported = new Set(
       this.store.listVideos().map((v) => extractYoutubeId(v.sourceUrl)).filter((x): x is string => !!x),
     );
@@ -135,6 +211,7 @@ export class DiscoveryService {
           transcriptSample: null, status: "NEW", jobId: null, videoId: null,
           discoveredAt: now(), enrichedAt: null,
           channelId: null, contentType: null, speechDensityWpm: null, isLikelyClipped: 0,
+          strongMoments: null, topMoments: null, reason: null,
         };
         d.url = text(v.url);
         d.title = text(v.title);
@@ -149,6 +226,7 @@ export class DiscoveryService {
         d.channelId = text(v.channelId) || d.channelId;
         d.contentType = text(v.contentType) || d.contentType;
         d.isLikelyClipped = v.isLikelyClipped === true ? 1 : 0;
+        Object.assign(d, extra.get(ytId) ?? {});
         // Re-flag against the library; QUEUED/SKIPPED/IMPORTED are user decisions, kept.
         if (!existing || d.status === "NEW") d.status = imported.has(ytId) ? "IMPORTED" : "NEW";
         out.push(this.store.saveDiscovered(d));
@@ -188,26 +266,30 @@ export class DiscoveryService {
     return new Promise((r) => this.idleResolvers.push(r));
   }
 
+  /** Whole-video caption analysis for one stored candidate. */
+  async analyze(url: string, duration: number, views: number, ageHours: number) {
+    const analysis = analyzeCaptions(parseVttLines(await this.youtube.captionFile(url)), this.corpusDir);
+    return { analysis, predictedScore: predictScore(analysis, duration, views, ageHours) };
+  }
+
   private async enrichOne(id: string) {
     const d = this.store.getDiscovered(id);
     if (!d) return;
     try {
-      const result = await this.runScript("discover.py", [
-        "--mode", "enrich",
-        "--video-url", d.url,
-        "--duration", String(d.durationSec ?? 0),
-        "--age-hours", String(d.ageHours ?? 9999),
-        "--view-count", String(d.viewCount ?? 0),
-      ]);
-      const sample = text(result.transcriptSample).slice(0, 2000);
+      const { analysis: a, predictedScore } = await this.analyze(d.url, d.durationSec ?? 0, d.viewCount ?? 0, d.ageHours ?? 9999);
       // Targeted update: never clobbers a status change made while we fetched.
       this.store.updateDiscovered(id, {
-        transcriptScore: nullableNum(result.transcriptScore),
-        predictedScore: nullableNum(result.predictedScore),
-        ...(sample ? { transcriptSample: sample } : {}),
+        transcriptScore: a?.transcriptScore ?? 0,
+        predictedScore,
+        ...(a ? {
+          transcriptSample: a.topMoments[0]!.text,
+          speechDensityWpm: a.speechWpm,
+          strongMoments: a.strongMoments,
+          topMoments: JSON.stringify(a.topMoments),
+        } : {}),
         enrichedAt: now(),
       });
-      console.info(`Enriched ${d.youtubeId} — transcript=${result.transcriptScore} predicted=${result.predictedScore}`);
+      console.info(`Enriched ${d.youtubeId} — moments=${a?.strongMoments ?? "no captions"} predicted=${predictedScore}`);
     } catch (e) {
       console.warn(`Enrichment failed for ${id}: ${(e as Error).message}`);
     }
