@@ -83,7 +83,7 @@ cd ai-pipeline
 - `frontend` must stay static-exportable: no API routes, rewrites, server actions or `next/image` optimization
 - API JSON keys = camelCase of SQLite columns (`backend/src/store.ts`); the frontend depends on them
 - `docker-compose.yml` uses `.env.docker` — always pass `--env-file .env.docker`
-- Image `ghcr.io/raufimusaddiq/sorot` is built + pushed by `.github/workflows/release-image.yml` (GitHub release published, or manual run — never on push/PR; `ci.yml` only tests) in two variants of `backend/Dockerfile` (`BASE_IMAGE` arg): CPU `:latest` (ubuntu:22.04) and GPU `:latest-cuda` (nvidia/cuda); release `v1.2.3` → `1.2.3`, `1.2`, `latest` (+`-cuda`). `SOROT_VERSION` in `.env.docker` picks the tag
+- Image `ghcr.io/raufimusaddiq/sorot` is built + pushed by `.github/workflows/release-image.yml` (GitHub release published, or manual run — never on push/PR; `ci.yml` tests, and on image-affecting changes builds the CPU image unpushed + smoke-tests it) in two variants of `backend/Dockerfile` (`BASE_IMAGE` arg): CPU `:latest` (ubuntu:22.04) and GPU `:latest-cuda` (nvidia/cuda); release `v1.2.3` → `1.2.3`, `1.2`, `latest` (+`-cuda`). `SOROT_VERSION` in `.env.docker` picks the tag
 - `docker-compose.yml` is CPU-only; GPU settings (cuda image, GPU reservation, `WHISPER_DEVICE=cuda`) live in the machine's gitignored `docker-compose.override.yml`, written by `install.sh` / `install.ps1` / `start.ps1` (`scripts/compose-override.ps1`)
 - PowerShell scripts must stay ASCII-only (PS 5.1 reads BOM-less files as ANSI) and `install.ps1` must not `exit` (it runs under `irm | iex`)
 - PowerShell scripts: `$ErrorActionPreference = "Continue"` (NOT "Stop" — docker stderr crashes it)

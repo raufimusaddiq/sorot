@@ -1,4 +1,5 @@
-# Tests on every push and PR. The Docker images are built and published
+# Tests on every push and PR, plus a CPU image build + smoke test (not pushed)
+# when the change can affect the image. The published images are built
 # separately, on releases or on demand: see release-image.yml.
 name: CI
 
@@ -58,3 +59,67 @@ jobs:
       - name: pytest
         working-directory: ai-pipeline
         run: python -m pytest tests -q
+
+  # Safety net for backend/Dockerfile without the release cost: builds only the
+  # CPU variant (the CUDA one runs the same steps on a different base), doesn't
+  # push it, and smoke-tests the container. Reuses layers cached by releases
+  # (registry) and by earlier runs (GitHub cache), so usually only the app
+  # layers rebuild. Skipped when a change can't affect the image (docs, the
+  # host-side install/start scripts).
+  image:
+    name: Docker image (CPU build + smoke test)
+    needs: [bun, python]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read   # registry cache from release builds
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: changes
+        name: Does this change touch the image?
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request) files="$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")" ;;
+            push) files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null || echo all)" ;;
+            *) files=all ;;
+          esac
+          relevant="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.claude/|LICENSE$|.*\.md$|scripts/.*\.ps1$|scripts/install\.sh$|\.github/workflows/release-image\.yml$)' || true)"
+          if [ -n "$relevant" ]; then echo "docker=true" >> "$GITHUB_OUTPUT"; else echo "docker=false" >> "$GITHUB_OUTPUT"; echo "Only docs/host scripts changed: skipping the image build"; fi
+      - if: steps.changes.outputs.docker == 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: steps.changes.outputs.docker == 'true'
+        uses: docker/login-action@v3
+        continue-on-error: true   # without it the registry cache is just skipped
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.changes.outputs.docker == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          platforms: linux/amd64
+          build-args: BASE_IMAGE=ubuntu:22.04
+          push: false
+          load: true
+          tags: sorot:ci
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-cpu
+            type=gha,scope=image-cpu
+          cache-to: type=gha,scope=image-cpu,mode=max
+      - if: steps.changes.outputs.docker == 'true'
+        name: Smoke test
+        run: |
+          docker run -d --name sorot -p 8080:8080 -e WHISPER_DEVICE=cpu sorot:ci
+          for _ in $(seq 1 30); do curl -fsS http://localhost:8080/api/health && break; sleep 2; done
+          curl -fsS http://localhost:8080/api/health
+          curl -fsS -o /dev/null -w 'UI %{http_code}\n' http://localhost:8080/
+          docker exec sorot /app/ai-pipeline/.venv/bin/python3 -c "import faster_whisper, cv2, numpy, lightgbm, sklearn; assert hasattr(cv2, 'CascadeClassifier'); print('pipeline imports ok')"
+          docker exec sorot ffmpeg -hide_banner -version | head -n 1
+          docker exec sorot yt-dlp --version
+      - if: failure() && steps.changes.outputs.docker == 'true'
+        name: Container logs
+        run: docker logs sorot || true
