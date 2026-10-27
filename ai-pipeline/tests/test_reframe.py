@@ -7,6 +7,7 @@ import subprocess
 import sys
 import types
 
+import cv2
 import numpy as np
 import pytest
 
@@ -81,10 +82,27 @@ class TestDetectors:
         cascade = types.SimpleNamespace(detectMultiScale=lambda g, **kw: [(100, 10, 64, 64)])
         import features.visual as visual
         monkeypatch.setattr(visual, "_get_haar_cascades", lambda: (cascade, None))
+        monkeypatch.setattr(cv2, "CascadeClassifier", lambda path: types.SimpleNamespace(detectMultiScale=lambda g, **kw: []))
         detect = reframe.make_detector()
         out = detect(np.zeros((360, 640), np.uint8))
         assert out == [(pytest.approx(132 / 640), pytest.approx(0.1))]
         assert all(type(v) is float for v in out[0])
+
+    def test_haar_adds_profiles_both_ways_without_duplicates(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "mediapipe", None)
+        frontal = types.SimpleNamespace(detectMultiScale=lambda g, **kw: [(100, 10, 64, 64)])
+        import features.visual as visual
+        monkeypatch.setattr(visual, "_get_haar_cascades", lambda: (frontal, None))
+        # a profile on the frontal face (dropped) and one at x=440; mirrored pass finds x=40 → 1 - 72/640
+        profile = types.SimpleNamespace(detectMultiScale=lambda g, **kw: (
+            [(40, 10, 64, 64)] if g[0, 0] == 1 else [(104, 10, 60, 60), (440, 10, 50, 50)]))
+        monkeypatch.setattr(cv2, "CascadeClassifier", lambda path: profile)
+        gray = np.zeros((360, 640), np.uint8)
+        gray[0, -1] = 1                                   # only the mirrored frame starts with 1
+        out = reframe.make_detector()(gray)
+        assert out == [(pytest.approx(132 / 640), pytest.approx(0.1)),
+                       (pytest.approx(465 / 640), pytest.approx(50 / 640)),
+                       (pytest.approx(1 - 72 / 640), pytest.approx(0.1))]
 
     def test_mediapipe_detector_when_installed(self, monkeypatch):
         box = types.SimpleNamespace(xmin=0.2, width=0.1)
