@@ -115,6 +115,17 @@ export class ApiClient {
     });
   }
 
+  async discoverAuto(goal = '', maxResults = 10) {
+    return this.request('/api/discover/auto', {
+      method: 'POST',
+      body: JSON.stringify({ goal, maxResults }),
+    });
+  }
+
+  async discoverAutoStatus(runId: string) {
+    return this.request(`/api/discover/auto/${runId}`);
+  }
+
   async listCandidates(status?: string) {
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';
     return this.request(`/api/discover/candidates${qs}`);
@@ -142,7 +153,7 @@ export class ApiClient {
     clipId: string,
     metrics: {
       views: number; likes: number; comments: number; shares: number; saves: number;
-      /** ISO-8601 timestamp when the clip was uploaded to TikTok (required). */
+      /** ISO-8601 timestamp when the clip was posted (required). */
       postedAt: string;
     },
   ) {

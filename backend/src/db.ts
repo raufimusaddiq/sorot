@@ -183,6 +183,9 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["clip", "title", "TEXT"],
   ["clip", "description", "TEXT"],
   ["clip_score", "text_sentiment", "REAL"],
+  // all 13 scored features are kept (feedback training reads them)
+  ["clip_score", "motion", "REAL"],
+  ["clip_score", "onset_density", "REAL"],
   // editing suite (2026-10-27)
   ["video", "section_start", "REAL"],
   ["video", "section_end", "REAL"],

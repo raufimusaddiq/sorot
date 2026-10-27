@@ -57,6 +57,8 @@ describe('ApiClient', () => {
     ['discoverTrending', () => api.discoverTrending(), 'POST', '/api/discover/trending', { maxResults: 20, region: 'ID' }],
     ['discoverChannel', () => api.discoverChannel('c', 5, 1, 2), 'POST', '/api/discover/channel',
       { channelUrl: 'c', maxResults: 5, minDuration: 1, maxDuration: 2 }],
+    ['discoverAuto', () => api.discoverAuto(), 'POST', '/api/discover/auto', { goal: '', maxResults: 10 }],
+    ['discoverAutoStatus', () => api.discoverAutoStatus('r'), 'GET', '/api/discover/auto/r', undefined],
     ['listCandidates', () => api.listCandidates(), 'GET', '/api/discover/candidates', undefined],
     ['listCandidates(status)', () => api.listCandidates('A B'), 'GET', '/api/discover/candidates?status=A%20B', undefined],
     ['updateCandidateStatus', () => api.updateCandidateStatus('i', 'SKIPPED'), 'POST',

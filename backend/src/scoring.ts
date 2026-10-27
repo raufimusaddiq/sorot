@@ -58,16 +58,20 @@ export function determineTier(score: number): string {
   return score >= 0.8 ? "PRIMARY" : score >= 0.65 ? "BACKUP" : "SKIP";
 }
 
-/** weights.json, with defaults for any feature it lacks. */
-export function loadWeights(pipelineDir: string): Record<string, number> {
-  const path = `${pipelineDir}/weights.json`;
-  try {
-    if (existsSync(path)) {
+/**
+ * Feature weights: learned ones (data/weights.json, written by feedback
+ * training) win over the shipped ai-pipeline/weights.json; defaults fill any
+ * feature the file lacks.
+ */
+export function loadWeights(pipelineDir: string, dataDir?: string): Record<string, number> {
+  for (const path of [dataDir ? `${dataDir}/weights.json` : "", `${pipelineDir}/weights.json`]) {
+    if (!path || !existsSync(path)) continue;
+    try {
       const w = (JSON.parse(readFileSync(path, "utf8")) as { weights?: Record<string, number> }).weights ?? {};
       return { ...w, ...Object.fromEntries(Object.entries(DEFAULT_WEIGHTS).filter(([k]) => !(k in w))) };
+    } catch {
+      /* unreadable → next */
     }
-  } catch {
-    /* unreadable → defaults */
   }
   return { ...DEFAULT_WEIGHTS };
 }

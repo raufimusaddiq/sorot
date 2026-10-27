@@ -3,10 +3,13 @@
 // DiscoveryControllerIT, HealthControllerIT); the rest cover the endpoints
 // those suites never reached.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeCaptions, parseVttLines, predictScore } from "../src/captionAnalysis";
 import { CATEGORY_SEED_QUERIES } from "../src/channels";
+import { viralScore } from "../src/learning";
+import { DEFAULT_WEIGHTS } from "../src/ruleConstants";
+import { FEATURE_ORDER } from "../src/scoring";
 import { TRENDING_HASHTAGS, TRENDING_NICHE_QUERIES } from "../src/youtube";
 import { argAfter, defaultExec, FAKE_VTT, makeEnv, procOk, ytLines, type TestEnv } from "./helpers";
 
@@ -291,60 +294,66 @@ describe("feedback", () => {
     const r = await env.json("POST", "/api/clips/c1/feedback", {
       postedAt: "2026-01-01T00:00:00+07:00", views: "1000", likes: 50, comments: 3, shares: 2, saves: 1,
     });
-    expect(r.body.data).toEqual({ clipId: "c1", viralScore: 0.42, views: 1000, likes: 50, postedAt: "2026-01-01T00:00:00+07:00" });
-    const call = env.calls.find((c) => c.script === "feedback.py")!;
-    expect(call.args).toContain("calc-viral-score");
-    expect(Number(call.args[call.args.indexOf("--hours-since-post") + 1])).toBeGreaterThan(1);
+    const hours = (Date.now() - Date.parse("2026-01-01T00:00:00+07:00")) / 3_600_000;
+    expect(r.body.data).toEqual({ clipId: "c1", viralScore: viralScore(1000, 50, 3, 2, 1, hours), views: 1000, likes: 50,
+      postedAt: "2026-01-01T00:00:00+07:00" });
 
     await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 2000 });
     expect(env.app.store.countFeedback()).toEqual({ total: 1, withScores: 1 });
     const fb = env.app.store.feedbackForClip("c1")!;
     expect(fb.tiktokViews).toBe(2000);
     expect(fb.features).toBe("{}"); // no clip_score row existed at first submit
+    await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 0 });
+    expect(env.app.store.feedbackForClip("c1")!.actualViralScore).toBe(0);
   });
 
-  test("viral-score failure still saves metrics", async () => {
-    seedClip("c1");
-    env.scripts["feedback.py"] = () => { throw new Error("boom"); };
-    const r = await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 5 });
-    expect(r.status).toBe(200);
-    expect(r.body.data.viralScore).toBeNull();
+  test("all 13 features are snapshotted; training writes learned weights to the data dir", async () => {
+    const pipelineDir = join(env.dir, "pipeline");
+    mkdirSync(pipelineDir);
+    writeFileSync(join(pipelineDir, "weights.json"), JSON.stringify({ version: 3, trained_on: 0, last_updated: "x",
+      weights: DEFAULT_WEIGHTS, thresholds: { PRIMARY: 0.8, BACKUP: 0.65 } }));
+    env.config.pipelineDir = pipelineDir;
+    expect((await env.json("POST", "/api/feedback/train")).body.data).toEqual({ status: "insufficient_data", version: 0, trained_on: 0,
+      message: "Need at least 5 records with actual scores, got 0" });
+
+    // six clips: hook strength tracks the real score, everything else is flat
+    for (let i = 0; i < 6; i++) {
+      seedClip(`c${i}`);
+      env.app.store.saveClipScore({ id: `s${i}`, clipId: `c${i}`, hookStrength: i / 5, keywordTrigger: 0.5, novelty: 0.5,
+        clarity: 0.5, emotionalEnergy: 0.5, textSentiment: 0.5, pauseStructure: 0.5, facePresence: 0.5, sceneChange: 0.5,
+        topicFit: 0.5, historyScore: 0.5, motion: 0.5, onsetDensity: 0.5, boostTotal: 0, penaltyTotal: 0 });
+      await env.json("POST", `/api/clips/c${i}/feedback`, { postedAt: "2026-01-01T00:00:00Z", views: 1000 * (i + 1), likes: 100 * i, saves: 10 * i });
+    }
+    expect(Object.keys(JSON.parse(env.app.store.feedbackForClip("c0")!.features))).toEqual([...FEATURE_ORDER]);
+    // a corrupt features column must not break training
+    env.app.store.saveFeedback({ ...env.app.store.feedbackForClip("c0")!, id: "f-bad", clipId: "c-bad", features: "not json" });
+
+    const r = (await env.json("POST", "/api/feedback/train")).body.data;
+    expect(r).toMatchObject({ status: "trained", version: 4, trained_on: 7 });
+    expect(Object.keys(r.new_weights)).toEqual([...FEATURE_ORDER]);
+    expect(r.new_weights.hookStrength).toBeGreaterThan(DEFAULT_WEIGHTS.hookStrength);
+    expect(r.weight_changes.hookStrength.from).toBe(DEFAULT_WEIGHTS.hookStrength);
+    const learned = JSON.parse(readFileSync(join(env.config.dataDir, "weights.json"), "utf8"));
+    expect(learned).toMatchObject({ version: 4, trained_on: 7, thresholds: { PRIMARY: 0.8, BACKUP: 0.65 } });
+    expect(learned.last_updated).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    expect(JSON.parse(readFileSync(join(pipelineDir, "weights.json"), "utf8")).version).toBe(3);   // shipped defaults untouched
+    const exported = JSON.parse(readFileSync(join(env.config.dataDir, "feedback", "feedback_export.json"), "utf8"));
+    expect(exported).toHaveLength(7);                                     // the LightGBM trainer's input
+    expect(exported[0]).toMatchObject({ clipId: "c0", predicted_tier: "PRIMARY", features: { hookStrength: 0 } });
+
+    const w = (await env.json("GET", "/api/feedback/weights")).body.data;
+    expect(w).toMatchObject({ version: 4, trained_on: 7, total_feedback: 7, with_actual_scores: 7, weights: r.new_weights });
   });
 
-  test("feature snapshot and training export", async () => {
-    seedClip("c1");
-    env.app.store.saveClipScore({ id: "s1", clipId: "c1", hookStrength: 0.8, keywordTrigger: 0.1, novelty: 0.2,
-      clarity: 0.3, emotionalEnergy: 0.4, textSentiment: 0.5, pauseStructure: 0.6, facePresence: 0.7,
-      sceneChange: 0.8, topicFit: 0.9, historyScore: 1, boostTotal: 0, penaltyTotal: 0 });
-    await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 5 });
-    expect(JSON.parse(env.app.store.feedbackForClip("c1")!.features).hookStrength).toBe(0.8);
-    // a corrupt features column must not break the export
-    seedVideo("v9");
-    env.app.store.saveFeedback({ ...env.app.store.feedbackForClip("c1")!, id: "f2", clipId: "c9", features: "not json" });
-
-    const r = await env.json("POST", "/api/feedback/train");
-    expect(r.body.data).toEqual({
-      status: "trained", version: 4, trained_on: 6,
-      weight_changes: { hookStrength: { from: 0.1, to: 0.12 } }, new_weights: { hookStrength: 0.12 }, message: "ok",
-    });
-    const exported = await Bun.file(`${env.config.dataDir}/feedback/feedback_export.json`).json();
-    expect(exported).toHaveLength(2);
-    expect(exported[0].features.hookStrength).toBe(0.8);
-    expect(exported[1].features).toEqual({});
-  });
-
-  test("train with minimal result; weights status; script errors → 500", async () => {
-    env.scripts["learn_weights.py"] = (args) =>
-      args.includes("train") ? { status: "insufficient_data" } : { version: 3, trained_on: 5, last_updated: "2026-10-01", weights: { hookStrength: 0.1, junk: "x" } };
-    expect((await env.json("POST", "/api/feedback/train")).body.data).toEqual({ status: "insufficient_data", version: 0, trained_on: 0 });
-    const w = await env.json("GET", "/api/feedback/weights");
-    expect(w.body.data).toEqual({ version: 3, trained_on: 5, last_updated: "2026-10-01", total_feedback: 0,
-      with_actual_scores: 0, weights: { hookStrength: 0.1, junk: 0 } });
-    env.scripts["learn_weights.py"] = () => ({});
-    expect((await env.json("GET", "/api/feedback/weights")).body.data.last_updated).toBe("");
-    env.scripts["learn_weights.py"] = () => { throw new Error("no model"); };
-    const r = await env.json("GET", "/api/feedback/weights");
-    expect(r).toEqual({ status: 500, body: { status: "error", error: "no model" } });
+  test("weights status falls back to the shipped file, then to defaults", async () => {
+    env.config.pipelineDir = join(env.dir, "nowhere");
+    expect((await env.json("GET", "/api/feedback/weights")).body.data).toEqual({ version: 0, trained_on: 0, last_updated: "",
+      total_feedback: 0, with_actual_scores: 0, weights: DEFAULT_WEIGHTS });
+    mkdirSync(env.config.dataDir, { recursive: true });
+    writeFileSync(join(env.config.dataDir, "weights.json"), "{broken");
+    expect((await env.json("GET", "/api/feedback/weights")).body.data.version).toBe(0);
+    writeFileSync(join(env.config.dataDir, "weights.json"), JSON.stringify({ version: "x", weights: { hookStrength: 1 } }));
+    expect((await env.json("GET", "/api/feedback/weights")).body.data).toMatchObject({ version: 0, last_updated: "", weights: { hookStrength: 1 } });
   });
 });
 

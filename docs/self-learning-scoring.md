@@ -1,5 +1,13 @@
 # Self-Learning Scoring System
 
+> **Status (2026-10-27): original design doc.** What exists today: posted-clip
+> metrics → a time-normalised viral score, and after 5+ results a linear
+> re-weighting of all 13 features (Pearson + EMA, `backend/src/learning.ts`,
+> written to `data/weights.json`). The LightGBM model (`train_scorer.py`) only
+> switches on with 200+ labelled clips. File names below (`feedback.py`,
+> `learn_weights.py`, `score.py`) are the original Python plan; see
+> [ai-audit.md](ai-audit.md) and [api-spec.md → Feedback](api-spec.md#feedback--self-learning).
+
 ## Problem
 Current scoring uses fixed weights and hand-crafted rules. As more videos are analyzed and clips are posted, the system should learn which features actually predict viral performance — and adjust weights automatically.
 

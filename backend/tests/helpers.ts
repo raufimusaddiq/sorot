@@ -17,6 +17,8 @@ export interface TestEnv {
   execCalls: Array<{ cmd: string; args: string[] }>;
   scripts: Record<string, ScriptHandler>;
   execHandler: { fn: (cmd: string, args: string[], signal?: AbortSignal) => Promise<ProcResult> | ProcResult };
+  /** Outbound HTTP (web search, LLM): tests never reach the network. */
+  fetchHandler: { fn: (url: string, init?: RequestInit) => Promise<Response> | Response };
   req(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Response>;
   json(method: string, path: string, body?: unknown): Promise<{ status: number; body: any }>;
   cleanup(): void;
@@ -103,8 +105,9 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
     return p;
   };
   return {
-    "transcribe.py": () => ({ videoId: "x", language: "id", segments: [{ index: 0, start: 0, end: 5, text: "halo" }] }),
-    "segment.py": () => ({ videoId: "x", segments: FAKE_SEGMENTS }),
+    // 30 s apart → segmenting turns each line into one FAKE_SEGMENTS clip
+    "transcribe.py": () => ({ videoId: "x", language: "id",
+      segments: FAKE_SEGMENTS.map((s) => ({ index: s.index, start: s.startTime, end: s.endTime, text: s.text })) }),
     "media_features.py": () => ({ videoId: "x", segments: FAKE_MEDIA }),
     "predict_supervised.py": () => ({ predictions: { 0: 0.99, 1: null, 2: 0.1 } }),
     "render.py": (args) => {
@@ -120,13 +123,6 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
       const start = Number(argAfter(args, "--start"));
       return { words: [{ text: "halo", start: start + 0.5, end: start + 1 }, { text: "dunia", start: start + 1.2, end: start + 2 }] };
     },
-    "analytics.py": () => ({ summary: { clips: 2 } }),
-    "feedback.py": () => ({ viralScore: 0.42 }),
-    "learn_weights.py": (args) =>
-      argAfter(args, "--action") === "train"
-        ? { status: "trained", version: 4, trained_on: 6, weight_changes: { hookStrength: { from: 0.1, to: 0.12 } },
-            new_weights: { hookStrength: 0.12 }, message: "ok" }
-        : { version: 3, trained_on: 5, last_updated: "2026-10-01", weights: { hookStrength: 0.1 } },
   };
 }
 
@@ -147,6 +143,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   const execCalls: TestEnv["execCalls"] = [];
   const scripts = defaultScripts(config.dataDir);
   const execHandler: TestEnv["execHandler"] = { fn: defaultExec };
+  const fetchHandler: TestEnv["fetchHandler"] = { fn: (url) => { throw new Error(`no network in tests: ${url}`); } };
 
   const runScript: ScriptRunner = async (script, args, opts) => {
     calls.push({ script, args });
@@ -159,7 +156,8 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
     return execHandler.fn(cmd, args, opts?.signal);
   };
 
-  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec });
+  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => fetchHandler.fn(String(input), init)) as typeof fetch;
+  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec, fetch: fetchFn });
   const req = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.fetch(new Request(`http://localhost${path}`, {
       method,
@@ -167,7 +165,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
       body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
     }));
   return {
-    app, config, dir, calls, execCalls, scripts, execHandler, req,
+    app, config, dir, calls, execCalls, scripts, execHandler, fetchHandler, req,
     async json(method, path, body) {
       const res = await req(method, path, body);
       return { status: res.status, body: await res.json() };

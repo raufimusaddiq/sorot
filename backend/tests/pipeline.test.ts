@@ -57,7 +57,9 @@ describe("full pipeline", () => {
     const saved = await Bun.file(`${env.config.dataDir}/segments/${videoId}.json`).json();
     expect(saved).toMatchObject({ videoId, scoredBy: "rules" });
     expect(saved.scoredSegments.map((x: any) => [x.index, x.rank, x.tier])).toEqual([[0, 1, "PRIMARY"], [1, 2, "BACKUP"], [2, 3, "SKIP"]]);
-    expect(await Bun.file(`${env.config.dataDir}/analytics/${videoId}.json`).json()).toEqual({ summary: { clips: 2 } });
+    const report = await Bun.file(`${env.config.dataDir}/analytics/${videoId}.json`).json();
+    expect(report).toMatchObject({ videoId, totalSegments: 3, tierDistribution: { PRIMARY: 1, BACKUP: 1, SKIP: 1 } });
+    expect(report.topFeatures).toHaveLength(13);
     for (const sub of ["input", "clips", "variations", "logs"]) expect(existsSync(`${env.config.dataDir}/${sub}`)).toBeTrue();
   });
 
@@ -224,13 +226,13 @@ describe("full pipeline", () => {
   });
 
   test("python stage failure is reported with stage name", async () => {
-    env.scripts["segment.py"] = () => { throw new Error("Python script segment.py error: empty transcript"); };
+    env.scripts["media_features.py"] = () => { throw new Error("Python script media_features.py error: no video stream"); };
     const { jobId } = await importAndRun();
     const d = await detail(jobId);
     expect(d.job.status).toBe("FAILED");
-    expect(d.job.currentStage).toBe("SEGMENT");
-    expect(d.job.errorMessage).toBe("Stage SEGMENT failed: Python script segment.py error: empty transcript");
-    expect(d.stages.find((s: any) => s.stage === "SEGMENT").errorMessage).toBe("Python script segment.py error: empty transcript");
+    expect(d.job.currentStage).toBe("SCORE");
+    expect(d.job.errorMessage).toBe("Stage SCORE failed: Python script media_features.py error: no video stream");
+    expect(d.stages.find((s: any) => s.stage === "SCORE").errorMessage).toBe("Python script media_features.py error: no video stream");
   });
 
   test("stage row is recreated if missing", async () => {

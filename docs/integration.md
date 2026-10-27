@@ -55,12 +55,17 @@ Find new source videos every night and process the best three. A small script:
 #!/bin/sh
 # ~/bin/vclip-nightly
 set -e
-vclip discover search "podcast indonesia" --max 20 --min-length 1800 > /dev/null
+# ✨ Auto-discover waits for its run (1-5 min) and stores its picks as candidates.
+vclip discover auto --max 6 --json > /dev/null
 vclip discover candidates --json \
-  | jq -r '[.videos[] | select(.status == "NEW")] | sort_by(-(.predictedScore // .relevanceScore // 0)) | .[:3][] | .id' \
+  | jq -r '[.videos[] | select(.status == "NEW")] | sort_by(-(.rankScore // .predictedScore // 0)) | .[:3][] | .id' \
   | xargs -r vclip discover queue
 vclip discover drain
 ```
+
+Prefer a fixed topic? Replace the first line with
+`vclip discover auto "podcast bisnis" --max 6 --json` or a plain search:
+`vclip discover search "podcast indonesia" --max 20 --min-length 1800`.
 
 run by a systemd user timer (no root needed):
 

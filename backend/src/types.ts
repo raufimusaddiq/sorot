@@ -80,6 +80,8 @@ export interface ClipScore {
   sceneChange: number | null;
   topicFit: number | null;
   historyScore: number | null;
+  motion?: number | null;
+  onsetDensity?: number | null;
   boostTotal: number;
   penaltyTotal: number;
 }

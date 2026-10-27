@@ -13,28 +13,30 @@ ViralVideo/
 │   │   ├── runner.ts               # Python subprocess runner (timeouts, abort)
 │   │   ├── orchestrator.ts · jobs.ts                 # 9-stage pipeline, queue, orphan sweep
 │   │   ├── services.ts · editor.ts · options.ts      # videos/clips, clip editor, editing options
-│   │   ├── discovery.ts · channels.ts                # candidates, source-channel crawler
-│   │   ├── feedback.ts             # TikTok metrics, weight training
+│   │   ├── segments.ts · scoring.ts · textRules.ts · ruleConstants.ts · pyCompat.ts   # segmenting, clip scoring
+│   │   ├── llm.ts · clipReview.ts  # optional OpenAI-compatible LLM, clip review
+│   │   ├── youtube.ts · youtubeCaptions.ts · captionAnalysis.ts  # yt-dlp feeds, captions, whole-video scoring
+│   │   ├── discovery.ts · channels.ts · discoveryAgent.ts · webSearch.ts  # candidates, crawler, auto-discover
+│   │   ├── feedback.ts · learning.ts  # posted-clip metrics, viral score, weight re-fitting
 │   │   └── http.ts                 # Router, JSON envelope, static files
-│   ├── tests/                      # bun test (fake scripts, in-memory SQLite)
+│   ├── tests/                      # bun test (fake scripts, in-memory SQLite, golden fixtures from the Python originals)
 │   └── Dockerfile                  # single image: API + static UI + pipeline
 │
-├── ai-pipeline/                     # Python CLI scripts
+├── ai-pipeline/                     # Python media scripts (Whisper, OpenCV, ffmpeg, LightGBM)
 │   ├── requirements.txt
 │   ├── .venv/                       # Python venv (gitignored)
+│   ├── weights.json                 # shipped feature weights (learned ones go to data/weights.json)
 │   ├── transcribe.py
-│   ├── segment.py
-│   ├── score.py                     # Orchestrates features/ into a final score
-│   ├── render.py · subtitle.py · variation.py · analytics.py
+│   ├── media_features.py            # Audio energy/onsets, faces, scene change, motion per segment
+│   ├── render.py · subtitle.py · variation.py
 │   ├── captions.py                  # Word timing, ASS captions, silence intervals
 │   ├── reframe.py                   # Face-tracking 9:16 crop / blur fill
-│   ├── discover.py · channel_crawler.py · feedback.py · learn_weights.py · train_scorer.py
-│   ├── features/                    # Scoring feature extractors
-│   │   ├── text.py                  # Hook, keywords, novelty, sentiment
+│   ├── train_scorer.py · predict_supervised.py   # optional LightGBM model
+│   ├── features/
+│   │   ├── text.py                  # Hook strength (hook-first openings)
 │   │   ├── audio.py                 # RMS energy, onset density
-│   │   ├── visual.py                # Faces, scene change, motion (MediaPipe/Haar)
-│   │   ├── context.py               # Pauses, topic fit, history
-│   │   └── supervised.py            # Optional LightGBM model
+│   │   ├── visual.py                # Faces, scene change, motion (Haar; MediaPipe if installed)
+│   │   └── supervised.py            # LightGBM loader
 │   └── tests/                       # pytest (in-process, no GPU needed)
 │
 ├── cli/                             # vclip command-line client (Bun)

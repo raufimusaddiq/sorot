@@ -5,6 +5,7 @@ import { Llm } from "./llm";
 import { decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
 import type { ExecFn, ScriptRunner } from "./runner";
 import { now, type Store } from "./store";
+import { analyticsReport, findSegments, type ScoredSummary } from "./segments";
 import { determineTier, FEATURE_ORDER, loadWeights, scoreSegments, type MediaFeatures, type SegmentIn } from "./scoring";
 import type { Clip, ClipScore, Json, Stage, Video } from "./types";
 import { YouTube } from "./youtube";
@@ -87,12 +88,12 @@ export class PipelineOrchestrator {
         ["IMPORT", () => this.stageImport(video, signal)],
         ["AUDIO_EXTRACT", () => this.stageAudioExtract(video, signal)],
         ["TRANSCRIBE", () => this.stageTranscribe(video, opts, signal)],
-        ["SEGMENT", () => this.stageSegment(video, signal)],
+        ["SEGMENT", () => this.stageSegment(video)],
         ["SCORE", () => this.stageScore(video, signal)],
         ["RENDER", () => this.stageRender(jobId, video, opts, signal)],
         ["SUBTITLE", () => this.stageSubtitle(jobId, video, opts, signal)],
         ["VARIATION", () => this.stageVariation(video, signal)],
-        ["ANALYTICS", () => this.stageAnalytics(video, signal)],
+        ["ANALYTICS", () => this.stageAnalytics(video)],
       ];
       for (const [name, fn] of stages) await this.runStage(jobId, name, fn, signal);
 
@@ -252,13 +253,12 @@ export class PipelineOrchestrator {
     return outputPath;
   }
 
-  private async stageSegment(video: Video, signal: AbortSignal) {
+  private async stageSegment(video: Video) {
     const outputPath = this.path("segments", `${video.id}.json`);
-    const result = await this.runScript("segment.py", [
-      "--transcript", this.path("transcripts", `${video.id}.json`),
-      "--output", outputPath,
-    ], { signal });
-    await Bun.write(outputPath, JSON.stringify(result));
+    const transcript = readJson(this.path("transcripts", `${video.id}.json`));
+    const lines = arr(transcript.segments).map((s) => ({ start: num(s.start), end: num(s.end), text: str(s.text) ?? "" }));
+    const segments = findSegments(lines);
+    await Bun.write(outputPath, JSON.stringify({ videoId: str(transcript.videoId) ?? "", segmentCount: segments.length, segments }));
     return outputPath;
   }
 
@@ -282,7 +282,7 @@ export class PipelineOrchestrator {
       sceneChange: num(m.sceneChange, 0.5), motion: num(m.motion, 0.5),
     }]));
     const ctx = {
-      weights: loadWeights(this.config.pipelineDir),
+      weights: loadWeights(this.config.pipelineDir, this.config.dataDir),
       niche: this.config.nicheKeywords.length ? this.config.nicheKeywords : null,
       transcript: existsSync(transcriptPath) ? arr(readJson(transcriptPath).segments) : null,
       history: this.store.feedbackHistory(),
@@ -360,6 +360,8 @@ export class PipelineOrchestrator {
           sceneChange: num(s.sceneChange),
           topicFit: num(s.topicFit),
           historyScore: num(s.historyScore),
+          motion: num(s.motion),
+          onsetDensity: num(s.onsetDensity),
           boostTotal: num(s.boostTotal),
           penaltyTotal: num(s.penaltyTotal),
         };
@@ -469,13 +471,10 @@ export class PipelineOrchestrator {
     return variationDir;
   }
 
-  private async stageAnalytics(video: Video, signal: AbortSignal) {
+  private async stageAnalytics(video: Video) {
     const outputPath = this.path("analytics", `${video.id}.json`);
-    const result = await this.runScript("analytics.py", [
-      "--segments", this.path("segments", `${video.id}.json`),
-      "--output", outputPath,
-    ], { signal });
-    await Bun.write(outputPath, JSON.stringify(result));
+    const scored = readJson(this.path("segments", `${video.id}.json`));
+    await Bun.write(outputPath, JSON.stringify(analyticsReport(str(scored.videoId) ?? "", arr(scored.scoredSegments) as ScoredSummary[])));
     return outputPath;
   }
 

@@ -50,6 +50,7 @@ Thumbs.db
 .env
 !.env.example
 !.env.docker
+.env.llm
 
 # === Docker ===
 docker-compose.override.yml

@@ -2,36 +2,53 @@
 
 ## Purpose
 
-Score each candidate segment (10-60s) to rank clips by viral potential. This is a heuristic formula, not a trained model. Good enough to filter 20 candidates down to the top 5.
+Score each candidate segment (10-60s) to rank clips by viral potential. This is a heuristic formula, not a trained model (see [ai-audit.md](ai-audit.md)). Good enough to filter 20 candidates down to the top 5.
+
+Where it runs: Python `media_features.py` measures the audio/visual signals;
+the Bun backend computes the text signals, the weighted sum, boosts,
+penalties, tiers and post copy (`backend/src/scoring.ts`, `textRules.ts`).
 
 ## Base Formula
 
+Shipped weights (`ai-pipeline/weights.json` v3; feedback training writes
+re-fitted ones to `data/weights.json`, which wins):
+
 ```
 final_score =
-  0.20 * hook_strength +
-  0.10 * keyword_trigger +
-  0.10 * novelty +
-  0.10 * clarity +
-  0.10 * emotional_energy +
-  0.07 * pause_structure +
-  0.10 * face_presence +
-  0.08 * scene_change +
-  0.08 * topic_fit +
-  0.07 * history_score
+  0.17 * hook_strength +
+  0.08 * keyword_trigger +
+  0.08 * novelty +
+  0.09 * clarity +
+  0.08 * emotional_energy +
+  0.05 * text_sentiment +
+  0.06 * pause_structure +
+  0.09 * face_presence +
+  0.07 * scene_change +
+  0.07 * topic_fit +
+  0.06 * history_score +
+  0.05 * motion +
+  0.05 * onset_density
+  + boosts - penalties
 ```
 
-All feature values are 0.0 – 1.0. Weights sum to 1.0. Final score can exceed 1.0 after boosts.
+All feature values are 0.0 – 1.0. Weights sum to 1.0. The final score is capped at 1.0.
+With an LLM configured, `clipReview.ts` then blends it 50/50 with the LLM's
+0-100 judgement of the excerpt. If `ai-pipeline/model.lgb` exists, its
+prediction replaces the weighted sum for the segments it can score.
+
+The per-feature sections below keep their original design notes; the
+weights above are the current ones.
 
 ## Feature Definitions
 
 ### hook_strength (weight: 0.20)
 How strong the opening sentence is in the first 3 seconds.
 
-**Implementation (MVP):**
-- Check if first sentence is a question (contains "?")
-- Check if first sentence contains hook phrases: `"rahasia", "penting", "perhatikan", "simak", "tahukah kamu"`
-- Check if first sentence is short (< 10 words) → stronger hook
-- Score: `1.0` if question + hook phrase, `0.7` if either, `0.3` if neither
+**Implementation:**
+- First sentence = text up to the first `.`, `?` or `!` (else up to the first comma)
+- Score: `1.0` question + hook phrase · `0.9` hook phrase and < 10 words ·
+  `0.7` question or hook phrase · `0.6` question word (apa, kenapa, kok…) ·
+  `0.4` short (< 10 words) · `0.2` otherwise
 
 ### keyword_trigger (weight: 0.10)
 Presence of attention-grabbing Indonesian keywords.
@@ -89,7 +106,7 @@ Penalizes segments with too much silence.
 ### face_presence (weight: 0.10)
 Whether a face is visible in the video during the segment.
 
-**Implementation** (`features/visual.py`, batch path used by `score.py`):
+**Implementation** (`features/visual.py`, batch path used by `media_features.py`):
 - Check 5 frames per segment, at 10/30/50/70/90 % of its duration
 - Detect on full-size frames (640 px wide). Scene/motion features keep their
   224-px copies, which is what they were calibrated on
@@ -169,8 +186,8 @@ After applying formula + boosts - penalties:
 ## Scoring Pipeline
 
 ```
-1. score.py reads segments JSON
-2. For each segment:
+1. media_features.py measures audio/visual signals per segment (Python)
+2. For each segment (Bun, scoring.ts):
    a. Calculate each feature (0.0 – 1.0)
    b. Apply weighted formula → base_score
    c. Check boost conditions → add boosts
@@ -179,8 +196,8 @@ After applying formula + boosts - penalties:
    f. Determine tier from final_score
 3. Sort segments by final_score descending
 4. Assign rank (1 = best)
-5. Write results back to segments JSON
-6. Output to stdout
+5. Optional LLM review (blend + title/description), optional LightGBM override
+6. Write scoredSegments back to the segments JSON
 ```
 
 ## Feature Values Reference
@@ -199,3 +216,6 @@ All features output a float between 0.0 and 1.0:
 | scene_change | Static throughout | Some changes | Frequent cuts/movement |
 | topic_fit | No niche match | Moderate match | Strong niche match |
 | history_score | Poor history | Average | Good history |
+| text_sentiment | Strongly negative | Neutral | Strongly positive |
+| motion | Static frame | Some movement | Constant movement (optical flow) |
+| onset_density | Few audio onsets | Average | Dense onsets (laughs, claps, fast talk) |

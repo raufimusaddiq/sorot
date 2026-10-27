@@ -42,8 +42,6 @@ export const SCRIPT_TIMEOUT_MINUTES: Record<string, number> = {
   "render.py": 30,
   "subtitle.py": 10,
   "variation.py": 10,
-  "analytics.py": 5,
-  "segment.py": 2,
   "captions.py": 1,
 };
 const DEFAULT_TIMEOUT_MINUTES = 15;

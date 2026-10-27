@@ -1,5 +1,13 @@
 # Python Pipeline — CLI Interface Contract
 
+Python does only what needs Python's media/ML libraries: Whisper
+transcription, measuring audio/visual features, the optional LightGBM model,
+and ffmpeg rendering, captions and variations. Segmenting, clip scoring (text
+rules, weights, tiers, titles), analytics, feedback learning, YouTube
+discovery, captions-as-transcript and the LLM all run in the Bun backend
+(`backend/src/segments.ts`, `scoring.ts`, `textRules.ts`, `learning.ts`,
+`youtube.ts`, `captionAnalysis.ts`, `youtubeCaptions.ts`, `discoveryAgent.ts`).
+
 ## General Protocol
 
 All Python scripts are called by the Bun backend as subprocesses
@@ -107,119 +115,40 @@ evenly over its duration.
 
 ---
 
-### `segment.py`
+### `media_features.py`
 
-Finds candidate clip segments from a transcript.
+Measures the media signals of each candidate segment for the Bun scorer.
 
-**Invocation:**
 ```bash
-python ai-pipeline/segment.py \
-  --transcript "data/transcripts/{videoId}.json" \
-  --min-duration 10 \
-  --max-duration 60
+python ai-pipeline/media_features.py --segments "data/segments/{videoId}.json" \
+  --video "data/raw/{videoId}.mp4" [--audio "data/audio/{videoId}.wav"]
 ```
 
-**Stdin:** (empty — reads transcript file from `--transcript` arg)
-
-**Stdout:**
 ```json
-{
-  "success": true,
-  "data": {
-    "videoId": "uuid",
-    "segmentCount": 8,
-    "segments": [
-      {
-        "index": 0,
-        "startTime": 45.2,
-        "endTime": 72.8,
-        "duration": 27.6,
-        "text": "Ternyata ada rahasia yang tidak banyak orang tahu tentang ini",
-        "reason": "strong opening hook + topic shift"
-      }
-    ]
-  }
-}
+{ "success": true, "data": { "videoId": "uuid", "segments": [
+  { "index": 0, "rmsRatio": 1.4, "onsetDensity": 0.6, "facePresence": 0.9, "sceneChange": 0.3, "motion": 0.5 } ] } }
 ```
 
-**Output file:** `data/segments/{videoId}.json`
+- `rmsRatio`: segment loudness ÷ whole-video loudness (`null` without audio)
+- `onsetDensity`: audio onsets per second, mapped to 0-1
+- `facePresence`: faces in 3 of 5 full-resolution frames (Haar cascades; MediaPipe if installed), smiles boost it
+- `sceneChange`, `motion`: histogram difference, Farneback optical flow
 
-**Args:**
+The backend combines these with its text rules and weights
+(`docs/scoring-spec.md`) and writes `scoredSegments` back to the segments file.
 
-| Arg | Required | Default | Description |
-|-----|----------|---------|-------------|
-| `--transcript` | Yes | | Path to transcript JSON |
-| `--output` | No | auto-derived | Path to write segments JSON |
-| `--min-duration` | No | 10 | Minimum segment duration (seconds) |
-| `--max-duration` | No | 60 | Maximum segment duration (seconds) |
+### `predict_supervised.py`
 
-**Segment logic (MVP):**
-1. Find pause gaps > 1.5s in transcript → potential segment boundaries
-2. Merge adjacent segments that are too short (< min-duration)
-3. Split segments that are too long (> max-duration) at the nearest pause
-4. Prefer segments that start with a strong sentence (question, exclamation, hook phrase)
-5. Assign `reason` string explaining why this segment was selected
+Runs only when `ai-pipeline/model.lgb` exists (see `train_scorer.py`).
+`--features F.json` with `[{"index": 0, "features": {...13 features}}]` →
+`{"predictions": {"0": 0.71, "1": null}}`; a prediction replaces the weighted sum for that segment.
 
----
+### `train_scorer.py` (manual)
 
-### `score.py`
-
-Scores each segment using the weighted formula. Reads segments, adds scores, writes back.
-
-**Invocation:**
-```bash
-python ai-pipeline/score.py \
-  --segments "data/segments/{videoId}.json" \
-  --video "data/raw/{videoId}.mp4"
-```
-
-**Stdin:** (empty)
-
-**Stdout:**
-```json
-{
-  "success": true,
-  "data": {
-    "videoId": "uuid",
-    "scoredSegments": [
-      {
-        "index": 0,
-        "startTime": 45.2,
-        "endTime": 72.8,
-        "duration": 27.6,
-        "text": "Ternyata ada rahasia yang tidak banyak orang tahu...",
-        "scores": {
-          "hookStrength": 0.9,
-          "keywordTrigger": 0.8,
-          "novelty": 0.7,
-          "clarity": 0.85,
-          "emotionalEnergy": 0.8,
-          "pauseStructure": 0.6,
-          "facePresence": 0.9,
-          "sceneChange": 0.5,
-          "topicFit": 0.85,
-          "historyScore": 0.7,
-          "boostTotal": 0.1,
-          "penaltyTotal": 0.0
-        },
-        "finalScore": 0.87,
-        "tier": "PRIMARY"
-      }
-    ]
-  }
-}
-```
-
-**Output file:** updates `data/segments/{videoId}.json` in place (adds score fields)
-
-**Args:**
-
-| Arg | Required | Default | Description |
-|-----|----------|---------|-------------|
-| `--segments` | Yes | | Path to segments JSON |
-| `--video` | Yes | | Path to raw video file (for face/scene analysis) |
-
-**Scoring logic:** See `docs/scoring-spec.md` for full formula and feature definitions.
+`python train_scorer.py --feedback data/feedback/feedback_export.json [--min-rows 200] [--dry-run]`.
+The export is written by `POST /api/feedback/train`. Writes `model.lgb` only
+with ≥ 200 labelled clips **and** a 5-fold CV R² at least 0.05 above the
+linear weights; otherwise reports `insufficient_data` / `below_margin`.
 
 ---
 
@@ -291,37 +220,12 @@ use DejaVu Sans, the only font family in the Docker image.
 
 ---
 
-### `youtube_captions.py`
-
-Transcript from the video's own YouTube captions (json3), same format as
-transcribe.py so later stages are unchanged. Uploaded captions first;
-auto-captions only with `--allow-auto`. `--start/--end` cut and shift the
-captions to a range download. `data.found: false` when no track exists — the
-backend then runs Whisper.
-
 ### `captions.py` (library + CLI)
 
 Shared by render.py/subtitle.py. CLI mode returns the words of a clip range in
 absolute seconds for the clip editor:
 `python captions.py --transcript t.json --start 30 --end 55` →
 `{"success": true, "data": {"words": [...]}}`.
-
-### `discover.py` and `channel_crawler.py` (discovery)
-
-discover.py modes `search | trending | channel | enrich` return candidate
-videos. Long-form wins: the duration fit is 0 under 5 min, 0.15 / 0.4 / 0.7 up
-to 30 min, and 1.0 above that. Titles that look re-clipped ("clip", "highlight",
-"best of", "potongan"…) are dropped, search and channel default to the last 90
-days, and each row carries `channelId`, a regex `contentType` and
-`isLikelyClipped`. An unknown upload date is the sentinel `age_hours = 99999`.
-
-channel_crawler.py finds source channels:
-- `--mode category_seed [--per-query 15]` runs 12 Indonesian long-form anchor
-  queries in parallel → `{"count": n, "channels": [{youtubeChannelId, channelName, channelUrl, discoveredViaQuery}]}`.
-- `--mode profile --channel-url URL [--count 30]` profiles the last uploads →
-  `avgDurationSec`, `medianViewCount`, `uploadsPerWeek`, `shortShareRatio`,
-  `clippedShareRatio`, `isLikelyClipperChannel` (≥ 70 % short or clip-titled),
-  `primaryCategory` (majority content type with ≥ 40 % share, else `MIXED`).
 
 ---
 

@@ -42,7 +42,7 @@ export interface AppConfig {
   llmModel: string;
   llmApiKey: string;
   llmTimeoutSec: number;
-  /** Web search for the discovery agent: a SearXNG URL, else DuckDuckGo; "off" disables. */
+  /** Web search for the discovery agent: "bing" (key-free HTML), a SearXNG URL, or "off". */
   webSearch: string;
 }
 
@@ -94,6 +94,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmModel: (env.LLM_MODEL ?? "").trim(),
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),
     llmTimeoutSec: int(env.LLM_TIMEOUT, 120),
-    webSearch: (env.WEB_SEARCH ?? "").trim() || "duckduckgo",
+    webSearch: (env.WEB_SEARCH ?? "").trim() || "bing",
   };
 }
