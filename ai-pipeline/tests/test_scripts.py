@@ -112,6 +112,14 @@ class TestNvencProbe:
         ok, _ = self.probe(mod, monkeypatch, "h264_nvenc", probe_rc=1)
         assert ok is False
 
+    def test_probe_frame_is_big_enough_for_nvenc(self, mod, monkeypatch):
+        # NVENC refuses frames below its minimum (128x128 fails on Ada GPUs),
+        # which made the probe report "no NVENC" on machines that have it.
+        _, calls = self.probe(mod, monkeypatch, "h264_nvenc")
+        src = next(a for a in calls[1] if a.startswith("testsrc="))
+        w, h = (int(v) for v in src.split("size=")[1].split(":")[0].split("x"))
+        assert w >= 256 and h >= 256
+
     def test_errors_mean_no_nvenc(self, mod, monkeypatch):
         ok, _ = self.probe(mod, monkeypatch, "", raise_on="-encoders")
         assert ok is False
