@@ -1,13 +1,18 @@
 {
   "name": "viral-clipper",
   "private": true,
-  "workspaces": ["backend", "frontend"],
+  "workspaces": [
+    "backend",
+    "frontend",
+    "cli"
+  ],
   "scripts": {
     "dev": "bun run --filter viralclipper-backend dev",
     "dev:web": "bun run --filter viral-clipper-frontend dev",
     "build": "bun run --filter viral-clipper-frontend build",
     "start": "bun run --filter viralclipper-backend start",
     "test": "bun run --filter '*' test",
-    "typecheck": "bun run --filter viralclipper-backend typecheck"
+    "typecheck": "bun run --filter viralclipper-backend --filter viralclip-cli typecheck",
+    "vclip": "bun run cli/src/main.ts"
   }
 }

@@ -7,7 +7,7 @@ YouTube/local video → 9:16 TikTok clips with auto-subtitles. Indonesian langua
 Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (static export) + SQLite + Docker
 
 ## Layout
-`backend/` Bun/TS API (also serves the UI) · `ai-pipeline/` Python · `frontend/` Next.js static export · `data/` media · `docs/` specs
+`backend/` Bun/TS API (also serves the UI) · `ai-pipeline/` Python · `frontend/` Next.js static export · `cli/` `vclip` client · `data/` media · `docs/` specs
 
 ## Build Order (strict)
 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
@@ -19,6 +19,13 @@ Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (stat
 .\scripts\start.ps1 -Build   # start app (rebuild image)
 .\scripts\start.ps1 -Dev     # + hot-reload UI on :3000
 .\scripts\stop.ps1           # stop all services
+```
+
+### Linux install / CLI
+```
+scripts/install.sh                 # Docker install (or --mode native: systemd); --uninstall [--purge]
+vclip import <url|file> | clips <video> | download --video <video> | up | down | logs -f | doctor
+cd cli; bun test --coverage        # CLI tests (95% gate); bun run build → cli/dist/vclip
 ```
 
 ### Verify
@@ -79,6 +86,7 @@ cd ai-pipeline
 - Editing options layer config defaults ← job options (import) ← clip options (editor); see `backend/src/options.ts`
 - Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README); render.py and subtitle.py must get the same silence flags
 - Python venv at `ai-pipeline/.venv`
+- `scripts/install.sh` must stay shellcheck-clean; Linux machine settings go in the gitignored `docker-compose.override.yml` (Docker) or `/etc/viralclip/` (native), never in tracked files
 - Schema auto-creates + migrates in `backend/src/db.ts` (compatible with the old Java-era DB file)
 - SQLite TEXT for UUIDs
 
