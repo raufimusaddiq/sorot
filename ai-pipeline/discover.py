@@ -67,6 +67,100 @@ TRENDING_HASHTAGS_ID = [
 ]
 
 
+# Titles that almost always mark re-clipped / compilation content rather than
+# original source material. Filtered out before scoring so a "Best of X Clips"
+# video can't rank above the original 2-hour X podcast it was cut from.
+CLIP_SOURCE_KEYWORDS = re.compile(
+    r"\b(clips?|klip|potongan|highlight|highlights?|"
+    r"best\s*of|compilation|moments?|cuplikan|rangkuman|"
+    r"funniest|top\s*\d+|react(?:ion|ions)?|"
+    r"full\s*episode\s*(?:below|di\s*bawah))\b",
+    re.IGNORECASE,
+)
+
+
+# Content-type heuristics. Kept regex-based (no ML) — v0 is only expected to
+# get ~80% right and feed the channel-trust EMA; real content-type labeling
+# is Phase 4 (supervised) scope.
+_PODCAST_RE = re.compile(
+    r"\b(podcast|ep\.?\s*\d|episode\s*\d|close\s*the\s*door|curhat\s*bang|"
+    r"ngobrol(?:in)?|bocor\s*alus|vindes|deddy\s*corbuzier)\b",
+    re.IGNORECASE,
+)
+_TALKSHOW_RE = re.compile(
+    r"\b(mata\s*najwa|rossy|hotman|talk\s*show|bincang(?:[-\s]*bincang)?)\b",
+    re.IGNORECASE,
+)
+_STANDUP_RE = re.compile(
+    r"\b(stand[-\s]*up|standup|open\s*mic|comedy\s*special|majelis\s*lucu|"
+    r"\bmli\b|\bsui\b)\b",
+    re.IGNORECASE,
+)
+_LIVESTREAM_RE = re.compile(
+    r"\b(live(?:\s*streaming)?|livestream|\bstream\b|\bvod\b|playthrough|gameplay)\b",
+    re.IGNORECASE,
+)
+_NEWS_RE = re.compile(
+    r"\b(debat|debate|politik|pemilu|berita\s*debat|news\s*debate)\b",
+    re.IGNORECASE,
+)
+
+
+def duration_fit_score(duration_sec):
+    """Clipper-source duration fit curve, inverted from the pre-v2 default.
+
+    Clippers harvest long-form, speech-dense source material (1–3 hr podcasts,
+    30–90 min talk shows, livestream VODs). The previous curve peaked at
+    3–15 min and zeroed >30 min — which rewarded already-cut compilations and
+    penalized the actual source content. This curve is the fix.
+    """
+    d = int(duration_sec or 0)
+    if d < 5 * 60:
+        return 0.0      # too short — already a clip or a Short
+    if d < 10 * 60:
+        return 0.15     # borderline; often a clip-of-a-clip
+    if d < 15 * 60:
+        return 0.40
+    if d < 30 * 60:
+        return 0.70     # short podcast / news segment — decent
+    if d <= 180 * 60:
+        return 1.00     # sweet spot: 30–180 min talk / podcast / stand-up
+    return 1.00         # >3hr = livestream VOD, still prime source
+
+
+def looks_already_clipped(title, description=""):
+    """Heuristic pre-filter: title/description matches a clip/compilation pattern."""
+    if not title:
+        return False
+    haystack = f"{title} {description or ''}"
+    return bool(CLIP_SOURCE_KEYWORDS.search(haystack))
+
+
+def classify_content_type(title, channel_name="", duration_sec=0, description=""):
+    """Regex-based v0 classifier.
+
+    Returns one of PODCAST / TALKSHOW / STANDUP / LIVESTREAM / NEWS / OTHER.
+    Order matters — first matching rule wins. Most duration thresholds exist
+    to avoid mis-labeling a 3-min clip that happens to mention "podcast".
+    """
+    hay = f"{(title or '').lower()} {(channel_name or '').lower()}"
+    d = int(duration_sec or 0)
+
+    if _TALKSHOW_RE.search(hay):
+        return "TALKSHOW"
+    if _STANDUP_RE.search(hay):
+        return "STANDUP"
+    if d >= 60 * 60 and _PODCAST_RE.search(hay):
+        return "PODCAST"
+    if d >= 30 * 60 and _PODCAST_RE.search(hay):
+        return "PODCAST"
+    if d >= 120 * 60 and _LIVESTREAM_RE.search(hay):
+        return "LIVESTREAM"
+    if d >= 30 * 60 and _NEWS_RE.search(hay):
+        return "NEWS"
+    return "OTHER"
+
+
 def run_ytdlp(args, ytdlp_path="yt-dlp", timeout=120):
     cmd = [ytdlp_path] + args + ["--no-warnings", "--no-check-certificates"]
     try:
@@ -121,13 +215,12 @@ def quick_relevance_score(video_meta, keywords=None):
     max_title = max(len(keywords) * 0.15, 1)
     score += min(title_hits / max_title, 1.0) * 0.40
 
-    if 180 <= duration <= 1200:
-        score += 0.25
-    elif 120 <= duration <= 1800:
-        score += 0.15
+    # Long-form source material > already-clipped compilation. See
+    # duration_fit_score docstring for the full curve rationale.
+    score += duration_fit_score(duration) * 0.25
 
     view_count = video_meta.get("viewCount") or video_meta.get("view_count") or 0
-    age_hours = video_meta.get("age_hours", 999)
+    age_hours = video_meta.get("age_hours", 99999)
     if isinstance(age_hours, (int, float)) and age_hours < 720 and view_count > 0:
         vph = view_count / max(age_hours, 1)
         if vph > 1000:
@@ -159,7 +252,11 @@ def normalize_video(entry):
             view_count = None
 
     upload_date = entry.get("upload_date") or ""
-    age_hours = 999
+    # 99999 = "unknown age" sentinel (beyond any realistic filter threshold).
+    # --flat-playlist strips upload_date on most channel/hashtag feeds; in those
+    # cases a row whose real age is 6 years old would show as 99999 rather than
+    # masquerade as 999 hours (~41 days) and sneak past the recency filter.
+    age_hours = 99999
     if upload_date and len(upload_date) >= 8:
         try:
             upload_dt = datetime.strptime(upload_date[:8], "%Y%m%d").replace(
@@ -169,23 +266,30 @@ def normalize_video(entry):
         except ValueError:
             pass
 
-    channel = entry.get("channel") or entry.get("uploader") or entry.get("channel_id") or ""
+    channel = entry.get("channel") or entry.get("uploader") or ""
+    channel_id = entry.get("channel_id") or entry.get("uploader_id") or ""
+    title = entry.get("title", "")
+    description = (entry.get("description") or "")[:500]
+    dur_int = int(duration) if duration else 0
 
     return {
         "videoId": extract_video_id(url) or entry.get("id", ""),
-        "title": entry.get("title", ""),
+        "title": title,
         "url": url,
-        "duration": int(duration) if duration else 0,
+        "duration": dur_int,
         "channel": channel,
+        "channelId": channel_id,
         "viewCount": view_count,
         "uploadDate": upload_date,
         "age_hours": round(age_hours, 1),
-        "description": (entry.get("description") or "")[:500],
+        "description": description,
+        "contentType": classify_content_type(title, channel, dur_int, description),
+        "isLikelyClipped": looks_already_clipped(title, description),
     }
 
 
 def discover_search(query, max_results=20, ytdlp_path="yt-dlp", min_duration=0, max_duration=0,
-                    dateafter=None, recent_only=False, max_age_days=0, timeout=180,
+                    dateafter=None, recent_only=False, max_age_days=90, timeout=180,
                     exclude_shorts=True):
     """Search yt-dlp for videos matching ``query``.
 
@@ -227,6 +331,8 @@ def discover_search(query, max_results=20, ytdlp_path="yt-dlp", min_duration=0, 
             entry = json.loads(line)
             vid = normalize_video(entry)
             if exclude_shorts and is_short(vid):
+                continue
+            if vid.get("isLikelyClipped"):
                 continue
             if min_duration and vid["duration"] < min_duration:
                 continue
@@ -293,6 +399,8 @@ def discover_hashtag(hashtag, max_results=10, ytdlp_path="yt-dlp",
             vid = normalize_video(entry)
             if exclude_shorts and is_short(vid):
                 continue
+            if vid.get("isLikelyClipped"):
+                continue
             if min_duration and vid["duration"] < min_duration:
                 continue
             if max_duration and vid["duration"] > max_duration:
@@ -309,14 +417,18 @@ def discover_hashtag(hashtag, max_results=10, ytdlp_path="yt-dlp",
 
 
 def discover_trending(max_results=20, ytdlp_path="yt-dlp", region="ID",
-                      max_age_days=45, min_duration=90, max_duration=1800):
+                      max_age_days=45, min_duration=5 * 60, max_duration=0):
     """Pull from YouTube hashtag feeds (real trending) + a small niche-search
-    supplement. Min/max duration drop music videos (usually 2–4 min with
-    topic channel) and full-length uploads (>30 min).
+    supplement.
 
-    The 6-keyword search we used before is wrong for "trending" — keyword
-    hits in the title aren't a trending signal. Hashtag feeds are YouTube's
-    own ranking of what's surfacing on that tag right now.
+    v2 note: the old 90s–1800s cap excluded the long-form podcasts/talk shows
+    we actually want. We now floor at 5 min (enough to exclude Shorts + most
+    already-cut TikTok reposts) and lift the upper cap — ``looks_already_clipped``
+    plus the inverted duration curve do the filtering that the hard caps used
+    to do.
+
+    Hashtag feeds are kept for backward compat with the existing controller
+    endpoint but are no longer a primary discovery source in v2.
     """
     seen = set()
     all_videos = []
@@ -369,18 +481,24 @@ def discover_trending(max_results=20, ytdlp_path="yt-dlp", region="ID",
 
 
 def discover_channel(channel_url, max_results=20, ytdlp_path="yt-dlp", min_duration=0, max_duration=0,
-                     exclude_shorts=True):
+                     exclude_shorts=True, max_age_days=90):
+    """Fetch a channel's recent uploads.
+
+    Uses ``--flat-playlist`` (fast, strips upload_date on channel feeds). To
+    enforce ``max_age_days``, we also apply a Python-side filter via
+    ``age_hours`` which ``normalize_video`` computes when present — and pull
+    more than ``max_results`` initially so after age filtering we still have
+    enough rows.
+    """
     videos_url = channel_url.rstrip("/") + "/videos"
+    fetch_count = max_results * 3 if max_age_days else max_results
+    args_tail = ["--flat-playlist", "--dump-json", "--skip-download", "--playlist-end", str(fetch_count)]
     stdout, stderr, rc = run_ytdlp(
-        [videos_url, "--flat-playlist", "--dump-json", "--skip-download", "--playlist-end", str(max_results)],
-        ytdlp_path=ytdlp_path,
-        timeout=180,
+        [videos_url] + args_tail, ytdlp_path=ytdlp_path, timeout=180,
     )
     if rc != 0:
         stdout2, stderr2, rc2 = run_ytdlp(
-            [channel_url, "--flat-playlist", "--dump-json", "--skip-download", "--playlist-end", str(max_results)],
-            ytdlp_path=ytdlp_path,
-            timeout=180,
+            [channel_url] + args_tail, ytdlp_path=ytdlp_path, timeout=180,
         )
         if rc2 != 0:
             raise RuntimeError(f"yt-dlp channel failed: {stderr2}")
@@ -396,17 +514,27 @@ def discover_channel(channel_url, max_results=20, ytdlp_path="yt-dlp", min_durat
             vid = normalize_video(entry)
             if exclude_shorts and is_short(vid):
                 continue
+            if vid.get("isLikelyClipped"):
+                continue
             if min_duration and vid["duration"] < min_duration:
                 continue
             if max_duration and vid["duration"] > max_duration:
                 continue
+            # Age filter. Flat-playlist strips upload_date for most channel
+            # entries, so age_hours defaults to 999 (unknown). Only reject
+            # rows where we KNOW the age is beyond the cutoff — missing dates
+            # are let through rather than silently discarded.
+            if max_age_days:
+                age_h = vid.get("age_hours", 9999)
+                if isinstance(age_h, (int, float)) and age_h < 9999 and age_h > max_age_days * 24:
+                    continue
             vid["relevanceScore"] = quick_relevance_score(vid)
             videos.append(vid)
         except json.JSONDecodeError:
             continue
 
     videos.sort(key=lambda v: v["relevanceScore"], reverse=True)
-    return videos
+    return videos[:max_results]
 
 
 def sample_transcript(video_url, ytdlp_path="yt-dlp", lang="id", max_chars=2000):
@@ -508,14 +636,8 @@ def predict_clip_potential(transcript, duration=0, view_count=0, age_hours=9999)
         vph = view_count / max(age_hours, 1)
         velocity = min(math.log10(max(vph, 1)) / 5.0, 1.0)
 
-    # Duration fit: 3–15 min is the clip sweet spot.
-    duration_fit = 0.0
-    if 180 <= duration <= 900:
-        duration_fit = 1.0
-    elif 120 <= duration <= 1500:
-        duration_fit = 0.7
-    elif 60 <= duration <= 1800:
-        duration_fit = 0.4
+    # Duration fit: long-form source material wins (see duration_fit_score).
+    duration_fit = duration_fit_score(duration)
 
     predicted = transcript_score * 0.55 + velocity * 0.25 + duration_fit * 0.20
     return round(transcript_score, 4), round(min(predicted, 1.0), 4)
