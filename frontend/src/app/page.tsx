@@ -38,32 +38,135 @@ function useReveal() {
   }, []);
 }
 
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Writes scroll progress to --p on every [data-scroll] element, once per frame.
+ * data-scroll="pin": 0 → 1 while a tall section scrolls past its pinned stage.
+ * data-scroll="pass": 0 as the top enters at the bottom of the screen, 1 when it reaches the top.
+ */
+function useScrollVars() {
+  useEffect(() => {
+    if (reducedMotion()) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const vh = window.innerHeight;
+      document.querySelectorAll<HTMLElement>('[data-scroll]').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const p = el.dataset.scroll === 'pin' ? clamp01(-r.top / Math.max(r.height - vh, 1)) : clamp01((vh - r.top) / vh);
+        el.style.setProperty('--p', p.toFixed(4));
+      });
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+}
+
+/** Progress (0–1) of a pinned section, kept in React state for things CSS can't compute. */
+function usePinProgress(ref: React.RefObject<HTMLElement>) {
+  const [p, setP] = useState(0);
+  useEffect(() => {
+    if (reducedMotion()) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const el = ref.current;
+      if (!el) return;
+      const vh = window.innerHeight;
+      if (el.offsetHeight < vh * 1.4) return;          // not pinned at this width
+      const r = el.getBoundingClientRect();
+      setP(clamp01(-r.top / Math.max(r.height - vh, 1)));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [ref]);
+  return p;
+}
+
+const HERO_LINE = 'ini bagian yang paling penting';
+const HERO_STEPS = captionSteps(HERO_LINE, PRESETS.default!);
+const ease = (t: number) => t * t * (3 - 2 * t);       // smoothstep: slow start, slow finish
+
+/**
+ * The sentence with the light in it. Scrolling opens the spotlight strip to the
+ * whole screen (the words part to let it through), then the line it found is
+ * captioned word by word, the way a render would.
+ */
 function Hero() {
+  const wrap = useRef<HTMLDivElement>(null);
+  const strip = useRef<HTMLSpanElement>(null);
+  const p = usePinProgress(wrap);
+  const [inset, setInset] = useState<[number, number, number, number] | null>(null);
+
+  useEffect(() => {
+    const measure = () => {
+      const s = strip.current?.getBoundingClientRect();
+      const stage = strip.current?.closest('.lp-hero')?.getBoundingClientRect();
+      if (!s || !stage || !s.width) return;
+      setInset([s.top - stage.top, stage.right - s.right, stage.bottom - s.bottom, s.left - stage.left]);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    document.fonts?.ready.then(measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  const open = ease(clamp01(p / 0.7));                  // the strip opens over the first 70%
+  const clip = inset ? `inset(${inset.map((v) => `${(v * (1 - open)).toFixed(1)}px`).join(' ')})` : undefined;
+  const capStep = p > 0.72 ? HERO_STEPS[Math.min(HERO_STEPS.length - 1, Math.floor(((p - 0.72) / 0.25) * HERO_STEPS.length))] : null;
+
   return (
-    <header className="lp-hero">
-      <nav className="lp-nav" aria-label="Main">
-        <a href="/" className="lp-wordmark"><Beam />Sorot</a>
-        <span className="lp-nav-links">
-          <a href="#how">How it works</a>
-          <a href="#faq">Questions</a>
-          <a href={REPO}>GitHub</a>
-        </span>
-      </nav>
-      <h1 className="lp-sentence">
-        <span className="lp-word">90&nbsp;min</span>
-        <span className="lp-strip">
+    <div className="lp-hero-wrap" ref={wrap}>
+      <header className={`lp-hero ${open > 0.45 ? 'is-open' : ''}`} style={{ '--open': open.toFixed(4) } as React.CSSProperties}>
+        <div className="lp-spot" style={{ clipPath: clip }} aria-hidden>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/assets/pertunjukan-wayang-kulit.jpg" width={1920} height={1280}
-            alt="A dalang lifts the gunungan into the lamp's light at a wayang kulit performance" />
-        </span>
-        <span className="lp-word">40&nbsp;sec</span>
-      </h1>
-      <a href={STUDIO} className="lp-btn lp-btn-hot lp-hero-action">Open the studio</a>
-      <p className="lp-hero-line">
-        Sorot cuts long Indonesian podcasts into ranked vertical clips with word-timed captions,
-        on your own computer. Free and open source.
-      </p>
-    </header>
+          <img src="/assets/pertunjukan-wayang-kulit.jpg" width={1920} height={1280} alt="" />
+          {capStep && (
+            <p className="lp-spot-cap">
+              {capStep.group.map((w, i) => <span key={`${w}-${i}`} className={i === capStep.active ? 'is-hl' : undefined}>{w} </span>)}
+            </p>
+          )}
+        </div>
+        <nav className="lp-nav" aria-label="Main">
+          <a href="/" className="lp-wordmark"><Beam />Sorot</a>
+          <span className="lp-nav-links">
+            <a href="#how">How it works</a>
+            <a href="#faq">Questions</a>
+            <a href={REPO}>GitHub</a>
+          </span>
+        </nav>
+        <h1 className="lp-sentence">
+          <span className="lp-word lp-w1">90&nbsp;min</span>
+          <span className="lp-strip" ref={strip} role="img"
+            aria-label="A dalang lifts the gunungan into the lamp's light at a wayang kulit performance" />
+          <span className="lp-word lp-w2">40&nbsp;sec</span>
+        </h1>
+        <div className="lp-hero-foot">
+          <p className="lp-hero-line">
+            Sorot cuts long Indonesian podcasts into ranked vertical clips with word-timed captions,
+            on your own computer. Free and open source.
+          </p>
+          <a href={STUDIO} className="lp-btn lp-btn-hot">Open the studio</a>
+        </div>
+        <p className="lp-scroll-cue" aria-hidden>Scroll to find the moment</p>
+      </header>
+    </div>
   );
 }
 
@@ -123,10 +226,13 @@ function CaptionDemo() {
               </label>
             ))}
           </fieldset>
-          <p className="lp-small">
-            {preset.maxWords} words a screen at most, the spoken word in {preset.label.toLowerCase()} colour.
-            The same rules burn the captions into every render.
-          </p>
+          <dl className="lp-spec">
+            <div><dt>Words on screen</dt><dd>up to {preset.maxWords}</dd></div>
+            <div><dt>Letters</dt><dd>{preset.uppercase ? 'capitals' : 'as spoken'}</dd></div>
+            <div><dt>Spoken word</dt><dd><span className="lp-swatch" style={{ background: preset.highlight }} aria-hidden /> {preset.highlight}</dd></div>
+            <div><dt>Text size</dt><dd>{preset.size}px on 1080×1920</dd></div>
+          </dl>
+          <p className="lp-small">The same rules burn the captions into every render.</p>
           <button type="button" className="lp-btn" onClick={() => setPlaying((p) => !p)} aria-pressed={!playing}>
             {playing ? 'Pause' : 'Play'}
           </button>
@@ -141,10 +247,11 @@ function CaptionDemo() {
   );
 }
 
-const STAGES: Array<{ name: string; clause: string; fragment: ReactNode }> = [
+const STAGES: Array<{ name: string; clause: string; detail: string; fragment: ReactNode }> = [
   {
     name: 'Paste',
     clause: 'First, paste one long video',
+    detail: 'A YouTube link or a file on your disk. Pick a caption style, cut the silences, or process only part of a long episode.',
     fragment: (
       <div className="ui-win">
         <div className="ui-bar ui-aqua">Import</div>
@@ -160,6 +267,7 @@ const STAGES: Array<{ name: string; clause: string; fragment: ReactNode }> = [
   {
     name: 'Listen',
     clause: 'Then it hears every word',
+    detail: 'Whisper writes down the talk with a time on every word, or Sorot uses the video’s own YouTube captions when you allow it.',
     fragment: (
       <div className="ui-win">
         <div className="ui-bar ui-mint">Transcript · 1:12:40</div>
@@ -176,6 +284,7 @@ const STAGES: Array<{ name: string; clause: string; fragment: ReactNode }> = [
   {
     name: 'Rank',
     clause: 'Then it ranks the moments',
+    detail: 'Every 10 to 60 second stretch is scored on 13 signals, from the hook in its first line to the faces on screen, best first.',
     fragment: (
       <div className="ui-win">
         <div className="ui-bar ui-sun">Clip #1 · 0:42</div>
@@ -195,6 +304,7 @@ const STAGES: Array<{ name: string; clause: string; fragment: ReactNode }> = [
   {
     name: 'Post',
     clause: 'Last, you post the clips',
+    detail: 'Sorot frames the speaker in 9:16, burns in the captions and writes a title and description. You download and post.',
     fragment: (
       <div className="ui-win">
         <div className="ui-bar ui-lilac">Clips (8)</div>
@@ -210,32 +320,52 @@ const STAGES: Array<{ name: string; clause: string; fragment: ReactNode }> = [
 ];
 
 function StageSlider() {
-  const [stage, setStage] = useState(0);
+  const wrap = useRef<HTMLDivElement>(null);
+  const p = usePinProgress(wrap);
+  const [picked, setPicked] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
+  const pinnedStage = Math.min(STAGES.length - 1, Math.floor(p * STAGES.length));
+  useEffect(() => { if (p > 0) setScrolled(true); }, [p]);
+  const stage = scrolled ? pinnedStage : picked;
   const current = STAGES[stage]!;
+
+  const go = (i: number) => {
+    setPicked(i);
+    const el = wrap.current;
+    if (el && el.offsetHeight >= window.innerHeight * 1.4) {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ top: top + ((i + 0.5) / STAGES.length) * (el.offsetHeight - window.innerHeight), behavior: 'smooth' });
+    } else setScrolled(false);
+  };
+
   return (
-    <section id="how" className="lp-how" aria-labelledby="how-title">
-      <div className="lp-how-clause">
-        <h2 id="how-title" key={current.clause} className="lp-fade">{current.clause}</h2>
-      </div>
-      <div className="lp-how-ui" data-ui>
-        <div key={stage} className="lp-fade">{current.fragment}</div>
-      </div>
-      <div className="lp-how-track">
-        <div className="lp-rail" style={{ '--pct': `${(stage / (STAGES.length - 1)) * 100}%` } as React.CSSProperties}>
-          <span className="lp-rail-fill" aria-hidden />
-          <input type="range" min={0} max={STAGES.length - 1} step={1} value={stage}
-            aria-label="How Sorot works, step by step" aria-valuetext={current.clause}
-            onChange={(e) => setStage(Number(e.target.value))} />
+    <div className="lp-how-wrap" ref={wrap}>
+      <section id="how" className="lp-how" aria-labelledby="how-title">
+        <div className="lp-how-clause">
+          <p className="lp-how-count" aria-hidden>{stage + 1}<span>/{STAGES.length}</span></p>
+          <h2 id="how-title" key={current.clause} className="lp-fade">{current.clause}</h2>
+          <p key={current.detail} className="lp-how-detail lp-fade">{current.detail}</p>
         </div>
-        <ol className="lp-how-names">
-          {STAGES.map((s, i) => (
-            <li key={s.name}>
-              <button type="button" className={i === stage ? 'is-on' : undefined} onClick={() => setStage(i)}>{s.name}</button>
-            </li>
-          ))}
-        </ol>
-      </div>
-    </section>
+        <div className="lp-how-ui" data-ui>
+          <div key={stage} className="lp-fade">{current.fragment}</div>
+        </div>
+        <div className="lp-how-track">
+          <div className="lp-rail" style={{ '--pct': `${(stage / (STAGES.length - 1)) * 100}%` } as React.CSSProperties}>
+            <span className="lp-rail-fill" aria-hidden />
+            <input type="range" min={0} max={STAGES.length - 1} step={1} value={stage}
+              aria-label="How Sorot works, step by step" aria-valuetext={current.clause}
+              onChange={(e) => go(Number(e.target.value))} />
+          </div>
+          <ol className="lp-how-names">
+            {STAGES.map((s, i) => (
+              <li key={s.name}>
+                <button type="button" className={i === stage ? 'is-on' : undefined} onClick={() => go(i)}>{s.name}</button>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -270,6 +400,7 @@ const FAQ = [
 
 export default function Landing() {
   useReveal();
+  useScrollVars();
   return (
     <div className="lp">
       <Hero />
@@ -279,7 +410,7 @@ export default function Landing() {
 
         <section className="lp-fields" aria-labelledby="field-0">
           {FIELDS.map((f, i) => (
-            <div key={f.phrase} className={`lp-field lp-${f.tone} ${i % 2 ? 'is-mirror' : ''}`} data-reveal>
+            <div key={f.phrase} className={`lp-field lp-${f.tone} ${i % 2 ? 'is-mirror' : ''}`} data-scroll="pass">
               <p className="lp-field-text">{f.text}</p>
               <h2 id={`field-${i}`} className="lp-field-phrase">{f.phrase}</h2>
             </div>
@@ -312,8 +443,11 @@ export default function Landing() {
           </div>
         </section>
 
-        <section id="faq" className="lp-faq" aria-labelledby="faq-title" data-reveal>
-          <h2 id="faq-title" className="lp-h2">Before you install</h2>
+        <section id="faq" className="lp-faq" aria-labelledby="faq-title">
+          <div className="lp-faq-head">
+            <h2 id="faq-title" className="lp-h2">Before you install</h2>
+            <p className="lp-small">Six answers, straight from how Sorot works today.</p>
+          </div>
           <div className="lp-faq-list">
             {FAQ.map(([q, a]) => (
               <details key={q}>
@@ -324,7 +458,7 @@ export default function Landing() {
           </div>
         </section>
 
-        <section className="lp-choice" aria-labelledby="choice-title">
+        <section className="lp-choice" aria-labelledby="choice-title" data-scroll="pass">
           <h2 id="choice-title" className="lp-choice-q">
             <span>Got a</span>
             <span>long one?</span>
@@ -338,7 +472,7 @@ export default function Landing() {
         </section>
       </main>
 
-      <footer className="lp-foot">
+      <footer className="lp-foot" data-scroll="pass">
         <div className="lp-foot-top">
           <div>
             <h2 className="lp-h2">Sorot means spotlight.</h2>

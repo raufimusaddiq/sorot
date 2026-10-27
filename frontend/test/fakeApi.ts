@@ -19,6 +19,8 @@ export interface FakeState {
   scores: Record<string, ClipScore>;
   candidates: Candidate[];
   weights: { version: number; trained_on: number; total_feedback: number; with_actual_scores: number };
+  /** Logged post results (GET /api/feedback). */
+  results: Array<{ clipId: string; title: string | null; viralScore: number | null; views: number; likes: number; comments: number; shares: number; saves: number; postedAt: string | null }>;
   /** "METHOD /path" or "METHOD /path-prefix*" → error message. */
   fail: Record<string, string>;
   /** Next ids handed out by import / process. */
@@ -83,6 +85,7 @@ export function emptyState(): FakeState {
   return {
     videos: [], jobs: [], stages: {}, clips: {}, scores: {}, candidates: [],
     weights: { version: 3, trained_on: 0, total_feedback: 0, with_actual_scores: 0 },
+    results: [],
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
   };
@@ -162,8 +165,13 @@ export function installFakeApi(state: FakeState) {
       return ok({ exported: [] });
     }
     if (method === 'POST' && (m = path.match(/^\/api\/clips\/([^/]+)\/feedback$/))) {
+      const title = Object.values(state.clips).flat().find(c => c.id === m![1])?.title ?? null;
+      state.results = [{ clipId: m[1], title, viralScore: 0.42, views: body.views, likes: body.likes, comments: body.comments,
+        shares: body.shares, saves: body.saves, postedAt: body.postedAt }, ...state.results];
+      state.weights = { ...state.weights, total_feedback: state.weights.total_feedback + 1, with_actual_scores: state.weights.with_actual_scores + 1 };
       return ok({ clipId: m[1], viralScore: 0.42, views: body.views, likes: body.likes, postedAt: body.postedAt });
     }
+    if (method === 'GET' && path === '/api/feedback') return ok({ results: state.results });
     if (method === 'GET' && path === '/api/feedback/weights') return ok({ ...state.weights, last_updated: '', weights: {} });
     if (method === 'POST' && path === '/api/feedback/train') {
       state.weights = { ...state.weights, version: state.weights.version + 1, trained_on: state.weights.with_actual_scores };

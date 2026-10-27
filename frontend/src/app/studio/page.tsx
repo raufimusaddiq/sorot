@@ -15,6 +15,8 @@ import { ProgressBar, ScoreBadge, TranscriptView } from '@/components/progress';
 import { FALLBACK_CHOICES, ImportOptions, type ImportSettings } from '@/components/ImportOptions';
 import { ClipEditor } from '@/components/ClipEditor';
 import { Window } from '@/components/Window';
+import { ResultsForm } from '@/components/ResultsForm';
+import { LearningPanel, type LearningStats } from '@/components/LearningPanel';
 import { Dock, ICONS, MenuBar } from '@/components/Desktop';
 
 // Adaptive polling bounds for job status — start fast so stage transitions
@@ -43,14 +45,6 @@ function ClipCard({
   const [showScore, setShowScore] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
-  const [feedback, setFeedback] = useState({
-    views: '', likes: '', comments: '', shares: '', saves: '',
-    // datetime-local format (yyyy-MM-ddTHH:mm) in the browser's local tz;
-    // converted to ISO-8601 UTC on submit.
-    postedAt: '',
-  });
-  const [submitting, setSubmitting] = useState(false);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [viralScore, setViralScore] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -58,41 +52,6 @@ function ClipCard({
     await navigator.clipboard.writeText(text);
     setCopied(label);
     setTimeout(() => setCopied(null), 1500);
-  };
-
-  const handleSubmitFeedback = async () => {
-    setFeedbackError(null);
-    if (!feedback.postedAt) {
-      setFeedbackError('Isi tanggal upload dulu — viral score butuh durasi di platform.');
-      return;
-    }
-    const postedDate = new Date(feedback.postedAt);
-    if (Number.isNaN(postedDate.getTime())) {
-      setFeedbackError('Format tanggal tidak valid.');
-      return;
-    }
-    if (postedDate.getTime() > Date.now()) {
-      setFeedbackError('Tanggal upload tidak boleh di masa depan.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const result = await api.submitFeedback(clip.id, {
-        views: parseInt(feedback.views) || 0,
-        likes: parseInt(feedback.likes) || 0,
-        comments: parseInt(feedback.comments) || 0,
-        shares: parseInt(feedback.shares) || 0,
-        saves: parseInt(feedback.saves) || 0,
-        postedAt: postedDate.toISOString(),
-      });
-      const data = result as { viralScore: number };
-      setViralScore(data.viralScore);
-    } catch (e) {
-      setFeedbackError(e instanceof Error ? e.message : 'Gagal submit feedback');
-      reportError(e, 'submitFeedback');
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   return (
@@ -163,8 +122,8 @@ function ClipCard({
           <button onClick={onEdit} className="btn">
             Edit
           </button>
-          <button onClick={() => setShowFeedback(!showFeedback)} className="btn text-muted">
-            {viralScore !== null ? `${(viralScore * 100).toFixed(0)}%` : 'FB'}
+          <button onClick={() => setShowFeedback(!showFeedback)} className="btn" aria-expanded={showFeedback} title="Log how this clip did after you posted it">
+            {viralScore !== null ? `${(viralScore * 100).toFixed(0)}%` : 'Results'}
           </button>
         </div>
       </div>
@@ -195,54 +154,8 @@ function ClipCard({
         </div>
       )}
       {showFeedback && (
-        <div className="border-t-3 border-line px-4 py-3 space-y-3">
-          <div className="space-y-1">
-            <label className="text-xs text-muted font-medium block">
-              Tanggal & jam upload
-              <span className="text-accent ml-1">*</span>
-            </label>
-            <input
-              type="datetime-local"
-              value={feedback.postedAt}
-              onChange={e => setFeedback(f => ({ ...f, postedAt: e.target.value }))}
-              max={new Date(Date.now() - 60000).toISOString().slice(0, 16)}
-              className="field px-2 py-1.5 text-xs w-full"
-            />
-            <p className="text-xs text-subtle">
-              Viral score dihitung per-hari (velocity), jadi durasi di platform wajib diisi.
-            </p>
-          </div>
-          <div className="space-y-1">
-            <span className="text-xs text-muted font-medium block">Metrik saat ini</span>
-            <div className="grid grid-cols-5 gap-1">
-              <input type="number" placeholder="Views" value={feedback.views} onChange={e => setFeedback(f => ({...f, views: e.target.value}))}
-                className="field px-2 py-1 text-xs w-full" />
-              <input type="number" placeholder="Likes" value={feedback.likes} onChange={e => setFeedback(f => ({...f, likes: e.target.value}))}
-                className="field px-2 py-1 text-xs w-full" />
-              <input type="number" placeholder="Comments" value={feedback.comments} onChange={e => setFeedback(f => ({...f, comments: e.target.value}))}
-                className="field px-2 py-1 text-xs w-full" />
-              <input type="number" placeholder="Shares" value={feedback.shares} onChange={e => setFeedback(f => ({...f, shares: e.target.value}))}
-                className="field px-2 py-1 text-xs w-full" />
-              <input type="number" placeholder="Saves" value={feedback.saves} onChange={e => setFeedback(f => ({...f, saves: e.target.value}))}
-                className="field px-2 py-1 text-xs w-full" />
-            </div>
-          </div>
-          {feedbackError && (
-            <p className="text-xs text-fg font-semibold bg-error-tint border-2 border-line rounded px-2 py-1">
-              {feedbackError}
-            </p>
-          )}
-          <div className="flex items-center gap-2">
-            <button onClick={handleSubmitFeedback} disabled={submitting}
-              className="btn btn-primary">
-              {submitting ? 'Saving...' : 'Submit feedback'}
-            </button>
-            {viralScore !== null && (
-              <span className="text-xs font-pixel text-success">
-                Viral Score: {(viralScore * 100).toFixed(1)}%
-              </span>
-            )}
-          </div>
+        <div className="border-t-3 border-line px-4 py-3">
+          <ResultsForm api={api} clipId={clip.id} onSaved={setViralScore} />
         </div>
       )}
       {showScore && score && (
@@ -306,6 +219,10 @@ type AutoRun = {
 };
 
 const AUTO_POLL_MS = 2000;
+/** Candidates shown before "Show all", and reason chips per row before "+N more". */
+const VISIBLE_CANDIDATES = 20;
+const WHY_SHOWN = 3;
+const statusLabel = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 type DiscoveryMode = 'auto' | 'search' | 'trending' | 'channel';
 type MainTab = 'import' | 'discovery' | 'learning';
@@ -323,6 +240,9 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<'ACTIVE' | 'NEW' | 'QUEUED' | 'IMPORTED' | 'SKIPPED'>('ACTIVE');
   const [draining, setDraining] = useState(false);
+  const [starting, setStarting] = useState<Set<string>>(new Set());
+  const [openWhy, setOpenWhy] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -389,13 +309,20 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
     });
   };
 
-  const handleQueueSelected = async () => {
-    if (selected.size === 0) return;
+  /** Queue these videos and start importing them: one step for "make clips from this". */
+  const handleMakeClips = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setStarting(new Set(ids));
     try {
-      await api.queueCandidates(Array.from(selected));
+      try {
+        await api.queueCandidates(ids);
+      } catch (e) { reportError(e, 'discover.queue'); return; }
       setSelected(new Set());
+      try {
+        await api.drainCandidateQueue();
+      } catch (e) { reportError(e, 'discover.drain'); }
       await refresh();
-    } catch (e) { reportError(e, 'discover.queue'); }
+    } finally { setStarting(new Set()); }
   };
 
   const handleDrain = async () => {
@@ -420,6 +347,12 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
       await refresh();
     } catch (e) { reportError(e, 'discover.unskip'); }
   };
+
+  const toggleWhy = (id: string) => setOpenWhy(prev => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
 
   const queuedCount = candidates.filter(c => c.status === 'QUEUED').length;
   const newCount = candidates.filter(c => c.status === 'NEW').length;
@@ -499,19 +432,19 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
                 className={`px-2.5 py-0.5 rounded-full border-2 border-line text-xs font-semibold ${
                   filter === f ? 'bg-fg text-sun' : 'bg-surface-2 text-fg hover:bg-surface-3'
                 }`}>
-                {f === 'ACTIVE' ? `All (${newCount + queuedCount})` : f}
+                {f === 'ACTIVE' ? `To review (${newCount + queuedCount})` : statusLabel(f)}
               </button>
             ))}
           </div>
           <div className="flex-1" />
           {selected.size > 0 && (
-            <button onClick={handleQueueSelected} className="btn bg-accent text-white">
-              Queue {selected.size} selected
+            <button onClick={() => handleMakeClips(Array.from(selected))} disabled={starting.size > 0} className="btn btn-primary">
+              Make clips from {selected.size} selected
             </button>
           )}
           {queuedCount > 0 && (
             <button onClick={handleDrain} disabled={draining} className="btn btn-primary">
-              {draining ? 'Processing…' : `Process queue (${queuedCount})`}
+              {draining ? 'Starting…' : `Start ${queuedCount} queued`}
             </button>
           )}
         </div>
@@ -520,12 +453,12 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
           <div className="text-center py-10 text-muted text-sm">
             {filter === 'ACTIVE'
               ? 'No candidates yet. Run a search above to populate.'
-              : `No ${filter.toLowerCase()} candidates.`}
+              : `No ${statusLabel(filter).toLowerCase()} videos.`}
           </div>
         )}
 
         <div>
-          {candidates.map(video => {
+          {(showAll ? candidates : candidates.slice(0, VISIBLE_CANDIDATES)).map(video => {
             const score = video.predictedScore ?? video.relevanceScore ?? 0;
             const hasPredicted = video.predictedScore !== null;
             const scoreColor = score >= 0.6 ? 'text-success' : score >= 0.3 ? 'text-warning' : 'text-subtle';
@@ -541,7 +474,7 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
                 } ${dim ? 'opacity-60' : ''}`}>
                 {canSelect ? (
                   <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(video.id)}
-                    className="mt-1 w-4 h-4 accent-accent" />
+                    aria-label={`Select ${video.title || video.youtubeId}`} className="mt-1 w-4 h-4 accent-accent" />
                 ) : (
                   <div className="w-4" />
                 )}
@@ -554,7 +487,7 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
                       video.status === 'IMPORTED' ? 'text-success bg-success-tint' :
                       video.status === 'SKIPPED' ? 'text-subtle bg-surface-3' :
                       'text-error bg-error-tint'
-                    }`}>{video.status}</span>
+                    }`}>{statusLabel(video.status)}</span>
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-muted flex-wrap">
                     {video.channel && <span>{video.channel}</span>}
@@ -574,7 +507,17 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
                   </div>
                   {video.why && video.why.length > 0 && (
                     <ul className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-fg">
-                      {video.why.map(w => <li key={w} className="px-2 py-0.5 rounded-full bg-surface-2 border-2 border-line">{w}</li>)}
+                      {(openWhy.has(video.id) ? video.why : video.why.slice(0, WHY_SHOWN)).map(w => (
+                        <li key={w} className="px-2 py-0.5 rounded-full bg-surface-2 border-2 border-line">{w}</li>
+                      ))}
+                      {video.why.length > WHY_SHOWN && (
+                        <li>
+                          <button onClick={() => toggleWhy(video.id)} aria-expanded={openWhy.has(video.id)}
+                            className="px-2 py-0.5 rounded-full border-2 border-line bg-fg text-sun font-semibold">
+                            {openWhy.has(video.id) ? 'Less' : `+${video.why.length - WHY_SHOWN} more`}
+                          </button>
+                        </li>
+                      )}
                     </ul>
                   )}
                 </div>
@@ -592,13 +535,22 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
                   {video.status === 'SKIPPED' ? (
                     <button onClick={() => handleUnskip(video.id)} className="btn px-2 py-1">Unskip</button>
                   ) : video.status === 'NEW' ? (
-                    <button onClick={() => handleSkip(video.id)} className="btn px-2 py-1">Skip</button>
+                    <>
+                      <button onClick={() => handleSkip(video.id)} className="btn px-2 py-1">Skip</button>
+                      <button onClick={() => handleMakeClips([video.id])} disabled={starting.size > 0}
+                        className="btn btn-primary px-2 py-1">{starting.has(video.id) ? 'Starting…' : 'Make clips'}</button>
+                    </>
                   ) : null}
                 </div>
               </div>
             );
           })}
         </div>
+        {!showAll && candidates.length > VISIBLE_CANDIDATES && (
+          <div className="px-4 py-4 border-t-3 border-line text-center">
+            <button onClick={() => setShowAll(true)} className="btn">Show all {candidates.length}</button>
+          </div>
+        )}
       </Window>
     </div>
   );
@@ -620,8 +572,7 @@ export default function Studio() {
   const [expandedVideos, setExpandedVideos] = useState<Set<string>>(new Set());
   const [activeTabs, setActiveTabs] = useState<Record<string, TabKey>>({});
   const [filterTiers, setFilterTiers] = useState<Record<string, string>>({});
-  const [learningStats, setLearningStats] = useState<{ version: number; trained_on: number; total_feedback: number; with_actual_scores: number } | null>(null);
-  const [training, setTraining] = useState(false);
+  const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollAbortRef = useRef<AbortController | null>(null);
   const pollDelayRef = useRef<number>(POLL_MIN_MS);
@@ -1120,52 +1071,7 @@ export default function Studio() {
       {mainTab === 'discovery' && <DiscoveryPanel api={api} />}
 
       {mainTab === 'learning' && (
-        <Window title="Learning" bar="bg-sun" className="max-w-3xl mx-auto">
-            <h2 className="heading text-[28px] mb-4">Learning from your posts</h2>
-            <p className="text-sm text-muted mb-5">
-              Enter how your posted clips performed. After 5+ results, retraining re-weights the 13 scoring features by how well each one matched real performance.
-            </p>
-            {learningStats && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                {[
-                  { value: learningStats.total_feedback, label: 'Total Feedback', fill: 'bg-surface-2' },
-                  { value: learningStats.with_actual_scores, label: 'With Results', fill: 'bg-success-tint' },
-                  { value: `v${learningStats.version}`, label: 'Weight Version', fill: 'bg-accent-tint' },
-                  { value: learningStats.trained_on, label: 'Trained Samples', fill: 'bg-warning-tint' },
-                ].map(s => (
-                  <div key={s.label} className={`${s.fill} border-3 border-line rounded-card shadow-hard-sm p-4 text-center`}>
-                    <div className="heading text-3xl">{s.value}</div>
-                    <div className="font-pixel text-xs mt-1">{s.label}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-3 items-center flex-wrap">
-              <button onClick={async () => {
-                setTraining(true);
-                try {
-                  await api.trainWeights();
-                  const ws = await api.getWeightsStatus() as Record<string, unknown>;
-                  setLearningStats({
-                    version: ws.version as number,
-                    trained_on: ws.trained_on as number,
-                    total_feedback: ws.total_feedback as number,
-                    with_actual_scores: ws.with_actual_scores as number,
-                  });
-                } catch (e) { console.error(e); } finally {
-                  setTraining(false);
-                }
-              }} disabled={training || !learningStats || learningStats.with_actual_scores < 5}
-                className="btn btn-primary px-5 py-2 text-sm">
-                {training ? 'Training...' : 'Retrain Weights'}
-              </button>
-              {learningStats && learningStats.with_actual_scores < 5 && (
-                <span className="text-xs text-muted">
-                  Need {5 - learningStats.with_actual_scores} more clips with feedback data to enable training
-                </span>
-              )}
-            </div>
-        </Window>
+        <LearningPanel api={api} groups={videoGroups} stats={learningStats} onStats={setLearningStats} />
       )}
       </main>
 
