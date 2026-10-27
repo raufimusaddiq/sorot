@@ -185,6 +185,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   });
   router.on("POST", "/api/feedback/train", async () => ok(await feedback.triggerTraining()));
   router.on("GET", "/api/feedback/weights", async () => ok(await feedback.getWeightsStatus()));
+  router.on("GET", "/api/feedback", () => ok({ results: store.feedbackList() }));
 
   // ---- discovery ----
   router.on("POST", "/api/discover/search", async (c) => {

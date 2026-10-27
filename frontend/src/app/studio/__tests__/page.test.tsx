@@ -269,7 +269,7 @@ describe('clip list', () => {
   it('validates and submits post feedback', async () => {
     await renderLoaded();
     const c1 = card('c1');
-    fireEvent.click(within(c1).getByRole('button', { name: 'FB' }));
+    fireEvent.click(within(c1).getByRole('button', { name: 'Results' }));
     const submit = within(c1).getByRole('button', { name: 'Submit feedback' });
 
     fireEvent.click(submit);
@@ -457,36 +457,63 @@ describe('import', () => {
   });
 });
 
-describe('learning tab', () => {
-  it('shows stats and keeps training disabled below 5 samples', async () => {
-    state.weights = { version: 3, trained_on: 0, total_feedback: 4, with_actual_scores: 2 };
+describe('learning app', () => {
+  const openLearning = async (name: string) => {
     await renderLoaded();
-    fireEvent.click(screen.getByRole('button', { name: 'Learning (2)' }));
-    expect(screen.getByText('v3')).toBeInTheDocument();
-    expect(screen.getByText('Need 3 more clips with feedback data to enable training')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retrain Weights' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name }));
+  };
+
+  it('shows progress toward retraining in plain words; training stays off below five', async () => {
+    state.weights = { version: 3, trained_on: 0, total_feedback: 4, with_actual_scores: 2 };
+    await openLearning('Learning (2)');
+    expect(await screen.findByText('2 of 5 results logged')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '2 of 5 results logged' })).toBeInTheDocument();
+    expect(screen.getByText('Log 3 more to retrain.')).toBeInTheDocument();
+    expect(screen.getByText('Scoring version v3, not retrained yet.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retrain scoring' })).toBeDisabled();
+    expect(screen.getByText('Nothing logged yet.')).toBeInTheDocument();
   });
 
-  it('retrains and refreshes the stats; training failures are logged', async () => {
+  it('logs results for a downloaded clip right here, then lists them', async () => {
+    seedCompleted();
+    state.clips.v1 = state.clips.v1!.map(c => (c.id === 'c1' ? { ...c, title: 'Downloaded one' } : c));
+    await openLearning('Learning');
+    const waiting = await screen.findByRole('region', { name: 'Waiting for results' });
+    fireEvent.click(within(waiting).getByRole('button', { name: 'Log results' }));
+    const local = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+    fireEvent.change(waiting.querySelector('input[type="datetime-local"]')!, { target: { value: local(new Date(Date.now() - 86_400_000)) } });
+    fireEvent.change(within(waiting).getByPlaceholderText('Views'), { target: { value: '1200' } });
+    fireEvent.click(within(waiting).getByRole('button', { name: 'Submit feedback' }));
+    const logged = screen.getByRole('region', { name: 'Logged results' });
+    expect(await within(logged).findByText('Downloaded one')).toBeInTheDocument();
+    expect(within(logged).getByText('42%')).toBeInTheDocument();
+    expect(within(logged).getByText((1200).toLocaleString('id-ID'))).toBeInTheDocument();
+    expect(await within(waiting).findByText(/Download a clip in the Library/)).toBeInTheDocument();
+    expect(screen.getByText('1 of 5 results logged')).toBeInTheDocument();
+  });
+
+  it('retrains when ready and says so; failures are reported', async () => {
     state.weights = { version: 3, trained_on: 0, total_feedback: 6, with_actual_scores: 6 };
-    await renderLoaded();
-    fireEvent.click(screen.getByRole('button', { name: 'Learning (6)' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Retrain Weights' }));
-    expect(await screen.findByText('v4')).toBeInTheDocument();
-    expect(calls('POST', '/api/feedback/train')).toHaveLength(1);
+    state.results = [{ clipId: 'gone-clip-id', title: null, viralScore: null, views: 5, likes: 0, comments: 0, shares: 0, saves: 0, postedAt: null }];
+    await openLearning('Learning (6)');
+    expect(await screen.findByText(/ready to retrain/)).toBeInTheDocument();
+    expect(await screen.findByText('gone-cli')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retrain scoring' }));
+    expect(await screen.findByText('Scoring retrained on your results.')).toBeInTheDocument();
+    expect(screen.getByText('Scoring version v4, last retrained on 6 results.')).toBeInTheDocument();
 
     state.fail['POST /api/feedback/train'] = 'not enough data';
-    fireEvent.click(screen.getByRole('button', { name: 'Retrain Weights' }));
-    await waitFor(() => expect(console.error).toHaveBeenCalledWith(expect.objectContaining({ message: 'not enough data' })));
-    expect(screen.getByRole('button', { name: 'Retrain Weights' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retrain scoring' }));
+    expect(await screen.findByText('feedback.train')).toBeInTheDocument();
   });
 
-  it('without weights the tab has no stats and training is disabled', async () => {
+  it('a broken feedback API leaves the screen usable', async () => {
     state.fail['GET /api/feedback/weights'] = 'no model';
-    await renderLoaded();
-    fireEvent.click(screen.getByRole('button', { name: 'Learning' }));
-    expect(screen.queryByText('Total Feedback')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retrain Weights' })).toBeDisabled();
+    state.fail['GET /api/feedback'] = 'db locked';
+    await openLearning('Learning');
+    expect(await screen.findByText(/feedback.(list|weights)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retrain scoring' })).toBeDisabled();
+    expect(screen.queryByText(/Scoring version/)).not.toBeInTheDocument();
   });
 });
 
@@ -500,8 +527,8 @@ describe('discovery panel', () => {
   it('shows the empty states per filter', async () => {
     await openDiscovery();
     expect(await screen.findByText('No candidates yet. Run a search above to populate.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'QUEUED' }));
-    expect(await screen.findByText('No queued candidates.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Queued' }));
+    expect(await screen.findByText('No queued videos.')).toBeInTheDocument();
     expect(fake.calls.some(c => c.path === '/api/discover/candidates')).toBe(true);
   });
 
@@ -643,22 +670,23 @@ describe('discovery panel', () => {
     const bare = row('ytBare');
     expect(within(bare).getByText('10%')).toHaveClass('text-subtle');
     expect(within(bare).queryByText(/views/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'All (3)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'To review (3)' })).toBeInTheDocument();
 
-    // select → deselect → select → queue
-    const box = within(hot).getByRole('checkbox');
-    fireEvent.click(box); fireEvent.click(box); fireEvent.click(box);
-    fireEvent.click(screen.getByRole('button', { name: 'Queue 1 selected' }));
-    await waitFor(() => expect(calls('POST', '/api/discover/queue')[0]!.body).toEqual({ ids: ['1'] }));
-
-    // drain everything queued
-    fireEvent.click(await screen.findByRole('button', { name: 'Process queue (2)' }));
+    // something already queued can be started on its own
+    fireEvent.click(screen.getByRole('button', { name: 'Start 1 queued' }));
     await waitFor(() => expect(calls('POST', '/api/discover/queue/drain')).toHaveLength(1));
+
+    // select → deselect → select → make clips (queues and starts in one step)
+    const box = within(row('Hot one')).getByRole('checkbox', { name: 'Select Hot one' });
+    fireEvent.click(box); fireEvent.click(box); fireEvent.click(box);
+    fireEvent.click(screen.getByRole('button', { name: 'Make clips from 1 selected' }));
+    await waitFor(() => expect(calls('POST', '/api/discover/queue')[0]!.body).toEqual({ ids: ['1'] }));
+    await waitFor(() => expect(calls('POST', '/api/discover/queue/drain')).toHaveLength(2));
 
     // skip the remaining NEW one, then unskip it from the SKIPPED filter
     fireEvent.click(within(row('ytBare')).getByRole('button', { name: 'Skip' }));
     await waitFor(() => expect(state.candidates.find(c => c.id === '3')!.status).toBe('SKIPPED'));
-    fireEvent.click(screen.getByRole('button', { name: 'SKIPPED' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Skipped' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Unskip' }));
     await waitFor(() => expect(state.candidates.find(c => c.id === '3')!.status).toBe('NEW'));
   });
@@ -672,13 +700,29 @@ describe('discovery panel', () => {
     ];
     await openDiscovery();
     expect(await screen.findByText('Broke')).toBeInTheDocument();
-    expect(within(row('Broke')).getByText('FAILED')).toHaveClass('text-error');
+    expect(within(row('Broke')).getByText('Failed')).toHaveClass('text-error');
     expect(row('Broke').className).not.toContain('opacity-60');
-    expect(within(row('Done')).getByText('IMPORTED')).toHaveClass('text-success');
+    expect(within(row('Done')).getByText('Imported')).toHaveClass('text-success');
     expect(row('Done').className).toContain('opacity-60');
-    expect(within(row('Nope')).getByText('SKIPPED')).toHaveClass('text-subtle');
+    expect(within(row('Nope')).getByText('Skipped')).toHaveClass('text-subtle');
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
     expect(within(row('Done')).queryByRole('button', { name: /Skip|Unskip/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps the list short: three reasons a row, twenty rows, then "Show all"', async () => {
+    state.candidates = Array.from({ length: 22 }, (_, i) => makeCandidate(String(i + 1), 'NEW', {
+      title: `Video ${i + 1}`, why: i === 0 ? ['one', 'two', 'three', 'four', 'five'] : [],
+    }));
+    await openDiscovery();
+    const first = await waitFor(() => row('Video 1'));
+    expect(within(first).queryByText('four')).not.toBeInTheDocument();
+    fireEvent.click(within(first).getByRole('button', { name: '+2 more' }));
+    expect(within(first).getByText('five')).toBeInTheDocument();
+    fireEvent.click(within(first).getByRole('button', { name: 'Less' }));
+    expect(within(first).queryByText('five')).not.toBeInTheDocument();
+    expect(screen.queryByText('Video 21')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 22' }));
+    expect(screen.getByText('Video 22')).toBeInTheDocument();
   });
 
   it('polls while transcript enrichment is pending', async () => {
@@ -704,19 +748,25 @@ describe('discovery panel', () => {
     state.fail['POST /api/discover/candidates/*'] = 's';
 
     fireEvent.click(within(row('A')).getByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Queue 1 selected' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Make clips from 1 selected' }));
     expect(await screen.findByText('discover.queue')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Process queue (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start 1 queued' }));
     expect(await screen.findByText('discover.drain')).toBeInTheDocument();
     fireEvent.click(within(row('A')).getByRole('button', { name: 'Skip' }));
     expect(await screen.findByText('discover.skip')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'SKIPPED' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Skipped' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Unskip' }));
     expect(await screen.findByText('discover.unskip')).toBeInTheDocument();
 
+    // queued fine but the start failed: still reported, per row
+    delete state.fail['POST /api/discover/queue'];
+    fireEvent.click(screen.getByRole('button', { name: 'New' }));
+    fireEvent.click(await within(await waitFor(() => row('A'))).findByRole('button', { name: 'Make clips' }));
+    await waitFor(() => expect(calls('POST', '/api/discover/queue/drain').length).toBeGreaterThanOrEqual(2));
+
     state.fail['GET /api/discover/candidates'] = 'l';
-    fireEvent.click(screen.getByRole('button', { name: 'NEW' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Queued' }));
     expect(await screen.findByText('discover.listCandidates')).toBeInTheDocument();
   });
 });

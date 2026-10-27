@@ -309,6 +309,14 @@ shipped `ai-pipeline/weights.json`.
 With too few results: `{ "status": "insufficient_data", "version": 0, "trained_on": 0,
 "message": "Need at least 5 records with actual scores, got 2" }`.
 
+### `GET /api/feedback`
+Logged results for posted clips, newest post first, with the clip's title (the Learning app lists them).
+```json
+{ "status": "ok", "data": { "results": [ { "clipId": "…", "videoId": "…", "title": "Gaji pertama cuma 3 juta?",
+  "viralScore": 0.7037, "views": 12000, "likes": 900, "comments": 40, "shares": 20, "saves": 15,
+  "postedAt": "2026-10-25T10:00:00Z" } ] } }
+```
+
 ### `GET /api/feedback/weights`
 ```json
 { "status": "ok", "data": { "version": 3, "trained_on": 0,

@@ -343,6 +343,11 @@ describe("feedback", () => {
 
     const w = (await env.json("GET", "/api/feedback/weights")).body.data;
     expect(w).toMatchObject({ version: 4, trained_on: 7, total_feedback: 7, with_actual_scores: 7, weights: r.new_weights });
+
+    const list = (await env.json("GET", "/api/feedback")).body.data.results;
+    expect(list).toHaveLength(7);
+    expect(list.find((x: { clipId: string }) => x.clipId === "c5")).toMatchObject({ views: 6000, likes: 500, saves: 50, postedAt: "2026-01-01T00:00:00Z", viralScore: expect.any(Number) });
+    expect(list.find((x: { clipId: string }) => x.clipId === "c-bad").title).toBeNull();
   });
 
   test("weights status falls back to the shipped file, then to defaults", async () => {

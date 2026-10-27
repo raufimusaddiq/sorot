@@ -182,6 +182,16 @@ export class Store {
   feedbackWithScores() {
     return this.all<ClipFeedback>("SELECT * FROM clip_feedback WHERE actual_viral_score IS NOT NULL");
   }
+  /** Logged results, newest post first, with the clip's title for display. */
+  feedbackList(): Array<{ clipId: string; videoId: string; title: string | null; viralScore: number | null;
+    views: number; likes: number; comments: number; shares: number; saves: number; postedAt: string | null }> {
+    return this.db.query(
+      "SELECT f.clip_id AS clipId, f.video_id AS videoId, c.title AS title, f.actual_viral_score AS viralScore, " +
+      "f.post_views AS views, f.post_likes AS likes, f.post_comments AS comments, f.post_shares AS shares, " +
+      "f.post_saves AS saves, f.posted_at AS postedAt FROM clip_feedback f LEFT JOIN clip c ON c.id = f.clip_id " +
+      "ORDER BY f.posted_at DESC",
+    ).all() as ReturnType<Store["feedbackList"]>;
+  }
   countFeedback(): { total: number; withScores: number } {
     const r = this.db
       .query(

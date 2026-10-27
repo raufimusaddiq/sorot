@@ -171,6 +171,11 @@ export class ApiClient {
     return this.request('/api/feedback/weights');
   }
 
+  /** Logged results for posted clips, newest post first. */
+  async listFeedback() {
+    return this.request('/api/feedback');
+  }
+
   /** ``version`` (e.g. clip.updatedAt) busts the browser cache after a re-render. */
   getPreviewUrl(clipId: string, version?: string | null) {
     return `${this.baseUrl}/api/clips/${clipId}/preview${version ? `?v=${encodeURIComponent(version)}` : ''}`;

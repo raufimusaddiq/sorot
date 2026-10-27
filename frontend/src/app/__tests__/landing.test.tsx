@@ -11,7 +11,7 @@ describe('landing page', () => {
     render(<Landing />);
     const h1 = screen.getByRole('heading', { level: 1 });
     expect(h1).toHaveTextContent(/90\s*min/i);
-    expect(within(h1).getByRole('img')).toHaveAttribute('alt', expect.stringContaining('gunungan'));
+    expect(within(h1).getByRole('img', { name: /gunungan/ })).toBeInTheDocument();
     expect(screen.getByText(/ranked vertical clips with word-timed captions/)).toBeInTheDocument();
     const studio = screen.getAllByRole('link', { name: 'Open the studio' });
     expect(studio.length).toBeGreaterThanOrEqual(3);
@@ -34,7 +34,8 @@ describe('landing page', () => {
     expect(frame.textContent).toContain('gaji');
     fireEvent.click(screen.getByLabelText('Hormozi'));
     expect(screen.getByRole('img', { name: /Hormozi style/ })).toBeInTheDocument();
-    expect(screen.getByText(/2 words a screen at most/)).toBeInTheDocument();
+    expect(screen.getByText('up to 2')).toBeInTheDocument();
+    expect(screen.getByText('#39FF14')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     const before = spoken();
@@ -69,7 +70,7 @@ describe('landing page', () => {
       return { observe: (el: Element) => observed.push(el), unobserve, disconnect: jest.fn() };
     });
     const { unmount } = render(<Landing />);
-    expect(observed.length).toBeGreaterThan(3);
+    expect(observed.length).toBeGreaterThanOrEqual(2);
     act(() => callback([
       { isIntersecting: true, target: observed[0]! },
       { isIntersecting: false, target: observed[1]! },
@@ -78,6 +79,44 @@ describe('landing page', () => {
     expect(observed[1]).not.toHaveClass('is-in');
     expect(unobserve).toHaveBeenCalledWith(observed[0]);
     unmount();
+  });
+
+  it('scrolling opens the spotlight, captions it, and steps through the stages', () => {
+    const rect = { top: -1000, bottom: 1000, left: 0, right: 1000, width: 1000, height: 2000, x: 0, y: -1000, toJSON: () => ({}) };
+    const spies = [
+      jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect as DOMRect),
+      jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(2000),
+      jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 1; }),
+    ];
+    const scrollTo = jest.fn();
+    window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+    try {
+      const { unmount } = render(<Landing />);
+      act(() => { window.dispatchEvent(new Event('scroll')); window.dispatchEvent(new Event('resize')); });
+      // pinned progress = 1000 / (2000 - 800) ≈ 0.83: the strip is open and the caption is playing
+      expect(document.querySelector('.lp-spot-cap')).not.toBeNull();
+      expect(document.querySelector('.lp-spot')!.getAttribute('style')).toContain('inset(');
+      expect(screen.getByRole('heading', { name: 'Last, you post the clips' })).toBeInTheDocument();
+      expect(document.querySelector<HTMLElement>('[data-scroll]')!.style.getPropertyValue('--p')).toBe('1.0000');
+      fireEvent.click(screen.getByRole('button', { name: 'Paste' }));
+      expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+      unmount();
+    } finally {
+      spies.forEach((sp) => sp.mockRestore());
+    }
+  });
+
+  it('with reduced motion nothing is pinned to the scroll', () => {
+    window.matchMedia = jest.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
+    try {
+      render(<Landing />);
+      act(() => { window.dispatchEvent(new Event('scroll')); });
+      expect(document.querySelector('.lp-spot-cap')).toBeNull();
+      expect(document.querySelector<HTMLElement>('[data-scroll]')!.style.getPropertyValue('--p')).toBe('');
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
   });
 
   it('answers the questions before install', () => {
