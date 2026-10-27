@@ -193,22 +193,9 @@ function Ensure-Docker {
 }
 
 function Write-Override($app, $gpu) {
-    $lines = @(
-        "# Written by scripts/install.ps1 for this machine (gitignored).",
-        "services:",
-        "  backend:",
-        "    restart: unless-stopped",
-        "    ports: !override",
-        "      - `"${Port}:8080`""
-    )
-    if (-not $gpu) {
-        $lines += "    deploy: !reset {}   # no NVIDIA GPU: run on the CPU"
-        $lines += "    environment:"
-        $lines += "      WHISPER_DEVICE: cpu"
-    }
-    # UTF-8 without BOM: compose rejects a BOM at the start of YAML on some versions.
-    [IO.File]::WriteAllText((Join-Path $app "docker-compose.override.yml"), (($lines -join "`n") + "`n"))
-    Ok "Compose settings: docker-compose.override.yml (port $Port, $(if ($gpu) { 'GPU' } else { 'CPU' }))"
+    . (Join-Path $app "scripts\compose-override.ps1")
+    Write-SorotOverride -Root $app -Port $Port -Gpu $gpu -Writer "scripts/install.ps1"
+    Ok "Compose settings: docker-compose.override.yml (port $Port, $(if ($gpu) { 'GPU, -cuda image' } else { 'CPU image' }))"
 }
 
 function Compose {
@@ -230,7 +217,7 @@ function Install-Docker($app) {
             Step "Building the image from source (first time ~10 min)"
             if ((Compose build backend) -ne 0) { $script:ComposeOut | Select-Object -Last 15 | Write-Host; Fail "Image build failed" }
         } else {
-            Step "Pulling ghcr.io/$Repo (several GB the first time; updates download only what changed)"
+            Step "Pulling the $(if ($gpu) { 'CUDA' } else { 'CPU' }) image from ghcr.io/$Repo (GB-sized the first time; updates download only what changed)"
             docker compose --env-file .env.docker pull backend
             if ($LASTEXITCODE -ne 0) { Fail "Pull failed. Check your connection, or build it yourself: -Build" }
         }

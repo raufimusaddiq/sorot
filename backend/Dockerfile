@@ -1,5 +1,9 @@
 # One image: Bun API + statically-exported Next.js UI + Python AI pipeline.
 # Build from the repo root:  docker build -f backend/Dockerfile .
+# CPU by default; the NVIDIA (CUDA + cuDNN) variant:
+#   docker build -f backend/Dockerfile --build-arg BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 .
+# Both bases are Ubuntu 22.04, so the steps below are the same.
+ARG BASE_IMAGE=ubuntu:22.04
 
 # ---- 1. Static UI (next build → frontend/out) ----
 # Next's build needs Node; Bun is copied in for the workspace install.
@@ -18,12 +22,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd frontend && bun run build
 
 # ---- 2. Runtime ----
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM ${BASE_IMAGE}
 
 # Ubuntu 22.04 LTS pins these de facto for the release's lifetime; yt-dlp
 # (pip, below) is left unpinned on purpose — YouTube changes break old ones.
 # curl is used by the docker-compose healthcheck.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates \
     python3 python3-pip python3-venv \
     ffmpeg \
     curl \

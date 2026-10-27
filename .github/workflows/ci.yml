@@ -1,7 +1,8 @@
 # Tests every push and PR; on master (and v* tags) also publishes the app image
 # to ghcr.io/raufimusaddiq/sorot, which docker-compose.yml and the installers pull.
-#   master  → :latest, :sha-<short>
-#   v1.2.3  → :1.2.3, :1.2, :sha-<short>
+# Two variants of backend/Dockerfile: CPU (plain Ubuntu, small) and CUDA (NVIDIA GPU).
+#   master  → :latest, :sha-<short>             | :latest-cuda, :sha-<short>-cuda
+#   v1.2.3  → :1.2.3, :1.2, :sha-<short>        | :1.2.3-cuda, :1.2-cuda, …
 name: CI
 
 on:
@@ -63,15 +64,25 @@ jobs:
         run: python -m pytest tests -q
 
   image:
-    name: Docker image
+    name: Docker image (${{ matrix.variant }})
     needs: [bun, python]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            base: ubuntu:22.04
+            suffix: ""
+          - variant: cuda
+            base: nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+            suffix: -cuda
     steps:
-      # CUDA base + Python wheels + the baked-in Whisper model is ~10 GB while
-      # building; the hosted runner's preinstalled SDKs leave too little room.
+      # The CUDA variant is several GB while building; drop the runner's
+      # preinstalled SDKs to leave room.
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -88,13 +99,16 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          flavor: |
+            latest=false
+            suffix=${{ matrix.suffix }},onlatest=true
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
           labels: |
-            org.opencontainers.image.title=Sorot
+            org.opencontainers.image.title=Sorot (${{ matrix.variant }})
             org.opencontainers.image.description=Long videos to 9:16 clips with word-timed captions (API + UI + media pipeline)
             org.opencontainers.image.licenses=MIT
       - uses: docker/build-push-action@v6
@@ -102,9 +116,10 @@ jobs:
           context: .
           file: backend/Dockerfile
           platforms: linux/amd64
+          build-args: BASE_IMAGE=${{ matrix.base }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Layer cache in the registry: the CUDA / pip / model layers rarely change.
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref=ghcr.io/{0}:buildcache,mode=max', github.repository) || '' }}
+          # Layer cache in the registry, one per variant: the base / pip / model layers rarely change.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-${{ matrix.variant }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref=ghcr.io/{0}:buildcache-{1},mode=max', github.repository, matrix.variant) || '' }}

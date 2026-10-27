@@ -117,6 +117,16 @@ function Ensure-DockerRunning {
 
 function Start-Docker {
     Ensure-DockerRunning
+    # docker-compose.yml is the CPU image; a GPU machine without machine settings
+    # (a clone that never ran install.ps1) gets the -cuda override once.
+    if (-not (Test-Path "docker-compose.override.yml") -and (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
+        $null = nvidia-smi -L 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            . (Join-Path $PSScriptRoot "compose-override.ps1")
+            Write-SorotOverride -Root $ProjectRoot -Port 8080 -Gpu $true -Writer "scripts/start.ps1"
+            Write-Host "       NVIDIA GPU found: wrote docker-compose.override.yml (CUDA image + GPU)." -ForegroundColor Green
+        }
+    }
     $image = (docker compose --env-file .env.docker config --images 2>$null | Where-Object { $_ -match "sorot:" } | Select-Object -First 1)
     $null = docker image inspect $image 2>&1
     $haveImage = $LASTEXITCODE -eq 0

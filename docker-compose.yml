@@ -3,6 +3,9 @@ services:
   backend:
     # Pulled from GitHub's registry (built by .github/workflows/ci.yml).
     # `docker compose build backend` / `up --build` builds it from source instead.
+    # This is the CPU image. With an NVIDIA GPU, docker-compose.override.yml
+    # (written by the installers; see README) switches to the -cuda image and
+    # reserves the GPU.
     image: ghcr.io/raufimusaddiq/sorot:${SOROT_VERSION:-latest}
     build:
       context: .
@@ -20,13 +23,6 @@ services:
     # Lets LLM_BASE_URL reach an Ollama running on the host.
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s

@@ -59,10 +59,10 @@ PATH (see [cli.md](cli.md)).
    `sorot up/down/logs` without sudo.
 4. Writes `docker-compose.override.yml` (gitignored) for this machine: your
    port, `restart: unless-stopped` (the app comes back after a reboot), and on
-   CPU-only machines it drops the GPU reservation and sets `WHISPER_DEVICE=cpu`.
-5. Pulls the ready-made image `ghcr.io/raufimusaddiq/sorot` (published by
-   `.github/workflows/ci.yml`; CUDA base, Python packages and the Whisper model
-   baked in) and starts it. `--build` builds it from source instead (~10 min).
+   GPU machines the `-cuda` image, the GPU reservation and `WHISPER_DEVICE=cuda`.
+5. Pulls the ready-made image (published by `.github/workflows/ci.yml`):
+   `ghcr.io/raufimusaddiq/sorot:latest` on CPU-only machines, `:latest-cuda`
+   with a GPU, and starts it. `--build` builds that variant from source instead (~10 min).
 
 Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`.
 

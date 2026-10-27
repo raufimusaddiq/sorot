@@ -31,7 +31,7 @@
 
 ## 🚀 Install
 
-The whole app ships as one ready-made Docker image, **`ghcr.io/raufimusaddiq/sorot`**, built by [CI](.github/workflows/ci.yml) on every push to `master` — no 10-minute build on your machine. Pick the path that fits:
+The whole app ships as a ready-made Docker image, **`ghcr.io/raufimusaddiq/sorot`**, built by [CI](.github/workflows/ci.yml) on every push to `master` — no 10-minute build on your machine. It comes in two variants: **`:latest`** (CPU, plain Ubuntu, the smaller download) and **`:latest-cuda`** (NVIDIA GPU: CUDA 12 + cuDNN). The installers pick the right one for your machine. Pick the path that fits:
 
 | | Path | GPU | Effort |
 |---|---|---|---|
@@ -106,23 +106,33 @@ Docker with Compose v2.24+. On Linux an NVIDIA GPU also needs the [Container Too
 ```bash
 git clone https://github.com/raufimusaddiq/sorot.git
 cd sorot
-docker compose --env-file .env.docker up -d backend      # pulls ghcr.io/raufimusaddiq/sorot:latest
+docker compose --env-file .env.docker up -d backend      # pulls ghcr.io/raufimusaddiq/sorot:latest (CPU)
 ```
 
-🖥️ **No NVIDIA GPU?** Create `docker-compose.override.yml` next to `docker-compose.yml` first (it's gitignored) — it drops the GPU reservation and moves Whisper to the CPU:
+🎮 **NVIDIA GPU?** Create `docker-compose.override.yml` next to `docker-compose.yml` first (it's gitignored) — it switches to the `-cuda` image and hands the GPU to the container:
 
 ```yaml
 services:
   backend:
     restart: unless-stopped        # come back after reboots
-    deploy: !reset {}              # no NVIDIA GPU
+    image: ghcr.io/raufimusaddiq/sorot:${SOROT_VERSION:-latest}-cuda
+    build:
+      args:
+        BASE_IMAGE: nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04   # for --build
     environment:
-      WHISPER_DEVICE: cpu
+      WHISPER_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 ```
 
 Day to day: `docker compose --env-file .env.docker logs -f backend` 📜 · `… down` ⏹️ · `… up -d backend` ▶️ · update: `… pull backend` then `… up -d backend` ⬇️. Settings live in `.env.docker`; `SOROT_VERSION` there pins a release tag (default `latest` = `master`). Rather build it yourself? `… up -d --build backend` 🔨.
 
-The image is `linux/amd64` with CUDA 12 and works without a GPU too. On Apple Silicon it would run under emulation, so use [Homebrew](#-macos--homebrew) there.
+Both images are `linux/amd64`. On Apple Silicon they would run under emulation, so use [Homebrew](#-macos--homebrew) there.
 
 ### 🍎 macOS — Homebrew
 
@@ -168,7 +178,7 @@ Put it on your `PATH` (`sorot`, the old name, works as an alias), then point it 
 
 ### 💻 No graphics card? No problem
 
-Everything runs on the **CPU** — the Linux and Windows installers switch automatically (or `--cpu` / `-Cpu`), Docker by hand uses the override above, and macOS is CPU by default. Only **NVIDIA** GPUs are used for acceleration (CUDA + NVENC).
+Everything runs on the **CPU** — the Linux and Windows installers switch automatically (or `--cpu` / `-Cpu`), Docker by hand uses the CPU image unless you add the GPU override above, and macOS is CPU by default. Only **NVIDIA** GPUs are used for acceleration (CUDA + NVENC).
 
 Measured on a 12-core CPU, no GPU: transcribing 54 s of speech took **24 s** with `large-v3-turbo` and **14 s** with `small` — so a 1-hour video transcribes in roughly half an hour (or ~15 min with `small`), and rendering 45 clips adds ~25 min. For comparison, on an RTX 4060 a 54-minute video took ~22 min end to end (measured before caption burning moved to the GPU, so it's faster now).
 
@@ -346,7 +356,7 @@ Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
 
 ### 📦 CI and the published image
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Bun, UI and Python tests on every push and PR, then builds `backend/Dockerfile` (PRs build it without pushing). Pushes to `master` publish `ghcr.io/raufimusaddiq/sorot:latest` and `:sha-<commit>`; a `v1.2.3` tag also publishes `:1.2.3` and `:1.2`. Layers are cached in the registry (`:buildcache`), so a code-only change re-uploads only the small top layers.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Bun, UI and Python tests on every push and PR, then builds `backend/Dockerfile` twice: on `ubuntu:22.04` (CPU) and, through the `BASE_IMAGE` build arg, on `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` (GPU). PRs build without pushing. Pushes to `master` publish `ghcr.io/raufimusaddiq/sorot:latest` / `:latest-cuda` and `:sha-<commit>` / `:sha-<commit>-cuda`; a `v1.2.3` tag also publishes `:1.2.3`, `:1.2` (and their `-cuda` twins). Layers are cached in the registry (`:buildcache-cpu`, `:buildcache-cuda`), so a code-only change re-uploads only the small top layers.
 
 GitHub may create the package as **private** on the first publish: if anonymous `docker pull` fails, make it public once (your GitHub profile → Packages → `sorot` → Package settings → Change visibility).
 

@@ -10,6 +10,7 @@
 set -euo pipefail
 
 BUN_VERSION=1.3.12
+CUDA_BASE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04   # GPU image base (backend/Dockerfile BASE_IMAGE)
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF_DIR=/etc/sorot
 BIN=/usr/local/bin/sorot
@@ -263,10 +264,22 @@ write_compose_override() {
     echo "    restart: unless-stopped"
     echo "    ports: !override"
     echo "      - \"$PORT:8080\""
-    if [ "$GPU" -eq 0 ]; then
-      echo "    deploy: !reset {}   # no NVIDIA GPU: run on the CPU"
+    if [ "$GPU" -eq 1 ]; then
+      # The -cuda image (or, with --build, the CUDA base) and the GPU itself.
+      # shellcheck disable=SC2016  # ${SOROT_VERSION} is for compose, not the shell
+      echo '    image: ghcr.io/raufimusaddiq/sorot:${SOROT_VERSION:-latest}-cuda'
+      echo "    build:"
+      echo "      args:"
+      echo "        BASE_IMAGE: $CUDA_BASE"
       echo "    environment:"
-      echo "      WHISPER_DEVICE: cpu"
+      echo "      WHISPER_DEVICE: cuda"
+      echo "    deploy:"
+      echo "      resources:"
+      echo "        reservations:"
+      echo "          devices:"
+      echo "            - driver: nvidia"
+      echo "              count: 1"
+      echo "              capabilities: [gpu]"
     fi
   } | as_user tee "$f" >/dev/null
   ok "Compose settings: docker-compose.override.yml (port $PORT, $([ "$GPU" -eq 1 ] && echo GPU || echo CPU))"
@@ -286,7 +299,7 @@ install_docker() {
     (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker build backend)
   else
     # Published by .github/workflows/ci.yml; updates download only the changed layers.
-    step "Pulling the app image from ghcr.io (several GB the first time)"
+    step "Pulling the $([ "$GPU" -eq 1 ] && echo "CUDA" || echo "CPU") app image from ghcr.io (GB-sized the first time)"
     (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker pull backend) \
       || die "Pull failed — check your connection, or build it here: scripts/install.sh --build"
   fi
