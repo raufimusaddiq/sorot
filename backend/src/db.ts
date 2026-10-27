@@ -190,6 +190,9 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["clip", "options", "TEXT"],
   ["clip", "caption_words", "TEXT"],
   ["clip", "updated_at", "TEXT"],
+  // scoring in Bun + optional LLM review (2026-10-27)
+  ["clip", "reason", "TEXT"],
+  ["clip", "scored_by", "TEXT"],
   // discovery v2 (channel crawler)
   ["discovered_video", "channel_id", "TEXT"],
   ["discovered_video", "content_type", "TEXT"],

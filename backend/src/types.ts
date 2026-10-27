@@ -60,6 +60,10 @@ export interface Clip {
   /** JSON-encoded edited caption words (absolute source seconds). */
   captionWords?: string | null;
   updatedAt?: string | null;
+  /** Why the clip scored as it did (LLM reason, or the strongest rule signals). */
+  reason?: string | null;
+  /** "llm+rules" or "rules". */
+  scoredBy?: string | null;
 }
 
 export interface ClipScore {

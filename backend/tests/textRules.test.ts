@@ -60,6 +60,20 @@ describe("pieces the fixtures don't reach", () => {
     expect([pyRound(0.30000000000000004, 4), pyRound(0.6789, 2), pyRound(-0.0001, 2), pyRound(Number.NaN, 2)]).toEqual([0.3, 0.68, 0, Number.NaN]);
   });
 
+  test("title and description regressions carried over from score.py's tests", () => {
+    // Whisper text opening with "..." once gave a hashtag-only title
+    expect(R.clipTitle("...dan kemudian dia pergi", "SKIP")).toStartWith("dan kemudian dia pergi");
+    const long = R.clipTitle("rahasia " + "a".repeat(120), "SKIP");
+    expect(long.length).toBe(100);
+    expect(long.endsWith("...")).toBeTrue();
+    expect(R.clipDescription("x".repeat(200), "SKIP")).toContain("x".repeat(147) + "...");
+    const firstLine = (text: string, tier: string) => R.clipDescription(text, tier).split("\n")[0];
+    expect(firstLine("ini trik jitu", "SKIP")).toBe("Trik yang harus kamu coba!");
+    expect(firstLine("cerita biasa", "PRIMARY")).toBe("Wajib tahu ini!");
+    expect(firstLine("cerita biasa", "SKIP")).toBe("cerita biasa");
+    expect(firstLine("Kenapa begitu? cerita", "PRIMARY")).toBe("Kenapa begitu? cerita");
+  });
+
   test("energy with loudness, silence ratio and pause bands", () => {
     expect([2, 1.5, 1, 0.5, 0.1].map((rms) => R.emotionalEnergy("biasa saja", rms))).toEqual([0.72, 0.6, 0.42, 0.3, 0.18]);
     const segs = [{ start: 0, end: 4 }, { start: 5, end: 9 }, { start: 9.5, end: 10 }, { start: 20, end: 30 }];

@@ -1,8 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { reviewClips } from "./clipReview";
 import type { AppConfig } from "./config";
+import { Llm } from "./llm";
 import { decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
 import type { ExecFn, ScriptRunner } from "./runner";
 import { now, type Store } from "./store";
+import { determineTier, FEATURE_ORDER, loadWeights, scoreSegments, type MediaFeatures, type SegmentIn } from "./scoring";
 import type { Clip, ClipScore, Json, Stage, Video } from "./types";
 
 const DATA_SUBDIRS = [
@@ -24,6 +27,7 @@ const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(
 const arr = (v: unknown): Json[] => (Array.isArray(v) ? v.map(obj) : []);
 
 const fileNonEmpty = (p: string) => existsSync(p) && statSync(p).size > 0;
+const readJson = (p: string): Json => obj(JSON.parse(readFileSync(p, "utf8")));
 
 /** Run `fn` over `items` with at most `limit` in flight; results keep input order. */
 export async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -45,6 +49,7 @@ export class PipelineOrchestrator {
     private readonly store: Store,
     private readonly runScript: ScriptRunner,
     private readonly exec: ExecFn,
+    private readonly llm: Llm = new Llm(config),
   ) {}
 
   /** Per-video render/export folders: clip files are named by rank, so a
@@ -255,18 +260,60 @@ export class PipelineOrchestrator {
     return outputPath;
   }
 
+  /**
+   * Python measures the media features (media_features.py); the text rules,
+   * weighting, tiers and post copy run here (scoring.ts), then the optional
+   * LLM review (clipReview.ts) blends in its judgement.
+   */
   private async stageScore(video: Video, signal: AbortSignal) {
     const segmentsPath = this.path("segments", `${video.id}.json`);
     const audioPath = this.path("audio", `${video.id}.wav`);
     const transcriptPath = this.path("transcripts", `${video.id}.json`);
     const args = ["--segments", segmentsPath, "--video", video.filePath];
     if (existsSync(audioPath)) args.push("--audio", audioPath);
-    if (existsSync(transcriptPath)) args.push("--transcript", transcriptPath);
+    const measured = await this.runScript("media_features.py", args, { signal });
 
-    const result = await this.runScript("score.py", args, { signal });
+    const segments = arr(readJson(segmentsPath).segments) as unknown as SegmentIn[];
+    const media = new Map<number, MediaFeatures>(arr(measured.segments).map((m) => [num(m.index), {
+      rmsRatio: typeof m.rmsRatio === "number" ? m.rmsRatio : null,
+      onsetDensity: num(m.onsetDensity, 0.5), facePresence: num(m.facePresence, 0.5),
+      sceneChange: num(m.sceneChange, 0.5), motion: num(m.motion, 0.5),
+    }]));
+    const ctx = {
+      weights: loadWeights(this.config.pipelineDir),
+      niche: this.config.nicheKeywords.length ? this.config.nicheKeywords : null,
+      transcript: existsSync(transcriptPath) ? arr(readJson(transcriptPath).segments) : null,
+      history: this.store.feedbackHistory(),
+      corpusDir: `${this.config.dataDir}/corpus`,
+    };
+    let scored = scoreSegments(segments, media, ctx);
+    const supervised = await this.supervisedPredictions(video.id, scored, signal);
+    if (supervised) scored = scoreSegments(segments, media, { ...ctx, supervised });
+    const review = await reviewClips(scored, this.llm, determineTier);
+    if (review.error) console.warn(`LLM review skipped for some clips of ${video.id}: ${review.error}`);
+    const ranked = review.segments.sort((a, b) => b.finalScore - a.finalScore).map((s, i) => ({ ...s, rank: i + 1 }));
+    const result: Json = {
+      videoId: video.id,
+      scoredSegments: ranked,
+      scoredBy: ranked.some((s) => s.scoredBy !== "rules") ? "llm+rules" : "rules",
+      ...(review.error ? { llmError: review.error } : {}),
+    };
     await Bun.write(segmentsPath, JSON.stringify(result));
     this.saveClipsFromScoredSegments(video.id, result);
     return segmentsPath;
+  }
+
+  /** Predictions of the optional trained model (ai-pipeline/model.lgb), by segment index. */
+  private async supervisedPredictions(videoId: string, scored: Array<{ index: number; scores: Record<string, number> }>, signal: AbortSignal) {
+    if (!existsSync(`${this.config.pipelineDir}/model.lgb`)) return null;
+    const featuresPath = this.path("segments", `${videoId}.features.json`);
+    await Bun.write(featuresPath, JSON.stringify(scored.map((s) => ({
+      index: s.index, features: Object.fromEntries(FEATURE_ORDER.map((k) => [k, s.scores[k] ?? 0])),
+    }))));
+    const r = await this.runScript("predict_supervised.py", ["--features", featuresPath], { signal });
+    const preds = new Map<number, number>();
+    for (const [k, v] of Object.entries(obj(r.predictions))) if (typeof v === "number") preds.set(Number(k), v);
+    return preds.size ? preds : null;
   }
 
   saveClipsFromScoredSegments(videoId: string, scored: Json) {
@@ -287,6 +334,8 @@ export class PipelineOrchestrator {
           endTime: num(seg.endTime),
           durationSec: num(seg.duration),
           textContent: str(seg.text),
+          reason: str(seg.reason, null),
+          scoredBy: str(seg.scoredBy, null),
           renderStatus: "PENDING",
           renderPath: null,
           exportStatus: "PENDING",

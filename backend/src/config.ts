@@ -35,6 +35,8 @@ export interface AppConfig {
   maxParallelRenders: number;
   orphanSweepMs: number;
   orphanSweepInitialMs: number;
+  /** Topic-fit keywords for the clip scorer (NICHE_KEYWORDS, comma-separated). */
+  nicheKeywords: string[];
   /** OpenAI-compatible LLM (Ollama, Groq, OpenRouter, OpenAI…); "" = off, rules only. */
   llmBaseUrl: string;
   llmModel: string;
@@ -87,6 +89,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     maxParallelRenders: int(env.MAX_PARALLEL_RENDERS, 2),
     orphanSweepMs: int(env.ORPHAN_SWEEP_MS, 300_000),
     orphanSweepInitialMs: int(env.ORPHAN_SWEEP_INITIAL_MS, 300_000),
+    nicheKeywords: (env.NICHE_KEYWORDS ?? "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean),
     llmBaseUrl: (env.LLM_BASE_URL ?? "").trim(),
     llmModel: (env.LLM_MODEL ?? "").trim(),
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),

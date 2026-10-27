@@ -45,19 +45,18 @@ export function defaultExec(cmd: string, args: string[]): ProcResult {
   return { exitCode: 127, stdout: "", stderr: `unknown cmd ${cmd}`, timedOut: false, aborted: false };
 }
 
-export function scoredSegments(n = 3): Json {
-  const tiers = ["PRIMARY", "BACKUP", "SKIP", "SKIP"];
-  return {
-    videoId: "x",
-    scoredSegments: Array.from({ length: n }, (_, i) => ({
-      index: i, rank: i + 1, startTime: i * 30, endTime: i * 30 + 25, duration: 25,
-      text: `segmen ${i}`, title: `Judul ${i}`, finalScore: 0.9 - i * 0.1, tier: tiers[i] ?? "SKIP",
-      scores: { hookStrength: 0.8, keywordTrigger: 0.5, novelty: 0.4, clarity: 0.7, emotionalEnergy: 0.6,
-        textSentiment: 0.3, pauseStructure: 0.5, facePresence: 1, sceneChange: 0.2, topicFit: 0.4,
-        historyScore: 0.5, boostTotal: 0.05, penaltyTotal: 0.01 },
-    })),
-  };
-}
+/** Segment texts + media values that the real Bun scorer puts in PRIMARY, BACKUP and SKIP. */
+export const FAKE_SEGMENTS = [
+  "Kenapa rahasia ini penting banget? Ternyata faktanya gila, Pak Budi kaget dan marah! Jadi pertama kamu harus tahu.",
+  "Ternyata rahasia sukses itu sederhana. Pertama, jangan malas, kan?",
+  "Hari ini kita duduk santai di rumah sambil minum teh bersama keluarga besar kami yang datang dari jauh sekali.",
+].map((text, i) => ({ index: i, startTime: i * 30, endTime: i * 30 + 25, duration: 25, text }));
+
+export const FAKE_MEDIA = [
+  { index: 0, rmsRatio: 2, onsetDensity: 1, facePresence: 1, sceneChange: 1, motion: 1 },
+  { index: 1, rmsRatio: 1, onsetDensity: 0.5, facePresence: 0.9, sceneChange: 0.5, motion: 0.5 },
+  { index: 2, rmsRatio: 0.3, onsetDensity: 0.2, facePresence: 0, sceneChange: 0.1, motion: 0.2 },
+];
 
 /** Python fakes that mimic each script's output contract. */
 export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
@@ -69,8 +68,9 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
   };
   return {
     "transcribe.py": () => ({ videoId: "x", language: "id", segments: [{ index: 0, start: 0, end: 5, text: "halo" }] }),
-    "segment.py": () => ({ videoId: "x", segments: [{ startTime: 0, endTime: 25 }] }),
-    "score.py": () => scoredSegments(3),
+    "segment.py": () => ({ videoId: "x", segments: FAKE_SEGMENTS }),
+    "media_features.py": () => ({ videoId: "x", segments: FAKE_MEDIA }),
+    "predict_supervised.py": () => ({ predictions: { 0: 0.99, 1: null, 2: 0.1 } }),
     "render.py": (args) => {
       const rank = Number(argAfter(args, "--clip-index")) + 1;
       return { clips: [{ rank, status: "COMPLETED", path: clipFile(argAfter(args, "--output-dir"), rank, "") }] };

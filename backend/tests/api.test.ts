@@ -95,7 +95,7 @@ describe("videos (VideoControllerIT)", () => {
       emotionalEnergy: 0, textSentiment: 0, pauseStructure: 0, facePresence: 0, sceneChange: 0, topicFit: 0,
       historyScore: 0, boostTotal: 0, penaltyTotal: 0 });
     await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 10 });
-    env.scripts["score.py"] = () => { throw new Error("stop"); }; // let the job fail fast
+    env.scripts["media_features.py"] = () => { throw new Error("stop"); }; // let the job fail fast
     const job = (await env.json("POST", "/api/process", { videoId: "vc" })).body.data.jobId;
     await env.app.jobs.whenIdle();
 

@@ -37,7 +37,8 @@ const DRAIN_GRACE_MS = 5_000;
 
 export const SCRIPT_TIMEOUT_MINUTES: Record<string, number> = {
   "transcribe.py": 20,
-  "score.py": 10,
+  "media_features.py": 10,
+  "predict_supervised.py": 2,
   "render.py": 30,
   "subtitle.py": 10,
   "variation.py": 10,

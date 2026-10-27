@@ -9,7 +9,6 @@ GPU path (CuPy) is opt-in behind ``USE_CUPY=1``; default is NumPy.
 import os
 import sys
 
-from .constants import EMOTION_WORDS
 
 
 def _load_audio_cache(audio_path):
@@ -85,43 +84,6 @@ def _extract_audio_rms_ratio(audio_path, start_time, end_time, audio_cache=None)
         return seg_rms / total_rms
     except Exception:
         return None
-
-
-def score_emotional_energy(text, audio_path=None, start_time=0.0, end_time=0.0, audio_cache=None):
-    text_score = 0.3
-    lower = text.lower()
-    count = sum(1 for w in EMOTION_WORDS if w in lower)
-    excl = text.count("!")
-    caps_words = sum(1 for w in text.split() if w.isupper() and len(w) > 2)
-    if count >= 3:
-        text_score += 0.4
-    elif count >= 2:
-        text_score += 0.3
-    elif count >= 1:
-        text_score += 0.2
-    if excl >= 2:
-        text_score += 0.15
-    elif excl >= 1:
-        text_score += 0.1
-    if caps_words >= 2:
-        text_score += 0.1
-    text_score = min(text_score, 1.0)
-
-    rms_ratio = _extract_audio_rms_ratio(audio_path, start_time, end_time, audio_cache=audio_cache)
-    if rms_ratio is not None:
-        if rms_ratio > 1.8:
-            audio_score = 1.0
-        elif rms_ratio > 1.3:
-            audio_score = 0.8
-        elif rms_ratio > 0.8:
-            audio_score = 0.5
-        elif rms_ratio > 0.4:
-            audio_score = 0.3
-        else:
-            audio_score = 0.1
-        return round((text_score * 0.4 + audio_score * 0.6), 4)
-
-    return round(text_score, 4)
 
 
 def score_onset_density(audio_cache, start_time, end_time):

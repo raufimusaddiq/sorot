@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { AppConfig } from "./config";
 import { CHANNEL_STATUSES, ChannelCrawler, channelToMap } from "./channels";
 import { openDatabase } from "./db";
+import { Llm } from "./llm";
 import { candidateToMap, DiscoveryService } from "./discovery";
 import { FeedbackService, ValidationError } from "./feedback";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
@@ -17,6 +18,8 @@ export interface AppDeps {
   db?: Database;
   exec?: ExecFn;
   runScript?: ScriptRunner;
+  /** fetch for the LLM and web search (tests inject a fake). */
+  fetch?: typeof fetch;
 }
 
 const strArg = (body: Body, key: string): string => {
@@ -37,7 +40,8 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const exec = deps.exec ?? spawnCapture;
   const runScript = deps.runScript ?? createPythonRunner(config, exec);
 
-  const orchestrator = new PipelineOrchestrator(config, store, runScript, exec);
+  const llm = new Llm(config, deps.fetch ?? globalThis.fetch);
+  const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm);
   const jobs = new JobService(config, store, orchestrator);
   const videos = new VideoService(config, store);
   const clips = new ClipService(config, store);
@@ -264,7 +268,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   return {
     fetch,
-    store, jobs, discovery, channels, orchestrator,
+    store, jobs, discovery, channels, orchestrator, llm,
     start() { jobs.startMaintenance(); },
     close() {
       jobs.shutdown();

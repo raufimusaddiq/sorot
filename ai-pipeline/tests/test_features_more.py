@@ -9,7 +9,7 @@ import wave
 import numpy as np
 import pytest
 
-from features import audio, context, text
+from features import audio, text
 
 
 def write_wav(path, samples, rate=8000, channels=1, width=2):
@@ -76,22 +76,6 @@ class TestRmsRatio:
         assert audio._extract_audio_rms_ratio(None, 0, 1, gpu_cache) == pytest.approx(1 / np.sqrt(5))
 
 
-class TestEmotionalEnergy:
-    @pytest.mark.parametrize("ratio,audio_score", [(2.0, 1.0), (1.5, 0.8), (1.0, 0.5), (0.5, 0.3), (0.2, 0.1)])
-    def test_audio_bands(self, monkeypatch, ratio, audio_score):
-        monkeypatch.setattr(audio, "_extract_audio_rms_ratio", lambda *a, **k: ratio)
-        assert audio.score_emotional_energy("biasa saja") == round(0.3 * 0.4 + audio_score * 0.6, 4)
-
-    def test_text_signals(self, monkeypatch):
-        monkeypatch.setattr(audio, "_extract_audio_rms_ratio", lambda *a, **k: None)
-        words = list(audio.EMOTION_WORDS)
-        assert audio.score_emotional_energy(" ".join(words[:3])) == 0.7
-        assert audio.score_emotional_energy(" ".join(words[:2])) == 0.6
-        assert audio.score_emotional_energy(words[0]) == 0.5
-        assert audio.score_emotional_energy("wah!! GILA BANGET") == round(0.3 + 0.15 + 0.1, 4)
-        assert audio.score_emotional_energy("oke!") == 0.4
-
-
 class TestOnsetDensity:
     def test_guards(self):
         assert audio.score_onset_density(None, 0, 1) == 0.5
@@ -121,45 +105,6 @@ def transcript(tmp_path, segments, name="t.json"):
     p.write_text(json.dumps({"segments": segments}), encoding="utf-8")
     return str(p)
 
-
-class TestSilenceAndPauses:
-    def test_silence_ratio_guards(self, tmp_path):
-        assert context._calc_silence_ratio(None, 0, 10) is None
-        assert context._calc_silence_ratio(transcript(tmp_path, []), 0, 10) is None
-        one = transcript(tmp_path, [{"start": 0, "end": 5}], "one.json")
-        assert context._calc_silence_ratio(one, 0, 10) is None
-        two = transcript(tmp_path, [{"start": 5, "end": 12}, {"start": 8, "end": 15}], "two.json")
-        assert context._calc_silence_ratio(two, 10, 10) is None          # zero-length clip
-        bad = tmp_path / "bad.json"
-        bad.write_text("{", encoding="utf-8")
-        assert context._calc_silence_ratio(str(bad), 0, 10) is None
-
-    @pytest.mark.parametrize("gap,expected", [(0.5, 0.9), (2, 0.7), (3, 0.4), (6, 0.1)])
-    def test_pause_bands_from_silence(self, tmp_path, gap, expected):
-        t = transcript(tmp_path, [{"start": 0, "end": 2}, {"start": 2 + gap, "end": 10}])
-        assert context.score_pause_structure("x", 10, t, 0, 10) == expected
-
-    @pytest.mark.parametrize("words,duration,expected", [(0, 10, 0.3), (30, 10, 0.9), (17, 10, 0.7),
-                                                         (10, 10, 0.4), (60, 10, 0.5)])
-    def test_pause_bands_from_word_rate(self, words, duration, expected):
-        assert context.score_pause_structure(" ".join(["kata"] * words), duration) == expected
-
-
-class TestTopicAndHistory:
-    def test_topic_fit_bands(self):
-        kws = ["satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh"]
-        assert context.score_topic_fit("x", None) == 0.5
-        assert context.score_topic_fit("satu dua tiga empat", kws) == 1.0
-        assert context.score_topic_fit("satu dua", kws) == 0.7
-        assert context.score_topic_fit("satu", kws) == 0.3
-
-    def test_history_handles_bad_records(self):
-        assert context.score_history([None], "a b c") == 0.5
-        assert context.score_history([{"text": "a b", "actual_viral_score": 1}], "a b c") == 0.5
-        assert context.score_history([{"text": "a b c", "actual_viral_score": None}], "a b c") == 0.5
-
-
-# --- text --------------------------------------------------------------------
 
 class TestKeywordCorpus:
     def reset(self, monkeypatch, corpus_dir):
