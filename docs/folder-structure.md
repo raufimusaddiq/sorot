@@ -28,11 +28,16 @@ ViralVideo/
 │   ├── .venv/                       # Python venv (gitignored)
 │   ├── transcribe.py
 │   ├── segment.py
-│   ├── score.py
-│   └── utils/                      # Shared helpers
-│       ├── __init__.py
-│       ├── audio.py                 # Audio analysis helpers
-│       └── video.py                 # Video/OpenCV analysis helpers
+│   ├── score.py                     # Orchestrates features/ into a final score
+│   ├── render.py · subtitle.py · variation.py · analytics.py
+│   ├── discover.py · feedback.py · learn_weights.py · train_scorer.py
+│   ├── features/                    # Scoring feature extractors
+│   │   ├── text.py                  # Hook, keywords, novelty, sentiment
+│   │   ├── audio.py                 # RMS energy, onset density
+│   │   ├── visual.py                # Faces, scene change, motion (MediaPipe/Haar)
+│   │   ├── context.py               # Pauses, topic fit, history
+│   │   └── supervised.py            # Optional LightGBM model
+│   └── tests/                       # pytest (in-process, no GPU needed)
 │
 ├── frontend/                        # Next.js
 │   ├── package.json

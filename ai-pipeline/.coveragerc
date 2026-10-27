@@ -7,3 +7,5 @@ omit =
 exclude_lines =
     pragma: no cover
     pass$
+    # Script entry-point guards; main() itself is tested in-process.
+    if __name__ == .__main__.:

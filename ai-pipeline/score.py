@@ -109,7 +109,9 @@ def generate_clip_title(text, tier, scores):
             title = s.strip()
             break
     if not title:
-        title = sentences[0].strip() if sentences else text.strip()
+        # First non-empty fragment: Whisper text often opens with "..." or ",",
+        # which would make sentences[0] empty and the title just hashtags.
+        title = next((s.strip() for s in sentences if s.strip()), text.strip())
     if len(title) > 80:
         title = title[:77] + "..."
     hashtags = _select_hashtags(text, tier, count=2)
