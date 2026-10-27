@@ -3,7 +3,7 @@
 ## Source Code
 
 ```
-viral-clipper/                       # the repo (the app is Sorot)
+sorot/
 ├── package.json · bun.lock · bunfig.toml  # Bun workspace (backend + frontend)
 ├── backend/                        # Bun + TypeScript API; also serves frontend/out
 │   ├── src/

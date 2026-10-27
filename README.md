@@ -48,8 +48,8 @@ Whichever you choose, the app ends up on **http://localhost:8080** 🌐 — UI a
 You need Docker Desktop (WSL2 backend), an NVIDIA GPU with the [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), and PowerShell 5.1+.
 
 ```powershell
-git clone https://github.com/raufimusaddiq/viral-clipper.git
-cd viral-clipper
+git clone https://github.com/raufimusaddiq/sorot.git
+cd sorot
 .\scripts\start.ps1 -Build        # first build ~10 min ☕
 ```
 
@@ -67,8 +67,8 @@ cd viral-clipper
 Docker with Compose v2.24+. With an NVIDIA GPU (+ Container Toolkit):
 
 ```bash
-git clone https://github.com/raufimusaddiq/viral-clipper.git
-cd viral-clipper
+git clone https://github.com/raufimusaddiq/sorot.git
+cd sorot
 docker compose --env-file .env.docker up -d --build backend
 ```
 
@@ -90,8 +90,8 @@ Day to day: `docker compose --env-file .env.docker logs -f backend` 📜 · `…
 Debian, Ubuntu and derivatives. One command does everything:
 
 ```bash
-git clone https://github.com/raufimusaddiq/viral-clipper.git
-cd viral-clipper
+git clone https://github.com/raufimusaddiq/sorot.git
+cd sorot
 scripts/install.sh                 # 🐳 Docker mode (recommended)
 scripts/install.sh --mode native   # 🧩 or: Bun + Python + systemd, no Docker
 ```
@@ -110,8 +110,8 @@ Macs have no NVIDIA GPU, so everything runs on the CPU (Apple Silicon and Intel)
 
 ```bash
 brew install oven-sh/bun/bun ffmpeg python@3.12
-git clone https://github.com/raufimusaddiq/viral-clipper.git
-cd viral-clipper
+git clone https://github.com/raufimusaddiq/sorot.git
+cd sorot
 python3.12 -m venv ai-pipeline/.venv
 ai-pipeline/.venv/bin/pip install -r ai-pipeline/requirements.txt
 bun install && bun run build                     # UI → frontend/out

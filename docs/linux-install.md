@@ -5,8 +5,8 @@ derivatives (Mint, Pop!_OS…). Run it from a clone of the repo as your normal
 user — it calls `sudo` for the system parts and keeps the repo files owned by you.
 
 ```bash
-git clone https://github.com/raufimusaddiq/viral-clipper.git
-cd viral-clipper
+git clone https://github.com/raufimusaddiq/sorot.git
+cd sorot
 scripts/install.sh                     # Docker mode (recommended)
 scripts/install.sh --mode native       # or: no Docker, systemd service
 ```

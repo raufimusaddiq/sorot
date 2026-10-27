@@ -19,7 +19,7 @@ before the rename are still found at `/etc/sorot/cli.conf` with `SOROT_*` keys):
 
 ```
 SOROT_MODE=docker          # docker | native — how `up/down/logs` work
-SOROT_APP_DIR=/home/me/viral-clipper
+SOROT_APP_DIR=/home/me/sorot
 SOROT_URL=http://localhost:8080
 SOROT_SERVICE=sorot       # systemd unit (native)
 ```
