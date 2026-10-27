@@ -31,7 +31,7 @@
 
 ## 🚀 Install
 
-The whole app ships as a ready-made Docker image, **`ghcr.io/raufimusaddiq/sorot`**, built by [CI](.github/workflows/ci.yml) on every push to `master` — no 10-minute build on your machine. It comes in two variants: **`:latest`** (CPU, plain Ubuntu, the smaller download) and **`:latest-cuda`** (NVIDIA GPU: CUDA 12 + cuDNN). The installers pick the right one for your machine. Pick the path that fits:
+The whole app ships as a ready-made Docker image, **`ghcr.io/raufimusaddiq/sorot`**, published by the [release workflow](.github/workflows/release-image.yml) for every Sorot release — no 10-minute build on your machine. It comes in two variants: **`:latest`** (CPU, plain Ubuntu, the smaller download) and **`:latest-cuda`** (NVIDIA GPU: CUDA 12 + cuDNN). The installers pick the right one for your machine. Pick the path that fits:
 
 | | Path | GPU | Effort |
 |---|---|---|---|
@@ -130,7 +130,7 @@ services:
               capabilities: [gpu]
 ```
 
-Day to day: `docker compose --env-file .env.docker logs -f backend` 📜 · `… down` ⏹️ · `… up -d backend` ▶️ · update: `… pull backend` then `… up -d backend` ⬇️. Settings live in `.env.docker`; `SOROT_VERSION` there pins a release tag (default `latest` = `master`). Rather build it yourself? `… up -d --build backend` 🔨.
+Day to day: `docker compose --env-file .env.docker logs -f backend` 📜 · `… down` ⏹️ · `… up -d backend` ▶️ · update: `… pull backend` then `… up -d backend` ⬇️. Settings live in `.env.docker`; `SOROT_VERSION` there pins a release tag (default `latest` = the newest release). Rather build it yourself? `… up -d --build backend` 🔨.
 
 Both images are `linux/amd64`. On Apple Silicon they would run under emulation, so use [Homebrew](#-macos--homebrew) there.
 
@@ -356,7 +356,14 @@ Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
 
 ### 📦 CI and the published image
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Bun, UI and Python tests on every push and PR, then builds `backend/Dockerfile` twice: on `ubuntu:22.04` (CPU) and, through the `BASE_IMAGE` build arg, on `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` (GPU). PRs build without pushing. Pushes to `master` publish `ghcr.io/raufimusaddiq/sorot:latest` / `:latest-cuda` and `:sha-<commit>` / `:sha-<commit>-cuda`; a `v1.2.3` tag also publishes `:1.2.3`, `:1.2` (and their `-cuda` twins). Layers are cached in the registry (`:buildcache-cpu`, `:buildcache-cuda`), so a code-only change re-uploads only the small top layers.
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Bun, UI and Python tests on every push to `master` and every PR. It doesn't build images, to save runner time.
+- [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml) builds `backend/Dockerfile` twice — on `ubuntu:22.04` (CPU) and, through the `BASE_IMAGE` build arg, on `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` (GPU) — and pushes both. It runs only:
+  - when a **GitHub release** is published: `v1.2.3` → `:1.2.3`, `:1.2`, `:latest`, `:sha-<commit>` and the same with `-cuda` (a pre-release doesn't move `:latest`);
+  - **by hand**: Actions → *Release image* → *Run workflow* on any branch → `:sha-<commit>`(`-cuda`), plus `:latest`(`-cuda`) unless you untick *latest*.
+
+  Layers are cached in the registry (`:buildcache-cpu`, `:buildcache-cuda`), so a code-only release re-uploads only the small top layers.
+
+To ship: merge to `master`, then create a release (GitHub → Releases → *Draft a new release*, tag `v1.2.3`). Until the first release or manual run there is no image to pull.
 
 GitHub may create the package as **private** on the first publish: if anonymous `docker pull` fails, make it public once (your GitHub profile → Packages → `sorot` → Package settings → Change visibility).
 

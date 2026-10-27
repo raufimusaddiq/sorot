@@ -60,7 +60,7 @@ PATH (see [cli.md](cli.md)).
 4. Writes `docker-compose.override.yml` (gitignored) for this machine: your
    port, `restart: unless-stopped` (the app comes back after a reboot), and on
    GPU machines the `-cuda` image, the GPU reservation and `WHISPER_DEVICE=cuda`.
-5. Pulls the ready-made image (published by `.github/workflows/ci.yml`):
+5. Pulls the ready-made image (published for each release by `.github/workflows/release-image.yml`):
    `ghcr.io/raufimusaddiq/sorot:latest` on CPU-only machines, `:latest-cuda`
    with a GPU, and starts it. `--build` builds that variant from source instead (~10 min).
 

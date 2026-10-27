@@ -298,7 +298,7 @@ install_docker() {
     step "Building the app image from source (first time: ~10 min, downloads the Whisper model)"
     (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker build backend)
   else
-    # Published by .github/workflows/ci.yml; updates download only the changed layers.
+    # Published by .github/workflows/release-image.yml; updates download only the changed layers.
     step "Pulling the $([ "$GPU" -eq 1 ] && echo "CUDA" || echo "CPU") app image from ghcr.io (GB-sized the first time)"
     (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker pull backend) \
       || die "Pull failed — check your connection, or build it here: scripts/install.sh --build"
