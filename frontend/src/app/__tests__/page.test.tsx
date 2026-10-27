@@ -30,7 +30,7 @@ async function renderLoaded() {
 }
 
 /** The ClipCard root for a clip (cards are identified by their transcript text). */
-const card = (clipId: string) => screen.getByText(`teks ${clipId}`).closest('.overflow-hidden') as HTMLElement;
+const card = (clipId: string) => screen.getByText(`teks ${clipId}`).closest('[data-clip-card]') as HTMLElement;
 
 /** One COMPLETED video with three clips covering ClipCard's render branches. */
 function seedCompleted() {
@@ -495,7 +495,7 @@ describe('discovery panel', () => {
     await renderLoaded();
     fireEvent.click(screen.getByRole('button', { name: 'Discover' }));
   };
-  const row = (title: string) => screen.getByText(title).closest('.rounded-card') as HTMLElement;
+  const row = (title: string) => screen.getByText(title).closest('[data-candidate]') as HTMLElement;
 
   it('shows the empty states per filter', async () => {
     await openDiscovery();
@@ -508,8 +508,8 @@ describe('discovery panel', () => {
   it('runs search, trending and channel discovery; blank input is ignored', async () => {
     await openDiscovery();
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-    // [0] is the top-level "Discover" tab; [1] is the panel's submit button.
-    const discover = screen.getAllByRole('button', { name: /^Discover$/ })[1]!;
+    // [0] is the panel's submit button; [1] is the "Discover" app in the dock.
+    const discover = screen.getAllByRole('button', { name: /^Discover$/ })[0]!;
 
     const search = screen.getByPlaceholderText(/Search keywords/);
     fireEvent.keyDown(search, { key: 'Enter' });
@@ -617,7 +617,7 @@ describe('discovery panel', () => {
     await openDiscovery();
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     fireEvent.change(screen.getByPlaceholderText(/Search keywords/), { target: { value: 'x' } });
-    fireEvent.click(screen.getAllByRole('button', { name: /^Discover$/ })[1]!);
+    fireEvent.click(screen.getAllByRole('button', { name: /^Discover$/ })[0]!);
     expect(await screen.findByText('yt-dlp missing')).toBeInTheDocument();
   });
 

@@ -1,5 +1,5 @@
 // Small display components: pipeline ProgressBar, ScoreBadge, TranscriptView.
-// Vercel Geist styling: solid blue accent, crisp borders, no gradients.
+// Retro desktop styling: hazard-striped bar, a numbered 9-step strip.
 
 import type { Clip, StageStatus } from '@/types';
 import {
@@ -23,22 +23,22 @@ export function ProgressBar({ stages }: { stages: StageStatus[] }) {
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-baseline text-sm">
-        <span className="text-muted">
+        <span className="font-semibold">
           {current ? STAGE_LABELS[current.stage] || current.stage : 'Waiting…'}
         </span>
-        <span className="font-mono text-xs text-subtle">{pct}%</span>
+        <span className="font-pixel text-sm">{pct}%</span>
       </div>
-      <div className="h-1 bg-surface-2 rounded-full overflow-hidden">
+      <div className="h-6 bg-surface-2 border-3 border-line rounded-md overflow-hidden">
         <div
-          className="h-full bg-accent rounded-full transition-all duration-500 ease-out"
+          className="progress-stripes h-full border-r-3 border-line transition-all duration-500 ease-out"
           style={{ width: `${pct}%` }}
         />
       </div>
       {renderStage?.outputPath && (
-        <p className="text-xs text-accent font-mono">{renderStage.outputPath}</p>
+        <p className="font-pixel text-sm bg-[#1D2B1D] text-[#9CFF9C] border-3 border-line rounded-md px-3 py-1">{renderStage.outputPath}</p>
       )}
-      <div className="grid grid-cols-3 gap-1.5 pt-1">
-        {STAGE_ORDER.map((stage) => {
+      <div className="grid grid-cols-9 border-3 border-line rounded-md overflow-hidden">
+        {STAGE_ORDER.map((stage, i) => {
           const stageStatus = stages.find(s => s.stage === stage);
           const status = stageStatus?.status || 'PENDING';
           const isCurrent = status === 'RUNNING' || status === 'IN_PROGRESS';
@@ -47,16 +47,17 @@ export function ProgressBar({ stages }: { stages: StageStatus[] }) {
           return (
             <div
               key={stage}
-              className={`text-xs px-2 py-1 rounded-card truncate border ${
-                isDone ? 'text-success bg-success-tint border-success/30' :
-                isCurrent ? 'text-accent bg-accent-tint border-accent/40' :
-                isFailed ? 'text-error bg-error-tint border-error/30' :
-                'text-subtle bg-surface border-line'
+              className={`flex flex-col items-center py-1 font-pixel text-xs leading-tight ${i > 0 ? 'border-l-3 border-line' : ''} ${
+                isDone ? 'bg-mint' :
+                isCurrent ? 'bg-sun stage-blink' :
+                isFailed ? 'bg-error-tint' :
+                'bg-surface-2 text-subtle'
               }`}
               title={STAGE_LABELS[stage] || stage}
+              aria-label={`${STAGE_LABELS[stage] || stage}: ${status.toLowerCase()}`}
             >
-              {isDone ? '✓' : isFailed ? '✗' : isCurrent ? '●' : '○'}{' '}
-              {STAGE_LABELS[stage] || stage}
+              <span className="heading text-base text-fg">{i + 1}</span>
+              <span aria-hidden>{isDone ? '✓' : isFailed ? '✗' : isCurrent ? '●' : '○'}</span>
             </div>
           );
         })}
@@ -89,14 +90,14 @@ export function TranscriptView({ clips, filterTier }: { clips: Clip[]; filterTie
       {filtered.map(clip => (
         <div
           key={clip.id}
-          className="bg-surface rounded-card p-4 border border-line"
+          className="bg-surface-2 rounded-card p-4 border-3 border-line"
         >
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-mono font-semibold text-fg">
+            <span className="font-pixel text-sm text-fg">
               #{clip.rankPos || '-'}
             </span>
             <span
-              className={`px-2 py-0.5 rounded text-xs font-medium border ${TIER_COLORS[clip.tier] || ''}`}
+              className={`px-2 py-0.5 rounded text-xs font-bold border-2 border-line ${TIER_COLORS[clip.tier] || ''}`}
             >
               {tierLabel(clip.tier)}
             </span>
@@ -104,7 +105,7 @@ export function TranscriptView({ clips, filterTier }: { clips: Clip[]; filterTie
               {formatTime(clip.startTime)} → {formatTime(clip.endTime)} ({formatDuration(clip.durationSec)})
             </span>
             {clip.score !== null && (
-              <span className="ml-auto text-sm font-mono font-semibold text-accent">
+              <span className="ml-auto heading text-lg">
                 {(clip.score * 100).toFixed(0)}%
               </span>
             )}

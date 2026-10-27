@@ -11,8 +11,8 @@ import { formatTime, tierLabel } from '@/lib/ui-utils';
 import { MusicPicker, REFRAME_LABELS, Toggle } from './ImportOptions';
 
 const STEP = 0.5;
-const field = 'w-full bg-surface-2 border border-line rounded px-2 py-1.5 text-sm text-fg';
-const label = 'text-xs text-muted font-medium block mb-1';
+const field = 'field w-full px-2 py-1.5';
+const label = 'font-pixel text-xs text-fg block mb-1';
 
 function parseClipOptions(json?: string | null): PipelineOptions {
   if (!json) return {};
@@ -79,28 +79,30 @@ export function ClipEditor({ clip, api, choices, onClose, onSaved }: {
     (which === 'start' ? setStart : setEnd)((v) => Math.max(0, Number((v + delta).toFixed(2))));
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" role="dialog" aria-label="Edit clip">
-      <div className="bg-surface rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-line">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <h3 className="text-lg font-semibold text-fg">
-            Edit clip #{clip.rankPos ?? '-'} <span className="text-xs text-subtle font-normal ml-2">{tierLabel(clip.tier)}</span>
+    <div className="fixed inset-0 bg-bg/80 z-50 flex items-center justify-center p-4" role="dialog" aria-label="Edit clip">
+      <div className="win w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="win-bar bg-lilac sticky top-0 z-10">
+          <button onClick={onClose} aria-label="Close editor" className="close" />
+          <span className="stripes" aria-hidden />
+          <h3 className="px-1 whitespace-nowrap">
+            Edit clip #{clip.rankPos ?? '-'} <span className="ml-1">· {tierLabel(clip.tier)}</span>
           </h3>
-          <button onClick={onClose} aria-label="Close editor" className="text-muted hover:text-fg">✕</button>
+          <span className="stripes" aria-hidden />
         </div>
 
         <div className="p-5 space-y-6">
           <section>
-            <h4 className="text-sm font-semibold text-fg mb-3">Timing</h4>
+            <h4 className="heading text-lg mb-3">Timing</h4>
             <div className="grid grid-cols-2 gap-4">
               {(['start', 'end'] as const).map((which) => (
                 <div key={which}>
                   <span className={label}>{which === 'start' ? 'Start' : 'End'} ({formatTime(which === 'start' ? start : end)})</span>
                   <div className="flex gap-1">
-                    <button type="button" onClick={() => nudge(which, -STEP)} className="px-2 rounded bg-surface-3 text-xs">−{STEP}s</button>
+                    <button type="button" onClick={() => nudge(which, -STEP)} className="btn px-2 py-0">−{STEP}s</button>
                     <input type="number" step={0.1} aria-label={which === 'start' ? 'Start seconds' : 'End seconds'}
                       value={which === 'start' ? start : end}
                       onChange={(e) => (which === 'start' ? setStart : setEnd)(Number(e.target.value))} className={field} />
-                    <button type="button" onClick={() => nudge(which, STEP)} className="px-2 rounded bg-surface-3 text-xs">+{STEP}s</button>
+                    <button type="button" onClick={() => nudge(which, STEP)} className="btn px-2 py-0">+{STEP}s</button>
                   </div>
                 </div>
               ))}
@@ -132,12 +134,12 @@ export function ClipEditor({ clip, api, choices, onClose, onSaved }: {
 
           <section>
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-semibold text-fg">
+              <h4 className="heading text-lg">
                 Captions {edited && !resetWords && <span className="text-xs text-accent font-normal ml-1">(edited)</span>}
               </h4>
               {(edited || dirtyWords) && !resetWords && (
                 <button type="button" onClick={() => { setResetWords(true); setDirtyWords(false); }}
-                  className="text-xs text-muted hover:text-fg">Reset to transcript</button>
+                  className="btn">Reset to transcript</button>
               )}
             </div>
             <p className="text-xs text-subtle mb-2">Fix misheard words (names, slang). Clear a word to drop it from the captions.</p>
@@ -151,20 +153,20 @@ export function ClipEditor({ clip, api, choices, onClose, onSaved }: {
                     title={`${formatTime(w.start)}`}
                     onChange={(e) => editWord(i, e.target.value)}
                     style={{ width: `${Math.max(3, w.text.length + 1)}ch` }}
-                    className={`bg-surface-2 border rounded px-1 py-0.5 text-sm ${w.text ? 'border-line text-fg' : 'border-error/40'}`} />
+                    className={`bg-surface-2 border-2 rounded px-1 py-0.5 text-sm ${w.text ? 'border-line text-fg' : 'border-error bg-error-tint'}`} />
                 ))}
                 {words.length === 0 && <p className="text-xs text-subtle">No speech in this clip.</p>}
               </div>
             )}
           </section>
 
-          {error && <p className="text-sm text-error bg-error-tint border border-error/30 rounded px-3 py-2">{error}</p>}
+          {error && <p className="text-sm text-fg font-semibold bg-error-tint border-3 border-line rounded px-3 py-2">{error}</p>}
         </div>
 
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
-          <button onClick={onClose} className="px-4 py-2 rounded text-sm bg-surface-3 text-fg/85">Cancel</button>
+        <div className="flex justify-end gap-3 px-5 py-4 border-t-3 border-line">
+          <button onClick={onClose} className="btn px-4 py-2 text-sm">Cancel</button>
           <button onClick={save} disabled={saving || invalid}
-            className="px-4 py-2 rounded text-sm font-medium bg-accent text-white disabled:bg-surface-3 disabled:text-subtle">
+            className="btn btn-primary px-4 py-2 text-sm">
             {saving ? 'Re-rendering…' : 'Save & re-render'}
           </button>
         </div>

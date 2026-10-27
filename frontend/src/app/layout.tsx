@@ -7,11 +7,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Geist fonts are loaded via Google Fonts CSS @import in globals.css —
-  // Next 14.2 doesn't ship Geist in next/font/google yet, and adding the
-  // geist npm package would require a Docker rebuild. The CSS-variable
-  // indirection (--font-sans / --font-mono) that tailwind.config.js expects
-  // is declared in globals.css.
+  // Fonts (IBM Plex Mono, Pixelify Sans, Archivo) load via a Google Fonts
+  // @import in globals.css, which also declares the --font-* variables
+  // tailwind.config.js points at. The dotted desktop background lives there too.
   return (
     <html lang="id">
       <body className="min-h-screen bg-bg text-fg antialiased font-sans">
