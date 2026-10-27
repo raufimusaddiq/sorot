@@ -73,7 +73,9 @@ cd ai-pipeline
 - Use `-UseBasicParsing` on all `Invoke-WebRequest` calls in PowerShell
 - Capture docker output to variable, check `$LASTEXITCODE` after, not via pipe
 - `clip.rank_pos` not `rank` (SQL reserved word)
-- Whisper model: `medium` (RTX 4060 8GB VRAM safe)
+- Whisper model: `large-v3-turbo` in Docker (`WHISPER_MODEL`); transcripts keep per-word timestamps (`segment.words`)
+- `opencv-python-headless` must stay `<5` — OpenCV 5 dropped the Haar `CascadeClassifier` used by face scoring and `reframe.py`
+- Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README); render.py and subtitle.py must get the same silence flags
 - Python venv at `ai-pipeline/.venv`
 - Schema auto-creates + migrates in `backend/src/db.ts` (compatible with the old Java-era DB file)
 - SQLite TEXT for UUIDs

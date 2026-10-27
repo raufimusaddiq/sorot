@@ -47,7 +47,7 @@ describe("loadConfig", () => {
       port: 8080, pythonPath: "python3", pipelineDir: "ai-pipeline", ffmpegPath: "ffmpeg", ytdlpPath: "yt-dlp",
       dataDir: "data", dbPath: "data/viralclipper.db", whisperModel: "medium", whisperDevice: "cuda",
       whisperLanguage: "id", maxConcurrentPipelines: 2, queueCapacity: 50, staticDir: "../frontend/out",
-      subtitleStyle: "default", silenceTrim: false, silenceGapSec: 0.6,
+      subtitleStyle: "default", silenceTrim: false, silenceGapSec: 0.6, reframeMode: "face",
     });
   });
 
@@ -55,6 +55,8 @@ describe("loadConfig", () => {
     const c = loadConfig({ SUBTITLE_STYLE: "hormozi", SILENCE_TRIM: "TRUE", SILENCE_GAP_SEC: "0.8" });
     expect(c).toMatchObject({ subtitleStyle: "hormozi", silenceTrim: true, silenceGapSec: 0.8 });
     expect(loadConfig({ SILENCE_TRIM: "no", SILENCE_GAP_SEC: "-1" })).toMatchObject({ silenceTrim: false, silenceGapSec: 0.6 });
+    expect(loadConfig({ REFRAME_MODE: " Blur " }).reframeMode).toBe("blur");
+    expect(loadConfig({ REFRAME_MODE: "sideways" }).reframeMode).toBe("face");
   });
 
   test("env overrides; empty strings fall back; bad ints fall back", () => {

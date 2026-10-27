@@ -338,6 +338,7 @@ export class PipelineOrchestrator {
         "--segments", segmentsPath, "--video", video.filePath, "--output-dir", renderDir,
         "--clip-index", String(idx),
         "--transcript", this.path("transcripts", `${video.id}.json`),
+        "--reframe", this.config.reframeMode,
         ...this.silenceArgs(),
       ],
       (r) => this.applyClipResults(video.id, r, "render"), "renderStatus");

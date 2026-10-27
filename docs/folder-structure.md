@@ -30,6 +30,8 @@ ViralVideo/
 │   ├── segment.py
 │   ├── score.py                     # Orchestrates features/ into a final score
 │   ├── render.py · subtitle.py · variation.py · analytics.py
+│   ├── captions.py                  # Word timing, ASS captions, silence intervals
+│   ├── reframe.py                   # Face-tracking 9:16 crop / blur fill
 │   ├── discover.py · feedback.py · learn_weights.py · train_scorer.py
 │   ├── features/                    # Scoring feature extractors
 │   │   ├── text.py                  # Hook, keywords, novelty, sentiment

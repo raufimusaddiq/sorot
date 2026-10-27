@@ -59,6 +59,7 @@ describe("full pipeline", () => {
     const render = env.calls.find((c) => c.script === "render.py")!.args;
     const subtitle = env.calls.find((c) => c.script === "subtitle.py")!.args;
     expect(argAfter(render, "--transcript")).toBe(transcript);
+    expect(argAfter(render, "--reframe")).toBe("face");
     expect(render).not.toContain("--silence-trim");
     expect(argAfter(subtitle, "--style")).toBe("default");
     expect(subtitle).not.toContain("--silence-trim");
