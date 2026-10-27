@@ -1,4 +1,7 @@
 faster-whisper>=1.0
+# PyAV 19 removed av.open(metadata_errors=…), which faster-whisper 1.2.1 still
+# passes when decoding audio — transcription fails on a fresh install. 18 works.
+av>=11,<19
 # <5: OpenCV 5.0 removed the Haar CascadeClassifier that face scoring and
 # reframe.py use (an unpinned rebuild silently disabled face detection).
 opencv-python-headless>=4.8,<5
