@@ -109,14 +109,14 @@ export function ImportOptions({ value, onChange, choices, disabled }: {
             )}
           </div>
           <MusicPicker choices={choices} bgm={o.bgm} volume={o.bgmVolume} onChange={set} />
-          <div className="md:col-span-2">
+          <div>
             <span className={label}>Only process part of the video (optional)</span>
             <div className="flex items-center gap-2">
-              <input aria-label="From" placeholder="From e.g. 13:25" value={value.startTime}
-                onChange={(e) => onChange({ ...value, startTime: e.target.value })} className={field} />
+              <input aria-label="From" placeholder="From 13:25" value={value.startTime}
+                onChange={(e) => onChange({ ...value, startTime: e.target.value })} className={`${field} min-w-0`} />
               <span className="text-subtle">→</span>
-              <input aria-label="To" placeholder="To e.g. 25:00" value={value.endTime}
-                onChange={(e) => onChange({ ...value, endTime: e.target.value })} className={field} />
+              <input aria-label="To" placeholder="To 25:00" value={value.endTime}
+                onChange={(e) => onChange({ ...value, endTime: e.target.value })} className={`${field} min-w-0`} />
             </div>
             <p className="text-xs text-subtle mt-1">YouTube downloads only this window. Formats: 85, 1:25, 1:02:03, 13m25s.</p>
           </div>
