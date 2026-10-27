@@ -19,7 +19,7 @@ export class Api {
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
-      throw new ApiError(`Cannot reach ${this.baseUrl} (${(e as Error).message}). Is the app running? Try: vclip up`, 0);
+      throw new ApiError(`Cannot reach ${this.baseUrl} (${(e as Error).message}). Is the app running? Try: sorot up`, 0);
     }
     let json: Json;
     try {
@@ -41,7 +41,7 @@ export class Api {
     try {
       res = await this.fetchFn(`${this.baseUrl}${path}`);
     } catch (e) {
-      throw new ApiError(`Cannot reach ${this.baseUrl} (${(e as Error).message}). Is the app running? Try: vclip up`, 0);
+      throw new ApiError(`Cannot reach ${this.baseUrl} (${(e as Error).message}). Is the app running? Try: sorot up`, 0);
     }
     if (!res.ok) {
       const err = await res.json().then((j) => (j as Json).error as string | undefined, () => undefined);

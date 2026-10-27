@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 // Same tables as the Java backend's schema.sql, so an existing
-// data/viralclipper.db opens unchanged. Columns that schema.sql added via
+// data/viralclipper.db (the app's old name) opens unchanged. Columns that schema.sql added via
 // ALTER TABLE are folded into the CREATE here and re-applied below (guarded)
 // for databases created before those migrations.
 const SCHEMA = `
@@ -83,11 +83,11 @@ CREATE TABLE IF NOT EXISTS clip_feedback (
     features TEXT NOT NULL,
     predicted_score REAL NOT NULL,
     predicted_tier TEXT NOT NULL,
-    tiktok_views INTEGER DEFAULT 0,
-    tiktok_likes INTEGER DEFAULT 0,
-    tiktok_comments INTEGER DEFAULT 0,
-    tiktok_shares INTEGER DEFAULT 0,
-    tiktok_saves INTEGER DEFAULT 0,
+    post_views INTEGER DEFAULT 0,
+    post_likes INTEGER DEFAULT 0,
+    post_comments INTEGER DEFAULT 0,
+    post_shares INTEGER DEFAULT 0,
+    post_saves INTEGER DEFAULT 0,
     actual_viral_score REAL,
     posted_at TEXT,
     last_checked TEXT,
@@ -207,12 +207,28 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["discovered_video", "reason", "TEXT"],
 ];
 
+// Columns renamed in place on old databases: posted-clip metrics are no longer
+// tied to one platform (they were tiktok_*).
+const RENAMED_COLUMNS: Array<[table: string, from: string, to: string]> = [
+  ["clip_feedback", "tiktok_views", "post_views"],
+  ["clip_feedback", "tiktok_likes", "post_likes"],
+  ["clip_feedback", "tiktok_comments", "post_comments"],
+  ["clip_feedback", "tiktok_shares", "post_shares"],
+  ["clip_feedback", "tiktok_saves", "post_saves"],
+];
+
 export function openDatabase(path: string): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path, { create: true, strict: true });
   db.run("PRAGMA busy_timeout = 5000");
   if (path !== ":memory:") db.run("PRAGMA journal_mode = WAL");
   db.run(SCHEMA);
+  for (const [table, from, to] of RENAMED_COLUMNS) {
+    const cols = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (cols.some((c) => c.name === from) && !cols.some((c) => c.name === to)) {
+      db.run(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`);
+    }
+  }
   for (const [table, column, type] of LEGACY_COLUMNS) {
     const cols = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === column)) {

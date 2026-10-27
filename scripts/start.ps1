@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Start Viral Clipper full stack (one command)
+    Start Sorot full stack (one command)
 .DESCRIPTION
     Builds Docker images with version tags, keeps last N versions,
     cleans old images + build cache, then starts the app. The backend image
@@ -83,16 +83,16 @@ function Remove-OldImages {
 }
 
 Write-Host ""
-Write-Host "=== Viral Clipper Startup ===" -ForegroundColor Cyan
+Write-Host "=== Sorot Startup ===" -ForegroundColor Cyan
 Write-Host "       Version: $VERSION | Keep last: $KeepN builds" -ForegroundColor DarkGray
 Write-Host ""
 
 if ($true) {
     Write-Host "[1/5] Building app image (API + UI + pipeline)..." -ForegroundColor Yellow
-    $backendImage = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null | Select-String "viralvideo-backend"
+    $backendImage = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null | Select-String "sorot-backend"
 
     if ($Build -or -not $backendImage) {
-        Build-ServiceImage -ImageName "viralvideo-backend" -Dockerfile "backend/Dockerfile"
+        Build-ServiceImage -ImageName "sorot-backend" -Dockerfile "backend/Dockerfile"
     } else {
         Write-Host "       Backend image exists. Use -Build to rebuild." -ForegroundColor Green
     }
@@ -100,18 +100,18 @@ if ($true) {
 
 if ($Dev) {
     Write-Host "[2/5] Building frontend dev image..." -ForegroundColor Yellow
-    $frontendImage = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null | Select-String "viralvideo-frontend"
+    $frontendImage = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null | Select-String "sorot-frontend"
 
     if ($Build -or -not $frontendImage) {
-        Build-ServiceImage -ImageName "viralvideo-frontend" -Dockerfile "frontend/Dockerfile" -Target "dev"
+        Build-ServiceImage -ImageName "sorot-frontend" -Dockerfile "frontend/Dockerfile" -Target "dev"
     } else {
         Write-Host "       Frontend image exists. Use -Build to rebuild." -ForegroundColor Green
     }
 }
 
 Write-Host "[3/5] Cleaning old images (keeping last $KeepN)..." -ForegroundColor Yellow
-Remove-OldImages -ImageName "viralvideo-backend" -Keep $KeepN
-Remove-OldImages -ImageName "viralvideo-frontend" -Keep $KeepN
+Remove-OldImages -ImageName "sorot-backend" -Keep $KeepN
+Remove-OldImages -ImageName "sorot-frontend" -Keep $KeepN
 Write-Host "       Old images cleaned." -ForegroundColor Green
 
 Write-Host "[4/5] Pruning dangling images + build cache..." -ForegroundColor Yellow

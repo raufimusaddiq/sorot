@@ -34,20 +34,34 @@ describe("config", () => {
 
   test("lookup order, env override and defaults", () => {
     const files: Record<string, string> = {
-      "/custom.conf": "VCLIP_MODE=docker\nVCLIP_APP_DIR=/srv/vc\nVCLIP_URL=http://box:9000/",
-      "/home/u/.config/viralclip/cli.conf": "VCLIP_MODE=native\nVCLIP_SERVICE=vc2",
-      "/etc/viralclip/cli.conf": "VCLIP_MODE=docker",
+      "/custom.conf": "SOROT_MODE=docker\nSOROT_APP_DIR=/srv/vc\nSOROT_URL=http://box:9000/",
+      "/home/u/.config/sorot/cli.conf": "SOROT_MODE=native\nSOROT_SERVICE=vc2",
+      "/etc/sorot/cli.conf": "SOROT_MODE=docker",
     };
     const read = (p: string) => files[p] ?? null;
-    expect(loadConfig({ VCLIP_CONFIG: "/custom.conf", HOME: "/home/u" }, read)).toEqual({
-      url: "http://box:9000", mode: "docker", appDir: "/srv/vc", service: "viralclip", source: "/custom.conf",
+    expect(loadConfig({ SOROT_CONFIG: "/custom.conf", HOME: "/home/u" }, read)).toEqual({
+      url: "http://box:9000", mode: "docker", appDir: "/srv/vc", service: "sorot", source: "/custom.conf",
     });
-    const home = loadConfig({ HOME: "/home/u", VCLIP_URL: "http://other/" }, read);
+    const home = loadConfig({ HOME: "/home/u", SOROT_URL: "http://other/" }, read);
     expect(home).toMatchObject({ url: "http://other", mode: "native", service: "vc2", appDir: "" });
-    expect(loadConfig({}, read).source).toBe("/etc/viralclip/cli.conf");
+    expect(loadConfig({}, read).source).toBe("/etc/sorot/cli.conf");
     expect(loadConfig({ USERPROFILE: "/home/u" }, read).mode).toBe("native");   // Windows home
-    expect(loadConfig({}, () => null)).toEqual({ url: "http://localhost:8080", mode: "none", appDir: "", service: "viralclip", source: null });
-    expect(loadConfig({}, () => "VCLIP_MODE=weird").mode).toBe("none");
+    expect(loadConfig({}, () => null)).toEqual({ url: "http://localhost:8080", mode: "none", appDir: "", service: "sorot", source: null });
+    expect(loadConfig({}, () => "SOROT_MODE=weird").mode).toBe("none");
+  });
+
+  test("installs from before the rename (Viral Clipper) keep working", () => {
+    const files: Record<string, string> = {
+      "/etc/viralclip/cli.conf": "VCLIP_MODE=native\nVCLIP_APP_DIR=/srv/old\nVCLIP_URL=http://old:8080\nVCLIP_SERVICE=viralclip",
+      "/home/u/.config/viralclip/cli.conf": "VCLIP_MODE=docker",
+      "/old.conf": "VCLIP_MODE=docker",
+    };
+    const read = (p: string) => files[p] ?? null;
+    expect(loadConfig({}, read)).toEqual({
+      url: "http://old:8080", mode: "native", appDir: "/srv/old", service: "viralclip", source: "/etc/viralclip/cli.conf",
+    });
+    expect(loadConfig({ HOME: "/home/u" }, read).source).toBe("/home/u/.config/viralclip/cli.conf");
+    expect(loadConfig({ VCLIP_CONFIG: "/old.conf", VCLIP_URL: "http://x" }, read)).toMatchObject({ source: "/old.conf", url: "http://x" });
   });
 });
 
@@ -86,7 +100,7 @@ describe("api client", () => {
 
   test("errors: unreachable, not JSON, envelope error, raw failures", async () => {
     const down = api(() => { throw new Error("ECONNREFUSED"); });
-    await expect(down.get("/x")).rejects.toThrow("Cannot reach http://a (ECONNREFUSED). Is the app running? Try: vclip up");
+    await expect(down.get("/x")).rejects.toThrow("Cannot reach http://a (ECONNREFUSED). Is the app running? Try: sorot up");
     await expect(down.raw("/x")).rejects.toThrow("Cannot reach");
     await expect(api(() => new Response("<html>", { status: 502 })).get("/x")).rejects.toThrow("GET /x: HTTP 502 (not JSON)");
     await expect(api(() => Response.json({ status: "error", error: "nope" }, { status: 409 })).get("/x")).rejects.toMatchObject({ message: "nope", status: 409 });

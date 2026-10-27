@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Stop all Viral Clipper services
+    Stop all Sorot services
 .PARAMETER Compact
     Also compact WSL2 disk after shutdown
 #>
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Continue"
 Set-Location ($PSScriptRoot | Split-Path)
 
-Write-Host "Stopping Viral Clipper..." -ForegroundColor Yellow
+Write-Host "Stopping Sorot..." -ForegroundColor Yellow
 docker compose --env-file .env.docker --profile dev down 2>&1 | Out-Null
 Write-Host "All services stopped." -ForegroundColor Green
 

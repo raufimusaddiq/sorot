@@ -21,12 +21,12 @@ export class FeedbackService {
   ) {}
 
   /**
-   * Create/update a clip_feedback row with real TikTok metrics. The viral
+   * Create/update a clip_feedback row with real metrics of the posted clip. The viral
    * score is velocity-based (normalized by hours on platform), so postedAt is
    * required. The scorer's feature vector is snapshotted on first submit so
    * the trainer can learn (features → actual score) without recomputing.
    */
-  async submitTikTokMetrics(clipId: string, m: Metrics, postedAtIso: string): Promise<ClipFeedback> {
+  async submitPostMetrics(clipId: string, m: Metrics, postedAtIso: string): Promise<ClipFeedback> {
     const postedAt = ISO_INSTANT.test(postedAtIso) ? Date.parse(postedAtIso) : Number.NaN;
     if (Number.isNaN(postedAt)) {
       throw new ValidationError(`postedAt must be ISO-8601 (e.g. 2026-04-22T10:00:00Z); got: ${postedAtIso}`);
@@ -43,13 +43,13 @@ export class FeedbackService {
       fb = {
         id: crypto.randomUUID(), clipId, videoId: clip.videoId, features: this.serializeFeatures(clipId),
         predictedScore: clip.score ?? 0, predictedTier: clip.tier || "UNKNOWN",
-        tiktokViews: 0, tiktokLikes: 0, tiktokComments: 0, tiktokShares: 0, tiktokSaves: 0,
+        postViews: 0, postLikes: 0, postComments: 0, postShares: 0, postSaves: 0,
         actualViralScore: null, postedAt: null, lastChecked: null, createdAt: ts,
       };
     }
     Object.assign(fb, {
-      tiktokViews: m.views, tiktokLikes: m.likes, tiktokComments: m.comments,
-      tiktokShares: m.shares, tiktokSaves: m.saves, postedAt: postedAtIso, lastChecked: ts,
+      postViews: m.views, postLikes: m.likes, postComments: m.comments,
+      postShares: m.shares, postSaves: m.saves, postedAt: postedAtIso, lastChecked: ts,
     });
 
     fb.actualViralScore = viralScore(m.views, m.likes, m.comments, m.shares, m.saves, hoursSincePost);

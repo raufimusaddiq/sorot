@@ -1,7 +1,7 @@
 services:
   # The whole app: Bun API + static UI + Python pipeline → http://localhost:8080
   backend:
-    image: viralvideo-backend:latest
+    image: sorot-backend:latest
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -33,7 +33,7 @@ services:
 
   # Optional hot-reload UI on :3000 (scripts\start.ps1 -Dev).
   frontend:
-    image: viralvideo-frontend:latest
+    image: sorot-frontend:latest
     build:
       context: .
       dockerfile: frontend/Dockerfile

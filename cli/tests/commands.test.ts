@@ -26,7 +26,7 @@ describe("main", () => {
   test("help, version, unknown command, usage and API errors", async () => {
     const h = harness({ "GET /api/jobs": new Fail(500, "db locked") });
     expect(await h.run()).toBe(2);
-    expect(h.text()).toContain("Usage: vclip <command>");
+    expect(h.text()).toContain("Usage: sorot <command>");
     expect(await h.run("help")).toBe(0);
     expect(await h.run("jobs", "--help")).toBe(0);
     expect(await h.run("--version")).toBe(0);
@@ -65,14 +65,14 @@ describe("import / watch", () => {
     expect(text).toContain("✓ RENDER        30s");
     expect(text).toMatch(/1\s+PRIMARY\s+0\.89\s+1:00-1:45\s+45s\s+ready\s+clip-1/);
     expect(text).toContain("no subs");
-    expect(text).toContain("1 ready. Download: vclip download --video video-1234-abcd");
+    expect(text).toContain("1 ready. Download: sorot download --video video-1234-abcd");
   });
 
   test("--no-wait, plain --yt-captions, and a range needs both ends", async () => {
     const h = harness({ "POST /api/import": { videoId: "v" }, "POST /api/process": { jobId: "j" } });
     expect(await h.run("import", "https://x", "--yt-captions", "--no-wait")).toBe(0);
     expect(h.requests[1]!.body.options).toEqual({ youtubeCaptions: true });
-    expect(h.text()).toContain("vclip watch j");
+    expect(h.text()).toContain("sorot watch j");
     expect(await h.run("import", "https://x", "--from", "1:00")).toBe(2);
     expect(h.err.at(-1)).toContain("Give both --from and --to");
     expect(await h.run("import")).toBe(2);
@@ -100,14 +100,14 @@ describe("import / watch", () => {
     const noDir = harness(routes, { appDir: "" });
     noDir.existing.add(p("a.mp4"));
     expect(await noDir.run("import", "a.mp4")).toBe(2);
-    expect(noDir.err.at(-1)).toContain("no VCLIP_APP_DIR");
+    expect(noDir.err.at(-1)).toContain("no SOROT_APP_DIR");
   });
 
   test("failed and cancelled jobs exit 1", async () => {
     const failed = harness(jobRoutes("FAILED"));
     expect(await failed.run("watch", "job-1")).toBe(1);
     expect(failed.text()).toContain("✗ RENDER        30s  ffmpeg died");
-    expect(failed.err).toEqual(["Job FAILED: boom", "Retry with: vclip retry job-1"]);
+    expect(failed.err).toEqual(["Job FAILED: boom", "Retry with: sorot retry job-1"]);
     const cancelled = harness(jobRoutes("CANCELLED"));
     expect(await cancelled.run("watch", "job-1")).toBe(1);
     expect(cancelled.err).toEqual(["Job CANCELLED: boom"]);
@@ -282,7 +282,7 @@ describe("discovery", () => {
     expect(g.requests[0]!.body).toEqual({ goal: "", maxResults: 10 });
     expect(g.out).toContain("Picked by the algorithm (No LLM configured)");
     expect(await g.run("discover", "auto", "--no-wait")).toBe(0);
-    expect(g.out.at(-1)).toBe("Auto-discover started: r1 (vclip discover auto-status r1)");
+    expect(g.out.at(-1)).toBe("Auto-discover started: r1 (sorot discover auto-status r1)");
     expect(await g.run("discover", "auto-status")).toBe(0);
     expect(g.out.at(-1)).toBe("Running (1 steps so far)");
     expect(await g.run("discover", "auto-status", "r1")).toBe(1);

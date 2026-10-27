@@ -93,11 +93,11 @@ export interface ClipFeedback {
   features: string;
   predictedScore: number;
   predictedTier: string;
-  tiktokViews: number;
-  tiktokLikes: number;
-  tiktokComments: number;
-  tiktokShares: number;
-  tiktokSaves: number;
+  postViews: number;
+  postLikes: number;
+  postComments: number;
+  postShares: number;
+  postSaves: number;
   actualViralScore: number | null;
   postedAt: string | null;
   lastChecked: string | null;

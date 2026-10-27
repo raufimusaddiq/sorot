@@ -167,16 +167,16 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     const b = await c.body();
     const postedAt = b.postedAt;
     if (postedAt == null || String(postedAt).trim() === "") {
-      return fail(400, "postedAt is required (ISO-8601 timestamp of TikTok upload)");
+      return fail(400, "postedAt is required (ISO-8601 time the clip was posted)");
     }
     const n = (k: string) => Math.max(intArg(b, k, 0), 0);
     try {
-      const fb = await feedback.submitTikTokMetrics(c.params.id as string, {
+      const fb = await feedback.submitPostMetrics(c.params.id as string, {
         views: n("views"), likes: n("likes"), comments: n("comments"), shares: n("shares"), saves: n("saves"),
       }, String(postedAt));
       return ok({
-        clipId: fb.clipId, viralScore: fb.actualViralScore, views: fb.tiktokViews,
-        likes: fb.tiktokLikes, postedAt: fb.postedAt,
+        clipId: fb.clipId, viralScore: fb.actualViralScore, views: fb.postViews,
+        likes: fb.postLikes, postedAt: fb.postedAt,
       });
     } catch (e) {
       if (e instanceof ValidationError) return fail(400, e.message);

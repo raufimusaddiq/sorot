@@ -1,7 +1,8 @@
 // Written by scripts/install.sh: where the app lives and how it runs.
-// Lookup: $VCLIP_CONFIG, ~/.config/viralclip/cli.conf (Windows: %USERPROFILE%\.config\…),
-// /etc/viralclip/cli.conf.
-// $VCLIP_URL overrides the URL (e.g. to drive a remote machine).
+// Lookup: $SOROT_CONFIG, ~/.config/sorot/cli.conf (Windows: %USERPROFILE%\.config\…),
+// /etc/sorot/cli.conf, then the paths of installs from before the rename
+// (Viral Clipper: viralclip/cli.conf). $SOROT_URL overrides the URL (e.g. to
+// drive a remote machine). The old VCLIP_* names are still read.
 
 export type Mode = "docker" | "native" | "none";
 
@@ -29,8 +30,11 @@ export function loadConfig(
   readFile: (path: string) => string | null,
 ): CliConfig {
   const home = env.HOME || env.USERPROFILE || "";   // USERPROFILE: Windows
-  const candidates = [env.VCLIP_CONFIG, home && `${home}/.config/viralclip/cli.conf`, "/etc/viralclip/cli.conf"]
-    .filter((p): p is string => !!p);
+  const candidates = [
+    env.SOROT_CONFIG, env.VCLIP_CONFIG,
+    home && `${home}/.config/sorot/cli.conf`, "/etc/sorot/cli.conf",
+    home && `${home}/.config/viralclip/cli.conf`, "/etc/viralclip/cli.conf",
+  ].filter((p): p is string => !!p);
   let conf: Record<string, string> = {};
   let source: string | null = null;
   for (const path of candidates) {
@@ -41,12 +45,13 @@ export function loadConfig(
       break;
     }
   }
-  const mode = conf.VCLIP_MODE === "docker" || conf.VCLIP_MODE === "native" ? conf.VCLIP_MODE : "none";
+  const get = (key: string) => conf[`SOROT_${key}`] ?? conf[`VCLIP_${key}`];
+  const mode = get("MODE") === "docker" || get("MODE") === "native" ? (get("MODE") as Mode) : "none";
   return {
-    url: (env.VCLIP_URL || conf.VCLIP_URL || "http://localhost:8080").replace(/\/+$/, ""),
+    url: (env.SOROT_URL || env.VCLIP_URL || get("URL") || "http://localhost:8080").replace(/\/+$/, ""),
     mode,
-    appDir: conf.VCLIP_APP_DIR ?? "",
-    service: conf.VCLIP_SERVICE || "viralclip",
+    appDir: get("APP_DIR") ?? "",
+    service: get("SERVICE") || "sorot",
     source,
   };
 }

@@ -3,11 +3,11 @@ import { test, expect } from '@playwright/test';
 const BACKEND = process.env.BACKEND_URL || 'http://localhost:8080';
 const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:8080';
 
-test.describe('Viral Clipper E2E', () => {
+test.describe('Sorot E2E', () => {
 
   test('frontend loads and shows import form', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1')).toContainText('Viral Clipper');
+    await expect(page.locator('h1')).toContainText('Sorot');
     await expect(page.getByPlaceholder('Paste YouTube URL...')).toBeVisible();
     // Multiple "import" buttons exist now (the "Import & Clips" tab + the form
     // submit "Import & Process"), so match the submit by its exact name.
@@ -57,7 +57,7 @@ test.describe('Viral Clipper E2E', () => {
     await page.getByRole('button', { name: /import & process/i }).click();
     await page.waitForTimeout(3000);
     // The page header with serif title stays visible through the state change.
-    await expect(page.locator('h1')).toContainText('Viral Clipper');
+    await expect(page.locator('h1')).toContainText('Sorot');
     // And the tab nav is still there.
     await expect(page.getByRole('button', { name: /import & clips/i })).toBeVisible();
   });

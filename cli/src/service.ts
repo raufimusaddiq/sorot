@@ -14,7 +14,7 @@ function systemctl(d: Deps, ...args: string[]) {
 
 function requireInstall(d: Deps) {
   if (d.config.mode === "none") {
-    throw new UsageError("No install found (no cli.conf). Run scripts/install.sh, or set VCLIP_CONFIG.");
+    throw new UsageError("No install found (no cli.conf). Run scripts/install.sh, or set SOROT_CONFIG.");
   }
 }
 
@@ -43,7 +43,7 @@ async function control(d: Deps, action: "up" | "down" | "restart"): Promise<numb
   if (code !== 0 || action === "down") return code;
   d.out("Waiting for the app…");
   if (!(await waitHealthy(d))) {
-    d.err(`The app didn't answer on ${d.config.url}. Check: vclip logs`);
+    d.err(`The app didn't answer on ${d.config.url}. Check: sorot logs`);
     return 1;
   }
   d.out(`Ready: ${d.config.url}`);
@@ -91,7 +91,7 @@ async function doctor(d: Deps): Promise<number> {
     line(v.code === 0, `docker compose ${v.stdout.trim()}`, "install Docker with the compose plugin");
   } else if (d.config.mode === "native") {
     const s = await d.capture(["systemctl", "is-active", d.config.service]);
-    line(s.stdout.trim() === "active", `service ${d.config.service}: ${s.stdout.trim() || "unknown"}`, "vclip up");
+    line(s.stdout.trim() === "active", `service ${d.config.service}: ${s.stdout.trim() || "unknown"}`, "sorot up");
     const ff = await d.capture(["ffmpeg", "-hide_banner", "-encoders"]);
     line(ff.code === 0, "ffmpeg", "sudo apt install ffmpeg");
     if (gpu.code === 0) {

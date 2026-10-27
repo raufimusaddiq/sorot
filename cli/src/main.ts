@@ -8,9 +8,9 @@ import { SERVICE_COMMANDS } from "./service";
 
 export const VERSION = "1.0.0";
 
-export const HELP = `vclip — Viral Clipper from the terminal
+export const HELP = `sorot — find source videos, make and download clips from the terminal
 
-Usage: vclip <command> [options]
+Usage: sorot <command> [options]   (vclip still works as an alias)
 
 Make clips
   import <youtube-url|file>     Import and process; waits and prints the clips
@@ -47,7 +47,7 @@ App
   logs [-f]                     app logs
   health | doctor               is it up? / check the whole install
 
-Global: --json (raw output), --url URL (or $VCLIP_URL), --help, --version
+Global: --json (raw output), --url URL (or $SOROT_URL), --help, --version
 `;
 
 export async function main(argv: string[], deps: Omit<Deps, "api"> & { fetchFn?: typeof fetch }): Promise<number> {
@@ -69,7 +69,7 @@ export async function main(argv: string[], deps: Omit<Deps, "api"> & { fetchFn?:
     return await handler(d, args);
   } catch (e) {
     if (e instanceof UsageError) {
-      deps.err(`${e.message}\nRun "vclip --help" for usage.`);
+      deps.err(`${e.message}\nRun "sorot --help" for usage.`);
       return 2;
     }
     if (e instanceof ApiError) {

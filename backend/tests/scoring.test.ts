@@ -19,7 +19,8 @@ describe("matches Python score_segment on real videos", () => {
     const mismatches: unknown[] = [];
     for (const c of golden.cases) {
       for (const [i, seg] of (c.segments as SegmentIn[]).entries()) {
-        const want = c.expected[i]!;
+        // platform-neutral generic hashtag (the Python said #tiktokindonesia)
+        const want = { ...c.expected[i]!, description: c.expected[i]!.description.replaceAll("#tiktokindonesia", "#indonesia") };
         const got = scoreSegment(seg, (c.media as unknown as Record<string, MediaFeatures>)[String(seg.index)], ctxFor(c));
         const sameDesc = got.description.split("\n").slice(0, -1).join("\n") === want.description.split("\n").slice(0, -1).join("\n")
           && CTA_PHRASES.includes(got.description.split("\n").at(-1)!);

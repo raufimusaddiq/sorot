@@ -119,7 +119,7 @@ export const HASHTAG_MAP: Record<string, string[]> = {
   menginspirasi: ["#inspirasi", "#motivasi"],
 };
 
-export const GENERIC_HASHTAGS = ["#fyp", "#foryou", "#viral", "#tiktokindonesia"];
+export const GENERIC_HASHTAGS = ["#fyp", "#foryou", "#viral", "#indonesia"];
 
 export const CTA_PHRASES = [
   "Simak sampai habis!",
