@@ -179,7 +179,7 @@ if ($Dev) {
 
 Write-Host ""
 Write-Host "=== Services Running ===" -ForegroundColor Green
-Write-Host "  App:      http://localhost:8080" -ForegroundColor Cyan
+Write-Host "  App:      http://localhost:8080  (studio: /studio)" -ForegroundColor Cyan
 if ($Dev) { Write-Host "  Dev UI:   http://localhost:3000 (hot reload)" -ForegroundColor Cyan }
 Write-Host "  Health:   http://localhost:8080/api/health" -ForegroundColor DarkGray
 Write-Host ""

@@ -6,7 +6,7 @@ const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:8080';
 test.describe('Sorot E2E', () => {
 
   test('frontend loads and shows import form', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/studio');
     await expect(page.locator('h1')).toContainText('Sorot');
     await expect(page.getByPlaceholder('Paste YouTube URL...')).toBeVisible();
     // Multiple "import" buttons exist now (the "Import & Clips" tab + the form
@@ -15,7 +15,7 @@ test.describe('Sorot E2E', () => {
   });
 
   test('three top-level tabs render', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/studio');
     await expect(page.getByRole('button', { name: /import & clips/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /^discover$/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /^learning/i })).toBeVisible();
@@ -29,13 +29,13 @@ test.describe('Sorot E2E', () => {
   });
 
   test('import with empty URL shows validation', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/studio');
     const btn = page.getByRole('button', { name: /import & process/i });
     await expect(btn).toBeDisabled();
   });
 
   test('import with valid URL triggers processing', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/studio');
     const input = page.getByPlaceholder('Paste YouTube URL...');
     await input.fill('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
     const btn = page.getByRole('button', { name: /import & process/i });
@@ -51,7 +51,7 @@ test.describe('Sorot E2E', () => {
     // click — either the button flips to Importing..., an error banner appears
     // (backend down, invalid URL), or the import card reappears with the
     // cleared input. We assert that the URL field is no longer a fresh mount.
-    await page.goto('/');
+    await page.goto('/studio');
     const input = page.getByPlaceholder('Paste YouTube URL...');
     await input.fill('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
     await page.getByRole('button', { name: /import & process/i }).click();

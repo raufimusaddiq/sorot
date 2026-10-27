@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import Home from '@/app/page';
+import Studio from '@/app/studio/page';
 import {
   emptyState, installFakeApi, makeCandidate, makeClip, makeJob, makeScore, makeStages, makeVideo, ts,
   type FakeState,
-} from '../../../test/fakeApi';
+} from '../../../../test/fakeApi';
 
 let state: FakeState;
 let fake: ReturnType<typeof installFakeApi>;
@@ -24,7 +24,7 @@ afterEach(() => {
 const calls = (method: string, path: string) => fake.calls.filter(c => c.method === method && c.path === path);
 
 async function renderLoaded() {
-  const utils = render(<Home />);
+  const utils = render(<Studio />);
   await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
   return utils;
 }
@@ -58,7 +58,7 @@ describe('shell', () => {
   });
 
   it('shows a loading state before data arrives', () => {
-    render(<Home />);
+    render(<Studio />);
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 });

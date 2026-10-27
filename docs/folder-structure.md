@@ -51,10 +51,11 @@ sorot/
 │   ├── package.json
 │   ├── next.config.js
 │   ├── src/
-│   │   ├── app/                     # App router pages
+│   │   ├── app/                     # page.tsx = landing (/), studio/ = the app (/studio);
+│   │   │                            #   icon.svg, favicon.ico, apple-icon.png, opengraph-image.png
 │   │   ├── components/              # React components
 │   │   └── lib/                     # API client, helpers
-│   ├── public/
+│   ├── public/assets/               # landing photographs + credits.json
 │   └── node_modules/               # (gitignored)
 │
 ├── data/                            # Runtime media storage (gitignored)

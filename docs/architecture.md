@@ -56,6 +56,8 @@ What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 ### Next.js Frontend (`frontend/`)
 - `output: 'export'` → plain HTML/JS in `frontend/out`, served by the backend
   (same origin, no CORS). `next dev` on :3000 is optional for hot reload.
+- `/` is the landing page (what Sorot is, a live caption demo, install facts);
+  `/studio` is the app below. Both share the brand tokens in `tailwind.config.js`.
 - Video input (paste URL or upload file)
 - Job status display
 - Clip list with scores and ranking

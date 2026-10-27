@@ -41,7 +41,7 @@ Pick the path that fits your machine:
 | 🍎 | [**macOS** — Docker Desktop or from source](#-macos) | CPU | Apple Silicon & Intel Macs |
 | ⌨️ | [**CLI only** — `sorot` on any machine](#%EF%B8%8F-cli-only--sorot-anywhere) | — | Scripting, remote control |
 
-Whichever you choose, the app ends up on **http://localhost:8080** 🌐 — UI and API on one port.
+Whichever you choose, the app ends up on **http://localhost:8080** 🌐 — UI and API on one port. The front page introduces Sorot; the studio, where you make clips, is **http://localhost:8080/studio**.
 
 ### 🪟 Windows — PowerShell
 
@@ -156,7 +156,7 @@ Measured on a 12-core CPU, no GPU: transcribing 54 s of speech took **24 s** wit
 
 ## 🎞️ Making clips
 
-1. 🌐 Open **http://localhost:8080**
+1. 🌐 Open the studio: **http://localhost:8080/studio** (or **Open the studio** on the front page)
 2. 🔗 Paste a YouTube URL (or pick a local file) → **Import & Process**
    - ⚙️ **Options** under the URL box: caption style, framing, silence trim, hook first, YouTube captions, music, and **only process 13:25 → 25:00** of a long video
 3. ⏳ Watch the 9 stages tick by
