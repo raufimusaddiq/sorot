@@ -54,15 +54,22 @@ TypeScript shapes are in [`backend/src/types.ts`](../backend/src/types.ts) and
 Register a video. Does **not** start processing — call `POST /api/process` next.
 
 ```json
-{ "url": "https://www.youtube.com/watch?v=...", "localPath": null }
+{ "url": "https://www.youtube.com/watch?v=...", "localPath": null,
+  "startTime": "13:25", "endTime": "25:00" }
 ```
 
 A non-empty `url` → `YOUTUBE` (downloaded to `data/raw/{videoId}.mp4` by the
 IMPORT stage). Otherwise → `LOCAL` with `filePath = localPath`. An empty body
 still creates a `LOCAL` row (legacy behavior); its pipeline fails at IMPORT.
 
+`startTime`/`endTime` (optional, both or neither, at least 10 s apart) limit
+processing to that part of the source: YouTube downloads only that window
+(`yt-dlp --download-sections`), a local file is cut once. Accepted formats:
+`85`, `85s`, `1:25`, `01:02:03`, `13m25s`. 400 on a bad or one-sided range.
+
 ```json
-{ "status": "ok", "data": { "videoId": "uuid", "sourceType": "YOUTUBE" } }
+{ "status": "ok", "data": { "videoId": "uuid", "sourceType": "YOUTUBE",
+  "sectionStart": 805, "sectionEnd": 1500 } }
 ```
 
 ### `GET /api/videos`
@@ -74,7 +81,8 @@ All videos, newest first: `{ "videos": [Video] }`.
 ```json
 { "id": "uuid", "sourceUrl": "https://...", "sourceType": "YOUTUBE",
   "title": "Judul", "durationSec": null,
-  "filePath": "/app/data/raw/uuid.mp4", "createdAt": "2026-10-27T10:00:00.000Z" }
+  "filePath": "/app/data/raw/uuid.mp4", "createdAt": "2026-10-27T10:00:00.000Z",
+  "sectionStart": null, "sectionEnd": null }
 ```
 
 ### `DELETE /api/videos/{videoId}`
@@ -103,8 +111,16 @@ At most 2 pipelines run at once and up to 50 wait in a FIFO queue. A job left
 
 ### `POST /api/process`
 ```json
-{ "videoId": "uuid" }
+{ "videoId": "uuid",
+  "options": { "style": "hormozi", "reframe": "face", "silenceTrim": true, "silenceGapSec": 0.6,
+               "hookFirst": false, "youtubeCaptions": true, "allowAutoCaptions": false,
+               "bgm": "lofi.mp3", "bgmVolume": 0.12 } }
 ```
+`options` is optional; every key is optional and falls back to the server
+defaults (`GET /api/options`). Stored on the job (`Job.options`, JSON) and used
+by its TRANSCRIBE / RENDER / SUBTITLE stages. 400 on an unknown style or
+framing, a non-boolean flag, an out-of-range number, or a `bgm` that isn't a
+bare music file name.
 ```json
 { "status": "ok", "data": { "jobId": "uuid", "status": "QUEUED", "currentStage": "" } }
 ```
@@ -146,6 +162,33 @@ Cancels a `RUNNING` or `QUEUED` job and kills its running subprocess.
 
 ---
 
+## Editing options
+
+### `GET /api/options`
+Choices and server defaults for the import form and clip editor:
+```json
+{ "styles": ["default", "hormozi", "storyteller", "cinematic"],
+  "reframeModes": ["face", "center", "blur"],
+  "defaults": { "style": "default", "reframe": "face", "silenceTrim": false, "silenceGapSec": 0.6,
+                "hookFirst": false, "youtubeCaptions": false, "allowAutoCaptions": false,
+                "bgm": "", "bgmVolume": 0.12 } }
+```
+
+| Option | Effect |
+|---|---|
+| `style` | Caption preset |
+| `reframe` | `face` (crop follows faces), `center`, `blur` (whole frame over a blurred fill) |
+| `silenceTrim` / `silenceGapSec` | Cut pauses longer than the gap (0.2–5 s) |
+| `hookFirst` | Replay the clip's strongest line (a question/hook, 1.2–6 s, after the first 3 s) before it starts |
+| `youtubeCaptions` / `allowAutoCaptions` | Use the video's uploaded (and optionally auto-generated) YouTube captions instead of Whisper when present |
+| `bgm` / `bgmVolume` | Music file from `data/music`, looped and ducked under speech; volume 0–1 |
+
+### `GET /api/music`
+`{ "tracks": ["lofi.mp3", ...] }` — audio files in `data/music`
+(`.mp3 .m4a .aac .wav .ogg .flac`), sorted.
+
+---
+
 ## Clips
 
 Tiers: `PRIMARY` (≥ 0.80), `BACKUP` (≥ 0.65), `SKIP` (< 0.65). Only PRIMARY
@@ -169,9 +212,39 @@ An unknown video returns `[]`.
 `{ "clip": Clip, "scoreBreakdown": ClipScore }`. `scoreBreakdown` is omitted
 when no score row exists. 404 `Clip not found`.
 
+Clips also carry `options` (JSON overrides from the editor), `captionWords`
+(JSON corrected words) and `updatedAt`. Rendered files live in per-video
+folders: `data/renders/{videoId}/clip_{rank}.mp4`,
+`data/exports/{videoId}/clip_{rank}_subtitled.mp4` (+ `clip_{rank}.ass`).
+
 `ClipScore` fields: `id`, `clipId`, `hookStrength`, `keywordTrigger`,
 `novelty`, `clarity`, `emotionalEnergy`, `textSentiment`, `pauseStructure`,
 `facePresence`, `sceneChange`, `topicFit`, `historyScore`, `boostTotal`, `penaltyTotal`.
+
+### `GET /api/clips/{clipId}/captions`
+Caption words for the clip editor, in absolute source seconds:
+`{ "words": [{ "text": "halo", "start": 30.5, "end": 31.0 }], "edited": false }`.
+`edited: true` when the clip has saved corrections (`Clip.captionWords`).
+404 unknown clip; 409 `Transcript not available yet`.
+
+### `POST /api/clips/{clipId}/rerender`
+Re-renders one clip (render + captions) with new settings. All keys optional:
+```json
+{ "startTime": 29.5, "endTime": "0:57",
+  "options": { "style": "hormozi", "silenceTrim": true },
+  "captionWords": [{ "text": "Mongol", "start": 32.0, "end": 32.4 }] }
+```
+- `startTime`/`endTime` — new range (same formats as import); length 3–180 s.
+- `options` — replaces the clip's saved overrides (`{}` clears them); layered
+  over the job's options and the server defaults.
+- `captionWords` — corrected words (empty text drops a word); `null` clears a
+  saved edit and regenerates captions from the transcript; omitted keeps it.
+
+Returns `{ "clip": Clip }` with `updatedAt` set — append it to the preview /
+download URL (`?v=…`) to bypass the browser cache. Errors: 400 validation,
+404 unknown clip, 409 `Clip is already re-rendering` /
+`Video is still processing…`, 500 `Re-render failed: …` (the clip's statuses
+are set to `FAILED`).
 
 ### `POST /api/clips/export`
 ```json

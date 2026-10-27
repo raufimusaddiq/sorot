@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import type { AppConfig } from "./config";
+import { decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
 import type { ExecFn, ScriptRunner } from "./runner";
 import { now, type Store } from "./store";
 import type { Clip, ClipScore, Json, Stage, Video } from "./types";
 
 const DATA_SUBDIRS = [
   "input", "raw", "audio", "transcripts", "segments", "clips", "renders",
-  "exports", "variations", "analytics", "logs",
+  "exports", "variations", "analytics", "logs", "music", "edits",
 ];
 const RENDER_TIERS = ["PRIMARY", "BACKUP"];
 const YTDLP_FORMAT = "bv[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/bv[vcodec^=avc1]+ba/b[ext=mp4]/b";
@@ -46,6 +47,16 @@ export class PipelineOrchestrator {
     private readonly exec: ExecFn,
   ) {}
 
+  /** Per-video render/export folders: clip files are named by rank, so a
+   *  shared folder let every new video overwrite older videos' clips. */
+  renderDir(videoId: string) {
+    return `${this.config.dataDir}/renders/${videoId}/`;
+  }
+
+  exportDir(videoId: string) {
+    return `${this.config.dataDir}/exports/${videoId}/`;
+  }
+
   private path(sub: string, file: string) {
     return `${this.config.dataDir}/${sub}/${file}`;
   }
@@ -59,6 +70,7 @@ export class PipelineOrchestrator {
       return;
     }
 
+    const opts = resolveOptions(this.config, decodeOptions(job.options));
     try {
       this.store.updateJob(jobId, { status: "RUNNING" }, { unlessCancelled: true });
       this.ensureDataDirs();
@@ -66,11 +78,11 @@ export class PipelineOrchestrator {
       const stages: Array<[Stage, () => Promise<string | null>]> = [
         ["IMPORT", () => this.stageImport(video, signal)],
         ["AUDIO_EXTRACT", () => this.stageAudioExtract(video, signal)],
-        ["TRANSCRIBE", () => this.stageTranscribe(video, signal)],
+        ["TRANSCRIBE", () => this.stageTranscribe(video, opts, signal)],
         ["SEGMENT", () => this.stageSegment(video, signal)],
         ["SCORE", () => this.stageScore(video, signal)],
-        ["RENDER", () => this.stageRender(jobId, video, signal)],
-        ["SUBTITLE", () => this.stageSubtitle(jobId, video, signal)],
+        ["RENDER", () => this.stageRender(jobId, video, opts, signal)],
+        ["SUBTITLE", () => this.stageSubtitle(jobId, video, opts, signal)],
         ["VARIATION", () => this.stageVariation(video, signal)],
         ["ANALYTICS", () => this.stageAnalytics(video, signal)],
       ];
@@ -127,10 +139,28 @@ export class PipelineOrchestrator {
 
   // ---- stages ----
 
+  private sectionArgs(video: Video): [number, number] | null {
+    const a = video.sectionStart ?? null;
+    const b = video.sectionEnd ?? null;
+    return a != null && b != null ? [a, b] : null;
+  }
+
   private async stageImport(video: Video, signal: AbortSignal): Promise<string> {
+    const section = this.sectionArgs(video);
     if (video.sourceType !== "YOUTUBE") {
       if (!fileNonEmpty(video.filePath)) throw new Error(`Local file not found: ${video.filePath}`);
-      return video.filePath;
+      if (!section) return video.filePath;
+      // Range import of a local file: cut once so every stage sees only it.
+      const cut = this.path("raw", `${video.id}.mp4`);
+      if (!fileNonEmpty(cut)) {
+        await this.run(this.config.ffmpegPath, [
+          "-ss", String(section[0]), "-to", String(section[1]), "-i", video.filePath,
+          "-c", "copy", "-avoid_negative_ts", "make_zero", "-y", cut,
+        ], signal, "ffmpeg range cut");
+      }
+      this.store.updateVideo(video.id, { filePath: cut });
+      video.filePath = cut;
+      return cut;
     }
     const sourceUrl = video.sourceUrl ?? "";
     const outputPath = this.path("raw", `${video.id}.mp4`);
@@ -145,8 +175,12 @@ export class PipelineOrchestrator {
     // A retry after a completed download skips straight to the cached file.
     if (!fileNonEmpty(outputPath)) {
       try {
+        // A range import downloads only that window, not the whole video.
+        const sectionFlags = section
+          ? ["--download-sections", `*${section[0]}-${section[1]}`, "--force-keyframes-at-cuts"]
+          : [];
         await this.run(this.config.ytdlpPath, [
-          "-f", YTDLP_FORMAT, "--merge-output-format", "mp4", "--no-warnings",
+          "-f", YTDLP_FORMAT, "--merge-output-format", "mp4", "--no-warnings", ...sectionFlags,
           "-o", outputPath, sourceUrl,
         ], signal, "yt-dlp download");
       } finally {
@@ -178,8 +212,28 @@ export class PipelineOrchestrator {
     return audioPath;
   }
 
-  private async stageTranscribe(video: Video, signal: AbortSignal) {
+  private async stageTranscribe(video: Video, opts: ResolvedOptions, signal: AbortSignal) {
     const outputPath = this.path("transcripts", `${video.id}.json`);
+    if (opts.youtubeCaptions && video.sourceType === "YOUTUBE" && video.sourceUrl) {
+      // Uploaded captions spell names right; fall back to Whisper when the
+      // video has none (or the fetch fails).
+      const section = this.sectionArgs(video);
+      try {
+        const captions = await this.runScript("youtube_captions.py", [
+          "--url", video.sourceUrl, "--output", outputPath, "--language", this.config.whisperLanguage,
+          "--ytdlp-path", this.config.ytdlpPath,
+          ...(opts.allowAutoCaptions ? ["--allow-auto"] : []),
+          ...(section ? ["--start", String(section[0]), "--end", String(section[1])] : []),
+        ], { signal });
+        if (captions.found === true) {
+          await Bun.write(outputPath, JSON.stringify(captions));
+          return outputPath;
+        }
+      } catch (e) {
+        if (signal.aborted) throw new CancelledError();
+        console.warn(`YouTube captions failed, using Whisper: ${(e as Error).message}`);
+      }
+    }
     const result = await this.runScript("transcribe.py", [
       "--audio", this.path("audio", `${video.id}.wav`),
       "--output", outputPath,
@@ -322,41 +376,32 @@ export class PipelineOrchestrator {
     }
   }
 
-  /** Same flags for render.py and subtitle.py so captions follow the cut video. */
-  private silenceArgs(): string[] {
-    return this.config.silenceTrim
-      ? ["--silence-trim", "--silence-gap", String(this.config.silenceGapSec)]
-      : [];
-  }
-
-  private async stageRender(jobId: string, video: Video, signal: AbortSignal) {
+  private async stageRender(jobId: string, video: Video, opts: ResolvedOptions, signal: AbortSignal) {
     const segmentsPath = this.path("segments", `${video.id}.json`);
-    const renderDir = `${this.config.dataDir}/renders/`;
+    const renderDir = this.renderDir(video.id);
     mkdirSync(renderDir, { recursive: true });
     await this.fanOut(jobId, "RENDER", video, signal, "Rendering", "rendered", "render.py",
       (idx) => [
         "--segments", segmentsPath, "--video", video.filePath, "--output-dir", renderDir,
         "--clip-index", String(idx),
         "--transcript", this.path("transcripts", `${video.id}.json`),
-        "--reframe", this.config.reframeMode,
-        ...this.silenceArgs(),
+        ...renderFlags(opts),
       ],
       (r) => this.applyClipResults(video.id, r, "render"), "renderStatus");
     return null; // progress text already written to output_path
   }
 
-  private async stageSubtitle(jobId: string, video: Video, signal: AbortSignal) {
-    const exportDir = `${this.config.dataDir}/exports/`;
+  private async stageSubtitle(jobId: string, video: Video, opts: ResolvedOptions, signal: AbortSignal) {
+    const exportDir = this.exportDir(video.id);
     mkdirSync(exportDir, { recursive: true });
     await this.fanOut(jobId, "SUBTITLE", video, signal, "Burning", "burned", "subtitle.py",
       (idx) => [
         "--transcript", this.path("transcripts", `${video.id}.json`),
         "--segments", this.path("segments", `${video.id}.json`),
-        "--render-dir", `${this.config.dataDir}/renders/`,
+        "--render-dir", this.renderDir(video.id),
         "--output-dir", exportDir,
         "--clip-index", String(idx),
-        "--style", this.config.subtitleStyle,
-        ...this.silenceArgs(),
+        ...subtitleFlags(opts, this.config),
       ],
       (r) => this.applyClipResults(video.id, r, "export"), "exportStatus");
     return null;

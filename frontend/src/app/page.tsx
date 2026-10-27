@@ -5,13 +5,15 @@ import { ApiClient } from '@/lib/api';
 import { reportError, onError, isAbortError } from '@/lib/errors';
 import type {
   Video, Job, StageStatus, Clip, ClipScore,
-  JobDetail, ClipDetail, VideoGroup,
+  JobDetail, ClipDetail, VideoGroup, EditChoices,
 } from '@/types';
 import {
   STAGE_LABELS, TIER_COLORS, STAGE_ORDER, STATUS_COLORS,
   formatTime, formatDuration, formatDurationSec, timeAgo, tierLabel, videoLabel,
 } from '@/lib/ui-utils';
 import { ProgressBar, ScoreBadge, TranscriptView } from '@/components/progress';
+import { FALLBACK_CHOICES, ImportOptions, type ImportSettings } from '@/components/ImportOptions';
+import { ClipEditor } from '@/components/ClipEditor';
 
 // Adaptive polling bounds for job status — start fast so stage transitions
 // feel snappy, back off so a 6-min RENDER stage doesn't fire 180 requests.
@@ -22,11 +24,11 @@ const POLL_MAX_MS = 10000;
 // Home's state and refresh handlers; their extraction is a separate PR.
 
 function ClipCard({
-  clip, score, previewing, onPreview, onExport, api,
+  clip, score, previewing, onPreview, onExport, onEdit, api,
   selectable, selected, onSelect,
 }: {
   clip: Clip; score?: ClipScore; previewing: boolean;
-  onPreview: () => void; onExport: () => void; api: ApiClient;
+  onPreview: () => void; onExport: () => void; onEdit: () => void; api: ApiClient;
   selectable?: boolean; selected?: boolean; onSelect?: () => void;
 }) {
   const [showScore, setShowScore] = useState(false);
@@ -146,11 +148,14 @@ function ClipCard({
             </button>
           )}
           {clip.exportPath && (
-            <a href={api.getExportUrl(clip.id)} className="flex-1 py-1.5 rounded text-xs font-medium bg-success text-white hover:bg-success/90 transition-colors text-center">Download</a>
+            <a href={api.getExportUrl(clip.id, clip.updatedAt)} className="flex-1 py-1.5 rounded text-xs font-medium bg-success text-white hover:bg-success/90 transition-colors text-center">Download</a>
           )}
           {!clip.exportPath && clip.renderStatus === 'COMPLETED' && (
             <button onClick={onExport} className="flex-1 py-1.5 rounded text-xs font-medium bg-surface-3 text-fg/85 hover:bg-surface-3 transition-colors">Export</button>
           )}
+          <button onClick={onEdit} className="py-1.5 px-2 rounded text-xs font-medium bg-surface-3 text-fg/85 hover:bg-surface-3 transition-colors">
+            Edit
+          </button>
           <button onClick={() => setShowFeedback(!showFeedback)} className="py-1.5 px-2 rounded text-xs font-medium bg-surface-3 text-muted hover:bg-surface-3 transition-colors">
             {viralScore !== null ? `${(viralScore * 100).toFixed(0)}%` : 'FB'}
           </button>
@@ -535,6 +540,11 @@ export default function Home() {
   const pollDelayRef = useRef<number>(POLL_MIN_MS);
   const pollLastStageRef = useRef<string | null>(null);
   const [initialLoad, setInitialLoad] = useState(true);
+  const [choices, setChoices] = useState<EditChoices>(FALLBACK_CHOICES);
+  const [importSettings, setImportSettings] = useState<ImportSettings>({ options: {}, startTime: '', endTime: '' });
+  const [editingClip, setEditingClip] = useState<Clip | null>(null);
+  /** Clip id → version (updatedAt) after a re-render, to bust cached media. */
+  const [versions, setVersions] = useState<Record<string, string>>({});
   const [globalError, setGlobalError] = useState<{ msg: string; ctx: string } | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -709,6 +719,12 @@ export default function Home() {
   }, [currentJobId, startPolling]);
 
   useEffect(() => {
+    Promise.all([api.getOptions(), api.listMusic()])
+      .then(([opts, music]) => setChoices({ ...opts, music: music.tracks }))
+      .catch((e) => reportError(e, 'loadOptions'));
+  }, [api]);
+
+  useEffect(() => {
     return onError((msg, ctx) => {
       setGlobalError({ msg, ctx });
     });
@@ -720,8 +736,12 @@ export default function Home() {
     setImporting(true);
     setImportError(null);
     try {
-      const importData = await api.importVideo(youtubeUrl.trim()) as { videoId: string };
-      const processData = await api.startProcessing(importData.videoId) as { jobId: string };
+      const { startTime, endTime, options } = importSettings;
+      const range = startTime.trim() || endTime.trim()
+        ? { startTime: startTime.trim(), endTime: endTime.trim() }
+        : undefined;
+      const importData = await api.importVideo(youtubeUrl.trim(), undefined, range) as { videoId: string };
+      const processData = await api.startProcessing(importData.videoId, options) as { jobId: string };
       setCurrentJobId(processData.jobId);
       startPolling(processData.jobId);
       setYoutubeUrl('');
@@ -839,6 +859,8 @@ export default function Home() {
           </button>
         </form>
         {importError && <p className="text-error text-xs mt-2">{importError}</p>}
+        <ImportOptions value={importSettings} onChange={setImportSettings} choices={choices}
+          disabled={importing || isActiveJob} />
        </section>
       )}
 
@@ -992,7 +1014,9 @@ export default function Home() {
                                       const clips = await fetchClipsForVideo(group.video.id);
                                       setVideoGroups(prev => prev.map(g => g.video.id === group.video.id ? { ...g, clips } : g));
                                     }).catch(() => {});
-                                  }} api={api} />
+                                  }}
+                                  onEdit={() => setEditingClip(clip)}
+                                  api={api} />
                               ))}
                             </div>
                           )}
@@ -1095,6 +1119,17 @@ export default function Home() {
         </section>
       )}
 
+      {editingClip && (
+        <ClipEditor clip={editingClip} api={api} choices={choices}
+          onClose={() => setEditingClip(null)}
+          onSaved={async (saved) => {
+            setEditingClip(null);
+            setVersions((v) => ({ ...v, [saved.id]: saved.updatedAt ?? String(Date.now()) }));
+            const clips = await fetchClipsForVideo(saved.videoId);
+            setVideoGroups((prev) => prev.map((g) => (g.video.id === saved.videoId ? { ...g, clips } : g)));
+          }} />
+      )}
+
       {previewingClip && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
           <div className="bg-surface rounded-lg max-w-sm w-full overflow-hidden">
@@ -1110,7 +1145,7 @@ export default function Home() {
                 </div>
               ) : (
                 <video
-                  src={api.getPreviewUrl(previewingClip)}
+                  src={api.getPreviewUrl(previewingClip, versions[previewingClip])}
                   controls
                   autoPlay
                   className="max-h-full max-w-full"

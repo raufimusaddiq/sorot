@@ -9,15 +9,18 @@ type Table =
   | "clip_feedback" | "discovered_video";
 
 const COLUMNS: Record<Table, string[]> = {
-  video: ["id", "source_url", "source_type", "title", "duration_sec", "file_path", "created_at"],
-  job: ["id", "video_id", "status", "current_stage", "error_message", "created_at", "updated_at"],
+  video: [
+    "id", "source_url", "source_type", "title", "duration_sec", "file_path", "created_at",
+    "section_start", "section_end",
+  ],
+  job: ["id", "video_id", "status", "current_stage", "error_message", "created_at", "updated_at", "options"],
   stage_status: [
     "id", "job_id", "stage", "status", "started_at", "completed_at", "error_message", "output_path",
   ],
   clip: [
     "id", "video_id", "rank_pos", "score", "tier", "title", "description", "start_time",
     "end_time", "duration_sec", "text_content", "render_status", "render_path",
-    "export_status", "export_path", "created_at",
+    "export_status", "export_path", "created_at", "options", "caption_words", "updated_at",
   ],
   clip_score: [
     "id", "clip_id", "hook_strength", "keyword_trigger", "novelty", "clarity",

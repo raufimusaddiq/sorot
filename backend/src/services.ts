@@ -17,7 +17,10 @@ function removeFile(path: string | null) {
 export class VideoService {
   constructor(private readonly config: AppConfig, private readonly store: Store) {}
 
-  importVideo(url?: string | null, localPath?: string | null): Video {
+  importVideo(
+    url?: string | null, localPath?: string | null,
+    section: { start: number; end: number } | null = null,
+  ): Video {
     const id = crypto.randomUUID();
     const isYoutube = !!url && url.trim() !== "";
     const video: Video = {
@@ -28,6 +31,8 @@ export class VideoService {
       durationSec: null,
       filePath: isYoutube ? `${this.config.dataDir}/raw/${id}.mp4` : (localPath ?? ""),
       createdAt: now(),
+      sectionStart: section?.start ?? null,
+      sectionEnd: section?.end ?? null,
     };
     return this.store.saveVideo(video);
   }

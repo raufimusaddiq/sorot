@@ -80,6 +80,11 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
       return { clips: [{ rank, status: "COMPLETED", path: clipFile(argAfter(args, "--output-dir"), rank, "_subtitled") }] };
     },
     "variation.py": () => ({ variations: [] }),
+    "captions.py": (args) => {
+      const start = Number(argAfter(args, "--start"));
+      return { words: [{ text: "halo", start: start + 0.5, end: start + 1 }, { text: "dunia", start: start + 1.2, end: start + 2 }] };
+    },
+    "youtube_captions.py": () => ({ found: false }),
     "analytics.py": () => ({ summary: { clips: 2 } }),
     "feedback.py": () => ({ viralScore: 0.42 }),
     "learn_weights.py": (args) =>

@@ -47,6 +47,33 @@ export type Clip = {
   exportStatus: string;
   exportPath: string | null;
   createdAt: string;
+  /** JSON-encoded PipelineOptions set in the clip editor. */
+  options?: string | null;
+  /** JSON-encoded edited caption words. */
+  captionWords?: string | null;
+  updatedAt?: string | null;
+};
+
+export type PipelineOptions = {
+  style?: string;
+  reframe?: string;
+  silenceTrim?: boolean;
+  silenceGapSec?: number;
+  hookFirst?: boolean;
+  youtubeCaptions?: boolean;
+  allowAutoCaptions?: boolean;
+  bgm?: string;
+  bgmVolume?: number;
+};
+
+export type CaptionWord = { text: string; start: number; end: number };
+
+/** Choices offered by the backend (GET /api/options + /api/music). */
+export type EditChoices = {
+  styles: string[];
+  reframeModes: string[];
+  music: string[];
+  defaults: Required<PipelineOptions>;
 };
 
 export type ClipScore = {

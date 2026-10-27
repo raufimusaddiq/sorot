@@ -1,5 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
+import type { CaptionWord, Clip, PipelineOptions } from '@/types';
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 export class ApiClient {
@@ -21,17 +23,39 @@ export class ApiClient {
     return json.data as T;
   }
 
-  async importVideo(url?: string, localPath?: string) {
+  /** ``range`` limits the import to part of the source ("1:25", "85", "13m25s"). */
+  async importVideo(url?: string, localPath?: string, range?: { startTime?: string; endTime?: string }) {
     return this.request('/api/import', {
       method: 'POST',
-      body: JSON.stringify({ url, localPath }),
+      body: JSON.stringify({ url, localPath, ...range }),
     });
   }
 
-  async startProcessing(videoId: string) {
+  async startProcessing(videoId: string, options?: PipelineOptions) {
     return this.request('/api/process', {
       method: 'POST',
-      body: JSON.stringify({ videoId }),
+      body: JSON.stringify({ videoId, options }),
+    });
+  }
+
+  async getOptions() {
+    return this.request<{ styles: string[]; reframeModes: string[]; defaults: Required<PipelineOptions> }>('/api/options');
+  }
+
+  async listMusic() {
+    return this.request<{ tracks: string[] }>('/api/music');
+  }
+
+  async getClipCaptions(clipId: string) {
+    return this.request<{ words: CaptionWord[]; edited: boolean }>(`/api/clips/${clipId}/captions`);
+  }
+
+  async rerenderClip(clipId: string, body: {
+    startTime?: number; endTime?: number; options?: PipelineOptions; captionWords?: CaptionWord[] | null;
+  }) {
+    return this.request<{ clip: Clip }>(`/api/clips/${clipId}/rerender`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   }
 
@@ -136,11 +160,12 @@ export class ApiClient {
     return this.request('/api/feedback/weights');
   }
 
-  getPreviewUrl(clipId: string) {
-    return `${this.baseUrl}/api/clips/${clipId}/preview`;
+  /** ``version`` (e.g. clip.updatedAt) busts the browser cache after a re-render. */
+  getPreviewUrl(clipId: string, version?: string | null) {
+    return `${this.baseUrl}/api/clips/${clipId}/preview${version ? `?v=${encodeURIComponent(version)}` : ''}`;
   }
 
-  getExportUrl(clipId: string) {
-    return `${this.baseUrl}/api/clips/${clipId}/export`;
+  getExportUrl(clipId: string, version?: string | null) {
+    return `${this.baseUrl}/api/clips/${clipId}/export${version ? `?v=${encodeURIComponent(version)}` : ''}`;
   }
 }

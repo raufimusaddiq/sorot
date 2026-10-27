@@ -1,4 +1,5 @@
 import type { AppConfig } from "./config";
+import type { PipelineOptions } from "./options";
 import { CancelledError, type PipelineOrchestrator } from "./orchestrator";
 import { now, type Store } from "./store";
 import { STAGES, type Job } from "./types";
@@ -25,7 +26,7 @@ export class JobService {
     private readonly orchestrator: PipelineOrchestrator,
   ) {}
 
-  createAndStartJob(videoId: string): Job {
+  createAndStartJob(videoId: string, options: PipelineOptions = {}): Job {
     if (!this.store.getVideo(videoId)) throw new ConflictError(`Video not found: ${videoId}`);
     const existing = this.store.latestJobForVideo(videoId);
     if (existing && (existing.status === "RUNNING" || existing.status === "QUEUED")) {
@@ -36,6 +37,7 @@ export class JobService {
     const job: Job = {
       id: crypto.randomUUID(), videoId, status: "QUEUED", currentStage: null,
       errorMessage: null, createdAt: ts, updatedAt: ts,
+      options: Object.keys(options).length ? JSON.stringify(options) : null,
     };
     this.store.transaction(() => {
       this.store.saveJob(job);

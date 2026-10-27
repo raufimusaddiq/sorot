@@ -57,6 +57,9 @@ describe("loadConfig", () => {
     expect(loadConfig({ SILENCE_TRIM: "no", SILENCE_GAP_SEC: "-1" })).toMatchObject({ silenceTrim: false, silenceGapSec: 0.6 });
     expect(loadConfig({ REFRAME_MODE: " Blur " }).reframeMode).toBe("blur");
     expect(loadConfig({ REFRAME_MODE: "sideways" }).reframeMode).toBe("face");
+    expect(loadConfig({ HOOK_FIRST: "1", YOUTUBE_CAPTIONS: "true", YOUTUBE_AUTO_CAPTIONS: "on", BGM_FILE: " lofi.mp3 ", BGM_VOLUME: "0.3" }))
+      .toMatchObject({ hookFirst: true, youtubeCaptions: true, allowAutoCaptions: true, bgmFile: "lofi.mp3", bgmVolume: 0.3 });
+    expect(loadConfig({ BGM_VOLUME: "7" }).bgmVolume).toBe(0.12);
   });
 
   test("env overrides; empty strings fall back; bad ints fall back", () => {
