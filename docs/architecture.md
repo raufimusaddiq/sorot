@@ -73,7 +73,8 @@ What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 
 | Where | How |
 |---|---|
-| Windows | Docker Desktop + `scripts\start.ps1` |
+| Windows, Docker | `scripts\install.ps1` — Docker Desktop pulls `ghcr.io/raufimusaddiq/sorot`; `scripts\start.ps1` / `stop.ps1` |
+| Windows, native | `scripts\install.ps1 -Mode native` — Bun + Python venv + winget ffmpeg, Startup-folder autostart, settings in `.env.native` |
 | Linux, Docker | `scripts/install.sh` — compose app container, GPU via NVIDIA Container Toolkit, `restart: unless-stopped` |
 | Linux, native | `scripts/install.sh --mode native` — Bun + venv on the host, systemd `sorot.service` |
 

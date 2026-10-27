@@ -1,0 +1,110 @@
+# Tests every push and PR; on master (and v* tags) also publishes the app image
+# to ghcr.io/raufimusaddiq/sorot, which docker-compose.yml and the installers pull.
+#   master  → :latest, :sha-<short>
+#   v1.2.3  → :1.2.3, :1.2, :sha-<short>
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BUN_VERSION: 1.3.12   # same as backend/Dockerfile and scripts/install.sh
+
+jobs:
+  bun:
+    name: Backend + CLI + UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Backend tests
+        working-directory: backend
+        run: bun test --coverage
+      - name: CLI tests
+        working-directory: cli
+        run: bun test --coverage
+      - name: UI tests
+        working-directory: frontend
+        run: bun run test
+      - name: UI static export
+        run: bun run build
+
+  python:
+    name: Media pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"   # Ubuntu 22.04's, as in the image
+          cache: pip
+          cache-dependency-path: ai-pipeline/requirements.txt
+      - name: ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      - run: pip install -r ai-pipeline/requirements.txt
+      - name: pytest
+        working-directory: ai-pipeline
+        run: python -m pytest tests -q
+
+  image:
+    name: Docker image
+    needs: [bun, python]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # CUDA base + Python wheels + the baked-in Whisper model is ~10 GB while
+      # building; the hosted runner's preinstalled SDKs leave too little room.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+          labels: |
+            org.opencontainers.image.title=Sorot
+            org.opencontainers.image.description=Long videos to 9:16 clips with word-timed captions (API + UI + media pipeline)
+            org.opencontainers.image.licenses=MIT
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer cache in the registry: the CUDA / pip / model layers rarely change.
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref=ghcr.io/{0}:buildcache,mode=max', github.repository) || '' }}

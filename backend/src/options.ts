@@ -87,7 +87,8 @@ export function parseOptions(raw: unknown): PipelineOptions {
 export function musicName(value: unknown): string {
   const name = String(value ?? "").trim();
   if (name === "") return "";
-  if (name !== basename(name) || name.startsWith(".") || !MUSIC_EXTENSIONS.some((e) => name.toLowerCase().endsWith(e))) {
+  // Either OS's separators: on Linux basename() treats "C:\x.mp3" as a plain name.
+  if (name !== basename(name) || /[\\/:]/.test(name) || name.startsWith(".") || !MUSIC_EXTENSIONS.some((e) => name.toLowerCase().endsWith(e))) {
     throw new HttpError(400, `bgm must be a music file name from data/music (${MUSIC_EXTENSIONS.join(", ")})`);
   }
   return name;

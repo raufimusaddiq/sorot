@@ -15,3 +15,6 @@ data
 *.mp4
 *.wav
 *.db
+.tools
+.env.native
+.env.llm

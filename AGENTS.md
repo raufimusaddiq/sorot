@@ -15,8 +15,10 @@ Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (stat
 ## Commands
 ### Start/Stop (user runs these)
 ```
-.\scripts\start.ps1          # start app on :8080 (cached image)
-.\scripts\start.ps1 -Build   # start app (rebuild image)
+.\scripts\install.ps1 [-Mode native]   # Windows install: Docker (pulls ghcr image) or native (Bun+venv+winget)
+.\scripts\start.ps1          # start app on :8080 (pulls ghcr.io/raufimusaddiq/sorot first time; native if .env.native)
+.\scripts\start.ps1 -Update  # pull newest image
+.\scripts\start.ps1 -Build   # build image from source
 .\scripts\start.ps1 -Dev     # + hot-reload UI on :3000
 .\scripts\stop.ps1           # stop all services
 ```
@@ -81,6 +83,8 @@ cd ai-pipeline
 - `frontend` must stay static-exportable: no API routes, rewrites, server actions or `next/image` optimization
 - API JSON keys = camelCase of SQLite columns (`backend/src/store.ts`); the frontend depends on them
 - `docker-compose.yml` uses `.env.docker` — always pass `--env-file .env.docker`
+- Image `ghcr.io/raufimusaddiq/sorot` is built + pushed by `.github/workflows/ci.yml` (master → `latest`, `v*` tags → semver); `SOROT_VERSION` in `.env.docker` picks the tag
+- PowerShell scripts must stay ASCII-only (PS 5.1 reads BOM-less files as ANSI) and `install.ps1` must not `exit` (it runs under `irm | iex`)
 - PowerShell scripts: `$ErrorActionPreference = "Continue"` (NOT "Stop" — docker stderr crashes it)
 - Use `-UseBasicParsing` on all `Invoke-WebRequest` calls in PowerShell
 - Capture docker output to variable, check `$LASTEXITCODE` after, not via pipe

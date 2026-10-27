@@ -26,6 +26,7 @@ CPU=0
 START=1
 SERVICE_WANTED=1
 SKIP_MODEL=0
+BUILD=0
 UNINSTALL=0
 PURGE=0
 YES=0
@@ -39,6 +40,8 @@ Usage: scripts/install.sh [options]
                          run by a systemd service.
   --port N               port for the web UI and API (default 8080)
   --cpu                  don't use the NVIDIA GPU even if one is present
+  --build                (docker) build the image from source instead of
+                         pulling ghcr.io/raufimusaddiq/sorot
   --no-start             install everything but don't start the app
   --no-service           (native) don't install the systemd service
   --skip-model           (native) don't pre-download the Whisper model
@@ -57,6 +60,7 @@ while [ $# -gt 0 ]; do
     --port) PORT="${2:-}"; shift ;;
     --port=*) PORT="${1#*=}" ;;
     --cpu) CPU=1 ;;
+    --build) BUILD=1 ;;
     --no-start) START=0 ;;
     --no-service) SERVICE_WANTED=0 ;;
     --skip-model) SKIP_MODEL=1 ;;
@@ -277,8 +281,15 @@ install_docker() {
     $SUDO usermod -aG docker "$RUN_USER"
     warn "Added $RUN_USER to the docker group — log out and back in before using sorot up/down/logs"
   fi
-  step "Building the app image (first time: ~10 min, downloads the Whisper model)"
-  (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker build backend)
+  if [ "$BUILD" -eq 1 ]; then
+    step "Building the app image from source (first time: ~10 min, downloads the Whisper model)"
+    (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker build backend)
+  else
+    # Published by .github/workflows/ci.yml; updates download only the changed layers.
+    step "Pulling the app image from ghcr.io (several GB the first time)"
+    (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker pull backend) \
+      || die "Pull failed — check your connection, or build it here: scripts/install.sh --build"
+  fi
   install_cli
   write_cli_conf
   if [ "$START" -eq 1 ]; then
@@ -477,7 +488,7 @@ uninstall() {
 
 # --- main --------------------------------------------------------------------
 
-[ "$(uname -s)" = Linux ] || die "This installer is for Linux (on Windows use scripts\\start.ps1)"
+[ "$(uname -s)" = Linux ] || die "This installer is for Linux (Windows: scripts\\install.ps1; macOS: see README.md)"
 if [ "$UNINSTALL" -eq 1 ]; then uninstall; exit 0; fi
 case "$MODE" in docker|native) ;; *) die "--mode must be docker or native" ;; esac
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then die "--port must be 1-65535"; fi

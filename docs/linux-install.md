@@ -39,6 +39,7 @@ PATH (see [cli.md](cli.md)).
 | `--mode docker` / `--mode native` | How the app runs (default: docker) |
 | `--port N` | Port for the UI and API (default 8080) |
 | `--cpu` | Ignore the GPU |
+| `--build` | Docker: build the image from source instead of pulling it |
 | `--no-start` | Install, don't start |
 | `--no-service` | Native: no systemd unit (you run the app yourself) |
 | `--skip-model` | Native: don't pre-download the Whisper model (it downloads on first use) |
@@ -59,8 +60,9 @@ PATH (see [cli.md](cli.md)).
 4. Writes `docker-compose.override.yml` (gitignored) for this machine: your
    port, `restart: unless-stopped` (the app comes back after a reboot), and on
    CPU-only machines it drops the GPU reservation and sets `WHISPER_DEVICE=cpu`.
-5. Builds the image (first time ~10 min: CUDA base, Python packages, the Whisper
-   model baked in) and starts it.
+5. Pulls the ready-made image `ghcr.io/raufimusaddiq/sorot` (published by
+   `.github/workflows/ci.yml`; CUDA base, Python packages and the Whisper model
+   baked in) and starts it. `--build` builds it from source instead (~10 min).
 
 Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`.
 
@@ -104,7 +106,7 @@ installer prints the command to run the app by hand.
 
 ```bash
 git pull
-scripts/install.sh            # same mode/options as before; rebuilds and restarts
+scripts/install.sh            # same mode/options as before; pulls the newest image (or rebuilds native) and restarts
 ```
 
 ## Uninstalling
