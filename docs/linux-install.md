@@ -16,7 +16,7 @@ installer: it moves your settings from `/etc/viralclip` to `/etc/sorot`,
 replaces the `viralclip` service with `sorot`, and keeps `vclip` as an alias
 of the new `sorot` command. Your `data/` (and its `viralclipper.db`) is untouched.
 
-When it finishes the app is on `http://localhost:8080` and `sorot` is on your
+When it finishes the app is on `http://localhost:8080` (the studio at `/studio`) and `sorot` is on your
 PATH (see [cli.md](cli.md)).
 
 ## Before you start

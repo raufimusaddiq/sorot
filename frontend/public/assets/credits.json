@@ -1,0 +1,48 @@
+[
+ {
+  "file": "assets/wayang-kulit-1890.jpg",
+  "media": "image",
+  "ref": "commons:45371338",
+  "title": "Wayang Kulit 1890",
+  "creator": "Unknown author Unknown author",
+  "creatorUrl": null,
+  "date": "circa 1890",
+  "license": "public domain",
+  "licenseCode": "pd",
+  "licenseUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+  "creditRequired": false,
+  "page": "https://commons.wikimedia.org/wiki/File:Wayang_Kulit_1890.jpg",
+  "via": "Wikimedia Commons",
+  "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/78/Wayang_Kulit_1890.jpg/1920px-Wayang_Kulit_1890.jpg",
+  "width": 1920,
+  "height": 1543,
+  "bytes": 1041243,
+  "credit": "\"Wayang Kulit 1890\", public domain, via Wikimedia Commons",
+  "notes": [],
+  "saved": "2026-10-27T20:40:37.424Z"
+ },
+ {
+  "file": "assets/pertunjukan-wayang-kulit.jpg",
+  "media": "image",
+  "ref": "commons:87928775",
+  "title": "Pertunjukan Wayang Kulit",
+  "creator": "FaizAttariqi",
+  "creatorUrl": null,
+  "date": "2019-09-21",
+  "license": "CC BY-SA 4.0",
+  "licenseCode": "by-sa",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "creditRequired": true,
+  "page": "https://commons.wikimedia.org/wiki/File:Pertunjukan_Wayang_Kulit.jpg",
+  "via": "Wikimedia Commons",
+  "image": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8d/Pertunjukan_Wayang_Kulit.jpg/1920px-Pertunjukan_Wayang_Kulit.jpg",
+  "width": 1920,
+  "height": 1280,
+  "bytes": 352855,
+  "credit": "\"Pertunjukan Wayang Kulit\" by FaizAttariqi, CC BY-SA 4.0, via Wikimedia Commons",
+  "notes": [
+   "Share-alike: an altered version (recoloured, combined with other pictures) must be shared under the same licence."
+  ],
+  "saved": "2026-10-27T20:40:38.129Z"
+ }
+]

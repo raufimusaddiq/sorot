@@ -5,7 +5,7 @@ Source of truth: [`backend/src/app.ts`](../backend/src/app.ts) (routes) and
 If this file and the code disagree, the code wins — fix this file.
 
 Base URL: `http://localhost:8080/api`. The UI is served from the same origin
-(`http://localhost:8080/`), so browsers need no CORS. CORS is allowed only for
+(`http://localhost:8080/` is the landing page, `/studio` the app), so browsers need no CORS. CORS is allowed only for
 `http://localhost:3000`, `http://127.0.0.1:3000` and `FRONTEND_URL` (for `next dev`).
 
 ## Conventions

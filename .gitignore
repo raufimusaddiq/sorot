@@ -62,3 +62,6 @@ $RECYCLE.BIN/
 
 # Playwright MCP screenshots / snapshots
 .playwright-mcp/
+
+# design-taste-frontend skill working files
+.taste-skill/

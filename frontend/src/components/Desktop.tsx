@@ -23,8 +23,10 @@ export function MenuBar({ tagline }: { tagline: string }) {
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex h-9 bg-surface border-b-3 border-line">
       <h1 className={`${cell} gap-2 bg-fg text-sun border-r-3 heading text-base`}>
-        <span aria-hidden className="w-5 h-4 bg-sun [clip-path:polygon(0_38%,100%_0,100%_100%,0_62%)]" />
-        Sorot
+        <a href="/" className="flex items-center gap-2" title="Sorot home">
+          <span aria-hidden className="w-5 h-4 bg-sun [clip-path:polygon(0_38%,100%_0,100%_100%,0_62%)]" />
+          Sorot
+        </a>
       </h1>
       <p className={`${cell} hidden md:flex border-r-3 font-sans text-xs text-muted`}>{tagline}</p>
       <span className="flex-1" />
