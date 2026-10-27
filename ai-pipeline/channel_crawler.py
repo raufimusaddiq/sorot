@@ -22,7 +22,6 @@ per-video fetch) and only falls back to non-flat when we need ``upload_date``.
 import argparse
 import json
 import statistics
-import subprocess
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -58,18 +57,8 @@ CATEGORY_SEED_QUERIES = [
 ]
 
 
-def _run_ytdlp(args, ytdlp_path="yt-dlp", timeout=120):
-    """Thin wrapper matching ``discover.run_ytdlp`` return shape."""
-    cmd = [ytdlp_path] + args + ["--no-warnings", "--no-check-certificates"]
-    try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
-        )
-        return result.stdout, result.stderr, result.returncode
-    except subprocess.TimeoutExpired:
-        return "", "Timeout", 1
-    except FileNotFoundError:
-        return "", f"yt-dlp not found at {ytdlp_path}", 1
+# Same yt-dlp wrapper as discover.py; module attribute so tests can swap it.
+_run_ytdlp = discover.run_ytdlp
 
 
 # -- mode: category_seed -----------------------------------------------------

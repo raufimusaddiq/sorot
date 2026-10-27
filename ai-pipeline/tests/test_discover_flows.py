@@ -68,8 +68,8 @@ class TestHeuristics:
     def test_relevance_duration_and_velocity_bands(self):
         base = {"title": "", "description": ""}
         assert discover.quick_relevance_score({**base, "duration": 100}) == 0.0
-        assert discover.quick_relevance_score({**base, "duration": 1500}) == 0.15
-        assert discover.quick_relevance_score({**base, "duration": 600}) == 0.25
+        assert discover.quick_relevance_score({**base, "duration": 1500}) == 0.175       # 25 min → 0.7 fit
+        assert discover.quick_relevance_score({**base, "duration": 3600}) == 0.25        # long-form = full fit
         assert discover.quick_relevance_score({**base, "duration": 0, "viewCount": 200 * 24, "age_hours": 24}) == 0.10
         assert discover.quick_relevance_score({**base, "duration": 0, "view_count": 5000 * 24, "age_hours": 24}) == 0.20
         assert discover.quick_relevance_score({**base, "duration": 0, "viewCount": 50, "age_hours": 24}) == 0.0
@@ -79,7 +79,7 @@ class TestHeuristics:
         v = discover.normalize_video({"id": "abcdefghijk", "view_count": "1,234", "upload_date": "20269999",
                                       "duration_string": "1:02:03", "uploader": "Up"})
         assert v["viewCount"] == 1234
-        assert v["age_hours"] == 999          # unparseable date
+        assert v["age_hours"] == 99999        # unparseable date → unknown-age sentinel
         assert v["duration"] == 3723
         assert v["channel"] == "Up"
         assert discover.normalize_video({"id": "x", "view_count": "lots"})["viewCount"] is None
@@ -103,7 +103,7 @@ class TestSearch:
             entry("eeeeeeeeeee", duration=50000),                  # too long
             entry("fffffffffff", duration=90),                     # too short for min
         ), "", 0)]
-        vids = discover.discover_search("q", 5, min_duration=100, max_duration=3600)
+        vids = discover.discover_search("q", 5, min_duration=100, max_duration=3600, max_age_days=0)
         assert [v["videoId"] for v in vids] == ["aaaaaaaaaaa", "bbbbbbbbbbb"]
         assert vids[0]["relevanceScore"] >= vids[1]["relevanceScore"]
         assert "--flat-playlist" in ytdlp["calls"][0]
@@ -213,8 +213,8 @@ class TestCaptions:
 
 class TestPrediction:
     def test_duration_bands_and_scorer_failure(self, monkeypatch):
-        assert discover.predict_clip_potential("", duration=1300)[1] == round(0.7 * 0.2, 4)
-        assert discover.predict_clip_potential("", duration=1700)[1] == round(0.4 * 0.2, 4)
+        assert discover.predict_clip_potential("", duration=1300)[1] == round(0.7 * 0.2, 4)   # 15–30 min
+        assert discover.predict_clip_potential("", duration=700)[1] == round(0.4 * 0.2, 4)    # 10–15 min
         assert discover.predict_clip_potential("", duration=10)[1] == 0.0
         from features import text as text_features
 

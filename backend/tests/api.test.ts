@@ -13,6 +13,7 @@ afterEach(async () => {
   env.app.jobs.shutdown(); // releases any pipeline a test parked at TRANSCRIBE
   await env.app.jobs.whenIdle();
   await env.app.discovery.whenIdle();
+  await env.app.channels.whenIdle();
   env.cleanup();
 });
 
@@ -366,7 +367,8 @@ describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
     const v = r.body.data.videos[0];
     expect(v).toMatchObject({ videoId: "abcdefghijk", youtubeId: "abcdefghijk", title: "Test", duration: 300,
       relevanceScore: 0.75, viewCount: 1000, ageHours: 12.5, status: "NEW", sourceMode: "search", sourceQuery: "indonesian viral" });
-    expect(r.body.data.videos[1].viewCount).toBeNull();
+    expect(v).toMatchObject({ channelId: "UCch", contentType: "PODCAST", isLikelyClipped: false, speechDensityWpm: null });
+    expect(r.body.data.videos[1]).toMatchObject({ viewCount: null, channelId: null, contentType: null, isLikelyClipped: true });
     expect(env.calls[0]!.args).toEqual(["--mode", "search", "--query", "indonesian viral", "--max-results", "10",
       "--min-duration", "120", "--max-duration", "1800"]);
 
@@ -375,8 +377,11 @@ describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
     expect(enrich).toHaveLength(2);
     expect(enrich[1]!.args).toContain("9999"); // missing age_hours default
     const c = await env.json("GET", "/api/discover/candidates");
-    expect(c.body.data.count).toBe(2);
+    expect(c.body.data.count).toBe(1); // "Two" has no known age → hidden from the default view
     expect(c.body.data.videos[0].predictedScore).toBe(0.7);
+    env.app.store.updateDiscovered(c.body.data.videos[0].id, { ageHours: 91 * 24 });
+    expect((await env.json("GET", "/api/discover/candidates")).body.data.count).toBe(0);
+    expect((await env.json("GET", "/api/discover/candidates?status=new")).body.data.count).toBe(2);
     expect(env.app.store.discoveredByYoutubeId("abcdefghijk")!.transcriptSample).toBe("contoh transkrip");
   });
 
@@ -444,6 +449,100 @@ describe("discovery (DiscoveryControllerIT / DiscoveryServiceTest)", () => {
     const d = await env.json("POST", "/api/discover/queue/drain");
     expect(d.body.data.failed[0].error).toBe("queue full");
     env2.app.jobs.createAndStartJob = origCreate;
+  });
+});
+
+describe("source channels (channel_crawler.py)", () => {
+  const seed = (...ids: string[]) => () => ({
+    count: ids.length,
+    channels: [...ids.map((id) => ({ youtubeChannelId: id, channelName: `name ${id}`, channelUrl: `https://yt/${id}` })),
+      { youtubeChannelId: "  ", channelName: "no id" }],
+  });
+  const profiles: Record<string, Record<string, unknown>> = {
+    "https://yt/UC1": { channelName: "Podcast One", avgDurationSec: 3600, medianViewCount: 50000.7, uploadsPerWeek: 2.5,
+      subscriberCount: 0, isLikelyClipperChannel: 0, primaryCategory: "PODCAST" },
+    "https://yt/UC2": { channelName: "", avgDurationSec: 240, isLikelyClipperChannel: 0, primaryCategory: "" },
+    "https://yt/UC3": { avgDurationSec: 0, isLikelyClipperChannel: 1 },
+  };
+  const profile = (args: string[]) => {
+    const p = profiles[args[args.indexOf("--channel-url") + 1] as string];
+    if (!p) throw new Error("channel gone");
+    return p;
+  };
+  const crawler = (args: string[]) => (args.includes("category_seed") ? seed("UC1", "UC2", "UC3")() : profile(args));
+
+  test("reseed stores new channels and profiles them in the background", async () => {
+    env.scripts["channel_crawler.py"] = crawler;
+    const r = await env.json("POST", "/api/discover/channels/reseed");
+    expect(r.body.data).toEqual({ upserted: 3, alreadyKnown: 0, queued: 3 });
+    await env.app.channels.whenIdle();
+
+    const active = (await env.json("GET", "/api/discover/channels")).body.data;
+    expect(active.count).toBe(1);
+    expect(active.channels[0]).toMatchObject({
+      youtubeChannelId: "UC1", channelName: "Podcast One", channelUrl: "https://yt/UC1", primaryCategory: "PODCAST",
+      avgDurationSec: 3600, medianViewCount: 50000, uploadsPerWeek: 2.5, isLikelyClipperChannel: false,
+      trustScore: 0.5, trustSamples: 0, pollCadenceHours: 24, status: "ACTIVE", lastCrawledAt: null,
+    });
+    expect(active.channels[0].lastProfileRefreshAt).toBeString();
+    const rejected = (await env.json("GET", "/api/discover/channels?status=rejected")).body.data.channels;
+    expect(rejected.map((c: { youtubeChannelId: string }) => c.youtubeChannelId).sort()).toEqual(["UC2", "UC3"]);
+    const short = rejected.find((c: { youtubeChannelId: string }) => c.youtubeChannelId === "UC2");
+    expect(short).toMatchObject({ channelName: "name UC2", primaryCategory: "MIXED", isLikelyClipperChannel: false });
+
+    const again = await env.json("POST", "/api/discover/channels/reseed");
+    expect(again.body.data).toEqual({ upserted: 0, alreadyKnown: 3, queued: 0 });
+  });
+
+  test("a failed profile is retried on the next reseed, never twice at once", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let profileCalls = 0;
+    env.scripts["channel_crawler.py"] = async (args) => {
+      if (args.includes("category_seed")) return seed("UC9")();
+      profileCalls++;
+      await gate;
+      throw new Error("yt-dlp 429");
+    };
+    await env.json("POST", "/api/discover/channels/reseed");
+    const second = await env.json("POST", "/api/discover/channels/reseed");   // still profiling UC9
+    expect(second.body.data).toEqual({ upserted: 0, alreadyKnown: 1, queued: 1 });
+    release();
+    await env.app.channels.whenIdle();
+    expect(profileCalls).toBe(1);
+    const ch = (await env.json("GET", "/api/discover/channels")).body.data.channels[0];
+    expect(ch).toMatchObject({ status: "ACTIVE", lastProfileRefreshAt: null });
+
+    await env.json("POST", "/api/discover/channels/reseed");
+    await env.app.channels.whenIdle();
+    expect(profileCalls).toBe(2);
+  });
+
+  test("refresh profiles one channel now; status can be changed by hand", async () => {
+    env.scripts["channel_crawler.py"] = (args) => (args.includes("category_seed") ? seed("UC3")() : { avgDurationSec: 3600 });
+    await env.json("POST", "/api/discover/channels/reseed");
+    await env.app.channels.whenIdle();
+    const id = (await env.json("GET", "/api/discover/channels")).body.data.channels[0].id;
+
+    env.scripts["channel_crawler.py"] = crawler;
+    const r = await env.json("POST", `/api/discover/channels/${id}/refresh`);
+    expect(r.body.data).toMatchObject({ rejected: true, channel: { status: "REJECTED", isLikelyClipperChannel: true } });
+    expect((await env.json("POST", "/api/discover/channels/nope/refresh")).status).toBe(404);
+
+    expect((await env.json("POST", `/api/discover/channels/${id}/status`, {})).status).toBe(400);
+    expect((await env.json("POST", `/api/discover/channels/${id}/status`, { status: "gone" })).body.error)
+      .toBe("status must be one of ACTIVE, PAUSED, REJECTED");
+    expect((await env.json("POST", "/api/discover/channels/nope/status", { status: "ACTIVE" })).status).toBe(404);
+    const paused = await env.json("POST", `/api/discover/channels/${id}/status`, { status: "paused" });
+    expect(paused.body.data.status).toBe("PAUSED");
+    expect((await env.json("GET", "/api/discover/channels?status=PAUSED")).body.data.count).toBe(1);
+  });
+
+  test("seed failure → 500; a seed without channels stores nothing", async () => {
+    env.scripts["channel_crawler.py"] = () => { throw new Error("yt-dlp missing"); };
+    expect((await env.json("POST", "/api/discover/channels/reseed")).status).toBe(500);
+    env.scripts["channel_crawler.py"] = () => ({ count: 0 });
+    expect((await env.json("POST", "/api/discover/channels/reseed")).body.data).toEqual({ upserted: 0, alreadyKnown: 0, queued: 0 });
   });
 });
 

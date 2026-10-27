@@ -4,24 +4,20 @@
 
 ```
 ViralVideo/
-├── backend/                        # Java Spring Boot
-│   ├── pom.xml
+├── package.json · bun.lock · bunfig.toml  # Bun workspace (backend + frontend)
+├── backend/                        # Bun + TypeScript API; also serves frontend/out
 │   ├── src/
-│   │   ├── main/
-│   │   │   ├── java/com/viralclipper/
-│   │   │   │   ├── ViralClipperApplication.java
-│   │   │   │   ├── config/            # Spring config, env loading
-│   │   │   │   ├── controller/        # REST controllers
-│   │   │   │   ├── model/             # JPA entities
-│   │   │   │   ├── repository/        # Spring Data repos
-│   │   │   │   ├── service/           # Business logic
-│   │   │   │   └── pipeline/          # Job orchestration, subprocess calls
-│   │   │   └── resources/
-│   │   │       ├── application.yml
-│   │   │       └── schema.sql         # SQLite DDL
-│   │   └── test/
-│   │       └── java/com/viralclipper/
-│   └── mvnw / mvnw.cmd
+│   │   ├── index.ts                # Bun.serve entry
+│   │   ├── app.ts                  # Routes; createApp(config, deps) for tests
+│   │   ├── config.ts · db.ts · store.ts · types.ts   # env, SQLite schema/migrations, repository
+│   │   ├── runner.ts               # Python subprocess runner (timeouts, abort)
+│   │   ├── orchestrator.ts · jobs.ts                 # 9-stage pipeline, queue, orphan sweep
+│   │   ├── services.ts · editor.ts · options.ts      # videos/clips, clip editor, editing options
+│   │   ├── discovery.ts · channels.ts                # candidates, source-channel crawler
+│   │   ├── feedback.ts             # TikTok metrics, weight training
+│   │   └── http.ts                 # Router, JSON envelope, static files
+│   ├── tests/                      # bun test (fake scripts, in-memory SQLite)
+│   └── Dockerfile                  # single image: API + static UI + pipeline
 │
 ├── ai-pipeline/                     # Python CLI scripts
 │   ├── requirements.txt
@@ -32,7 +28,7 @@ ViralVideo/
 │   ├── render.py · subtitle.py · variation.py · analytics.py
 │   ├── captions.py                  # Word timing, ASS captions, silence intervals
 │   ├── reframe.py                   # Face-tracking 9:16 crop / blur fill
-│   ├── discover.py · feedback.py · learn_weights.py · train_scorer.py
+│   ├── discover.py · channel_crawler.py · feedback.py · learn_weights.py · train_scorer.py
 │   ├── features/                    # Scoring feature extractors
 │   │   ├── text.py                  # Hook, keywords, novelty, sentiment
 │   │   ├── audio.py                 # RMS energy, onset density
@@ -41,7 +37,7 @@ ViralVideo/
 │   │   └── supervised.py            # Optional LightGBM model
 │   └── tests/                       # pytest (in-process, no GPU needed)
 │
-├── frontend/                        # Next.js
+├── frontend/                        # Next.js static export (out/ served by backend)
 │   ├── package.json
 │   ├── next.config.js
 │   ├── src/
@@ -57,9 +53,10 @@ ViralVideo/
 │   ├── audio/                       # Extracted WAV audio
 │   ├── transcripts/                 # Transcription JSON output
 │   ├── segments/                    # Segment + score JSON output
-│   ├── clips/                       # Cropped vertical video (no subtitle)
-│   ├── renders/                     # Rendered vertical video (no subtitle)
-│   ├── exports/                     # Final clips with subtitles
+│   ├── renders/{videoId}/           # Rendered vertical clips (no subtitle)
+│   ├── exports/{videoId}/           # Final clips with subtitles
+│   ├── edits/                       # Clip-editor timelines and caption fixes
+│   ├── music/                       # Background music tracks
 │   └── logs/                        # Processing logs
 │
 ├── docs/                            # Design specifications
@@ -98,6 +95,6 @@ __pycache__/
 .venv/
 node_modules/
 .env
-target/
 .next/
+out/
 ```

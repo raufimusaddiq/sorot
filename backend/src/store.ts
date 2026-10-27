@@ -1,12 +1,12 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type {
-  Clip, ClipFeedback, ClipScore, DiscoveredVideo, Job, StageStatus, Video,
+  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, Job, StageStatus, Video,
 } from "./types";
 
 type Row = Record<string, unknown>;
 type Table =
   | "video" | "job" | "stage_status" | "clip" | "clip_score"
-  | "clip_feedback" | "discovered_video";
+  | "clip_feedback" | "discovered_video" | "discovery_channel";
 
 const COLUMNS: Record<Table, string[]> = {
   video: [
@@ -36,7 +36,13 @@ const COLUMNS: Record<Table, string[]> = {
     "id", "youtube_id", "url", "title", "channel", "duration_sec", "view_count", "upload_date",
     "age_hours", "source_mode", "source_query", "relevance_score", "transcript_score",
     "predicted_score", "transcript_sample", "status", "job_id", "video_id", "discovered_at",
-    "enriched_at",
+    "enriched_at", "channel_id", "content_type", "speech_density_wpm", "is_likely_clipped",
+  ],
+  discovery_channel: [
+    "id", "youtube_channel_id", "channel_name", "channel_url", "primary_category",
+    "avg_duration_sec", "median_view_count", "uploads_per_week", "subscriber_count",
+    "is_likely_clipper_channel", "trust_score", "trust_samples", "poll_cadence_hours", "status",
+    "first_seen_at", "last_crawled_at", "last_profile_refresh_at",
   ],
 };
 
@@ -184,13 +190,41 @@ export class Store {
       status,
     );
   }
-  discoveredActiveRanked() {
+  /** NEW+QUEUED of known age ≤ maxAgeHours (≥ 9999 is the unknown-age sentinel). */
+  discoveredActiveRanked(maxAgeHours: number) {
     return this.all<DiscoveredVideo>(
       "SELECT * FROM discovered_video WHERE status IN ('NEW', 'QUEUED') " +
+        "AND age_hours IS NOT NULL AND age_hours < 9999 AND age_hours <= ? " +
         "ORDER BY COALESCE(predicted_score, relevance_score) DESC, discovered_at DESC",
+      maxAgeHours,
     );
   }
   updateDiscovered(id: string, fields: Partial<DiscoveredVideo>) {
     this.patch("discovered_video", id, fields);
+  }
+
+  // ---- discovery_channel ----
+  saveChannel(c: DiscoveryChannel) { return this.upsert("discovery_channel", c); }
+  getChannel(id: string) {
+    return this.one<DiscoveryChannel>("SELECT * FROM discovery_channel WHERE id = ?", id);
+  }
+  channelByYoutubeId(ytId: string) {
+    return this.one<DiscoveryChannel>(
+      "SELECT * FROM discovery_channel WHERE youtube_channel_id = ?", ytId,
+    );
+  }
+  channelsByStatus(status: string) {
+    return this.all<DiscoveryChannel>(
+      "SELECT * FROM discovery_channel WHERE status = ? ORDER BY first_seen_at DESC", status,
+    );
+  }
+  channelsActiveByTrust() {
+    return this.all<DiscoveryChannel>(
+      "SELECT * FROM discovery_channel WHERE status = 'ACTIVE' " +
+        "ORDER BY trust_score DESC, median_view_count DESC",
+    );
+  }
+  updateChannel(id: string, fields: Partial<DiscoveryChannel>) {
+    this.patch("discovery_channel", id, fields);
   }
 }

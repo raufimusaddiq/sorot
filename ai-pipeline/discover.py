@@ -521,7 +521,7 @@ def discover_channel(channel_url, max_results=20, ytdlp_path="yt-dlp", min_durat
             if max_duration and vid["duration"] > max_duration:
                 continue
             # Age filter. Flat-playlist strips upload_date for most channel
-            # entries, so age_hours defaults to 999 (unknown). Only reject
+            # entries, so age_hours is the 99999 unknown sentinel. Only reject
             # rows where we KNOW the age is beyond the cutoff — missing dates
             # are let through rather than silently discarded.
             if max_age_days:

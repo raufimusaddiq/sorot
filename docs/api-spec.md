@@ -326,8 +326,13 @@ Candidate object (every list below returns these):
   "url": "https://…", "title": "…", "channel": "…", "duration": 300,
   "viewCount": 1000, "uploadDate": "20260401", "ageHours": 12.5,
   "relevanceScore": 0.75, "transcriptScore": 0.6, "predictedScore": 0.7,
-  "status": "NEW", "jobId": null, "sourceMode": "search", "sourceQuery": "…" }
+  "status": "NEW", "jobId": null, "sourceMode": "search", "sourceQuery": "…",
+  "channelId": "UC…", "contentType": "PODCAST", "speechDensityWpm": null,
+  "isLikelyClipped": false }
 ```
+`contentType` is a regex guess (`PODCAST`, `TALKSHOW`, `STANDUP`, `LIVESTREAM`,
+`NEWS`, `OTHER`). discover.py already drops titles that look re-clipped
+("clip", "highlight", "best of"…) and defaults to uploads from the last 90 days.
 `videoId` is a legacy alias of `youtubeId`. Status values: `NEW`, `QUEUED`,
 `SKIPPED`, `IMPORTED` (any uppercase string is accepted). Re-running a search
 keeps a status the user set; candidates already in the library come back as `IMPORTED`.
@@ -348,8 +353,8 @@ keeps a status the user set; candidates already in the library come back as `IMP
 → `{ "mode": "channel", … }`. 400 `channelUrl is required`.
 
 ### `GET /api/discover/candidates?status=QUEUED`
-Without `status`: `NEW` + `QUEUED`, ranked by `predictedScore` (else
-`relevanceScore`). With `status`: that status, ranked by predicted then
+Without `status`: `NEW` + `QUEUED` of known age up to 90 days, ranked by
+`predictedScore` (else `relevanceScore`); rows of unknown age stay hidden. With `status`: that status, ranked by predicted then
 relevance score. Returns `{ "count": n, "videos": [Candidate] }`.
 
 ### `POST /api/discover/candidates/{id}/status`
@@ -367,3 +372,33 @@ For every `QUEUED` candidate: imports the video, starts a job, and marks the can
   "started": [{ "discoveredId": "uuid", "jobId": "uuid", "videoId": "uuid" }],
   "failed":  [{ "discoveredId": "uuid", "error": "Pipeline queue is full; try again later" }] } }
 ```
+
+### Source channels
+
+`channel_crawler.py` finds long-form source channels (podcasts, talk shows,
+stand-up, livestream VODs) with 12 Indonesian anchor queries, then profiles each
+from its last 30 uploads. Channels averaging under 15 min, or flagged as clip
+farms (≥ 70 % short or clip-titled uploads), are stored as `REJECTED`.
+
+Channel object:
+```json
+{ "id": "uuid", "youtubeChannelId": "UC…", "channelName": "…", "channelUrl": "https://…",
+  "primaryCategory": "PODCAST", "avgDurationSec": 3600, "medianViewCount": 50000,
+  "uploadsPerWeek": 2.5, "subscriberCount": 0, "isLikelyClipperChannel": false,
+  "trustScore": 0.5, "trustSamples": 0, "pollCadenceHours": 24, "status": "ACTIVE",
+  "firstSeenAt": "…", "lastCrawledAt": null, "lastProfileRefreshAt": "…" }
+```
+
+#### `GET /api/discover/channels?status=REJECTED`
+Without `status`: `ACTIVE` channels by trust, then median views. Returns `{ "count": n, "channels": [Channel] }`.
+
+#### `POST /api/discover/channels/reseed`
+Runs the anchor queries (about a minute) and stores unseen channels →
+`{ "upserted": n, "alreadyKnown": n, "queued": n }`. Profiling runs in the
+background, 6 at a time; known channels that were never profiled are queued again.
+
+#### `POST /api/discover/channels/{id}/refresh`
+Profiles one channel now → `{ "channel": Channel, "rejected": bool }`. 404 `not found`.
+
+#### `POST /api/discover/channels/{id}/status`
+`{ "status": "paused" }` (`ACTIVE`, `PAUSED`, `REJECTED`) → the updated Channel. 400 on any other value, 404 `not found`.
