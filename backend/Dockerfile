@@ -9,6 +9,8 @@ WORKDIR /repo
 COPY package.json bun.lock bunfig.toml ./
 COPY backend/package.json backend/
 COPY frontend/package.json frontend/
+# Every workspace in package.json must be present for the frozen install (the CLI isn't built here).
+COPY cli/package.json cli/
 RUN bun install --frozen-lockfile
 COPY frontend/ frontend/
 # NEXT_PUBLIC_API_URL stays unset → the UI calls /api on its own origin.

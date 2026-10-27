@@ -8,6 +8,7 @@ WORKDIR /repo
 COPY package.json bun.lock bunfig.toml ./
 COPY backend/package.json backend/
 COPY frontend/package.json frontend/
+COPY cli/package.json cli/
 RUN bun install --frozen-lockfile
 COPY frontend/ frontend/
 WORKDIR /repo/frontend
