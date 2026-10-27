@@ -11,6 +11,11 @@ export interface AppConfig {
   whisperDevice: string;
   whisperLanguage: string;
   frontendUrl: string;
+  /** Caption preset passed to subtitle.py (default | hormozi | storyteller | cinematic). */
+  subtitleStyle: string;
+  /** Cut pauses longer than silenceGapSec out of each clip (render + captions). */
+  silenceTrim: boolean;
+  silenceGapSec: number;
   /** Static Next.js export (frontend/out) served at "/"; "" disables it. */
   staticDir: string;
   /** GPU is the shared resource: one pipeline on GPU, one on CPU stages. */
@@ -22,6 +27,8 @@ export interface AppConfig {
 }
 
 type Env = Record<string, string | undefined>;
+
+const bool = (value: string | undefined) => /^(1|true|yes|on)$/i.test((value ?? "").trim());
 
 function int(value: string | undefined, fallback: number): number {
   const n = Number.parseInt(value ?? "", 10);
@@ -43,6 +50,9 @@ export function loadConfig(env: Env = process.env): AppConfig {
     whisperDevice: env.WHISPER_DEVICE || "cuda",
     whisperLanguage: env.WHISPER_LANGUAGE || "id",
     frontendUrl: env.FRONTEND_URL || "http://localhost:3000",
+    subtitleStyle: env.SUBTITLE_STYLE || "default",
+    silenceTrim: bool(env.SILENCE_TRIM),
+    silenceGapSec: Number.parseFloat(env.SILENCE_GAP_SEC ?? "") > 0 ? Number.parseFloat(env.SILENCE_GAP_SEC as string) : 0.6,
     staticDir: env.STATIC_DIR ?? "../frontend/out",
     maxConcurrentPipelines: int(env.MAX_CONCURRENT_PIPELINES, 2),
     queueCapacity: int(env.PIPELINE_QUEUE_CAPACITY, 50),

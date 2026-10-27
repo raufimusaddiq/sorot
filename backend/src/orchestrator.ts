@@ -322,12 +322,24 @@ export class PipelineOrchestrator {
     }
   }
 
+  /** Same flags for render.py and subtitle.py so captions follow the cut video. */
+  private silenceArgs(): string[] {
+    return this.config.silenceTrim
+      ? ["--silence-trim", "--silence-gap", String(this.config.silenceGapSec)]
+      : [];
+  }
+
   private async stageRender(jobId: string, video: Video, signal: AbortSignal) {
     const segmentsPath = this.path("segments", `${video.id}.json`);
     const renderDir = `${this.config.dataDir}/renders/`;
     mkdirSync(renderDir, { recursive: true });
     await this.fanOut(jobId, "RENDER", video, signal, "Rendering", "rendered", "render.py",
-      (idx) => ["--segments", segmentsPath, "--video", video.filePath, "--output-dir", renderDir, "--clip-index", String(idx)],
+      (idx) => [
+        "--segments", segmentsPath, "--video", video.filePath, "--output-dir", renderDir,
+        "--clip-index", String(idx),
+        "--transcript", this.path("transcripts", `${video.id}.json`),
+        ...this.silenceArgs(),
+      ],
       (r) => this.applyClipResults(video.id, r, "render"), "renderStatus");
     return null; // progress text already written to output_path
   }
@@ -342,6 +354,8 @@ export class PipelineOrchestrator {
         "--render-dir", `${this.config.dataDir}/renders/`,
         "--output-dir", exportDir,
         "--clip-index", String(idx),
+        "--style", this.config.subtitleStyle,
+        ...this.silenceArgs(),
       ],
       (r) => this.applyClipResults(video.id, r, "export"), "exportStatus");
     return null;

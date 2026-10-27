@@ -44,12 +44,26 @@ def main():
 
         segments = []
         for i, seg in enumerate(segments_gen):
+            # Per-word timing drives karaoke captions and silence trimming
+            # (captions.py). Older transcripts lack "words" and fall back to
+            # an even split of the segment text.
+            words = [
+                {
+                    "text": w.word.strip(),
+                    "start": round(w.start, 3),
+                    "end": round(w.end, 3),
+                    "prob": round(w.probability, 3),
+                }
+                for w in (getattr(seg, "words", None) or [])
+                if w.word.strip()
+            ]
             segments.append({
                 "index": i,
                 "start": round(seg.start, 2),
                 "end": round(seg.end, 2),
                 "text": seg.text.strip(),
                 "confidence": round(seg.avg_logprob, 2) if seg.avg_logprob else None,
+                "words": words,
             })
 
         result = {

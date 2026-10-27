@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Burn word-level subtitles into rendered clips using ffmpeg drawtext.
+"""Burn word-timed karaoke captions into rendered clips.
 
-NVENC-first with libx264 fallback, same pattern as render.py. drawtext is
-CPU-only so we leave decode CPU-side (no -hwaccel) to avoid an extra GPU↔CPU
-copy; the encode is GPU. ``format=yuv420p`` is appended to the filter chain
-so NVENC H.264 never sees a 10-bit / 4:4:4 input.
+Captions are generated as an ASS file (``captions.build_ass``) from Whisper's
+per-word timestamps and burned in with ffmpeg's libass ``ass`` filter. The
+``.ass`` file is kept next to the export so captions can be reviewed or
+hand-edited (names, slang) and re-burned.
+
+NVENC-first with libx264 fallback, same pattern as render.py. libass is
+CPU-only so decode stays CPU-side (no -hwaccel); the encode is GPU.
+``format=yuv420p`` is appended so NVENC H.264 never sees 10-bit / 4:4:4.
 """
 
 import argparse
@@ -13,6 +17,11 @@ import os
 import subprocess
 import sys
 import tempfile
+
+from captions import (
+    DEFAULT_PRESET, PRESETS, build_ass, ffmpeg_filter_path, is_trimmed, keep_intervals,
+    remap_words, words_for_clip,
+)
 
 
 _NVENC_CACHE = None
@@ -64,84 +73,20 @@ def _detect_nvenc(ffmpeg_path):
     return _probe_nvenc(ffmpeg_path)
 
 
-def escape_drawtext(text):
-    return (
-        text.replace("'", "'\\''")
-        .replace(":", "\\:")
-        .replace(",", "\\,")
-        .replace("[", "\\[")
-        .replace("]", "\\]")
-        .replace("%", "%%")
-    )
-
-
-def build_word_timeline(segments, clip_start, clip_end):
-    words = []
-    for seg in segments:
-        seg_start = seg.get("start", 0.0)
-        seg_end = seg.get("end", 0.0)
-        if seg_end < clip_start or seg_start > clip_end:
-            continue
-        text = seg.get("text", "").strip()
-        if not text:
-            continue
-        duration = seg_end - seg_start
-        word_list = text.split()
-        if not word_list:
-            continue
-        word_duration = duration / len(word_list)
-        for i, word in enumerate(word_list):
-            w_start = seg_start + (i * word_duration)
-            w_end = seg_start + ((i + 1) * word_duration)
-            if w_end > clip_end or w_start < clip_start:
-                continue
-            words.append({
-                "text": word,
-                "start": round(w_start - clip_start, 3),
-                "end": round(w_end - clip_start, 3),
-            })
+def clip_words(transcript_segments, seg, silence_trim=False, silence_gap=0.6):
+    """Clip-relative words for a scored segment, re-timed onto the trimmed
+    timeline when render.py cut its silences (same inputs → same intervals)."""
+    words = words_for_clip(transcript_segments, seg["startTime"], seg["endTime"])
+    if silence_trim:
+        duration = seg["endTime"] - seg["startTime"]
+        intervals = keep_intervals(words, duration, min_gap=silence_gap)
+        if is_trimmed(intervals, duration):
+            words = remap_words(words, intervals)
     return words
 
 
-def build_subtitle_filter(words, max_chars=3, fontsize=52):
-    if not words:
-        return "null"
-    phrases = []
-    chunk = []
-    chunk_start = words[0]["start"]
-    for w in words:
-        chunk.append(w["text"])
-        if len(chunk) >= max_chars:
-            text = escape_drawtext(" ".join(chunk))
-            t_start = chunk_start
-            t_end = w["end"]
-            phrases.append((text, t_start, t_end))
-            chunk = []
-            chunk_start = w["end"]
-    if chunk:
-        text = escape_drawtext(" ".join(chunk))
-        t_start = chunk_start
-        t_end = words[-1]["end"]
-        phrases.append((text, t_start, t_end))
-
-    filters = []
-    for text, t_start, t_end in phrases:
-        filters.append(
-            f"drawtext=text='{text}':"
-            f"fontsize={fontsize}:fontcolor=yellow:"
-            f"borderw=4:bordercolor=black:"
-            f"shadowcolor=black@0.5:shadowx=2:shadowy=2:"
-            f"x=(w-text_w)/2:y=h*0.70:"
-            f"enable='between(t,{t_start:.3f},{t_end:.3f})'"
-        )
-    return ",".join(filters)
-
-
-def _build_burn_cmd(ffmpeg_path, render_path, subtitle_filter, output_path, use_nvenc):
-    if not subtitle_filter or subtitle_filter == "null":
-        vf = "format=yuv420p"
-    else:
-        vf = f"{subtitle_filter},format=yuv420p"
+def _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc):
+    vf = f"ass={ffmpeg_filter_path(ass_path)},format=yuv420p" if ass_path else "format=yuv420p"
     cmd = [
         ffmpeg_path, "-hide_banner", "-loglevel", "error",
         "-i", render_path,
@@ -159,13 +104,15 @@ def _build_burn_cmd(ffmpeg_path, render_path, subtitle_filter, output_path, use_
     return cmd
 
 
-def burn_subtitles(render_path, subtitle_filter, output_path, ffmpeg_path=None):
+def burn_subtitles(render_path, ass_path, output_path, ffmpeg_path=None):
+    """Burn ``ass_path`` onto ``render_path``. ``ass_path=None`` re-encodes
+    without captions (clip with no speech)."""
     if ffmpeg_path is None:
         ffmpeg_path = find_ffmpeg()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     use_nvenc = _probe_nvenc(ffmpeg_path)
-    cmd = _build_burn_cmd(ffmpeg_path, render_path, subtitle_filter, output_path, use_nvenc)
+    cmd = _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc)
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0 and use_nvenc:
@@ -174,9 +121,7 @@ def burn_subtitles(render_path, subtitle_filter, output_path, ffmpeg_path=None):
             f"stderr={result.stderr[-400:]}",
             file=sys.stderr,
         )
-        cmd = _build_burn_cmd(
-            ffmpeg_path, render_path, subtitle_filter, output_path, use_nvenc=False,
-        )
+        cmd = _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc=False)
         result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
@@ -187,13 +132,18 @@ def burn_subtitles(render_path, subtitle_filter, output_path, ffmpeg_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Burn subtitles into rendered clips")
+    parser = argparse.ArgumentParser(description="Burn karaoke captions into rendered clips")
     parser.add_argument("--transcript", required=True, help="Path to transcript JSON")
     parser.add_argument("--segments", required=True, help="Path to scored segments JSON")
     parser.add_argument("--render-dir", required=True, help="Directory with rendered clips")
     parser.add_argument("--output-dir", required=True, help="Directory for exported clips with subtitles")
     parser.add_argument("--tiers", default="PRIMARY,BACKUP", help="Comma-separated tiers to subtitle")
     parser.add_argument("--clip-index", type=int, default=-1, help="Subtitle only this clip index (0-based)")
+    parser.add_argument("--style", default=os.environ.get("SUBTITLE_STYLE", DEFAULT_PRESET),
+                        help=f"Caption preset: {', '.join(PRESETS)}")
+    parser.add_argument("--silence-trim", action="store_true",
+                        help="Clips were rendered with --silence-trim; re-time captions to match")
+    parser.add_argument("--silence-gap", type=float, default=0.6, help="Must match render.py --silence-gap")
     args = parser.parse_args()
 
     try:
@@ -220,6 +170,7 @@ def main():
             clip_id = seg.get("rank", seg.get("index", 0))
             render_path = os.path.join(args.render_dir, f"clip_{clip_id}.mp4")
             output_path = os.path.join(args.output_dir, f"clip_{clip_id}_subtitled.mp4")
+            ass_path = os.path.join(args.output_dir, f"clip_{clip_id}.ass")
 
             if not os.path.exists(render_path):
                 exported.append({
@@ -229,13 +180,13 @@ def main():
                 })
                 continue
 
-            words = build_word_timeline(
-                word_segments, seg["startTime"], seg["endTime"]
-            )
-            subtitle_filter = build_subtitle_filter(words)
+            words = clip_words(word_segments, seg, args.silence_trim, args.silence_gap)
+            if words:
+                with open(ass_path, "w", encoding="utf-8") as f:
+                    f.write(build_ass(words, args.style))
 
             try:
-                burn_subtitles(render_path, subtitle_filter, output_path)
+                burn_subtitles(render_path, ass_path if words else None, output_path)
                 if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                     exported.append({
                         "rank": clip_id,
@@ -246,6 +197,7 @@ def main():
                 exported.append({
                     "rank": clip_id,
                     "path": output_path,
+                    "assPath": ass_path if words else None,
                     "status": "COMPLETED",
                     "wordCount": len(words),
                 })
@@ -260,6 +212,7 @@ def main():
 
         result = {
             "videoId": segments_data.get("videoId", ""),
+            "style": args.style,
             "exportedCount": len([e for e in exported if e["status"] == "COMPLETED"]),
             "failedCount": len([e for e in exported if e["status"] == "FAILED"]),
             "clips": exported,

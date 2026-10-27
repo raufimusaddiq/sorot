@@ -53,6 +53,30 @@ describe("full pipeline", () => {
     for (const sub of ["input", "clips", "variations", "logs"]) expect(existsSync(`${env.config.dataDir}/${sub}`)).toBeTrue();
   });
 
+  test("render and subtitle get the caption style, transcript and silence-trim flags", async () => {
+    const { videoId } = await importAndRun();
+    const transcript = `${env.config.dataDir}/transcripts/${videoId}.json`;
+    const render = env.calls.find((c) => c.script === "render.py")!.args;
+    const subtitle = env.calls.find((c) => c.script === "subtitle.py")!.args;
+    expect(argAfter(render, "--transcript")).toBe(transcript);
+    expect(render).not.toContain("--silence-trim");
+    expect(argAfter(subtitle, "--style")).toBe("default");
+    expect(subtitle).not.toContain("--silence-trim");
+  });
+
+  test("silence trim is passed identically to render and subtitle", async () => {
+    env.config.silenceTrim = true;
+    env.config.silenceGapSec = 0.8;
+    env.config.subtitleStyle = "hormozi";
+    await importAndRun();
+    for (const script of ["render.py", "subtitle.py"]) {
+      const args = env.calls.find((c) => c.script === script)!.args;
+      expect(args).toContain("--silence-trim");
+      expect(argAfter(args, "--silence-gap")).toBe("0.8");
+    }
+    expect(argAfter(env.calls.find((c) => c.script === "subtitle.py")!.args, "--style")).toBe("hormozi");
+  });
+
   test("download is skipped when the raw file already exists", async () => {
     const videoId = (await env.json("POST", "/api/import", { url: "https://youtu.be/abcdefghijk" })).body.data.videoId;
     mkdirSync(`${env.config.dataDir}/raw`, { recursive: true });

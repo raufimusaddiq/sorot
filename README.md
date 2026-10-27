@@ -24,7 +24,7 @@ YouTube URL ──► Backend API ──► 11-Stage Pipeline
                      4. Segment (gap-based)
                      5. Score (11-feature multimodal formula)
                      6. Render 9:16 (ffmpeg)
-                     7. Burn Subtitles (ffmpeg drawtext)
+                     7. Karaoke Captions (word-timed ASS, libass)
                      8. Generate Variations (zoom/crop presets)
                      9. Analytics (distribution, recommendations)
                                     │
@@ -166,6 +166,9 @@ Copy `.env.example` to `.env` for local overrides. Docker uses `.env.docker` (co
 | `WHISPER_DEVICE` | cuda | cuda or cpu |
 | `WHISPER_LANGUAGE` | id | Language code (Indonesian) |
 | `NICHE_KEYWORDS` | rahasia,penting,trik,solusi,tip | Scoring keywords |
+| `SUBTITLE_STYLE` | default | Caption preset: default, hormozi, storyteller, cinematic |
+| `SILENCE_TRIM` | false | Cut pauses out of clips (video, audio and captions stay in sync) |
+| `SILENCE_GAP_SEC` | 0.6 | Pause length that gets cut when `SILENCE_TRIM=true` |
 
 ## API
 
