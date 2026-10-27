@@ -1,5 +1,11 @@
 # One image: Bun API + statically-exported Next.js UI + Python AI pipeline.
 # Build from the repo root:  docker build -f backend/Dockerfile .
+# CPU by default; the NVIDIA (CUDA + cuDNN) variant:
+#   docker build -f backend/Dockerfile --build-arg BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 .
+# Both bases are Ubuntu 24.04 (Python 3.12), so the steps below are the same.
+# Not 26.04: NVIDIA ships CUDA 13 only there, and CTranslate2 (faster-whisper)
+# is built for CUDA 12 (it loads libcublas.so.12).
+ARG BASE_IMAGE=ubuntu:24.04
 
 # ---- 1. Static UI (next build → frontend/out) ----
 # Next's build needs Node; Bun is copied in for the workspace install.
@@ -18,12 +24,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd frontend && bun run build
 
 # ---- 2. Runtime ----
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM ${BASE_IMAGE}
 
-# Ubuntu 22.04 LTS pins these de facto for the release's lifetime; yt-dlp
+# Ubuntu 24.04 LTS pins these de facto for the release's lifetime; yt-dlp
 # (pip, below) is left unpinned on purpose — YouTube changes break old ones.
 # curl is used by the docker-compose healthcheck.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates \
     python3 python3-pip python3-venv \
     ffmpeg \
     curl \
@@ -35,8 +42,9 @@ COPY ai-pipeline/requirements.txt /app/ai-pipeline/requirements.txt
 RUN python3 -m venv /app/ai-pipeline/.venv \
     && /app/ai-pipeline/.venv/bin/pip install --no-cache-dir -r /app/ai-pipeline/requirements.txt
 
-ARG WHISPER_MODEL=mobiuslabsgmbh/faster-whisper-large-v3-turbo
-RUN /app/ai-pipeline/.venv/bin/python3 -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL}', device='cpu', compute_type='int8')"
+# The Whisper model (WHISPER_MODEL, ~1.6 GB for large-v3-turbo) is not baked in:
+# it downloads on first use into /root/.cache/huggingface, the hf-cache volume
+# in docker-compose.yml, and survives image updates. The installers pre-fetch it.
 
 # The backend has no runtime npm dependencies — Bun runs the TypeScript directly.
 COPY backend/package.json backend/tsconfig.json /app/backend/

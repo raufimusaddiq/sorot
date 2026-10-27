@@ -10,6 +10,7 @@
 set -euo pipefail
 
 BUN_VERSION=1.3.12
+CUDA_BASE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04   # GPU image base (backend/Dockerfile BASE_IMAGE)
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF_DIR=/etc/sorot
 BIN=/usr/local/bin/sorot
@@ -26,6 +27,7 @@ CPU=0
 START=1
 SERVICE_WANTED=1
 SKIP_MODEL=0
+BUILD=0
 UNINSTALL=0
 PURGE=0
 YES=0
@@ -39,9 +41,12 @@ Usage: scripts/install.sh [options]
                          run by a systemd service.
   --port N               port for the web UI and API (default 8080)
   --cpu                  don't use the NVIDIA GPU even if one is present
+  --build                (docker) build the image from source instead of
+                         pulling ghcr.io/raufimusaddiq/sorot
   --no-start             install everything but don't start the app
   --no-service           (native) don't install the systemd service
-  --skip-model           (native) don't pre-download the Whisper model
+  --skip-model           don't pre-download the Whisper model (it then
+                         downloads on the first import)
   --uninstall            remove the service / container, CLI and config
   --purge                with --uninstall: also delete data/ (videos, clips,
                          database), the Python venv and the Docker image
@@ -57,6 +62,7 @@ while [ $# -gt 0 ]; do
     --port) PORT="${2:-}"; shift ;;
     --port=*) PORT="${1#*=}" ;;
     --cpu) CPU=1 ;;
+    --build) BUILD=1 ;;
     --no-start) START=0 ;;
     --no-service) SERVICE_WANTED=0 ;;
     --skip-model) SKIP_MODEL=1 ;;
@@ -259,10 +265,22 @@ write_compose_override() {
     echo "    restart: unless-stopped"
     echo "    ports: !override"
     echo "      - \"$PORT:8080\""
-    if [ "$GPU" -eq 0 ]; then
-      echo "    deploy: !reset {}   # no NVIDIA GPU: run on the CPU"
+    if [ "$GPU" -eq 1 ]; then
+      # The -cuda image (or, with --build, the CUDA base) and the GPU itself.
+      # shellcheck disable=SC2016  # ${SOROT_VERSION} is for compose, not the shell
+      echo '    image: ghcr.io/raufimusaddiq/sorot:${SOROT_VERSION:-latest}-cuda'
+      echo "    build:"
+      echo "      args:"
+      echo "        BASE_IMAGE: $CUDA_BASE"
       echo "    environment:"
-      echo "      WHISPER_DEVICE: cpu"
+      echo "      WHISPER_DEVICE: cuda"
+      echo "    deploy:"
+      echo "      resources:"
+      echo "        reservations:"
+      echo "          devices:"
+      echo "            - driver: nvidia"
+      echo "              count: 1"
+      echo "              capabilities: [gpu]"
     fi
   } | as_user tee "$f" >/dev/null
   ok "Compose settings: docker-compose.override.yml (port $PORT, $([ "$GPU" -eq 1 ] && echo GPU || echo CPU))"
@@ -277,8 +295,23 @@ install_docker() {
     $SUDO usermod -aG docker "$RUN_USER"
     warn "Added $RUN_USER to the docker group — log out and back in before using sorot up/down/logs"
   fi
-  step "Building the app image (first time: ~10 min, downloads the Whisper model)"
-  (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker build backend)
+  if [ "$BUILD" -eq 1 ]; then
+    step "Building the app image from source (first time: ~10 min, downloads the Whisper model)"
+    (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker build backend)
+  else
+    # Published by .github/workflows/release-image.yml; updates download only the changed layers.
+    step "Pulling the $([ "$GPU" -eq 1 ] && echo "CUDA" || echo "CPU") app image from ghcr.io (GB-sized the first time)"
+    (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker pull backend) \
+      || die "Pull failed — check your connection, or build it here: scripts/install.sh --build"
+  fi
+  if [ "$SKIP_MODEL" -eq 0 ]; then
+    # Into the hf-cache volume, so the first import doesn't spend its time limit downloading.
+    step "Downloading the Whisper model into the hf-cache volume (once, ~1.6 GB)"
+    (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker run --rm --no-deps \
+      --entrypoint /app/ai-pipeline/.venv/bin/python3 backend -c \
+      "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ.get('WHISPER_MODEL') or 'large-v3-turbo', device='cpu', compute_type='int8')" >/dev/null) \
+      || warn "Model download failed; it will download on the first import"
+  fi
   install_cli
   write_cli_conf
   if [ "$START" -eq 1 ]; then
@@ -477,7 +510,7 @@ uninstall() {
 
 # --- main --------------------------------------------------------------------
 
-[ "$(uname -s)" = Linux ] || die "This installer is for Linux (on Windows use scripts\\start.ps1)"
+[ "$(uname -s)" = Linux ] || die "This installer is for Linux (Windows: scripts\\install.ps1; macOS: see README.md)"
 if [ "$UNINSTALL" -eq 1 ]; then uninstall; exit 0; fi
 case "$MODE" in docker|native) ;; *) die "--mode must be docker or native" ;; esac
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then die "--port must be 1-65535"; fi

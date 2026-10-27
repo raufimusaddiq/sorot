@@ -39,9 +39,10 @@ PATH (see [cli.md](cli.md)).
 | `--mode docker` / `--mode native` | How the app runs (default: docker) |
 | `--port N` | Port for the UI and API (default 8080) |
 | `--cpu` | Ignore the GPU |
+| `--build` | Docker: build the image from source instead of pulling it |
 | `--no-start` | Install, don't start |
 | `--no-service` | Native: no systemd unit (you run the app yourself) |
-| `--skip-model` | Native: don't pre-download the Whisper model (it downloads on first use) |
+| `--skip-model` | Don't pre-download the Whisper model (it downloads on the first import) |
 | `-y`, `--yes` | No confirmation prompts (for scripts / provisioning) |
 | `--uninstall [--purge]` | Remove the install; `--purge` also deletes `data/`, the venv and the image |
 
@@ -58,9 +59,13 @@ PATH (see [cli.md](cli.md)).
    `sorot up/down/logs` without sudo.
 4. Writes `docker-compose.override.yml` (gitignored) for this machine: your
    port, `restart: unless-stopped` (the app comes back after a reboot), and on
-   CPU-only machines it drops the GPU reservation and sets `WHISPER_DEVICE=cpu`.
-5. Builds the image (first time ~10 min: CUDA base, Python packages, the Whisper
-   model baked in) and starts it.
+   GPU machines the `-cuda` image, the GPU reservation and `WHISPER_DEVICE=cuda`.
+5. Pulls the ready-made image (published for each release by `.github/workflows/release-image.yml`):
+   `ghcr.io/raufimusaddiq/sorot:latest` on CPU-only machines, `:latest-cuda`
+   with a GPU. `--build` builds that variant from source instead (~10 min).
+6. Downloads the Whisper model (`large-v3-turbo`, ~1.6 GB) once into the
+   `hf-cache` Docker volume — it isn't in the image, and it survives image
+   updates — then starts the app.
 
 Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`.
 
@@ -104,7 +109,7 @@ installer prints the command to run the app by hand.
 
 ```bash
 git pull
-scripts/install.sh            # same mode/options as before; rebuilds and restarts
+scripts/install.sh            # same mode/options as before; pulls the newest image (or rebuilds native) and restarts
 ```
 
 ## Uninstalling

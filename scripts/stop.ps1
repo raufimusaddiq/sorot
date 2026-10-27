@@ -12,9 +12,19 @@ param(
 $ErrorActionPreference = "Continue"
 Set-Location ($PSScriptRoot | Split-Path)
 
+$Root = $PSScriptRoot | Split-Path
 Write-Host "Stopping Sorot..." -ForegroundColor Yellow
-docker compose --env-file .env.docker --profile dev down 2>&1 | Out-Null
-Write-Host "All services stopped." -ForegroundColor Green
+if (Test-Path ".env.native") {
+    # Native install (scripts\install.ps1 -Mode native): the Bun in .tools\bun is ours.
+    # /T also ends the Python / ffmpeg stages it started.
+    $bun = Join-Path $Root ".tools\bun\bun.exe"
+    $procs = Get-Process bun -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $bun }
+    foreach ($p in $procs) { taskkill /PID $p.Id /T /F 2>&1 | Out-Null }
+    Write-Host "Stopped $(@($procs).Count) native process(es)." -ForegroundColor Green
+} else {
+    docker compose --env-file .env.docker --profile dev down 2>&1 | Out-Null
+    Write-Host "All services stopped." -ForegroundColor Green
+}
 
 if ($Compact) {
     Write-Host ""

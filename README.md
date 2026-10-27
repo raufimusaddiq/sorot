@@ -31,59 +31,58 @@
 
 ## 🚀 Install
 
-Pick the path that fits your machine:
+The whole app ships as a ready-made Docker image, **`ghcr.io/raufimusaddiq/sorot`**, published by the [release workflow](.github/workflows/release-image.yml) for every Sorot release — no 10-minute build on your machine. It comes in two variants: **`:latest`** (CPU, plain Ubuntu, the smaller download) and **`:latest-cuda`** (NVIDIA GPU: CUDA 12 + cuDNN). The installers pick the right one for your machine. Pick the path that fits:
 
-| | Path | GPU | Best for |
+| | Path | GPU | Effort |
 |---|---|---|---|
-| 🪟 | [**Windows** — PowerShell + Docker Desktop](#-windows--powershell) | NVIDIA | Windows PCs with an NVIDIA card |
-| 🐳 | [**Docker** — any OS, by hand](#-docker--any-os) | NVIDIA or CPU | Any OS, full control |
-| 🐧 | [**Linux** — one-command installer](#-linux--installer) | NVIDIA or CPU | Linux desktops & servers — easiest |
-| 🍎 | [**macOS** — Docker Desktop or from source](#-macos) | CPU | Apple Silicon & Intel Macs |
-| ⌨️ | [**CLI only** — `sorot` on any machine](#%EF%B8%8F-cli-only--sorot-anywhere) | — | Scripting, remote control |
+| 🪟 | [**Windows** — Docker Desktop](#-windows--docker-desktop) | NVIDIA or CPU | one command |
+| 🪟 | [**Windows** — native, no Docker](#-windows--native-no-docker) | NVIDIA or CPU | one command |
+| 🐧 | [**Linux** — installer](#-linux--installer) | NVIDIA or CPU | one command |
+| 🐳 | [**Docker** — any OS, by hand](#-docker--any-os) | NVIDIA or CPU | a few commands |
+| 🍎 | [**macOS** — Homebrew, from source](#-macos--homebrew) | CPU | manual steps |
+| ⌨️ | [**CLI only** — `sorot` on any machine](#%EF%B8%8F-cli-only--sorot-anywhere) | — | build one binary |
 
 Whichever you choose, the app ends up on **http://localhost:8080** 🌐 — UI and API on one port. The front page introduces Sorot; the studio, where you make clips, is **http://localhost:8080/studio**.
 
-### 🪟 Windows — PowerShell
+### 🪟 Windows — Docker Desktop
 
-You need Docker Desktop (WSL2 backend), an NVIDIA GPU with the [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), and PowerShell 5.1+.
+Paste into PowerShell (no git needed):
 
 ```powershell
-git clone https://github.com/raufimusaddiq/sorot.git
-cd sorot
-.\scripts\start.ps1 -Build        # first build ~10 min ☕
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/raufimusaddiq/sorot/master/scripts/install.ps1 | iex"
 ```
+
+It downloads Sorot into `%LOCALAPPDATA%\Sorot`, installs Docker Desktop with winget if it's missing (start it once, then run the command again), pulls the image, uses your NVIDIA GPU when the driver is there (else the CPU), starts the app and opens the studio. **Sorot** and **Stop Sorot** appear in the Start menu; the app comes back whenever Docker Desktop starts. Re-run the same command to update.
+
+GPU: only the normal NVIDIA Windows driver is needed — Docker Desktop's WSL2 backend passes the GPU through. If Docker can't use it, the installer falls back to the CPU.
+
+Already have a clone? `.\scripts\install.ps1` does the same from it. Day to day:
 
 | Command | |
 |---|---|
-| `.\scripts\start.ps1` | ▶️ start on :8080 (cached image) |
-| `.\scripts\start.ps1 -Build` | 🔨 rebuild and start |
+| `.\scripts\start.ps1` | ▶️ start on :8080 (pulls the image the first time) |
+| `.\scripts\start.ps1 -Update` | ⬇️ pull the newest image and restart |
+| `.\scripts\start.ps1 -Build` | 🔨 build the image from source instead (~10 min) |
 | `.\scripts\start.ps1 -Dev` | 🔥 + hot-reload UI on :3000 |
 | `.\scripts\stop.ps1` | ⏹️ stop everything |
 | `.\scripts\verify-env.ps1` | 🩺 check dependencies |
 | `.\scripts\e2e-test.ps1` | 🧪 end-to-end tests |
 
-### 🐳 Docker — any OS
+Running `.ps1` files by hand needs `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once (the Start menu shortcuts don't).
 
-Docker with Compose v2.24+. With an NVIDIA GPU (+ Container Toolkit):
+### 🪟 Windows — native (no Docker)
 
-```bash
-git clone https://github.com/raufimusaddiq/sorot.git
-cd sorot
-docker compose --env-file .env.docker up -d --build backend
+No Docker Desktop, no WSL — Bun, Python and ffmpeg straight on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/raufimusaddiq/sorot/master/scripts/install.ps1))) -Mode native"
 ```
 
-🖥️ **No NVIDIA GPU?** Create `docker-compose.override.yml` next to `docker-compose.yml` first (it's gitignored) — it drops the GPU reservation and moves Whisper to the CPU:
+It installs what's missing with winget (ffmpeg, Python 3.12), puts Bun in `.tools\bun`, creates the Python venv (plus the cuBLAS/cuDNN wheels faster-whisper needs when there's an NVIDIA GPU — no CUDA toolkit install), builds the UI, pre-downloads the Whisper model, starts the app and opens the studio. It starts at logon (Startup folder) and has the same **Sorot** / **Stop Sorot** Start menu entries; `scripts\start.ps1` and `scripts\stop.ps1` work too. Settings: `.env.native` · logs: `data\logs\sorot.log`. Re-run to update.
 
-```yaml
-services:
-  backend:
-    restart: unless-stopped        # come back after reboots
-    deploy: !reset {}              # no NVIDIA GPU
-    environment:
-      WHISPER_DEVICE: cpu
-```
+*The native Windows path is new and not yet tested on a real Windows machine — feedback welcome.*
 
-Day to day: `docker compose --env-file .env.docker logs -f backend` 📜 · `… down` ⏹️ · `… up -d` ▶️. Settings live in `.env.docker`.
+Installer options (either mode): `-Port 8090` · `-Cpu` (ignore the GPU) · `-Dir D:\Sorot` · `-Build` (Docker: build locally) · `-SkipModel` · `-NoStart` · `-Uninstall [-Purge]` (`-Purge` also deletes `data\`, the venv and the image).
 
 ### 🐧 Linux — installer
 
@@ -92,21 +91,54 @@ Debian, Ubuntu and derivatives. One command does everything:
 ```bash
 git clone https://github.com/raufimusaddiq/sorot.git
 cd sorot
-scripts/install.sh                 # 🐳 Docker mode (recommended)
+scripts/install.sh                 # 🐳 Docker mode (recommended) — pulls the image
 scripts/install.sh --mode native   # 🧩 or: Bun + Python + systemd, no Docker
 ```
 
-It installs what's missing (Docker + compose, the NVIDIA Container Toolkit — or ffmpeg, Python, Bun for native), detects the GPU (falls back to CPU), starts the app so it survives reboots, and installs the `sorot` CLI. Re-run to update; `--uninstall` to remove.
+It installs what's missing (Docker + compose, the NVIDIA Container Toolkit — or ffmpeg, Python, Bun for native), detects the GPU (falls back to CPU), pulls the image (`--build` builds it locally instead), starts the app so it survives reboots, and installs the `sorot` CLI. Re-run to update; `--uninstall` to remove.
 
 👉 Options, file locations, troubleshooting: **[docs/linux-install.md](docs/linux-install.md)**
 
-### 🍎 macOS
+### 🐳 Docker — any OS
 
-Macs have no NVIDIA GPU, so everything runs on the CPU (Apple Silicon and Intel). *Not tested on a Mac yet — feedback welcome.*
+Docker with Compose v2.24+. On Linux an NVIDIA GPU also needs the [Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html); Docker Desktop on Windows needs only the driver.
 
-**Option A — Docker Desktop:** follow [🐳 Docker](#-docker--any-os) including the *No NVIDIA GPU* override.
+```bash
+git clone https://github.com/raufimusaddiq/sorot.git
+cd sorot
+docker compose --env-file .env.docker up -d backend      # pulls ghcr.io/raufimusaddiq/sorot:latest (CPU)
+```
 
-**Option B — from source** (with [Homebrew](https://brew.sh)):
+🎮 **NVIDIA GPU?** Create `docker-compose.override.yml` next to `docker-compose.yml` first (it's gitignored) — it switches to the `-cuda` image and hands the GPU to the container:
+
+```yaml
+services:
+  backend:
+    restart: unless-stopped        # come back after reboots
+    image: ghcr.io/raufimusaddiq/sorot:${SOROT_VERSION:-latest}-cuda
+    build:
+      args:
+        BASE_IMAGE: nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04   # for --build
+    environment:
+      WHISPER_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+```
+
+Day to day: `docker compose --env-file .env.docker logs -f backend` 📜 · `… down` ⏹️ · `… up -d backend` ▶️ · update: `… pull backend` then `… up -d backend` ⬇️. Settings live in `.env.docker`; `SOROT_VERSION` there pins a release tag (default `latest` = the newest release). Rather build it yourself? `… up -d --build backend` 🔨.
+
+The Whisper model isn't in the image: the first import downloads it (`large-v3-turbo`, ~1.6 GB) into the `hf-cache` volume, where it stays across restarts and image updates. The installers fetch it up front; by hand, you can do the same once with `docker compose --env-file .env.docker run --rm --entrypoint /app/ai-pipeline/.venv/bin/python3 backend -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8')"`.
+
+Both images are `linux/amd64`. On Apple Silicon they would run under emulation, so use [Homebrew](#-macos--homebrew) there.
+
+### 🍎 macOS — Homebrew
+
+Macs have no NVIDIA GPU, so everything runs on the CPU (Apple Silicon and Intel). This path is manual: no installer or native image for macOS yet. *Not tested on a Mac yet — feedback welcome.*
 
 ```bash
 brew install oven-sh/bun/bun ffmpeg python@3.12
@@ -127,7 +159,7 @@ EOF
 cd backend && bun run src/index.ts               # 🌐 http://localhost:8080
 ```
 
-Bun reads `backend/.env` automatically; every option from `.env.docker` works there too.
+Bun reads `backend/.env` automatically; every option from `.env.docker` works there too. To update: `git pull`, re-run the `pip install` and `bun install && bun run build` lines, then restart.
 
 ### ⌨️ CLI only — `sorot` anywhere
 
@@ -148,7 +180,7 @@ Put it on your `PATH` (`sorot`, the old name, works as an alias), then point it 
 
 ### 💻 No graphics card? No problem
 
-Everything runs on the **CPU** — the Linux installer switches automatically (or `--cpu`), Docker uses the override above, and macOS is CPU by default. Only **NVIDIA** GPUs are used for acceleration (CUDA + NVENC).
+Everything runs on the **CPU** — the Linux and Windows installers switch automatically (or `--cpu` / `-Cpu`), Docker by hand uses the CPU image unless you add the GPU override above, and macOS is CPU by default. Only **NVIDIA** GPUs are used for acceleration (CUDA + NVENC).
 
 Measured on a 12-core CPU, no GPU: transcribing 54 s of speech took **24 s** with `large-v3-turbo` and **14 s** with `small` — so a 1-hour video transcribes in roughly half an hour (or ~15 min with `small`), and rendering 45 clips adds ~25 min. For comparison, on an RTX 4060 a 54-minute video took ~22 min end to end (measured before caption burning moved to the GPU, so it's faster now).
 
@@ -264,7 +296,7 @@ Every clip gets post-ready copy: a **title** (first question or hook + hashtags,
 
 ## ⚙️ Configuration
 
-Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc/sorot/sorot.env`; `.env` holds local overrides for development. Every option can also be changed per import in the UI or with `sorot import` flags.
+Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc/sorot/sorot.env`, native Windows installs `.env.native`; `.env` holds local overrides for development. Every option can also be changed per import in the UI or with `sorot import` flags.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
@@ -295,7 +327,7 @@ Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc
 | 🗄️ Database | SQLite |
 | ⌨️ CLI | `sorot` — one compiled Bun binary |
 | 📦 Repo | Bun workspace monorepo (`backend` + `frontend` + `cli`, one `bun.lock`) |
-| 🐳 Runs on | Docker Compose + NVIDIA GPU, or native Linux (systemd), or CPU-only |
+| 🐳 Runs on | Docker Compose (image from `ghcr.io/raufimusaddiq/sorot`) + NVIDIA GPU, native Linux (systemd), native Windows, macOS via Homebrew, or CPU-only |
 
 ### 🗂️ Project layout
 
@@ -305,7 +337,7 @@ Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc
 │                      subtitle, captions, variation, train_scorer / predict_supervised
 ├── frontend/       ⚛️ Next.js web UI (static export → frontend/out)
 ├── cli/            ⌨️ sorot command-line client
-├── scripts/        🛠️ install.sh (Linux) · start/stop/verify/e2e .ps1 (Windows)
+├── scripts/        🛠️ install.sh (Linux) · install/start/stop/verify/e2e .ps1 (Windows)
 ├── docs/           📚 architecture, API, CLI, install, integration, scoring specs
 └── data/           💾 your videos, clips and database (gitignored)
 ```
@@ -323,6 +355,19 @@ cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~200 media pipeline 
 ```
 
 Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
+
+### 📦 CI and the published image
+
+- [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Bun, UI and Python tests on every push to `master` and every PR. When a change can affect the image (anything except docs and the host-side install/start scripts), it also builds the **CPU** image — reusing cached layers, not pushed — and smoke-tests it: the API answers, the UI is served, the pipeline's Python packages, ffmpeg and yt-dlp load. The CUDA variant runs the same Dockerfile steps on another base, so it's left to releases.
+- [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml) builds `backend/Dockerfile` twice — on `ubuntu:24.04` (CPU) and, through the `BASE_IMAGE` build arg, on `nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04` (GPU) — and pushes both. It runs only:
+  - when a **GitHub release** is published: `v1.2.3` → `:1.2.3`, `:1.2`, `:latest`, `:sha-<commit>` and the same with `-cuda` (a pre-release doesn't move `:latest`);
+  - **by hand**: Actions → *Release image* → *Run workflow* on any branch → `:sha-<commit>`(`-cuda`), plus `:latest`(`-cuda`) unless you untick *latest*.
+
+  Layers are cached in the registry (`:buildcache-cpu`, `:buildcache-cuda`), so a code-only release re-uploads only the small top layers.
+
+To ship: merge to `master`, then create a release (GitHub → Releases → *Draft a new release*, tag `v1.2.3`). Until the first release or manual run there is no image to pull.
+
+GitHub may create the package as **private** on the first publish: if anonymous `docker pull` fails, make it public once (your GitHub profile → Packages → `sorot` → Package settings → Change visibility).
 
 ---
 

@@ -65,3 +65,7 @@ $RECYCLE.BIN/
 
 # design-taste-frontend skill working files
 .taste-skill/
+
+# === Windows native install (scripts/install.ps1) ===
+.env.native
+.tools/
