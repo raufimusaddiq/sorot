@@ -349,4 +349,6 @@ Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
 
 ## 📄 License
 
-Private project. All rights reserved. 🔒
+[MIT](LICENSE) © 2026 Raufi Musaddiq — free to use, modify and share, including commercially; keep the copyright notice. 🔓
+
+Sorot calls tools that keep their own licenses: ffmpeg (LGPL/GPL, depending on the build), yt-dlp (Unlicense), faster-whisper and the Whisper models (MIT), OpenCV (Apache-2.0), LightGBM (MIT). The Docker image bundles some of them, so redistributing that image means following their terms too. Downloading or clipping videos is subject to the platforms' terms and the creators' rights.
