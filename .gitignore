@@ -30,13 +30,8 @@ frontend/playwright-report/
 frontend/blob-report/
 frontend/coverage/
 
-# === Java / Maven ===
-backend/target/
-*.jar
-*.war
-*.class
-.mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
+# === Backend (Bun) ===
+backend/coverage/
 
 # === IDE ===
 .idea/

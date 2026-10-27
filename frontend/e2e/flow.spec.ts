@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 const BACKEND = process.env.BACKEND_URL || 'http://localhost:8080';
-const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:8080';
 
 test.describe('Viral Clipper E2E', () => {
 

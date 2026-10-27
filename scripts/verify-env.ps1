@@ -2,7 +2,7 @@
 .SYNOPSIS
     Verify all dependencies for Viral Clipper
 .DESCRIPTION
-    Checks Docker, GPU passthrough, Node.js, Python venv, ffmpeg, and the
+    Checks Docker, GPU passthrough, Node.js, Bun, Python venv, ffmpeg, and the
     AI-pipeline Python packages. Returns exit code 0 if required checks pass,
     1 if required items missing. Optional deps (yt-dlp on host, lightgbm for
     scorer retraining) print a warning but don't fail the check.
@@ -67,7 +67,7 @@ $allOk = $true
 Write-Host "--- Core Dependencies ---" -ForegroundColor Yellow
 $allOk = $allOk -and (Check-Required "Docker" "docker")
 $allOk = $allOk -and (Check-Required "Node.js" "node")
-$allOk = $allOk -and (Check-Required "npm" "npm")
+$allOk = $allOk -and (Check-Required "Bun" "bun")
 $allOk = $allOk -and (Check-Required "Python" "python")
 $allOk = $allOk -and (Check-Required "ffmpeg" "ffmpeg")
 # yt-dlp is bundled inside the Docker image via requirements.txt (P4 change);
@@ -102,7 +102,8 @@ $files = @(
     @(".env.docker", "Docker env vars"),
     @("backend\Dockerfile", "Backend Dockerfile"),
     @("frontend\Dockerfile", "Frontend Dockerfile"),
-    @("backend\src\main\resources\schema.sql", "Database schema"),
+    @("backend\src\db.ts", "Database schema"),
+    @("bun.lock", "Bun workspace lockfile"),
     @("ai-pipeline\transcribe.py", "Transcribe script"),
     @("ai-pipeline\segment.py", "Segment script"),
     @("ai-pipeline\score.py", "Score script"),

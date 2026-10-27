@@ -1,0 +1,4 @@
+[install]
+# Next.js 14 and Jest expect a flat node_modules; Bun 1.3's default for
+# workspaces is the isolated linker.
+linker = "hoisted"

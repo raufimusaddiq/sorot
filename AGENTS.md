@@ -4,10 +4,10 @@
 YouTube/local video → 9:16 TikTok clips with auto-subtitles. Indonesian language. Local-only.
 
 ## Stack
-Spring Boot 3.2 (Java 17) + Python 3 CLI + Next.js 14 + SQLite + Docker
+Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (static export) + SQLite + Docker
 
 ## Layout
-`backend/` Java · `ai-pipeline/` Python · `frontend/` Next.js · `data/` media · `docs/` specs
+`backend/` Bun/TS API (also serves the UI) · `ai-pipeline/` Python · `frontend/` Next.js static export · `data/` media · `docs/` specs
 
 ## Build Order (strict)
 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
@@ -15,8 +15,9 @@ Spring Boot 3.2 (Java 17) + Python 3 CLI + Next.js 14 + SQLite + Docker
 ## Commands
 ### Start/Stop (user runs these)
 ```
-.\scripts\start.ps1          # start stack (cached images)
-.\scripts\start.ps1 -Build   # start stack (rebuild images)
+.\scripts\start.ps1          # start app on :8080 (cached image)
+.\scripts\start.ps1 -Build   # start app (rebuild image)
+.\scripts\start.ps1 -Dev     # + hot-reload UI on :3000
 .\scripts\stop.ps1           # stop all services
 ```
 
@@ -32,12 +33,21 @@ Spring Boot 3.2 (Java 17) + Python 3 CLI + Next.js 14 + SQLite + Docker
 
 ### Docker
 ```
-docker compose --env-file .env.docker build --no-cache backend
-docker compose --env-file .env.docker build --no-cache frontend
+docker compose --env-file .env.docker build --no-cache backend   # API + static UI + pipeline
 docker compose --env-file .env.docker up -d
-docker compose --env-file .env.docker down
+docker compose --env-file .env.docker --profile dev up -d         # + dev UI on :3000
+docker compose --env-file .env.docker --profile dev down
 docker compose --env-file .env.docker logs -f backend
-docker compose --env-file .env.docker logs -f frontend
+```
+
+### Backend / Frontend (Bun workspace, run from repo root)
+```
+bun install                          # one lockfile for backend + frontend
+cd backend; bun test --coverage      # backend tests (95% line/func threshold)
+cd backend; bun run typecheck        # tsc --noEmit
+cd frontend; bun run test            # jest
+bun run build                        # static UI → frontend/out
+bun run start                        # backend on :8080, serves frontend/out
 ```
 
 ### Python Tests
@@ -54,8 +64,10 @@ cd ai-pipeline
 - When code exists, prefer executable source over plan docs
 - Keep it personal-use simple
 - **KEEP MEMORY LEAN**: details → journal, memory = pointers only
-- Backend `PythonRunner.java` must have `@Component` annotation
-- Backend must have CORS config (`WebConfig.java`) allowing `localhost:3000`
+- Backend shells out to Python via `backend/src/runner.ts` (per-script timeouts, abort-on-cancel); tests inject fakes via `createApp(config, deps)`
+- UI is same-origin in prod (backend serves `frontend/out`); CORS in `backend/src/app.ts` allows `localhost:3000` only for `next dev`
+- `frontend` must stay static-exportable: no API routes, rewrites, server actions or `next/image` optimization
+- API JSON keys = camelCase of SQLite columns (`backend/src/store.ts`); the frontend depends on them
 - `docker-compose.yml` uses `.env.docker` — always pass `--env-file .env.docker`
 - PowerShell scripts: `$ErrorActionPreference = "Continue"` (NOT "Stop" — docker stderr crashes it)
 - Use `-UseBasicParsing` on all `Invoke-WebRequest` calls in PowerShell
@@ -63,7 +75,7 @@ cd ai-pipeline
 - `clip.rank_pos` not `rank` (SQL reserved word)
 - Whisper model: `medium` (RTX 4060 8GB VRAM safe)
 - Python venv at `ai-pipeline/.venv`
-- Schema auto-creates via `schema.sql`
+- Schema auto-creates + migrates in `backend/src/db.ts` (compatible with the old Java-era DB file)
 - SQLite TEXT for UUIDs
 
 ## Gate Policy

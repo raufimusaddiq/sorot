@@ -28,9 +28,9 @@ Implement a previously planned set of changes, verifying each step and writing i
 - **KEEP MEMORY LEAN**: Write details to journal, not memory. Memory = compressed pointers only.
 
 ## Verification:
-- After backend changes: `cd backend && ./mvnw verify`
+- After backend changes: `cd backend && bun test --coverage && bun run typecheck`
 - After Python changes: `cd ai-pipeline && pytest --cov=. --cov-fail-under=95`
-- After frontend changes: `cd frontend && npm test`
+- After frontend changes: `cd frontend && bun run test`
 - After full pipeline: test with a sample video
 
 ## Gate Criteria (must ALL pass before finishing):

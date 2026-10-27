@@ -12,7 +12,7 @@ Run focused verification on a specific pipeline step — integration tests must 
 1. **Identify the step**: Which pipeline step to verify (1-9 per AGENTS.md build order)
 2. **Check prerequisites**: Ensure earlier steps in the build order work
 3. **Run integration tests for the step**:
-   - Backend: `cd backend && ./mvnw verify -Dtest="*StepName*IT"`
+   - Backend: `cd backend && bun test -t "StepName"`
    - AI Pipeline: `cd ai-pipeline && pytest tests/test_<step>.py --cov=. --cov-fail-under=95 -v`
 4. **Run the step manually**: Execute with sample input if possible
 5. **Validate output**: Check that output matches expected format

@@ -2,10 +2,12 @@
 
 ## Overview
 
-Minimal local architecture: 1 Spring Boot backend + 1 worker process.
+Minimal local architecture: one Bun process serves the API **and** the
+statically-exported UI on :8080, and runs the pipeline in-process (bounded
+async queue), shelling out to Python / ffmpeg / yt-dlp.
 
 ```
-[Next.js UI]  ←→  [Spring Boot API]  →  [SQLite]
+[Static Next.js UI]  ←same origin→  [Bun API :8080]  →  [SQLite (bun:sqlite)]
                         |
                   [Worker Thread]
                         |
@@ -20,13 +22,15 @@ Minimal local architecture: 1 Spring Boot backend + 1 worker process.
 
 ## Component Responsibilities
 
-### Spring Boot Backend (`backend/`)
-- REST API for the Next.js frontend
-- Job orchestration: manages the pipeline stages
-- Calls Python CLI scripts as subprocess (JSON stdin/stdout)
+### Bun Backend (`backend/`)
+- REST API (`src/app.ts`) + static host for `frontend/out` with SPA fallback
+- Job orchestration (`src/orchestrator.ts`, `src/jobs.ts`): 9 stages, 2 pipelines
+  in flight, FIFO queue (cap 50), cancel = abort signal that kills the child
+  process, orphan sweep on startup + every 5 min
+- Calls Python CLI scripts as subprocess with per-script timeouts (`src/runner.ts`)
 - Calls yt-dlp and ffmpeg as subprocess
-- SQLite for all metadata (jobs, videos, clips, scores)
-- Serves static media files from `data/` for preview
+- SQLite for all metadata (`src/db.ts` schema + migrations, `src/store.ts` repo)
+- Streams clip previews with HTTP Range support
 
 ### Python AI Pipeline (`ai-pipeline/`)
 - Standalone CLI scripts, each doing one job
@@ -38,7 +42,8 @@ Minimal local architecture: 1 Spring Boot backend + 1 worker process.
 - Uses CUDA for faster-whisper and OpenCV GPU ops
 
 ### Next.js Frontend (`frontend/`)
-- Runs on localhost, connects to Spring Boot API
+- `output: 'export'` → plain HTML/JS in `frontend/out`, served by the backend
+  (same origin, no CORS). `next dev` on :3000 is optional for hot reload.
 - Video input (paste URL or upload file)
 - Job status display
 - Clip list with scores and ranking
@@ -68,8 +73,10 @@ Minimal local architecture: 1 Spring Boot backend + 1 worker process.
 
 | Decision | Choice | Why |
 |----------|--------|-----|
-| Architecture | Minimal (1 backend + 1 worker) | Personal use, simplest to build and debug |
-| Java↔Python bridge | CLI subprocess + JSON | No extra service, no network dependency, simple |
+| Architecture | One Bun process (API + UI + queue) | Personal use, one container, simplest to build and debug |
+| Backend runtime | Bun + TypeScript | Same language as the UI, zero runtime deps, built-in SQLite; replaced Spring Boot (JVM) |
+| Repo layout | Bun workspace monorepo | One lockfile + install for backend and frontend |
+| Backend↔Python bridge | CLI subprocess + JSON | No extra service, no network dependency, simple |
 | DB | SQLite | Zero config, local-only, file-based |
 | GPU | CUDA | Available; significantly speeds up transcription |
 | Transcription | faster-whisper | Best local Whisper implementation, CUDA support |
