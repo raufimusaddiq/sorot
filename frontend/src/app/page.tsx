@@ -279,6 +279,8 @@ type DiscoveredVideo = {
   jobId: string | null;
   sourceMode: string;
   sourceQuery: string;
+  /** Auto-discover picks: the LLM's model name, or "algorithm". */
+  pickedBy?: string | null;
   /** Plain-language reasons behind the rank (agent reason, strong moments, speech, channel…). */
   why?: string[];
 };
@@ -554,6 +556,13 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
                   )}
                   {video.sourceMode && <span aria-hidden>&#8226;</span>}
                   {video.sourceMode && <span className="font-mono text-subtle">{video.sourceMode}</span>}
+                  {video.sourceMode === 'auto' && video.pickedBy && (
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                      video.pickedBy === 'algorithm' ? 'text-subtle bg-surface-2 border-line' : 'text-accent bg-accent-tint border-accent/30'
+                    }`} title={video.pickedBy === 'algorithm' ? 'Picked by the algorithm (no LLM)' : `Picked by the LLM agent (${video.pickedBy})`}>
+                      {video.pickedBy === 'algorithm' ? 'algorithm' : `🤖 ${video.pickedBy}`}
+                    </span>
+                  )}
                 </div>
                 {video.why && video.why.length > 0 && (
                   <ul className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-muted">

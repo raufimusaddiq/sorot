@@ -98,6 +98,7 @@ export function candidateToMap(d: DiscoveredVideo, ctx: CandidateContext = {}) {
     strongMoments: d.strongMoments ?? null,
     topMoments: parseMoments(d.topMoments),
     reason: d.reason ?? null,
+    pickedBy: d.pickedBy ?? null,
     why: candidateReasons(d, ctx),
   };
 }
@@ -211,7 +212,7 @@ export class DiscoveryService {
           transcriptSample: null, status: "NEW", jobId: null, videoId: null,
           discoveredAt: now(), enrichedAt: null,
           channelId: null, contentType: null, speechDensityWpm: null, isLikelyClipped: 0,
-          strongMoments: null, topMoments: null, reason: null,
+          strongMoments: null, topMoments: null, reason: null, pickedBy: null,
         };
         d.url = text(v.url);
         d.title = text(v.title);

@@ -338,7 +338,7 @@ Candidate object (every list below returns these):
   "channelId": "UC…", "contentType": "PODCAST", "speechDensityWpm": 136,
   "isLikelyClipped": false, "strongMoments": 3,
   "topMoments": [{ "start": 278, "score": 0.7, "text": "…" }],
-  "reason": "Hot topic this week (agent picks only)",
+  "reason": "Hot topic this week (agent picks only)", "pickedBy": null,
   "why": ["3 strong moments, best at 4:38", "Steady talk (136 wpm)", "Long-form (63 min)"] }
 ```
 `why` gives plain-language reasons for the rank (agent reason, caption analysis,
@@ -384,7 +384,8 @@ answers with picks and reasons; only videos its tools returned are accepted.
 Without an LLM, or if it fails (`llmError` says why), the algorithm runs: 3
 random anchor queries (the goal first), every new result analyzed, best
 predicted scores kept, at most 2 per channel. Picks are stored as candidates
-with `sourceMode: "auto"`.
+with `sourceMode: "auto"` and `pickedBy`: the LLM's model name, or `"algorithm"`
+(picks from before this field read `"LLM"`). The UI shows it as a badge.
 
 ### `GET /api/discover/auto` · `GET /api/discover/auto/{id}`
 The latest run / a run by id (404 when none). `status`: `RUNNING`, `DONE`,

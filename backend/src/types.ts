@@ -135,6 +135,8 @@ export interface DiscoveredVideo {
   topMoments?: string | null;
   /** Why it was picked (the discovery agent's reason). */
   reason?: string | null;
+  /** Who made an auto-discover pick: the LLM's model name, or "algorithm". */
+  pickedBy?: string | null;
 }
 
 /** A source channel found by the crawler (category seed + profile, channels.ts). */

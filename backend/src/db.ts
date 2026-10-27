@@ -205,7 +205,16 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["discovered_video", "strong_moments", "INTEGER"],
   ["discovered_video", "top_moments", "TEXT"],
   ["discovered_video", "reason", "TEXT"],
+  ["discovered_video", "picked_by", "TEXT"],
 ];
+
+// Fills a column just added to an old database, where the value can be recovered.
+const BACKFILL: Record<string, string> = {
+  // auto picks made before picked_by: the algorithm's reasons say so, the rest came from the LLM
+  "discovered_video.picked_by": `UPDATE discovered_video SET picked_by =
+    CASE WHEN reason LIKE 'Algorithm pick%' THEN 'algorithm' ELSE 'LLM' END
+    WHERE source_mode = 'auto' AND reason IS NOT NULL`,
+};
 
 // Columns renamed in place on old databases: posted-clip metrics are no longer
 // tied to one platform (they were tiktok_*).
@@ -233,6 +242,8 @@ export function openDatabase(path: string): Database {
     const cols = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === column)) {
       db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      const backfill = BACKFILL[`${table}.${column}`];
+      if (backfill) db.run(backfill);
     }
   }
   db.run(LATE_INDEXES);
