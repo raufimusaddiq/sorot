@@ -252,7 +252,8 @@ class TestVariation:
         def boom(*a, **k):
             raise OSError("x")
         monkeypatch.setattr(subprocess, "run", boom)
-        assert variation._detect_nvenc("ffmpeg") is False
+        monkeypatch.setattr(render, "_NVENC_CACHE", None)
+        assert variation._detect_nvenc("ffmpeg") is False      # render's probe, not a listing sniff
 
         cmds = []
         monkeypatch.setattr(subprocess, "run",
@@ -266,10 +267,21 @@ class TestVariation:
     def test_generate_cpu_path_and_failure(self, monkeypatch, tmp_path):
         monkeypatch.setattr(variation, "_detect_nvenc", lambda p: False)
         cmds = []
-        monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: (cmds.append(cmd), proc(0))[1])
+
+        def run(cmd, **kw):
+            cmds.append(cmd)
+            with open(cmd[-1], "wb") as f:
+                f.write(b"x" if len(cmds) == 1 else b"")
+            return proc(0)
+        monkeypatch.setattr(subprocess, "run", run)
         out = str(tmp_path / "v" / "a.mp4")
-        assert variation.generate_variation("in.mp4", 0, 2, out, "unknown-preset") == out
-        assert "libx264" in cmds[0] and "zoompan" in cmds[0][cmds[0].index("-vf") + 1]
+        assert variation.generate_variation("in.mp4", 30, 32, out, "unknown-preset") == out
+        cmd = cmds[0]
+        assert "libx264" in cmd and "zoompan" in cmd[cmd.index("-vf") + 1]
+        assert cmd.index("-ss") < cmd.index("-i") and cmd[cmd.index("-t") + 1] == "2.000"   # input seek
+        assert "pzoom+0.005000" in cmd[cmd.index("-vf") + 1]                               # 0.3 over 60 frames
+        with pytest.raises(RuntimeError, match="empty file"):
+            variation.generate_variation("in.mp4", 0, 2, out, "zoom_top")
         monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: proc(1, stderr="boom"))
         with pytest.raises(RuntimeError, match="ffmpeg variation failed"):
             variation.generate_variation("in.mp4", 0, 2, out, "zoom_top", ffmpeg_path="ffmpeg")

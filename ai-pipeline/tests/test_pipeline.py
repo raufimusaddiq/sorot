@@ -1068,10 +1068,11 @@ class TestVariationPresets:
             assert "label" in preset
             assert "vf_extra" in preset
 
-    def test_preset_has_frames_placeholder(self):
+    def test_zoompan_presets_are_video_safe(self):
+        # d=1 + pzoom: one output frame per input frame (d>1 multiplies the length)
         for name, preset in VARIATION_PRESETS.items():
             if "zoompan" in preset["vf_extra"]:
-                assert "{frames}" in preset["vf_extra"]
+                assert "{step}" in preset["vf_extra"] and ":d=1:" in preset["vf_extra"] and "pzoom" in preset["vf_extra"]
 
 
 class TestVariationScript:

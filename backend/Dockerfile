@@ -51,5 +51,8 @@ ENV PYTHON_PATH=/app/ai-pipeline/.venv/bin/python3
 ENV PIPELINE_DIR=/app/ai-pipeline
 ENV DATA_DIR=/app/data
 ENV STATIC_DIR=/app/frontend/out
+# The CUDA base image grants only compute,utility; "video" mounts
+# libnvidia-encode so ffmpeg's h264_nvenc works (else render.py falls back to x264).
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
 ENTRYPOINT ["bun", "run", "src/index.ts"]

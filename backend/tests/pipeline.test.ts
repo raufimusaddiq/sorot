@@ -63,6 +63,8 @@ describe("full pipeline", () => {
     expect(render).not.toContain("--silence-trim");
     expect(argAfter(subtitle, "--style")).toBe("default");
     expect(subtitle).not.toContain("--silence-trim");
+    const variation = env.calls.find((c) => c.script === "variation.py")!.args;
+    expect(argAfter(variation, "--output-dir")).toBe(`${env.config.dataDir}/variations/${videoId}/`);
   });
 
   test("silence trim is passed identically to render and subtitle", async () => {
@@ -289,6 +291,16 @@ describe("cancel / retry / queue", () => {
     await env.app.jobs.whenIdle();
     const d = await detail(jobId);
     expect(d.job).toMatchObject({ status: "COMPLETED", errorMessage: null });
+    // no leftovers from the failed run (SCORE kept "cuda OOM" before)
+    for (const s of d.stages) expect(s).toMatchObject({ status: "COMPLETED", errorMessage: null });
+  });
+
+  test("resetStages clears a run's stage results", async () => {
+    const { jobId } = await importAndRun();
+    env.app.store.resetStages(jobId);
+    for (const s of env.app.store.stagesForJob(jobId)) {
+      expect(s).toMatchObject({ status: "PENDING", startedAt: null, completedAt: null, errorMessage: null, outputPath: null });
+    }
   });
 
   test("queue full → 409 and the rejected job is marked FAILED", async () => {

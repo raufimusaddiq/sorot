@@ -98,13 +98,25 @@ def make_detector():
     except Exception:
         pass
 
+    import cv2
     from features.visual import _get_haar_cascades
     face_cascade, _ = _get_haar_cascades()
+    # The frontal cascade misses people turned toward each other in wide
+    # shots; the profile cascade (one facing direction, so also run on the
+    # mirrored frame) finds them.
+    profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml")
+    params = dict(scaleFactor=1.1, minNeighbors=5, minSize=(24, 24))
 
     def detect(gray):
         w = gray.shape[1]
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(24, 24))
-        return [(float((x + fw / 2) / w), float(fw / w)) for (x, y, fw, fh) in faces]
+        found = [((x + fw / 2) / w, fw / w) for (x, y, fw, fh) in face_cascade.detectMultiScale(gray, **params)]
+        side = [((x + fw / 2) / w, fw / w) for (x, y, fw, fh) in profile_cascade.detectMultiScale(gray, **params)]
+        side += [(1 - (x + fw / 2) / w, fw / w)
+                 for (x, y, fw, fh) in profile_cascade.detectMultiScale(cv2.flip(gray, 1), **params)]
+        for c, fw in side:                       # skip faces the frontal pass already has
+            if all(abs(c - c2) > max(fw, fw2) / 2 for c2, fw2 in found):
+                found.append((c, fw))
+        return [(float(c), float(fw)) for c, fw in found]
     return detect
 
 

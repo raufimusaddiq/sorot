@@ -101,6 +101,8 @@ export class JobService {
     if (!job) throw new ConflictError(`Job not found: ${jobId}`);
     if (job.status !== "FAILED") throw new ConflictError("Can only retry failed jobs");
     this.store.updateJob(jobId, { status: "QUEUED", errorMessage: null });
+    // The pipeline reruns every stage; don't show the failed run's results meanwhile.
+    this.store.resetStages(jobId);
     this.submit(jobId);
     return this.store.getJob(jobId) as Job;
   }

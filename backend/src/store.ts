@@ -138,6 +138,12 @@ export class Store {
     );
   }
   updateStage(id: string, fields: Partial<StageStatus>) { this.patch("stage_status", id, fields); }
+  resetStages(jobId: string) {
+    this.db.query(
+      "UPDATE stage_status SET status = 'PENDING', started_at = NULL, completed_at = NULL, " +
+        "error_message = NULL, output_path = NULL WHERE job_id = ?",
+    ).run(jobId);
+  }
 
   // ---- clip / clip_score ----
   saveClip(c: Clip) { return this.upsert("clip", c); }
