@@ -132,7 +132,7 @@ cd ai-pipeline
 | GET | /api/discover/candidates | Ranked candidates with `why` reasons |
 
 ## Git Strategy
-- **Repo**: `raufimusaddiq/sorot` (private monorepo; was viral-clipper)
+- **Repo**: `raufimusaddiq/sorot` (public monorepo, MIT license; was viral-clipper)
 - **Branch**: `master` stable. Feature: `feat/short-description`
 - **Commit**: Conventional — `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - **Merge**: `--no-ff` always. Never rebase shared branches.
