@@ -19,9 +19,12 @@ import sys
 import tempfile
 
 from captions import (
-    DEFAULT_PRESET, PRESETS, build_ass, ffmpeg_filter_path, is_trimmed, keep_intervals,
-    remap_words, words_for_clip,
+    DEFAULT_PRESET, PRESETS, build_ass, ffmpeg_filter_path, map_words, plan_timeline, words_for_clip,
 )
+
+# Background music: looped under the clip and ducked whenever the voice is
+# present (sidechain compression keyed on the speech), then mixed in.
+DUCK = "sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400"
 
 
 _NVENC_CACHE = None
@@ -73,25 +76,31 @@ def _detect_nvenc(ffmpeg_path):
     return _probe_nvenc(ffmpeg_path)
 
 
-def clip_words(transcript_segments, seg, silence_trim=False, silence_gap=0.6):
-    """Clip-relative words for a scored segment, re-timed onto the trimmed
-    timeline when render.py cut its silences (same inputs → same intervals)."""
+def clip_words(transcript_segments, seg, silence_trim=False, silence_gap=0.6, hook_first=False):
+    """Clip words on the output timeline: render.py plans the same timeline
+    (silence trim, hook replay) from the same inputs, so they line up."""
     words = words_for_clip(transcript_segments, seg["startTime"], seg["endTime"])
-    if silence_trim:
+    if silence_trim or hook_first:
         duration = seg["endTime"] - seg["startTime"]
-        intervals = keep_intervals(words, duration, min_gap=silence_gap)
-        if is_trimmed(intervals, duration):
-            words = remap_words(words, intervals)
+        words = map_words(words, plan_timeline(words, duration, silence_trim, silence_gap, hook_first))
     return words
 
 
-def _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc):
+def _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc, bgm=None, bgm_volume=0.12):
     vf = f"ass={ffmpeg_filter_path(ass_path)},format=yuv420p" if ass_path else "format=yuv420p"
-    cmd = [
-        ffmpeg_path, "-hide_banner", "-loglevel", "error",
-        "-i", render_path,
-        "-vf", vf,
-    ]
+    cmd = [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-i", render_path]
+    if bgm:
+        cmd.extend(["-stream_loop", "-1", "-i", bgm])
+        graph = (
+            f"[0:v]{vf}[vout];"
+            "[0:a]asplit=2[voice][sc];"
+            f"[1:a]volume={bgm_volume:.3f}[bg];"
+            f"[bg][sc]{DUCK}[duck];"
+            "[voice][duck]amix=inputs=2:duration=first:normalize=0[aout]"
+        )
+        cmd.extend(["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]"])
+    else:
+        cmd.extend(["-vf", vf])
     if use_nvenc:
         cmd.extend([
             "-c:v", "h264_nvenc",
@@ -100,19 +109,19 @@ def _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc):
         ])
     else:
         cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
-    cmd.extend(["-c:a", "copy", "-y", output_path])
+    cmd.extend(["-c:a", "aac" if bgm else "copy", "-y", output_path])
     return cmd
 
 
-def burn_subtitles(render_path, ass_path, output_path, ffmpeg_path=None):
-    """Burn ``ass_path`` onto ``render_path``. ``ass_path=None`` re-encodes
-    without captions (clip with no speech)."""
+def burn_subtitles(render_path, ass_path, output_path, ffmpeg_path=None, bgm=None, bgm_volume=0.12):
+    """Burn ``ass_path`` onto ``render_path`` (``None`` = no captions, e.g. a
+    clip with no speech) and optionally mix ducked background music."""
     if ffmpeg_path is None:
         ffmpeg_path = find_ffmpeg()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     use_nvenc = _probe_nvenc(ffmpeg_path)
-    cmd = _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc)
+    cmd = _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc, bgm, bgm_volume)
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0 and use_nvenc:
@@ -121,7 +130,7 @@ def burn_subtitles(render_path, ass_path, output_path, ffmpeg_path=None):
             f"stderr={result.stderr[-400:]}",
             file=sys.stderr,
         )
-        cmd = _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc=False)
+        cmd = _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, False, bgm, bgm_volume)
         result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
@@ -144,9 +153,14 @@ def main():
     parser.add_argument("--silence-trim", action="store_true",
                         help="Clips were rendered with --silence-trim; re-time captions to match")
     parser.add_argument("--silence-gap", type=float, default=0.6, help="Must match render.py --silence-gap")
+    parser.add_argument("--hook-first", action="store_true", help="Must match render.py --hook-first")
+    parser.add_argument("--bgm", default="", help="Background music file (looped, ducked under speech)")
+    parser.add_argument("--bgm-volume", type=float, default=0.12, help="Music level before ducking (0-1)")
     args = parser.parse_args()
 
     try:
+        if args.bgm and not os.path.exists(args.bgm):
+            raise ValueError(f"background music not found: {args.bgm}")
         with open(args.transcript, "r", encoding="utf-8") as f:
             transcript = json.load(f)
         with open(args.segments, "r", encoding="utf-8") as f:
@@ -180,13 +194,14 @@ def main():
                 })
                 continue
 
-            words = clip_words(word_segments, seg, args.silence_trim, args.silence_gap)
+            words = clip_words(word_segments, seg, args.silence_trim, args.silence_gap, args.hook_first)
             if words:
                 with open(ass_path, "w", encoding="utf-8") as f:
                     f.write(build_ass(words, args.style))
 
             try:
-                burn_subtitles(render_path, ass_path if words else None, output_path)
+                burn_subtitles(render_path, ass_path if words else None, output_path,
+                               bgm=args.bgm or None, bgm_volume=args.bgm_volume)
                 if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                     exported.append({
                         "rank": clip_id,

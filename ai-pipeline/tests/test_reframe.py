@@ -59,9 +59,9 @@ class TestExpressions:
 
     def test_remap_track_onto_trimmed_timeline(self):
         keep = [(1.0, 3.0), (6.0, 8.0)]
-        assert reframe.remap_track([(0.0, 0.2), (2.0, 0.6), (7.0, 0.9)], keep) == [(0.0, 0.2), (1.0, 0.6), (3.0, 0.9)]
+        assert reframe.timeline_track([(0.0, 0.2), (2.0, 0.6), (7.0, 0.9)], keep) == [(0.0, 0.2), (1.0, 0.6), (3.0, 0.9)]
         # A switch inside a cut collapses onto the previous switch point.
-        assert reframe.remap_track([(0.0, 0.2), (0.5, 0.6)], keep) == [(0.0, 0.6)]
+        assert reframe.timeline_track([(0.0, 0.2), (0.5, 0.6)], keep) == [(0.0, 0.6)]
 
     def test_video_filters(self):
         assert reframe.video_filter("center") == ("vf", reframe.CENTER_VF)
@@ -127,7 +127,7 @@ class TestRenderIntegration:
 
         monkeypatch.setattr(reframe, "probe_size", lambda *a, **k: (1920, 1080))
         monkeypatch.setattr(reframe, "plan_face_track", lambda *a, **k: [(0.0, 0.3), (2.0, 0.7)])
-        framing, n = render.plan_framing("face", "v", 0, 5, keep=[(1.0, 4.0)])
+        framing, n = render.plan_framing("face", "v", 0, 5, timeline=[(1.0, 4.0)])
         assert n == 2 and "if(lt(t,1.000)" in framing[1]          # switch re-timed for the trim
 
         monkeypatch.setattr(reframe, "plan_face_track", lambda *a, **k: [])
@@ -139,7 +139,7 @@ class TestRenderIntegration:
         assert render.plan_framing("face", "v", 0, 5) == (("vf", reframe.CENTER_VF), 0)
 
     def test_blur_command_uses_filter_complex_with_trim(self):
-        cmd = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, keep=[(0.5, 1.5)],
+        cmd = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, timeline=[(0.5, 1.5)],
                                        reframe=reframe.video_filter("blur"))
         graph = cmd[cmd.index("-filter_complex") + 1]
         assert graph.startswith("[0:v]select='between(t,0.500,1.500)',setpts=N/FRAME_RATE/TB[in];[in]split")
@@ -207,6 +207,6 @@ class TestRealFfmpeg:
     def test_blur_render_with_silence_trim(self, wide_source, tmp_path, monkeypatch):
         monkeypatch.setattr(render, "_probe_nvenc", lambda p: False)
         out = str(tmp_path / "blur.mp4")
-        render.render_clip(wide_source, 0, 6, out, keep=[(0.5, 1.5), (3.0, 4.0)], reframe=reframe.video_filter("blur"))
+        render.render_clip(wide_source, 0, 6, out, timeline=[(0.5, 1.5), (3.0, 4.0)], reframe=reframe.video_filter("blur"))
         w, h, dur, audio = probe(out)
         assert (w, h) == (1080, 1920) and dur == pytest.approx(2.0, abs=0.2) and audio

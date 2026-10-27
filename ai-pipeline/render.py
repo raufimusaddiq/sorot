@@ -13,7 +13,9 @@ import subprocess
 import sys
 import tempfile
 
-from captions import is_trimmed, keep_intervals, select_expr, words_for_clip
+from captions import (
+    concat_graph, is_monotonic, plan_timeline, select_expr, timeline_duration, words_for_clip,
+)
 import reframe as reframe_mod
 
 
@@ -72,7 +74,7 @@ def _detect_nvenc(ffmpeg_path):
     return _probe_nvenc(ffmpeg_path)
 
 
-def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, keep=None, reframe=None):
+def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, timeline=None, reframe=None):
     # Seek before -i so ffmpeg jumps to the nearest keyframe instead of
     # decoding the whole upstream video — this is the single biggest win on
     # long YouTube sources.
@@ -86,11 +88,21 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
         "-ss", str(start), "-to", str(end),
         "-i", video_path,
     ]
+    if timeline and not is_monotonic(timeline):
+        # Hook-first: ranges jump back, so cut each range and concatenate.
+        graph = concat_graph(timeline, "[cv]", "[ca]")
+        if kind == "complex":
+            graph += ";[cv]null[in];" + frame_filter
+        else:
+            graph += f";[cv]{frame_filter}[v]"
+        cmd.extend(["-filter_complex", graph, "-map", "[v]", "-map", "[ca]"])
+        return _encoder_args(cmd, output_path, use_nvenc)
+
     select = ""
-    if keep:
+    if timeline:
         # Silence trim: keep only the speech spans (clip-relative; input-side
         # -ss resets timestamps to 0) and re-time both streams gaplessly.
-        expr = select_expr(keep)
+        expr = select_expr(timeline)
         select = f"select='{expr}',setpts=N/FRAME_RATE/TB"
         cmd.extend(["-af", f"aselect='{expr}',asetpts=N/SR/TB"])
     if kind == "complex":
@@ -98,6 +110,10 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
         cmd.extend(["-filter_complex", head + frame_filter, "-map", "[v]", "-map", "0:a?"])
     else:
         cmd.extend(["-vf", f"{select},{frame_filter}" if select else frame_filter])
+    return _encoder_args(cmd, output_path, use_nvenc)
+
+
+def _encoder_args(cmd, output_path, use_nvenc):
     if use_nvenc:
         cmd.extend([
             "-c:v", "h264_nvenc",
@@ -111,13 +127,13 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
     return cmd
 
 
-def render_clip(video_path, start, end, output_path, ffmpeg_path=None, keep=None, reframe=None):
+def render_clip(video_path, start, end, output_path, ffmpeg_path=None, timeline=None, reframe=None):
     if ffmpeg_path is None:
         ffmpeg_path = find_ffmpeg()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     use_nvenc = _probe_nvenc(ffmpeg_path)
-    cmd = _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, keep, reframe)
+    cmd = _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, timeline, reframe)
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     # Per-clip NVENC failure → retry once on libx264 so a driver hiccup or an
@@ -129,7 +145,7 @@ def render_clip(video_path, start, end, output_path, ffmpeg_path=None, keep=None
             file=sys.stderr,
         )
         cmd = _build_render_cmd(
-            ffmpeg_path, video_path, start, end, output_path, use_nvenc=False, keep=keep, reframe=reframe,
+            ffmpeg_path, video_path, start, end, output_path, use_nvenc=False, timeline=timeline, reframe=reframe,
         )
         result = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -140,7 +156,7 @@ def render_clip(video_path, start, end, output_path, ffmpeg_path=None, keep=None
     return output_path
 
 
-def plan_framing(mode, video_path, start, end, keep=None):
+def plan_framing(mode, video_path, start, end, timeline=None):
     """(kind, filter) for this clip plus the number of crop segments used.
     Face tracking failures degrade to the centre crop, never to a failed clip."""
     if mode != "face":
@@ -149,8 +165,8 @@ def plan_framing(mode, video_path, start, end, keep=None):
         ffmpeg_path = find_ffmpeg()
         size = reframe_mod.probe_size(video_path, ffprobe=ffmpeg_path.replace("ffmpeg", "ffprobe"))
         track = reframe_mod.plan_face_track(video_path, start, end, ffmpeg=ffmpeg_path) if size else []
-        if track and keep:
-            track = reframe_mod.remap_track(track, keep)
+        if track and timeline:
+            track = reframe_mod.timeline_track(track, timeline)
         framing = reframe_mod.video_filter("face", size, track)
         return framing, (len(track) if framing[1] != reframe_mod.CENTER_VF else 0)
     except Exception as e:
@@ -168,6 +184,8 @@ def main():
     parser.add_argument("--transcript", default="", help="Transcript JSON (needed for --silence-trim)")
     parser.add_argument("--silence-trim", action="store_true", help="Cut pauses longer than --silence-gap")
     parser.add_argument("--silence-gap", type=float, default=0.6, help="Pause length (s) that gets cut")
+    parser.add_argument("--hook-first", action="store_true",
+                        help="Replay the clip's strongest line before it starts (needs --transcript)")
     parser.add_argument("--reframe", default=os.environ.get("REFRAME_MODE", reframe_mod.DEFAULT_MODE),
                         choices=reframe_mod.MODES, help="9:16 framing: follow faces, centre crop, or blurred fill")
     args = parser.parse_args()
@@ -187,9 +205,9 @@ def main():
                 to_render = []
 
         transcript_segments = []
-        if args.silence_trim:
+        if args.silence_trim or args.hook_first:
             if not args.transcript:
-                raise ValueError("--silence-trim requires --transcript")
+                raise ValueError("--silence-trim/--hook-first require --transcript")
             with open(args.transcript, "r", encoding="utf-8") as f:
                 transcript_segments = json.load(f).get("segments", [])
 
@@ -199,22 +217,22 @@ def main():
         for seg in to_render:
             clip_id = seg.get("rank", seg.get("index", 0))
             output_path = os.path.join(args.output_dir, f"clip_{clip_id}.mp4")
-            keep = None
-            if args.silence_trim:
-                # subtitle.py derives the same intervals from the same inputs,
-                # so captions stay in sync with the cut video.
+            timeline = None
+            if args.silence_trim or args.hook_first:
+                # subtitle.py plans the same timeline from the same inputs, so
+                # captions stay in sync with the cut video.
                 duration = seg["endTime"] - seg["startTime"]
                 words = words_for_clip(transcript_segments, seg["startTime"], seg["endTime"])
-                intervals = keep_intervals(words, duration, min_gap=args.silence_gap)
-                keep = intervals if is_trimmed(intervals, duration) else None
-            framing, crop_segments = plan_framing(args.reframe, args.video, seg["startTime"], seg["endTime"], keep)
+                planned = plan_timeline(words, duration, args.silence_trim, args.silence_gap, args.hook_first)
+                timeline = None if planned == [(0.0, round(duration, 3))] else planned
+            framing, crop_segments = plan_framing(args.reframe, args.video, seg["startTime"], seg["endTime"], timeline)
             try:
                 render_clip(
                     args.video,
                     seg["startTime"],
                     seg["endTime"],
                     output_path,
-                    keep=keep,
+                    timeline=timeline,
                     reframe=framing,
                 )
                 if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
@@ -232,7 +250,8 @@ def main():
                     "status": "COMPLETED",
                     "startTime": seg["startTime"],
                     "endTime": seg["endTime"],
-                    "trimmedDuration": round(sum(b - a for a, b in keep), 3) if keep else None,
+                    "trimmedDuration": timeline_duration(timeline) if timeline else None,
+                    "hookFirst": bool(timeline) and not is_monotonic(timeline),
                     "reframe": "blur" if framing[0] == "complex"
                     else ("face" if framing[1] != reframe_mod.CENTER_VF else "center"),
                     "cropSegments": crop_segments,
