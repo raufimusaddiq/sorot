@@ -89,11 +89,21 @@ Penalizes segments with too much silence.
 ### face_presence (weight: 0.10)
 Whether a face is visible in the video during the segment.
 
-**Implementation (MVP):**
-- Sample 3 frames from the segment (start, middle, end)
-- Run OpenCV Haar cascade face detection
-- `1.0` = face in all 3 frames, `0.7` = face in 2, `0.3` = face in 1, `0.0` = no face
-- Future: use better face detection model
+**Implementation** (`features/visual.py`, batch path used by `score.py`):
+- Check 5 frames per segment, at 10/30/50/70/90 % of its duration
+- Detect on full-size frames (640 px wide). Scene/motion features keep their
+  224-px copies, which is what they were calibrated on
+- Detector: MediaPipe if installed, else OpenCV Haar (`minNeighbors=8`,
+  `minSize=40px`). The Docker image uses Haar; OpenCV must stay `<5` (5.0
+  removed `CascadeClassifier`)
+- **Majority vote**: a face must be found in at least 3 of the 5 frames.
+  Single-frame Haar fires on busy textures (measured: 3–13 of 30 frames on a
+  no-face video), so one hit is not enough
+- `1.0` = face majority plus a smile detected, `0.7` = face majority,
+  `0.0` = otherwise
+- Calibration (2026-10-27): a real podcast clip went from faces `0.0` on 2 of 3
+  segments (224-px single frame) to faces found in 5 of 6 five-second
+  segments. A synthetic no-face video scored `0.0` on all segments
 
 ### scene_change (weight: 0.08)
 Visual activity in the segment.

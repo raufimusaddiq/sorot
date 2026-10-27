@@ -99,7 +99,7 @@ Clips are scored on 11 weighted multimodal features with Indonesian keyword heur
 | Emotional Energy | 9% | Audio RMS energy (60%) + text emotion (40%) |
 | Text Sentiment | 5% | Indonesian positive/negative word polarity |
 | Pause Structure | 7% | Actual silence gaps from transcript |
-| Face Presence | 10% | OpenCV face + smile expression detection |
+| Face Presence | 10% | Face (majority of 5 full-res frames) + smile detection |
 | Scene Change | 8% | Histogram diff + color brightness/saturation |
 | Topic Fit | 8% | Niche keyword match |
 | History Score | 7% | Similar past clips via feedback lookup |

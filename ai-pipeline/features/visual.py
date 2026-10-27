@@ -91,10 +91,51 @@ def _calc_motion_from_grays(grays):
         return 0.5
 
 
-def _extract_frames_ffmpeg(video_path, timestamps):
+# Scene/motion features are calibrated on 224-px-wide frames. Face detection
+# needs more pixels: at 224 px a podcast face is ~20 px and Haar misses it, so
+# frames are decoded at FACE_WIDTH and a full-size copy is kept only for the
+# few timestamps used for face checks (memory stays at the 224-px level).
+ANALYSIS_WIDTH = 224
+FACE_WIDTH = 640
+# Haar fires on busy textures (measured: 3-13 of 30 no-face frames), so a
+# segment only counts as "has a face" when a majority of its samples agree.
+FACE_FRACTIONS = (0.1, 0.3, 0.5, 0.7, 0.9)
+FACE_MIN_HITS = 3
+HAAR_PARAMS = {"scaleFactor": 1.1, "minNeighbors": 8, "minSize": (40, 40)}
+
+
+def _face_times(start, dur):
+    return [start + dur * f for f in FACE_FRACTIONS]
+
+
+def _frame_entry(img, keep_face):
+    """gray/hsv at ANALYSIS_WIDTH (+ full-size face_gray when requested)."""
+    import cv2
+    h, w = img.shape[:2]
+    full_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if w > ANALYSIS_WIDTH:
+        small = cv2.resize(img, (ANALYSIS_WIDTH, max(2, round(h * ANALYSIS_WIDTH / w))), interpolation=cv2.INTER_AREA)
+    else:
+        small = img
+    entry = {"gray": cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), "hsv": cv2.cvtColor(small, cv2.COLOR_BGR2HSV)}
+    if keep_face:
+        entry["face_gray"] = full_gray
+    return entry
+
+
+def _near_any(t, targets, tol=0.6):
+    return any(abs(t - x) <= tol for x in targets)
+
+
+def _extract_frames_ffmpeg(video_path, timestamps, face_timestamps=None):
+    """Frames at 1 fps across the timestamps' span, keyed by time. When
+    ``face_timestamps`` is given, frames near those times also carry a
+    full-size ``face_gray`` for detection."""
     import subprocess
     import tempfile
     frames = {}
+    face_ts = sorted(set(face_timestamps or []))
+    width = FACE_WIDTH if face_ts else ANALYSIS_WIDTH
     tmpdir = tempfile.mkdtemp(prefix="vc_frames_")
     try:
         ts_list = sorted(set(timestamps))
@@ -107,7 +148,7 @@ def _extract_frames_ffmpeg(video_path, timestamps):
             "ffmpeg", "-y",
             "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
             "-i", video_path,
-            "-vf", "fps=1,scale=224:-2",
+            "-vf", f"fps=1,scale={width}:-2",
             "-q:v", "5",
             out_pattern
         ]
@@ -121,9 +162,7 @@ def _extract_frames_ffmpeg(video_path, timestamps):
                 if img is not None:
                     frame_num = int(os.path.basename(img_path).replace("f_", "").replace(".jpg", ""))
                     t = start + (frame_num - 1)
-                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-                    frames[t] = {"gray": gray, "hsv": hsv}
+                    frames[t] = _frame_entry(img, _near_any(t, face_ts))
                 try:
                     os.remove(img_path)
                 except Exception:
@@ -133,7 +172,7 @@ def _extract_frames_ffmpeg(video_path, timestamps):
                 out_path = os.path.join(tmpdir, f"s_{int(t * 1000)}.jpg")
                 cmd2 = [
                     "ffmpeg", "-y", "-ss", f"{t:.3f}", "-i", video_path,
-                    "-vframes", "1", "-q:v", "5", "-vf", "scale=224:-2",
+                    "-vframes", "1", "-q:v", "5", "-vf", f"scale={width}:-2",
                     out_path
                 ]
                 r = subprocess.run(cmd2, capture_output=True, timeout=15)
@@ -141,9 +180,7 @@ def _extract_frames_ffmpeg(video_path, timestamps):
                     import cv2
                     img = cv2.imread(out_path)
                     if img is not None:
-                        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-                        frames[t] = {"gray": gray, "hsv": hsv}
+                        frames[t] = _frame_entry(img, _near_any(t, face_ts))
                     try:
                         os.remove(out_path)
                     except Exception:
@@ -187,7 +224,7 @@ def _batch_analyze_video_mediapipe(video_path, segments):
             dur = seg.get("duration", 30)
             end = seg.get("endTime", start + dur)
             mid = start + dur * 0.5
-            all_times.append({"idx": i, "face_times": [mid], "scene_times": [start, mid, end]})
+            all_times.append({"idx": i, "face_times": _face_times(start, dur), "scene_times": [start, mid, end]})
             for t in [mid, start, end]:
                 unique_ts.add(round(t, 1))
 
@@ -196,7 +233,8 @@ def _batch_analyze_video_mediapipe(video_path, segments):
             step = len(unique_ts) / 60
             unique_ts = [unique_ts[int(i * step)] for i in range(60)]
 
-        frame_data = _extract_frames_ffmpeg(video_path, unique_ts)
+        face_ts = [t for info in all_times for t in info["face_times"]]
+        frame_data = _extract_frames_ffmpeg(video_path, unique_ts, face_ts)
 
         def _nearest(t):
             key = round(t, 1)
@@ -221,17 +259,14 @@ def _batch_analyze_video_mediapipe(video_path, segments):
                 if fd is None:
                     continue
                 try:
-                    rgb = cv2.cvtColor(fd["gray"], cv2.COLOR_GRAY2RGB)
+                    rgb = cv2.cvtColor(fd.get("face_gray", fd["gray"]), cv2.COLOR_GRAY2RGB)
                     detections = face_detector.process(rgb)
                     if detections.detections:
                         faces_found += 1
                 except Exception:
                     pass
 
-            if faces_found >= 1:
-                face_score = 0.7
-            else:
-                face_score = 0.0
+            face_score = 0.7 if faces_found >= FACE_MIN_HITS else 0.0
 
             scene_frames = [fd for t in info["scene_times"] if (fd := _nearest(t)) is not None]
 
@@ -315,7 +350,7 @@ def _batch_analyze_video_haar(video_path, segments):
             end = seg.get("endTime", start + dur)
             mid = start + dur * 0.5
             ts = [mid, start, end]
-            all_times.append({"idx": i, "face_times": [mid], "scene_times": [start, mid, end]})
+            all_times.append({"idx": i, "face_times": _face_times(start, dur), "scene_times": [start, mid, end]})
             for t in ts:
                 unique_ts.add(round(t, 1))
 
@@ -324,7 +359,8 @@ def _batch_analyze_video_haar(video_path, segments):
             step = len(unique_ts) / 60
             unique_ts = [unique_ts[int(i * step)] for i in range(60)]
 
-        frame_data = _extract_frames_ffmpeg(video_path, unique_ts)
+        face_ts = [t for info in all_times for t in info["face_times"]]
+        frame_data = _extract_frames_ffmpeg(video_path, unique_ts, face_ts)
 
         def _nearest(t):
             key = round(t, 1)
@@ -349,9 +385,9 @@ def _batch_analyze_video_haar(video_path, segments):
                 fd = _nearest(t)
                 if fd is None:
                     continue
-                gray = fd["gray"]
+                gray = fd.get("face_gray", fd["gray"])
                 try:
-                    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(20, 20))
+                    faces = face_cascade.detectMultiScale(gray, **HAAR_PARAMS)
                     if len(faces) > 0:
                         faces_found += 1
                         if smile_cascade is not None:
@@ -363,10 +399,8 @@ def _batch_analyze_video_haar(video_path, segments):
                 except Exception:
                     pass
 
-            if faces_found >= 1 and smiles_found >= 1:
-                face_score = 1.0
-            elif faces_found >= 1:
-                face_score = 0.7
+            if faces_found >= FACE_MIN_HITS:
+                face_score = 1.0 if smiles_found >= 1 else 0.7
             else:
                 face_score = 0.0
 

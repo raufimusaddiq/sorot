@@ -160,6 +160,42 @@ class FakeDetector:
         self.closed = True
 
 
+class TestFaceResolution:
+    def test_frame_entry_keeps_full_size_only_for_faces(self):
+        img = np.zeros((360, 640, 3), np.uint8)
+        e = visual._frame_entry(img, keep_face=True)
+        assert e["gray"].shape == (126, 224) and e["hsv"].shape == (126, 224, 3)
+        assert e["face_gray"].shape == (360, 640)
+        assert "face_gray" not in visual._frame_entry(img, keep_face=False)
+        small = visual._frame_entry(np.zeros((100, 200, 3), np.uint8), keep_face=False)
+        assert small["gray"].shape == (100, 200)        # never upscaled
+
+    def test_face_times_and_tolerance(self):
+        assert visual._face_times(10, 20) == [12.0, 16.0, 20.0, 24.0, 28.0]
+        assert visual._near_any(15.5, [15.0]) and not visual._near_any(16.0, [15.0])
+
+    def test_detectors_get_the_full_size_frame(self, video_file, monkeypatch):
+        seen = []
+        big = {**frame(), "face_gray": np.zeros((360, 640), np.uint8)}
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: {t: big for t in (0.0, 5.0, 10.0)})
+
+        class Det(FakeDetector):
+            def process(self, rgb):
+                seen.append(rgb.shape)
+                return types.SimpleNamespace(detections=None)
+        monkeypatch.setattr(visual, "_get_mediapipe_face_detector", lambda: Det([]))
+        visual._batch_analyze_video_mediapipe(video_file, segs(1))
+        assert seen == [(360, 640, 3)] * len(visual.FACE_FRACTIONS)
+
+    def test_real_extraction_with_face_timestamps(self, real_video):
+        frames = visual._extract_frames_ffmpeg(real_video, [0.5, 3.0], face_timestamps=[1.5])
+        with_face = [t for t, f in frames.items() if "face_gray" in f]
+        assert with_face and all(abs(t - 1.5) <= 0.6 for t in with_face)
+        f = frames[with_face[0]]
+        # 160-px source: decoded at FACE_WIDTH; analysis copy stays at the calibrated 224 px
+        assert f["gray"].shape[1] == 224 and f["face_gray"].shape[1] == 640
+
+
 class TestBatchDispatch:
     def test_missing_video_gives_neutral_defaults(self):
         for fn in (visual._batch_analyze_video, visual._batch_analyze_video_mediapipe,
@@ -181,8 +217,10 @@ class TestMediapipeBatch:
     def test_faces_scene_motion_per_segment(self, video_file, monkeypatch):
         # seg0 frames at 0/5/10 (exact keys), seg1 at 20/25/30 → nearest-frame lookup
         data = {0.0: frame(10), 5.0: frame(240), 10.0: frame(10), 22.0: frame(128, v=50, s=20)}
-        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts: data)
-        det = FakeDetector([["face"], []])
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: data)
+        # 5 checks per segment, majority (3) needed: seg0 3 hits → face; seg1 2 hits → none.
+        det = FakeDetector([["face"], ["face"], [], ["face"], [],
+                            ["face"], [], ["face"], [], []])
         monkeypatch.setattr(visual, "_get_mediapipe_face_detector", lambda: det)
 
         res = visual._batch_analyze_video_mediapipe(video_file, segs(2))
@@ -196,7 +234,7 @@ class TestMediapipeBatch:
     @pytest.mark.parametrize("corr,base", [(0.4, 0.9), (0.6, 0.7), (0.8, 0.5), (0.95, 0.3)])
     def test_scene_change_bands(self, video_file, monkeypatch, corr, base):
         dull = {t: frame(100, v=50, s=20) for t in (0.0, 5.0, 10.0)}
-        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts: dull)
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: dull)
         monkeypatch.setattr(visual, "_get_mediapipe_face_detector", lambda: FakeDetector([[]]))
         monkeypatch.setattr(cv2, "compareHist", lambda *a: corr)
         assert visual._batch_analyze_video_mediapipe(video_file, segs(1))[0]["scene"] == base
@@ -204,7 +242,7 @@ class TestMediapipeBatch:
     def test_no_frames_detector_errors_and_many_timestamps(self, video_file, monkeypatch):
         seen = {}
 
-        def extract(v, ts):
+        def extract(v, ts, face_ts=None):
             seen["n"] = len(ts)
             return {}
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", extract)
@@ -213,13 +251,13 @@ class TestMediapipeBatch:
         assert seen["n"] == 60                      # 75 unique timestamps capped at 60
         assert res[0] == {"faces": 0.0, "scene": 0.5, "motion": 0.5}
 
-        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts: {0.0: frame(), 5.0: frame()})
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: {0.0: frame(), 5.0: frame()})
         monkeypatch.setattr(visual, "_get_mediapipe_face_detector",
                             lambda: FakeDetector([RuntimeError("tflite")]))
         assert visual._batch_analyze_video_mediapipe(video_file, segs(1))[0]["faces"] == 0.0
 
     def test_unexpected_error_gives_defaults(self, video_file, monkeypatch):
-        def boom(v, ts):
+        def boom(v, ts, face_ts=None):
             raise RuntimeError("decode")
         monkeypatch.setattr(visual, "_get_mediapipe_face_detector", lambda: FakeDetector([]))
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", boom)
@@ -251,9 +289,13 @@ def install_cascades(monkeypatch, face_results, smile_results, smile_exists=True
 class TestHaarBatch:
     def test_face_and_smile_scoring(self, video_file, monkeypatch):
         face = [(2, 2, 10, 10)]
-        install_cascades(monkeypatch, [face, face, []], [[(1, 1, 2, 2)], []])
+        # Five checks per segment, majority (3) required: seg0 4 hits + a smile,
+        # seg1 3 hits no smile, seg2 2 hits → below majority (false-positive guard).
+        install_cascades(monkeypatch,
+                         [face, face, [], face, face,  face, [], face, face, [],  face, [], [], face, []],
+                         [[(1, 1, 2, 2)]] + [[]] * 20)
         data = {0.0: frame(10), 5.0: frame(240), 10.0: frame(10)}
-        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts: data)
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: data)
         res = visual._batch_analyze_video_haar(video_file, segs(3))
         assert [res[i]["faces"] for i in range(3)] == [1.0, 0.7, 0.0]
         assert res[0]["scene"] == 1.0
@@ -262,7 +304,7 @@ class TestHaarBatch:
     def test_scene_change_bands(self, video_file, monkeypatch, corr, base):
         install_cascades(monkeypatch, [], [], smile_exists=False)
         dull = {t: frame(100, v=50, s=20) for t in (0.0, 5.0, 10.0)}
-        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts: dull)
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: dull)
         monkeypatch.setattr(cv2, "compareHist", lambda *a: corr)
         assert visual._batch_analyze_video_haar(video_file, segs(1))[0]["scene"] == base
 
@@ -270,7 +312,7 @@ class TestHaarBatch:
         install_cascades(monkeypatch, [RuntimeError("cascade")], [])
         seen = {}
 
-        def extract(v, ts):
+        def extract(v, ts, face_ts=None):
             seen["n"] = len(ts)
             return {3.0: frame(), 7.0: frame()}
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", extract)
@@ -280,10 +322,10 @@ class TestHaarBatch:
 
     def test_no_frames_and_crash(self, video_file, monkeypatch):
         install_cascades(monkeypatch, [], [])
-        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts: {})
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: {})
         assert visual._batch_analyze_video_haar(video_file, segs(1))[0] == {"faces": 0.0, "scene": 0.5, "motion": 0.5}
 
-        def boom(v, ts):
+        def boom(v, ts, face_ts=None):
             raise RuntimeError("x")
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", boom)
         assert visual._batch_analyze_video_haar(video_file, segs(1)) == {0: DEFAULTS}
