@@ -37,6 +37,14 @@ ViralVideo/
 │   │   └── supervised.py            # Optional LightGBM model
 │   └── tests/                       # pytest (in-process, no GPU needed)
 │
+├── cli/                             # vclip command-line client (Bun)
+│   ├── src/                         # main.ts (entry + help), commands.ts, service.ts (up/down/logs), api.ts
+│   └── tests/                       # bun test (fake API, processes and files)
+│
+├── scripts/
+│   ├── install.sh                   # Linux installer: Docker or native (systemd), --uninstall
+│   └── *.ps1                        # Windows: start / stop / verify / e2e
+│
 ├── frontend/                        # Next.js static export (out/ served by backend)
 │   ├── package.json
 │   ├── next.config.js
