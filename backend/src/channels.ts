@@ -1,6 +1,7 @@
-import type { ScriptRunner } from "./runner";
+import { pyRound } from "./pyCompat";
 import { now, type Store } from "./store";
 import type { DiscoveryChannel, Json } from "./types";
+import { normalizeVideo, type Video, type YouTube } from "./youtube";
 
 // Channels whose recent uploads average under 15 min are short-form or clip
 // sources, not the long-form podcasts/talk shows clips are cut from.
@@ -10,7 +11,81 @@ const PROFILE_CONCURRENCY = 6;
 
 export const CHANNEL_STATUSES = ["ACTIVE", "PAUSED", "REJECTED"];
 
-const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+/** Long-form anchor queries, one per kind of source clippers harvest (Indonesian). */
+export const CATEGORY_SEED_QUERIES = [
+  "podcast indonesia", "podcast full episode indonesia", "close the door deddy corbuzier", "curhat bang denny sumargo",
+  "talk show indonesia", "mata najwa full", "rossy kompas tv",
+  "stand up comedy indonesia special", "majelis lucu indonesia",
+  "wawancara eksklusif", "bincang bincang podcast",
+  "live streaming indonesia full",
+];
+const SEED_CONCURRENCY = 6;
+const CLIPPER_DURATION_CAP = 5 * 60;   // < 5 min = Shorts-scale
+const CLIPPER_THRESHOLD = 0.7;         // ≥ 70% short or clip-titled uploads = clip farm
+
+export interface SeedChannel {
+  youtubeChannelId: string;
+  channelName: string;
+  channelUrl: string;
+  discoveredViaQuery: string;
+}
+
+/** Channels behind flat search results. */
+export function channelsFromEntries(entries: Json[], query: string): SeedChannel[] {
+  return entries.flatMap((e) => {
+    const id = String(e.channel_id || e.uploader_id || "");
+    const name = String(e.channel || e.uploader || "");
+    if (!id || !name) return [];
+    return [{ youtubeChannelId: id, channelName: name, channelUrl: String(e.channel_url || `https://www.youtube.com/channel/${id}`), discoveredViaQuery: query }];
+  });
+}
+
+/** Most common content type with ≥ 40% share (alphabetical tie-break), else MIXED. */
+export function channelCategory(uploads: Video[]): string {
+  if (!uploads.length) return "MIXED";
+  const counts = new Map<string, number>();
+  for (const u of uploads) counts.set(u.contentType || "OTHER", (counts.get(u.contentType || "OTHER") ?? 0) + 1);
+  const ranked = [...counts].filter(([k]) => k !== "OTHER").sort(([a], [b]) => (a < b ? -1 : 1));
+  if (!ranked.length) return "MIXED";
+  const [top, topCount] = ranked.reduce((best, cur) => (cur[1] > best[1] ? cur : best));
+  return topCount / uploads.length >= 0.4 ? top : "MIXED";
+}
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+};
+
+/** Profile from a channel's recent uploads (median views resist viral outliers). */
+export function profileFromUploads(channelUrl: string, uploads: Video[]) {
+  const durations = uploads.map((u) => Math.trunc(u.duration || 0));
+  const views = uploads.filter((u) => u.viewCount).map((u) => Math.trunc(u.viewCount || 0));
+  const ages = uploads.map((u) => u.age_hours).filter((a) => typeof a === "number" && a < 9999);
+  let uploadsPerWeek = 0.0;
+  if (ages.length >= 2) {
+    const span = Math.max(...ages) - Math.min(...ages);
+    if (span > 0) uploadsPerWeek = pyRound(ages.length / (span / 168.0), 3);
+  }
+  const n = uploads.length;
+  const shortRatio = durations.filter((d) => d > 0 && d < CLIPPER_DURATION_CAP).length / n;
+  const clippedRatio = uploads.filter((u) => u.isLikelyClipped).length / n;
+  return {
+    channelUrl,
+    channelId: uploads[0]!.channelId ?? "",
+    channelName: uploads[0]!.channel ?? "",
+    uploadsAnalyzed: n,
+    avgDurationSec: Math.trunc(durations.reduce((a, b) => a + b, 0) / n),
+    medianViewCount: views.length ? Math.trunc(median(views)) : 0,
+    uploadsPerWeek,
+    subscriberCount: 0,     // not in flat listings
+    isLikelyClipperChannel: Math.max(shortRatio, clippedRatio) >= CLIPPER_THRESHOLD ? 1 : 0,
+    clippedShareRatio: pyRound(clippedRatio, 3),
+    shortShareRatio: pyRound(shortRatio, 3),
+    primaryCategory: channelCategory(uploads),
+  };
+}
+
 const text = (v: unknown) => (typeof v === "string" ? v : "");
 
 export function channelToMap(c: DiscoveryChannel) {
@@ -36,9 +111,9 @@ export function channelToMap(c: DiscoveryChannel) {
 }
 
 /**
- * Source-channel registry. A reseed runs channel_crawler.py's anchor queries,
- * stores channels it has not seen, and profiles them in the background;
- * profiling rejects clip farms and short-form channels.
+ * Source-channel registry. A reseed runs the anchor queries, stores channels
+ * it has not seen, and profiles them in the background; profiling rejects
+ * clip farms and short-form channels.
  */
 export class ChannelCrawler {
   private backlog: string[] = [];
@@ -46,7 +121,18 @@ export class ChannelCrawler {
   private inFlight = 0;
   private idleResolvers: Array<() => void> = [];
 
-  constructor(private readonly store: Store, private readonly runScript: ScriptRunner) {}
+  constructor(private readonly store: Store, private readonly youtube: YouTube) {}
+
+  /** Anchor queries in parallel (6 at a time); first sighting of each channel wins. */
+  async seedChannels(queries = CATEGORY_SEED_QUERIES, perQuery = 15): Promise<SeedChannel[]> {
+    const seen = new Map<string, SeedChannel>();
+    for (let i = 0; i < queries.length; i += SEED_CONCURRENCY) {
+      const batch = await Promise.all(queries.slice(i, i + SEED_CONCURRENCY)
+        .map(async (q) => channelsFromEntries(await this.youtube.searchEntries(q, perQuery), q)));
+      for (const c of batch.flat()) if (!seen.has(c.youtubeChannelId)) seen.set(c.youtubeChannelId, c);
+    }
+    return [...seen.values()];
+  }
 
   /** status unset → ACTIVE channels by trust. */
   list(status?: string | null) {
@@ -57,8 +143,7 @@ export class ChannelCrawler {
 
   /** Returns once the seed search is stored; profiling continues in the background. */
   async reseed() {
-    const data = await this.runScript("channel_crawler.py", ["--mode", "category_seed"]);
-    const found = Array.isArray(data.channels) ? (data.channels as Json[]) : [];
+    const found = (await this.seedChannels()) as unknown as Json[];
     let upserted = 0;
     let alreadyKnown = 0;
     const toProfile: string[] = [];
@@ -135,19 +220,20 @@ export class ChannelCrawler {
   private async profile(id: string): Promise<boolean | null> {
     const ch = this.store.getChannel(id);
     if (!ch) return null;
-    const p = await this.runScript("channel_crawler.py", ["--mode", "profile", "--channel-url", ch.channelUrl]);
-    const avg = Math.trunc(num(p.avgDurationSec));
-    const clipper = num(p.isLikelyClipperChannel) === 1;
+    const uploads = (await this.youtube.channelEntries(ch.channelUrl, 30)).map((e) => normalizeVideo(e));
+    const p = profileFromUploads(ch.channelUrl, uploads);
+    const avg = p.avgDurationSec;
+    const clipper = p.isLikelyClipperChannel === 1;
     const rejected = clipper || (avg > 0 && avg < MIN_AVG_DURATION_SEC);
     this.store.updateChannel(id, {
       // yt-dlp may resolve a better display name than the search result had.
-      channelName: text(p.channelName) || undefined,
+      channelName: p.channelName || undefined,
       avgDurationSec: avg,
-      medianViewCount: Math.trunc(num(p.medianViewCount)),
-      uploadsPerWeek: num(p.uploadsPerWeek),
-      subscriberCount: Math.trunc(num(p.subscriberCount)),
+      medianViewCount: p.medianViewCount,
+      uploadsPerWeek: p.uploadsPerWeek,
+      subscriberCount: p.subscriberCount,
       isLikelyClipperChannel: clipper ? 1 : 0,
-      primaryCategory: text(p.primaryCategory) || "MIXED",
+      primaryCategory: p.primaryCategory,
       lastProfileRefreshAt: now(),
       ...(rejected ? { status: "REJECTED" } : {}),
     });

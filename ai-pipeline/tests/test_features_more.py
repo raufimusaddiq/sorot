@@ -1,4 +1,4 @@
-"""features/audio.py, features/context.py, features/text.py — branches the
+"""features/audio.py and features/text.py — branches the
 fixture-based tests in test_pipeline.py don't reach."""
 
 import json
@@ -106,61 +106,18 @@ def transcript(tmp_path, segments, name="t.json"):
     return str(p)
 
 
-class TestKeywordCorpus:
-    def reset(self, monkeypatch, corpus_dir):
-        monkeypatch.setattr(text, "_CORPUS_DIR", str(corpus_dir))
-        monkeypatch.setattr(text, "_CORPUS_IDF", None)
+class TestHookStrength:
+    """The hook score captions.py uses for hook-first openings."""
 
-    def test_too_few_docs_and_unreadable_files(self, tmp_path, monkeypatch):
-        corpus = tmp_path / "corpus"
-        corpus.mkdir()
-        (corpus / "a.txt").write_text("rahasia penting banget", encoding="utf-8")
-        (corpus / "readme.md").write_text("ignored", encoding="utf-8")
-        (corpus / "folder.txt").mkdir()               # open() fails → skipped
-        (corpus / "empty.txt").write_text("", encoding="utf-8")
-        self.reset(monkeypatch, corpus)
-        assert text._load_keyword_corpus() is None
-        assert text._load_keyword_corpus() is None    # cached empty sentinel
-
-    def test_all_tokens_filtered_as_stopwords(self, tmp_path, monkeypatch):
-        corpus = tmp_path / "corpus"
-        corpus.mkdir()
-        for i in range(3):
-            (corpus / f"{i}.txt").write_text("sama semua", encoding="utf-8")
-        self.reset(monkeypatch, corpus)
-        assert text._load_keyword_corpus() is None
-
-    def test_tfidf_scoring_path(self, tmp_path, monkeypatch):
-        corpus = tmp_path / "corpus"
-        corpus.mkdir()
-        docs = ["rahasia dapur", "rahasia bisnis", "tips dapur", "tips bisnis", "lain lagi"]
-        for i, d in enumerate(docs):
-            (corpus / f"{i}.txt").write_text(d, encoding="utf-8")
-        self.reset(monkeypatch, corpus)
-        idf = text._load_keyword_corpus()
-        assert set(idf) == {"rahasia", "dapur", "bisnis", "tips"}
-        assert text.score_keyword_trigger("rahasia dapur") == 1.0
-
-    @pytest.mark.parametrize("density,expected", [(0.9, 1.0), (0.6, 0.85), (0.3, 0.65), (0.2, 0.4), (0.05, 0.2)])
-    def test_tfidf_density_bands(self, density, expected):
-        assert text._score_keyword_trigger_tfidf("kunci kunci", {"kunci": density}) == expected
-
-    def test_tfidf_no_tokens_or_no_match(self):
-        assert text._score_keyword_trigger_tfidf("a b", {"kunci": 1}) == 0.1
-        assert text._score_keyword_trigger_tfidf("lainnya saja", {"kunci": 1}) == 0.1
-
-
-class TestTextBands:
-    def test_static_keyword_counts(self, monkeypatch):
-        monkeypatch.setattr(text, "_load_keyword_corpus", lambda: None)
-        kws = list(text.KEYWORD_TRIGGERS)
-        filler = " ".join(["isi"] * 60)
-        assert text.score_keyword_trigger(" ".join(kws[:3]) + " " + filler) == 0.85
-        assert text.score_keyword_trigger(" ".join(kws[:2]) + " " + filler) == 0.65
-        assert text.score_keyword_trigger(kws[0] + " " + filler) == 0.4
-
-    def test_hook_question_word_and_long_clarity(self):
-        long_plain = "gimana " + " ".join(["kata"] * 12) + "."
-        assert text.score_hook_strength(long_plain.replace("gimana ", "")) == 0.2
+    def test_every_band(self):
+        assert text.score_hook_strength("Ternyata rahasia ini gimana?") == 1.0
+        assert text.score_hook_strength("Ternyata rahasianya sederhana.") == 0.9
+        assert text.score_hook_strength("Ini " + " ".join(["kata"] * 12) + "?") == 0.7
         assert text.score_hook_strength("apa " + " ".join(["kata"] * 12) + ".") == 0.6
-        assert text.score_clarity(90, "isi") == 0.4
+        assert text.score_hook_strength("Halo semua, apa kabar") == 0.4
+        assert text.score_hook_strength(" ".join(["kata"] * 12) + ".") == 0.2
+
+    def test_first_sentence(self):
+        assert text._extract_first_sentence("satu. dua") == "satu."
+        assert text._extract_first_sentence("satu, dua") == "satu"
+        assert text._extract_first_sentence("satu dua") == "satu dua"

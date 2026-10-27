@@ -7,6 +7,8 @@ import type { ExecFn, ScriptRunner } from "./runner";
 import { now, type Store } from "./store";
 import { determineTier, FEATURE_ORDER, loadWeights, scoreSegments, type MediaFeatures, type SegmentIn } from "./scoring";
 import type { Clip, ClipScore, Json, Stage, Video } from "./types";
+import { YouTube } from "./youtube";
+import { captionTranscript } from "./youtubeCaptions";
 
 const DATA_SUBDIRS = [
   "input", "raw", "audio", "transcripts", "segments", "clips", "renders",
@@ -50,6 +52,7 @@ export class PipelineOrchestrator {
     private readonly runScript: ScriptRunner,
     private readonly exec: ExecFn,
     private readonly llm: Llm = new Llm(config),
+    private readonly youtube: YouTube = new YouTube(exec, config.ytdlpPath),
   ) {}
 
   /** Per-video render/export folders: clip files are named by rank, so a
@@ -224,12 +227,11 @@ export class PipelineOrchestrator {
       // video has none (or the fetch fails).
       const section = this.sectionArgs(video);
       try {
-        const captions = await this.runScript("youtube_captions.py", [
-          "--url", video.sourceUrl, "--output", outputPath, "--language", this.config.whisperLanguage,
-          "--ytdlp-path", this.config.ytdlpPath,
-          ...(opts.allowAutoCaptions ? ["--allow-auto"] : []),
-          ...(section ? ["--start", String(section[0]), "--end", String(section[1])] : []),
-        ], { signal });
+        const captions = await captionTranscript(this.youtube, video.sourceUrl, video.id, {
+          language: this.config.whisperLanguage, allowAuto: opts.allowAutoCaptions,
+          start: section?.[0], end: section?.[1], signal,
+        });
+        if (signal.aborted) throw new CancelledError();
         if (captions.found === true) {
           await Bun.write(outputPath, JSON.stringify(captions));
           return outputPath;

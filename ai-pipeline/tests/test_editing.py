@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 import sys
-import types
 
 import pytest
 
@@ -15,7 +14,6 @@ import captions
 import reframe
 import render
 import subtitle
-import youtube_captions as ytc
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 
@@ -170,100 +168,6 @@ class TestSubtitleEditing:
                                           "--bgm", str(song), "--bgm-volume", "0.3"])
         subtitle.main()
         assert got == {"bgm": str(song), "vol": 0.3}
-
-
-# --- YouTube captions ------------------------------------------------------------------
-
-AUTO = {"events": [
-    {"tStartMs": 1000, "dDurationMs": 2000, "segs": [
-        {"utf8": "halo", "tOffsetMs": 0}, {"utf8": " semua", "tOffsetMs": 600}]},
-    {"tStartMs": 3000, "dDurationMs": 1000, "segs": [{"utf8": "\n"}]},
-    {"tStartMs": 5000, "dDurationMs": 1500, "segs": [{"utf8": "apa kabar"}]},
-]}
-
-
-class TestYoutubeCaptions:
-    def test_parse_auto_and_uploaded_tracks(self):
-        segs = ytc.parse_json3(AUTO)
-        assert [s["text"] for s in segs] == ["halo semua", "apa kabar"]
-        # last word capped at 1 s, not stretched to the event's display end (3.0)
-        assert segs[0]["words"] == [w("halo", 1.0, 1.6), w("semua", 1.6, 2.6)]
-        assert "words" not in segs[1] and segs[1]["start"] == 5.0 and segs[1]["end"] == 6.5
-        assert ytc.parse_json3({}) == []
-
-    def test_window_shifts_to_section(self):
-        segs = ytc.parse_json3(AUTO)
-        out = ytc.window(segs, 1.5, 6.0)
-        # "halo" was spoken before the window → dropped; the segment is rebuilt from "semua"
-        assert out[0] == {"index": 0, "start": 0.1, "end": 1.1, "text": "semua", "words": [w("semua", 0.1, 1.1)]}
-        assert out[1]["start"] == 3.5 and out[1]["end"] == 4.5
-        assert ytc.window(segs) is segs
-        assert ytc.window(segs, 10.0, None) == []
-
-    def test_non_speech_tags_are_dropped(self):
-        data = {"events": [
-            {"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "[tertawa]"}]},
-            {"tStartMs": 1000, "dDurationMs": 2000, "segs": [{"utf8": "[Musik]", "tOffsetMs": 0}, {"utf8": " ayo", "tOffsetMs": 500}]},
-            {"tStartMs": 3000, "dDurationMs": 1000, "segs": [{"utf8": "[Musik]", "tOffsetMs": 0}, {"utf8": " [Tepuk tangan]", "tOffsetMs": 200}]},
-            {"tStartMs": 5000, "dDurationMs": 1000, "segs": [{"utf8": "[Musik] halo  semua"}]},
-        ]}
-        segs = ytc.parse_json3(data)
-        assert [s["text"] for s in segs] == ["ayo", "halo semua"]
-        assert segs[0]["words"] == [w("ayo", 1.5, 2.5)]
-
-    def test_fetch_prefers_uploaded_then_auto(self, monkeypatch):
-        calls = []
-
-        def run(cmd, **kw):
-            calls.append(cmd)
-            if "--write-auto-subs" in cmd:
-                out = cmd[cmd.index("-o") + 1].replace("%(id)s.%(ext)s", "abc.id.json3")
-                with open(out, "w", encoding="utf-8") as f:
-                    json.dump(AUTO, f)
-            return types.SimpleNamespace(returncode=0)
-        monkeypatch.setattr(subprocess, "run", run)
-        assert ytc.fetch_json3("u", "id", allow_auto=False) == (None, None)
-        path, kind = ytc.fetch_json3("u", "id", allow_auto=True)
-        assert kind == "auto" and json.load(open(path, encoding="utf-8")) == AUTO
-        os.remove(path)
-
-        def missing(cmd, **kw):
-            raise FileNotFoundError()
-        monkeypatch.setattr(subprocess, "run", missing)
-        assert ytc.fetch_json3("u", "id", allow_auto=True) == (None, None)
-
-    def run_main(self, monkeypatch, capsys, *argv):
-        monkeypatch.setattr(sys, "argv", ["youtube_captions.py", *argv])
-        code = 0
-        try:
-            ytc.main()
-        except SystemExit as e:
-            code = e.code
-        return code, json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-
-    def test_main(self, monkeypatch, capsys, tmp_path):
-        out = tmp_path / "t" / "vid.json"
-        monkeypatch.setattr(ytc, "fetch_json3", lambda *a, **k: (None, None))
-        code, env = self.run_main(monkeypatch, capsys, "--url", "u", "--output", str(out))
-        assert env == {"success": True, "data": {"found": False}} and not out.exists()
-
-        def fetched(*a, **k):
-            p = tmp_path / "x.json3"
-            p.write_text(json.dumps(AUTO), encoding="utf-8")
-            return str(p), "uploaded"
-        monkeypatch.setattr(ytc, "fetch_json3", fetched)
-        code, env = self.run_main(monkeypatch, capsys, "--url", "u", "--output", str(out))
-        assert env["data"]["found"] is True and env["data"]["source"] == "youtube-uploaded"
-        assert json.loads(out.read_text(encoding="utf-8"))["videoId"] == "vid"
-
-        code, env = self.run_main(monkeypatch, capsys, "--url", "u", "--output", str(out), "--start", "100")
-        assert env == {"success": True, "data": {"found": False}}           # nothing inside the section
-
-        def boom(*a, **k):
-            raise RuntimeError("yt down")
-        monkeypatch.setattr(ytc, "fetch_json3", boom)
-        code, env = self.run_main(monkeypatch, capsys, "--url", "u", "--output", str(out))
-        assert code == 1 and env == {"success": False, "error": "yt down"}
 
 
 # --- caption editor CLI -------------------------------------------------------------

@@ -3,13 +3,13 @@
 // the clip editor (captions + one-clip re-render).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { HttpError } from "../src/http";
 import {
   decodeOptions, musicName, parseOptions, parseTimestamp, renderFlags, resolveOptions, subtitleFlags,
 } from "../src/options";
 import { parseCaptionWords } from "../src/editor";
-import { argAfter, makeEnv, type TestEnv } from "./helpers";
+import { argAfter, defaultExec, makeEnv, procOk, type TestEnv } from "./helpers";
 
 let env: TestEnv;
 beforeEach(() => { env = makeEnv(); });
@@ -149,24 +149,59 @@ describe("range import and per-job options", () => {
 });
 
 describe("YouTube captions before Whisper", () => {
-  test("uploaded captions replace Whisper when found", async () => {
-    env.scripts["youtube_captions.py"] = () => ({ found: true, source: "youtube-uploaded", segments: [{ start: 0, end: 2, text: "halo" }] });
+  const subCalls = () => env.execCalls.filter((c) => c.args.includes("--sub-format")).map((c) => c.args);
+  /** yt-dlp writes `track` for the given flag (--write-subs = uploaded, --write-auto-subs = auto). */
+  const withTrack = (flag: string, track: object) => {
+    env.execHandler.fn = (cmd, args) => {
+      if (args.includes("--sub-format") && args.includes(flag)) {
+        writeFileSync(join(dirname(argAfter(args, "-o")), "abcdefghijk.id.json3"), JSON.stringify(track));
+      }
+      return defaultExec(cmd, args);
+    };
+  };
+  const AUTO = { events: [
+    { tStartMs: 4800, dDurationMs: 2000, segs: [{ utf8: "halo", tOffsetMs: 0 }, { utf8: " semua", tOffsetMs: 600 }] },
+    { tStartMs: 7000, dDurationMs: 1500, segs: [{ utf8: "apa kabar" }] },
+  ] };
+
+  test("captions replace Whisper when found (auto only when allowed, shifted to the range)", async () => {
+    withTrack("--write-auto-subs", AUTO);
     const { videoId } = await processed({ url: "https://youtu.be/abcdefghijk", startTime: 5, endTime: 65 },
       { youtubeCaptions: true, allowAutoCaptions: true });
-    const call = env.calls.find((c) => c.script === "youtube_captions.py")!.args;
-    expect(call).toContain("--allow-auto");
-    expect(argAfter(call, "--start")).toBe("5");
+    expect(subCalls().map((a) => a[2])).toEqual(["--write-subs", "--write-auto-subs"]);
+    expect(argAfter(subCalls()[0]!, "--sub-format")).toBe("json3");
     expect(env.calls.some((c) => c.script === "transcribe.py")).toBeFalse();
     const saved = JSON.parse(readFileSync(`${env.config.dataDir}/transcripts/${videoId}.json`, "utf-8"));
-    expect(saved.source).toBe("youtube-uploaded");
+    expect(saved).toMatchObject({ found: true, videoId, source: "youtube-auto", model: "youtube-auto", language: "id" });
+    // "halo" was spoken before the range → dropped; times are relative to 5 s
+    expect(saved.segments).toEqual([
+      { index: 0, start: 0.4, end: 1.4, text: "semua", words: [{ text: "semua", start: 0.4, end: 1.4 }] },
+      { index: 1, start: 2, end: 3.5, text: "apa kabar" },
+    ]);
   });
 
-  test("falls back to Whisper when none are found or the fetch fails", async () => {
-    await processed(undefined, { youtubeCaptions: true });
+  test("uploaded captions win; auto-captions are skipped unless allowed", async () => {
+    withTrack("--write-subs", { events: [{ tStartMs: 0, dDurationMs: 2000, segs: [{ utf8: "[Musik]\nhalo  dunia" }] }] });
+    const { videoId } = await processed(undefined, { youtubeCaptions: true });
+    expect(subCalls()).toHaveLength(1);
+    const saved = JSON.parse(readFileSync(`${env.config.dataDir}/transcripts/${videoId}.json`, "utf-8"));
+    expect(saved.source).toBe("youtube-uploaded");
+    expect(saved.segments).toEqual([{ index: 0, start: 0, end: 2, text: "halo dunia" }]);
+  });
+
+  test("falls back to Whisper when none are found, the track is empty, or yt-dlp fails", async () => {
+    await processed(undefined, { youtubeCaptions: true, allowAutoCaptions: true });
+    expect(subCalls()).toHaveLength(2);
     expect(env.calls.some((c) => c.script === "transcribe.py")).toBeTrue();
+
     env.calls.length = 0;
-    env.scripts["youtube_captions.py"] = () => { throw new Error("429"); };
+    withTrack("--write-subs", { events: [{ tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: "[Musik]" }] }] });
     await processed({ url: "https://youtu.be/zyxwvutsrqp" }, { youtubeCaptions: true });
+    expect(env.calls.some((c) => c.script === "transcribe.py")).toBeTrue();
+
+    env.calls.length = 0;
+    env.execHandler.fn = (cmd, args) => (args.includes("--sub-format") ? { ...procOk("", "HTTP 429"), exitCode: 1 } : defaultExec(cmd, args));
+    await processed({ url: "https://youtu.be/abcdefghijk" }, { youtubeCaptions: true });
     expect(env.calls.some((c) => c.script === "transcribe.py")).toBeTrue();
   });
 
@@ -175,16 +210,17 @@ describe("YouTube captions before Whisper", () => {
     const src = join(env.dir, "l.mp4");
     writeFileSync(src, "x");
     await processed({ localPath: src }, { youtubeCaptions: true });
-    expect(env.calls.some((c) => c.script === "youtube_captions.py")).toBeFalse();
+    expect(subCalls()).toEqual([]);
   });
 
   test("a cancel during the captions fetch is a cancel", async () => {
     let started!: () => void;
     const running = new Promise<void>((r) => { started = r; });
-    env.scripts["youtube_captions.py"] = (_a, signal) => new Promise((_, reject) => {
+    env.execHandler.fn = (cmd, args, signal) => {
+      if (!args.includes("--sub-format")) return defaultExec(cmd, args);
       started();
-      signal?.addEventListener("abort", () => reject(new Error("killed")));
-    });
+      return new Promise((resolve) => signal?.addEventListener("abort", () => resolve({ ...procOk(), exitCode: 1, aborted: true })));
+    };
     const videoId = (await env.json("POST", "/api/import", { url: "https://youtu.be/abcdefghijk" })).body.data.videoId;
     const jobId = (await env.json("POST", "/api/process", { videoId, options: { youtubeCaptions: true } })).body.data.jobId;
     await running;

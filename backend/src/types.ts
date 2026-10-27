@@ -123,14 +123,19 @@ export interface DiscoveredVideo {
   videoId: string | null;
   discoveredAt: string;
   enrichedAt: string | null;
-  // discovery v2: heuristic labels from discover.py
+  // discovery v2: heuristic labels (youtube.ts)
   channelId: string | null;
   contentType: string | null;
   speechDensityWpm: number | null;
   isLikelyClipped: number | null;
+  /** Caption analysis: windows ≥ the strong-moment bar, and the best ones (JSON). */
+  strongMoments?: number | null;
+  topMoments?: string | null;
+  /** Why it was picked (the discovery agent's reason). */
+  reason?: string | null;
 }
 
-/** A source channel found by channel_crawler.py (category seed + profile). */
+/** A source channel found by the crawler (category seed + profile, channels.ts). */
 export interface DiscoveryChannel {
   id: string;
   youtubeChannelId: string;

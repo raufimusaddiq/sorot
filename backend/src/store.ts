@@ -38,6 +38,7 @@ const COLUMNS: Record<Table, string[]> = {
     "age_hours", "source_mode", "source_query", "relevance_score", "transcript_score",
     "predicted_score", "transcript_sample", "status", "job_id", "video_id", "discovered_at",
     "enriched_at", "channel_id", "content_type", "speech_density_wpm", "is_likely_clipped",
+    "strong_moments", "top_moments", "reason",
   ],
   discovery_channel: [
     "id", "youtube_channel_id", "channel_name", "channel_url", "primary_category",

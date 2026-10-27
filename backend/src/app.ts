@@ -3,7 +3,8 @@ import type { AppConfig } from "./config";
 import { CHANNEL_STATUSES, ChannelCrawler, channelToMap } from "./channels";
 import { openDatabase } from "./db";
 import { Llm } from "./llm";
-import { candidateToMap, DiscoveryService } from "./discovery";
+import { YouTube } from "./youtube";
+import { DiscoveryService } from "./discovery";
 import { FeedbackService, ValidationError } from "./feedback";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
 import { ClipEditor } from "./editor";
@@ -41,12 +42,13 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const runScript = deps.runScript ?? createPythonRunner(config, exec);
 
   const llm = new Llm(config, deps.fetch ?? globalThis.fetch);
-  const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm);
+  const youtube = new YouTube(exec, config.ytdlpPath);
+  const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm, youtube);
   const jobs = new JobService(config, store, orchestrator);
   const videos = new VideoService(config, store);
   const clips = new ClipService(config, store);
-  const discovery = new DiscoveryService(store, runScript);
-  const channels = new ChannelCrawler(store, runScript);
+  const discovery = new DiscoveryService(store, youtube, `${config.dataDir}/corpus`);
+  const channels = new ChannelCrawler(store, youtube);
   const feedback = new FeedbackService(config, store, runScript);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
 
@@ -198,21 +200,21 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     return ok(await discovery.channel(url, intArg(b, "maxResults", 20), intArg(b, "minDuration", 0), intArg(b, "maxDuration", 0)));
   });
   router.on("GET", "/api/discover/candidates", (c) => {
-    const rows = discovery.listCandidates(c.url.searchParams.get("status")).map(candidateToMap);
+    const rows = discovery.listCandidates(c.url.searchParams.get("status"));
     return ok({ count: rows.length, videos: rows });
   });
   router.on("POST", "/api/discover/candidates/:id/status", async (c) => {
     const status = strArg(await c.body(), "status");
     if (!status.trim()) return fail(400, "status is required");
     const d = discovery.updateStatus(c.params.id as string, status);
-    return d ? ok(candidateToMap(d)) : fail(404, "not found");
+    return d ? ok(discovery.withContext([d])[0]) : fail(404, "not found");
   });
   router.on("POST", "/api/discover/queue", async (c) => {
     const ids = (await c.body()).ids;
     if (!Array.isArray(ids)) return fail(400, "ids[] is required");
     const clean = ids.filter((x) => x != null).map(String);
     if (clean.length === 0) return fail(400, "ids[] is empty");
-    const rows = discovery.queueByIds(clean).map(candidateToMap);
+    const rows = discovery.withContext(discovery.queueByIds(clean));
     return ok({ count: rows.length, videos: rows });
   });
   /** Drain: import + start a job for every QUEUED candidate. */
@@ -268,7 +270,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   return {
     fetch,
-    store, jobs, discovery, channels, orchestrator, llm,
+    store, jobs, discovery, channels, orchestrator, llm, youtube,
     start() { jobs.startMaintenance(); },
     close() {
       jobs.shutdown();
