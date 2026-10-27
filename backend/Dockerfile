@@ -40,8 +40,9 @@ COPY ai-pipeline/requirements.txt /app/ai-pipeline/requirements.txt
 RUN python3 -m venv /app/ai-pipeline/.venv \
     && /app/ai-pipeline/.venv/bin/pip install --no-cache-dir -r /app/ai-pipeline/requirements.txt
 
-ARG WHISPER_MODEL=mobiuslabsgmbh/faster-whisper-large-v3-turbo
-RUN /app/ai-pipeline/.venv/bin/python3 -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL}', device='cpu', compute_type='int8')"
+# The Whisper model (WHISPER_MODEL, ~1.6 GB for large-v3-turbo) is not baked in:
+# it downloads on first use into /root/.cache/huggingface, the hf-cache volume
+# in docker-compose.yml, and survives image updates. The installers pre-fetch it.
 
 # The backend has no runtime npm dependencies — Bun runs the TypeScript directly.
 COPY backend/package.json backend/tsconfig.json /app/backend/

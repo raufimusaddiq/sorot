@@ -45,7 +45,8 @@ Usage: scripts/install.sh [options]
                          pulling ghcr.io/raufimusaddiq/sorot
   --no-start             install everything but don't start the app
   --no-service           (native) don't install the systemd service
-  --skip-model           (native) don't pre-download the Whisper model
+  --skip-model           don't pre-download the Whisper model (it then
+                         downloads on the first import)
   --uninstall            remove the service / container, CLI and config
   --purge                with --uninstall: also delete data/ (videos, clips,
                          database), the Python venv and the Docker image
@@ -302,6 +303,14 @@ install_docker() {
     step "Pulling the $([ "$GPU" -eq 1 ] && echo "CUDA" || echo "CPU") app image from ghcr.io (GB-sized the first time)"
     (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker pull backend) \
       || die "Pull failed — check your connection, or build it here: scripts/install.sh --build"
+  fi
+  if [ "$SKIP_MODEL" -eq 0 ]; then
+    # Into the hf-cache volume, so the first import doesn't spend its time limit downloading.
+    step "Downloading the Whisper model into the hf-cache volume (once, ~1.6 GB)"
+    (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker run --rm --no-deps \
+      --entrypoint /app/ai-pipeline/.venv/bin/python3 backend -c \
+      "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ.get('WHISPER_MODEL') or 'large-v3-turbo', device='cpu', compute_type='int8')" >/dev/null) \
+      || warn "Model download failed; it will download on the first import"
   fi
   install_cli
   write_cli_conf

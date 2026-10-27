@@ -42,7 +42,7 @@ PATH (see [cli.md](cli.md)).
 | `--build` | Docker: build the image from source instead of pulling it |
 | `--no-start` | Install, don't start |
 | `--no-service` | Native: no systemd unit (you run the app yourself) |
-| `--skip-model` | Native: don't pre-download the Whisper model (it downloads on first use) |
+| `--skip-model` | Don't pre-download the Whisper model (it downloads on the first import) |
 | `-y`, `--yes` | No confirmation prompts (for scripts / provisioning) |
 | `--uninstall [--purge]` | Remove the install; `--purge` also deletes `data/`, the venv and the image |
 
@@ -62,7 +62,10 @@ PATH (see [cli.md](cli.md)).
    GPU machines the `-cuda` image, the GPU reservation and `WHISPER_DEVICE=cuda`.
 5. Pulls the ready-made image (published for each release by `.github/workflows/release-image.yml`):
    `ghcr.io/raufimusaddiq/sorot:latest` on CPU-only machines, `:latest-cuda`
-   with a GPU, and starts it. `--build` builds that variant from source instead (~10 min).
+   with a GPU. `--build` builds that variant from source instead (~10 min).
+6. Downloads the Whisper model (`large-v3-turbo`, ~1.6 GB) once into the
+   `hf-cache` Docker volume — it isn't in the image, and it survives image
+   updates — then starts the app.
 
 Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`.
 

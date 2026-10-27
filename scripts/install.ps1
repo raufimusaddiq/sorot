@@ -23,7 +23,7 @@
 .PARAMETER Cpu
     Don't use the NVIDIA GPU even if one is present.
 .PARAMETER SkipModel
-    Native: don't pre-download the Whisper model (downloads on first use).
+    Don't pre-download the Whisper model (it then downloads on the first import).
 .PARAMETER NoStart
     Install, don't start.
 .PARAMETER Uninstall
@@ -222,6 +222,14 @@ function Install-Docker($app) {
             if ($LASTEXITCODE -ne 0) { Fail "Pull failed. Check your connection, or build it yourself: -Build" }
         }
         Ok "Image ready"
+        if (-not $SkipModel) {
+            # Into the hf-cache volume, so the first import doesn't spend its time limit downloading.
+            Step "Downloading the Whisper model into the hf-cache volume (once, ~1.6 GB)"
+            $py = "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ.get('WHISPER_MODEL') or 'large-v3-turbo', device='cpu', compute_type='int8')"
+            if ((Compose run --rm --no-deps --entrypoint /app/ai-pipeline/.venv/bin/python3 backend -c $py) -ne 0) {
+                Warn "Model download failed; it will download on the first import"
+            } else { Ok "Whisper model cached" }
+        }
         if (-not $NoStart) {
             Step "Starting"
             if ((Compose up -d backend) -ne 0) {

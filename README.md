@@ -132,6 +132,8 @@ services:
 
 Day to day: `docker compose --env-file .env.docker logs -f backend` 📜 · `… down` ⏹️ · `… up -d backend` ▶️ · update: `… pull backend` then `… up -d backend` ⬇️. Settings live in `.env.docker`; `SOROT_VERSION` there pins a release tag (default `latest` = the newest release). Rather build it yourself? `… up -d --build backend` 🔨.
 
+The Whisper model isn't in the image: the first import downloads it (`large-v3-turbo`, ~1.6 GB) into the `hf-cache` volume, where it stays across restarts and image updates. The installers fetch it up front; by hand, you can do the same once with `docker compose --env-file .env.docker run --rm --entrypoint /app/ai-pipeline/.venv/bin/python3 backend -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8')"`.
+
 Both images are `linux/amd64`. On Apple Silicon they would run under emulation, so use [Homebrew](#-macos--homebrew) there.
 
 ### 🍎 macOS — Homebrew

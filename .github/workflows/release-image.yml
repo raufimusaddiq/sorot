@@ -80,6 +80,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Layer cache in the registry, one per variant: the base / pip / model layers rarely change.
+          # Layer cache in the registry, one per variant: the base and pip layers rarely change.
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-${{ matrix.variant }}
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache-${{ matrix.variant }},mode=max
