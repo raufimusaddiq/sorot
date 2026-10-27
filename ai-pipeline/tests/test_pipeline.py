@@ -1674,76 +1674,6 @@ class TestScoreHistoryWithFeedback:
 # -- Discovery: transcript sampling + predicted score --
 
 
-class TestDiscoveryVTTParser:
-    def test_strips_timing_and_tags(self, tmp_path):
-        import discover
-        vtt = tmp_path / "s.vtt"
-        vtt.write_text(
-            "WEBVTT\nKind: captions\nLanguage: id\n\n"
-            "00:00:00.000 --> 00:00:02.000\nHalo semuanya\n\n"
-            "00:00:02.000 --> 00:00:04.000\n<c>Ini</c> rahasia penting\n",
-            encoding="utf-8",
-        )
-        text = discover._vtt_to_text(str(vtt), 500)
-        assert "Halo semuanya" in text
-        assert "Ini rahasia penting" in text
-        assert "-->" not in text
-        assert "<c>" not in text
-        assert "WEBVTT" not in text
-
-    def test_dedupes_rolling_duplicates(self, tmp_path):
-        import discover
-        vtt = tmp_path / "s.vtt"
-        vtt.write_text(
-            "WEBVTT\n\n"
-            "00:00:00.000 --> 00:00:01.000\nHalo\n\n"
-            "00:00:01.000 --> 00:00:02.000\nHalo\n\n"
-            "00:00:02.000 --> 00:00:03.000\nHalo dunia\n",
-            encoding="utf-8",
-        )
-        text = discover._vtt_to_text(str(vtt), 500)
-        # "Halo" twice collapses to once; "Halo dunia" is different so kept
-        assert text.count("Halo") >= 2  # "Halo" + "Halo dunia"
-        assert text == "Halo Halo dunia"
-
-    def test_returns_empty_on_missing_file(self):
-        import discover
-        assert discover._vtt_to_text("/nonexistent/path.vtt", 500) == ""
-
-
-class TestPredictClipPotential:
-    def test_viral_keywords_score_high(self):
-        import discover
-        t, p = discover.predict_clip_potential(
-            "Ternyata rahasia ini jarang diketahui. Fakta mengejutkan tentang sukses. Penting banget buat kamu.",
-            duration=300, view_count=50000, age_hours=24,
-        )
-        assert t > 0.5
-        assert p > 0.5
-
-    def test_bland_text_scores_low(self):
-        import discover
-        t, p = discover.predict_clip_potential(
-            "Hari ini saya masak. Kemarin cuaca biasa saja.",
-            duration=60, view_count=100, age_hours=720,
-        )
-        assert t < 0.5
-        assert p < 0.5
-
-    def test_empty_transcript_still_scores_velocity(self):
-        import discover
-        t, p = discover.predict_clip_potential("", duration=600, view_count=100000, age_hours=12)
-        assert t == 0.0
-        # With zero transcript but strong velocity + duration fit, predicted is nonzero
-        assert p > 0.2
-
-    def test_duration_fit_sweet_spot(self):
-        import discover
-        _, p_good = discover.predict_clip_potential("", duration=400, view_count=0, age_hours=9999)
-        _, p_bad = discover.predict_clip_potential("", duration=5, view_count=0, age_hours=9999)
-        assert p_good > p_bad
-
-
 class TestDiscoveryEnrichCLI:
     def test_enrich_mode_requires_video_url(self):
         result = run_script("discover.py", ["--mode", "enrich"])
@@ -1825,16 +1755,12 @@ class TestDurationFitInverted:
         }
         assert discover.quick_relevance_score(podcast) > discover.quick_relevance_score(compilation)
 
-    def test_predict_clip_potential_rewards_long_form(self):
+    def test_predicted_score_rewards_long_form(self):
         import discover
-        # Same transcript, same velocity, different durations. Long-form wins.
-        long_tscore, long_pscore = discover.predict_clip_potential(
-            transcript="", duration=90 * 60, view_count=10000, age_hours=240
-        )
-        short_tscore, short_pscore = discover.predict_clip_potential(
-            transcript="", duration=8 * 60, view_count=10000, age_hours=240
-        )
-        assert long_pscore > short_pscore
+        # Same (no) captions, same velocity, different durations. Long-form wins.
+        long_p = discover.predict_score(None, duration=90 * 60, view_count=10000, age_hours=240)
+        short_p = discover.predict_score(None, duration=8 * 60, view_count=10000, age_hours=240)
+        assert long_p > short_p
 
 
 class TestAlreadyClippedFilter:
@@ -1904,6 +1830,15 @@ class TestContentTypeClassifier:
         assert discover.classify_content_type(
             "Debat Capres 2026 - Segmen 1", "KPU", 45 * 60
         ) == "NEWS"
+
+    def test_categories_seen_in_real_results(self):
+        import discover
+        c = discover.classify_content_type
+        assert c("SUKA BERHITUNG - KHW PART 396", "Nadia Omara", 41 * 60) == "STORYTELLING"
+        assert c("Cerita Horor Malam Jumat", "X", 3 * 60) == "OTHER"          # too short to clip from
+        assert c("Rekomendasi HP TERBAIK buat OKTOBER 2026", "GadgetIn", 22 * 60) == "REVIEW"
+        assert c("Viral! Dugaan Perselingkuhan Oknum TNI", "Tribun Timur", 3 * 60) == "NEWS"
+        assert c("Mabar Mobile Legends sampai pagi", "Gamer", 90 * 60) == "GAMING"
 
     def test_other_fallback(self):
         import discover

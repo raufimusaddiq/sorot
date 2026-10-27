@@ -200,35 +200,100 @@ class TestCaptions:
                     f.write("WEBVTT\n\n00:00.000 --> 00:01.000\nhalo <c>dunia</c>\nhalo dunia\n")
             return "", "", 0
         monkeypatch.setattr(discover, "run_ytdlp", fake)
-        assert discover.sample_transcript("https://youtu.be/abc", max_chars=50) == "halo dunia"
+        assert discover.fetch_caption_lines("https://youtu.be/abc") == [(0.0, "halo dunia")]
         assert attempts == ["id", "en"]
 
     def test_no_captions(self, ytdlp):
-        assert discover.sample_transcript("https://youtu.be/abc") == ""
+        assert discover.fetch_caption_lines("https://youtu.be/abc") == []
         assert len(ytdlp["calls"]) == 3
 
     def test_unreadable_vtt(self, tmp_path):
-        assert discover._vtt_to_text(str(tmp_path / "missing.vtt"), 100) == ""
+        assert discover.parse_vtt_lines(str(tmp_path / "missing.vtt")) == []
+
+    def test_rolling_auto_captions_keep_only_new_speech(self, tmp_path):
+        vtt = tmp_path / "a.vtt"
+        vtt.write_text('WEBVTT\nKind: captions\nLanguage: id\n\n00:00:00.480 --> 00:00:01.550 align:start position:0%\n \nDi<00:00:00.560><c> ruangan</c><00:00:00.840><c> tuh</c>\n\n00:00:01.550 --> 00:00:01.560 align:start position:0%\nDi ruangan tuh\n \n\n00:00:01.560 --> 00:00:03.189 align:start position:0%\nDi ruangan tuh\nenggak<00:00:01.680><c> ada</c><00:00:01.920><c> orang.</c>\n\n01:00:03.189 --> 01:00:03.199 align:start position:0%\nenggak ada orang.\n \n', encoding="utf-8")
+        assert discover.parse_vtt_lines(str(vtt)) == [(0.48, "Di ruangan tuh"), (1.56, "enggak ada orang.")]
+
+    def test_uploaded_captions_dedupe_repeats_and_read_hours(self, tmp_path):
+        vtt = tmp_path / "u.vtt"
+        vtt.write_bytes(b"WEBVTT\r\n\r\n1:02:03.5 --> 1:02:04.0\r\nHalo\r\n\r\n"   # bytes: exact CRLF
+                        b"1:02:04.000 --> 1:02:05.000\r\nHalo\r\n\r\n1:02:05.000 --> 1:02:06.000\r\nHalo dunia\r\n")
+        assert discover.parse_vtt_lines(str(vtt)) == [(3723.5, "Halo"), (3725.0, "Halo dunia")]
 
 
-class TestPrediction:
-    def test_duration_bands_and_scorer_failure(self, monkeypatch):
-        assert discover.predict_clip_potential("", duration=1300)[1] == round(0.7 * 0.2, 4)   # 15–30 min
-        assert discover.predict_clip_potential("", duration=700)[1] == round(0.4 * 0.2, 4)    # 10–15 min
-        assert discover.predict_clip_potential("", duration=10)[1] == 0.0
+def lines_every(seconds, texts):
+    return [(i * seconds, t) for i, t in enumerate(texts)]
+
+
+class TestWindows:
+    def test_windows_split_by_time(self):
+        lines = lines_every(20, ["a", "b", "c", "d", "e"])          # 0, 20, 40, 60, 80
+        assert discover.caption_windows(lines) == [(0, "a b c"), (60, "d e")]
+        assert discover.caption_windows([]) == []
+
+    def test_window_score_short_text_and_scorer_failure(self, monkeypatch):
+        assert discover.window_score("terlalu pendek") == 0.0
+        viral = "Ternyata rahasia ini jarang diketahui orang. Fakta mengejutkan! Kenapa bisa begitu? Penting banget."
+        assert discover.window_score(viral) > discover.window_score("Hari ini saya masak nasi goreng biasa saja di rumah sendiri.")
         from features import text as text_features
 
         def boom(t):
             raise RuntimeError("scorer")
         monkeypatch.setattr(text_features, "score_hook_strength", boom)
-        assert discover.predict_clip_potential("x" * 100)[0] == 0.0
+        assert discover.window_score("x" * 100) == 0.0
 
-    def test_enrich_combines_transcript_and_metadata(self, monkeypatch):
-        monkeypatch.setattr(discover, "sample_transcript", lambda url, ytdlp_path="yt-dlp": "kata " * 200)
-        out = discover.discover_enrich("u", duration=300, age_hours=10, view_count=10000)
-        assert out["transcriptLength"] == 1000
-        assert len(out["transcriptSample"]) == 500
-        assert 0 < out["predictedScore"] <= 1
+    def test_analyze_finds_moments_anywhere_in_the_video(self):
+        bland = "Kami lanjut ngobrol soal cuaca hari ini yang cukup cerah dan sejuk di kota ini."
+        viral = "Ternyata rahasia ini jarang diketahui orang. Fakta mengejutkan! Kenapa bisa begitu? Penting banget."
+        # 30 minutes: a bland intro and body, two strong moments deep in the video
+        texts = [bland] * 40
+        texts[25] = viral
+        texts[33] = viral
+        a = discover.analyze_captions(lines_every(45, texts))
+        assert a["windows"] == 40 and a["captionMinutes"] == 29.2
+        assert a["strongMoments"] == 2
+        assert [m["start"] for m in a["topMoments"][:2]] == [1125, 1485]
+        assert len(a["topMoments"]) == 5
+        assert a["speechWpm"] == round(sum(len(t.split()) for t in texts) / 29.25)
+        assert discover.analyze_captions([]) is None
+        assert discover.analyze_captions([(0, "satu dua tiga empat lima enam tujuh delapan sembilan sepuluh")])["speechWpm"] is None
+
+
+class TestPrediction:
+    def test_speech_fit_and_velocity(self):
+        assert discover.speech_fit(None) == 0.0
+        assert discover.speech_fit(40) == 0.0
+        assert discover.speech_fit(85) == 0.5
+        assert discover.speech_fit(160) == 1.0
+        assert discover.velocity_score(0, 10) == 0.0
+        assert discover.velocity_score(1000, 99999) == 0.0
+        assert discover.velocity_score(10 ** 6, 10) == 1.0
+
+    def test_without_captions_only_metadata_counts(self):
+        assert discover.predict_score(None, duration=1300) == round(0.7 * 0.15, 4)     # 15–30 min
+        assert discover.predict_score(None, duration=10) == 0.0
+        assert discover.predict_score(None, duration=3600, view_count=10 ** 6, age_hours=10) == round(0.20 + 0.15, 4)
+
+    def test_moments_and_talk_outrank_intro_heavy_or_music(self):
+        talk = {"transcriptScore": 0.62, "strongMoments": 8, "captionMinutes": 40, "speechWpm": 150}
+        music = {"transcriptScore": 0.62, "strongMoments": 8, "captionMinutes": 40, "speechWpm": 30}
+        few = {"transcriptScore": 0.62, "strongMoments": 1, "captionMinutes": 40, "speechWpm": 150}
+        p = lambda a: discover.predict_score(a, duration=2400)
+        assert p(talk) > p(few) > p(None)
+        assert p(talk) > p(music)
+        assert p(talk) == round(0.62 * 0.40 + 1.0 * 0.15 + 1.0 * 0.10 + 1.0 * 0.15, 4)
+
+    def test_enrich_reports_moments(self, monkeypatch):
+        viral = "Ternyata rahasia ini jarang diketahui orang. Fakta mengejutkan! Kenapa bisa begitu? Penting banget."
+        monkeypatch.setattr(discover, "fetch_caption_lines", lambda url, ytdlp_path="yt-dlp": lines_every(45, [viral] * 20))
+        out = discover.discover_enrich("u", duration=900, age_hours=10, view_count=10000)
+        assert out["hasCaptions"] is True and out["strongMoments"] >= 1
+        assert out["topMoments"][0]["text"] == out["transcriptSample"]
+        assert out["speechDensityWpm"] > 0 and 0 < out["predictedScore"] <= 1
+        monkeypatch.setattr(discover, "fetch_caption_lines", lambda url, ytdlp_path="yt-dlp": [])
+        out = discover.discover_enrich("u", duration=700)                 # 10-15 min band: 0.4
+        assert out == {"predictedScore": round(0.4 * 0.15, 4), "transcriptScore": 0.0, "hasCaptions": False}
 
 
 class TestMain:

@@ -104,6 +104,24 @@ _NEWS_RE = re.compile(
     r"\b(debat|debate|politik|pemilu|berita\s*debat|news\s*debate)\b",
     re.IGNORECASE,
 )
+# Added after real discovery runs labeled every result OTHER: horror /
+# storytelling series, gadget reviews and news clips are what searches return.
+_STORY_RE = re.compile(
+    r"\b(cerita|kisah|horor|horror|misteri|mistis|seram|angker|creepy|khw|malam\s*jumat)\b",
+    re.IGNORECASE,
+)
+_REVIEW_RE = re.compile(
+    r"\b(review|unboxing|rekomendasi|cobain|nyobain|bedah|hands[-\s]*on)\b",
+    re.IGNORECASE,
+)
+_NEWS_WORDS_RE = re.compile(
+    r"\b(berita|terkini|breaking|kronologi|dugaan|sidang|kasus)\b",
+    re.IGNORECASE,
+)
+_GAMING_RE = re.compile(
+    r"\b(gameplay|mabar|mobile\s*legends|minecraft|roblox|free\s*fire|valorant|pubg|playthrough)\b",
+    re.IGNORECASE,
+)
 
 
 def duration_fit_score(duration_sec):
@@ -139,7 +157,8 @@ def looks_already_clipped(title, description=""):
 def classify_content_type(title, channel_name="", duration_sec=0, description=""):
     """Regex-based v0 classifier.
 
-    Returns one of PODCAST / TALKSHOW / STANDUP / LIVESTREAM / NEWS / OTHER.
+    Returns one of PODCAST / TALKSHOW / STANDUP / LIVESTREAM / NEWS /
+    STORYTELLING / REVIEW / GAMING / OTHER.
     Order matters — first matching rule wins. Most duration thresholds exist
     to avoid mis-labeling a 3-min clip that happens to mention "podcast".
     """
@@ -157,6 +176,14 @@ def classify_content_type(title, channel_name="", duration_sec=0, description=""
     if d >= 120 * 60 and _LIVESTREAM_RE.search(hay):
         return "LIVESTREAM"
     if d >= 30 * 60 and _NEWS_RE.search(hay):
+        return "NEWS"
+    if d >= 10 * 60 and _STORY_RE.search(hay):
+        return "STORYTELLING"
+    if d >= 10 * 60 and _GAMING_RE.search(hay):
+        return "GAMING"
+    if _REVIEW_RE.search(hay):
+        return "REVIEW"
+    if _NEWS_WORDS_RE.search(hay):
         return "NEWS"
     return "OTHER"
 
@@ -537,12 +564,23 @@ def discover_channel(channel_url, max_results=20, ytdlp_path="yt-dlp", min_durat
     return videos[:max_results]
 
 
-def sample_transcript(video_url, ytdlp_path="yt-dlp", lang="id", max_chars=2000):
-    """Fetch YouTube auto-captions and return up to ``max_chars`` of plain text.
+# Clip-sized windows scored across the whole video. The old enrichment scored
+# the first 2000 caption characters — on a 1-hour podcast that is the greeting
+# and the intro, never the moments that get clipped.
+WINDOW_SEC = 45
+TOP_MOMENTS = 5
+# A window at or above this is a "strong moment": about the top 10% of
+# 45 s windows on real Indonesian podcasts / storytelling videos (p90 ≈ 0.54).
+STRONG_MOMENT = 0.55
 
-    Uses ``--write-auto-subs --skip-download`` — no video bytes, just captions.
-    Tries requested language first, falls back to English, then any available.
-    Returns empty string if no captions exist (common for brand-new uploads).
+_CUE_RE = re.compile(r"^(?:(\d+):)?(\d{1,2}):(\d{2})\.(\d{1,3})\s+-->")
+
+
+def fetch_caption_lines(video_url, ytdlp_path="yt-dlp", lang="id"):
+    """YouTube captions (uploaded or auto) as ``[(start_sec, text), ...]``.
+
+    ``--skip-download``: only the caption file is fetched. Tries the requested
+    language, then English, then anything. ``[]`` when the video has none.
     """
     tmp = tempfile.mkdtemp(prefix="yt_subs_")
     try:
@@ -558,102 +596,152 @@ def sample_transcript(video_url, ytdlp_path="yt-dlp", lang="id", max_chars=2000)
                 "-o", outtmpl,
                 "--no-warnings",
             ]
-            stdout, stderr, rc = run_ytdlp(args, ytdlp_path=ytdlp_path, timeout=90)
+            run_ytdlp(args, ytdlp_path=ytdlp_path, timeout=90)
             vtts = glob.glob(os.path.join(tmp, "*.vtt"))
             if vtts:
-                return _vtt_to_text(vtts[0], max_chars)
-        return ""
+                return parse_vtt_lines(vtts[0])
+        return []
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _vtt_to_text(vtt_path, max_chars):
-    """Strip VTT timing/cue lines, dedupe rolling-window repetition, cap length."""
+def parse_vtt_lines(vtt_path):
+    """Spoken lines with their start time from a VTT file.
+
+    YouTube auto-captions roll: every phrase appears in two cues, and only the
+    line carrying inline word timings (``<c>`` tags) is new speech. Uploaded
+    captions have no such tags; there adjacent repeats are collapsed.
+    """
     try:
         with open(vtt_path, "r", encoding="utf-8", errors="ignore") as f:
             raw = f.read()
     except OSError:
-        return ""
-
-    lines = []
-    for ln in raw.splitlines():
-        s = ln.strip()
-        if not s:
-            continue
-        if s.startswith(("WEBVTT", "NOTE", "Kind:", "Language:")):
-            continue
-        if "-->" in s:
-            continue
-        if re.match(r"^\d+$", s):
-            continue
-        # Strip inline tags like <c> / <00:00:01.000>
-        s = re.sub(r"<[^>]+>", "", s).strip()
-        if s:
-            lines.append(s)
-
-    # Auto-caption files often emit each phrase twice as the rolling window
-    # advances. Collapse adjacent duplicates.
-    deduped = []
-    for ln in lines:
-        if not deduped or deduped[-1] != ln:
-            deduped.append(ln)
-
-    text = " ".join(deduped)
-    return text[:max_chars]
+        return []
+    cues = []
+    for block in raw.replace("\r", "").split("\n\n"):
+        rows = block.strip("\n").split("\n")
+        for i, row in enumerate(rows):
+            m = _CUE_RE.match(row.strip())
+            if m:
+                h, mi, sec, frac = m.groups()
+                t = int(h or 0) * 3600 + int(mi) * 60 + int(sec) + int(frac.ljust(3, "0")) / 1000
+                cues.append((t, rows[i + 1:]))
+                break
+    rolling = any("<c>" in row for _, rows in cues for row in rows)
+    lines, last = [], None
+    for t, rows in cues:
+        for row in rows:
+            if rolling and "<c>" not in row:
+                continue
+            text = re.sub(r"<[^>]+>", "", row).strip()
+            if text and text != last:
+                lines.append((round(t, 2), text))
+                last = text
+    return lines
 
 
-def predict_clip_potential(transcript, duration=0, view_count=0, age_hours=9999):
-    """Combine transcript text score with velocity+duration into ``predictedScore``.
+def caption_windows(lines, window=WINDOW_SEC):
+    """Group lines into consecutive ~``window``-second windows: ``[(start, text), ...]``."""
+    windows = []
+    for t, text in lines:
+        if not windows or t - windows[-1][0] >= window:
+            windows.append([t, []])
+        windows[-1][1].append(text)
+    return [(start, " ".join(parts)) for start, parts in windows]
 
-    Reuses ``features.text`` so the discovery scorer learns whatever the final
-    clip scorer learns (corpus-derived TF-IDF, hook phrases, surprise words).
-    Returns ``(transcript_score, predicted_score)``.
+
+def window_score(text):
+    """Text-only clip potential of one window (same rules as the clip scorer's text features)."""
+    if not text or len(text) < 40:
+        return 0.0
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from features import text as text_features  # type: ignore
+
+        hook = text_features.score_hook_strength(text)
+        keyword = text_features.score_keyword_trigger(text)
+        novelty = text_features.score_novelty(text)
+        sentiment = text_features.score_text_sentiment(text)
+        return round(hook * 0.35 + keyword * 0.30 + novelty * 0.20 + abs(sentiment - 0.5) * 2 * 0.15, 4)
+    except Exception:
+        return 0.0
+
+
+def analyze_captions(lines):
+    """Score every clip-sized window of the video.
+
+    Returns ``None`` without captions, else ``transcriptScore`` (mean of the
+    best 5 windows), ``strongMoments`` (windows ≥ STRONG_MOMENT), the best
+    ``topMoments`` with their start time, ``speechWpm`` (talk vs music /
+    gameplay) and ``captionMinutes``.
     """
-    transcript_score = 0.0
-    if transcript and len(transcript) >= 40:
-        try:
-            # Local import so discover.py stays callable without the pipeline
-            # deps installed (e.g. on systems running only the yt-dlp search).
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            from features import text as text_features  # type: ignore
+    if not lines:
+        return None
+    windows = [(start, text, window_score(text)) for start, text in caption_windows(lines)]
+    best = sorted(windows, key=lambda w: w[2], reverse=True)[:TOP_MOMENTS]
+    words = sum(len(text.split()) for _, text in lines)
+    minutes = max((lines[-1][0] - lines[0][0]) / 60, 0)
+    return {
+        "transcriptScore": round(sum(w[2] for w in best) / len(best), 4),
+        "strongMoments": sum(1 for w in windows if w[2] >= STRONG_MOMENT),
+        "topMoments": [{"start": round(t), "score": sc, "text": text[:160]} for t, text, sc in best],
+        "speechWpm": round(words / minutes) if minutes >= 1 else None,
+        "captionMinutes": round(minutes, 1),
+        "windows": len(windows),
+    }
 
-            hook = text_features.score_hook_strength(transcript)
-            keyword = text_features.score_keyword_trigger(transcript)
-            novelty = text_features.score_novelty(transcript)
-            sentiment = text_features.score_text_sentiment(transcript)
-            # Favour hook+keyword (the two strongest viral predictors in weights.json v3)
-            transcript_score = round(
-                hook * 0.35 + keyword * 0.30 + novelty * 0.20 + abs(sentiment - 0.5) * 2 * 0.15,
-                4,
-            )
-        except Exception:
-            transcript_score = 0.0
 
-    # Velocity: views per hour, log-scaled so 1 viral video doesn't dominate.
-    velocity = 0.0
-    if age_hours and age_hours < 720 and view_count > 0:
+def speech_fit(wpm):
+    """0 for music / gameplay with little talk (< 60 wpm), 1 for steady talk (≥ 110)."""
+    if not wpm:
+        return 0.0
+    return round(min(max((wpm - 60) / 50, 0.0), 1.0), 3)
+
+
+def velocity_score(view_count, age_hours):
+    """Views per hour, log-scaled, for uploads younger than 30 days."""
+    if age_hours and age_hours < 720 and view_count and view_count > 0:
         import math
-        vph = view_count / max(age_hours, 1)
-        velocity = min(math.log10(max(vph, 1)) / 5.0, 1.0)
+        return min(math.log10(max(view_count / max(age_hours, 1), 1)) / 5.0, 1.0)
+    return 0.0
 
-    # Duration fit: long-form source material wins (see duration_fit_score).
-    duration_fit = duration_fit_score(duration)
 
-    predicted = transcript_score * 0.55 + velocity * 0.25 + duration_fit * 0.20
-    return round(transcript_score, 4), round(min(predicted, 1.0), 4)
+def predict_score(analysis, duration=0, view_count=0, age_hours=9999):
+    """Ranking score for a candidate (0-1). Hand-set weights — a heuristic, not a trained model.
+
+    40% best-moments text score, 15% strong moments per 10 captioned minutes
+    (2+ saturates), 10% speech density, 20% view velocity, 15% duration fit.
+    Without captions only velocity and duration count.
+    """
+    transcript = moment_rate = speech = 0.0
+    if analysis:
+        transcript = analysis["transcriptScore"]
+        per_10min = analysis["strongMoments"] / max(analysis["captionMinutes"] / 10, 1)
+        moment_rate = min(per_10min / 2, 1.0)
+        speech = speech_fit(analysis["speechWpm"])
+    predicted = (transcript * 0.40 + moment_rate * 0.15 + speech * 0.10
+                 + velocity_score(view_count, age_hours) * 0.20 + duration_fit_score(duration) * 0.15)
+    return round(min(predicted, 1.0), 4)
 
 
 def discover_enrich(video_url, duration=0, age_hours=9999, view_count=0, ytdlp_path="yt-dlp"):
-    transcript = sample_transcript(video_url, ytdlp_path=ytdlp_path)
-    transcript_score, predicted_score = predict_clip_potential(
-        transcript, duration=duration, view_count=view_count, age_hours=age_hours,
-    )
-    return {
-        "transcriptScore": transcript_score,
-        "predictedScore": predicted_score,
-        "transcriptSample": transcript[:500],
-        "transcriptLength": len(transcript),
+    lines = fetch_caption_lines(video_url, ytdlp_path=ytdlp_path)
+    analysis = analyze_captions(lines)
+    out = {
+        "predictedScore": predict_score(analysis, duration=duration, view_count=view_count, age_hours=age_hours),
+        "transcriptScore": analysis["transcriptScore"] if analysis else 0.0,
+        "hasCaptions": analysis is not None,
     }
+    if analysis:
+        out.update({
+            "strongMoments": analysis["strongMoments"],
+            "topMoments": analysis["topMoments"],
+            "speechDensityWpm": analysis["speechWpm"],
+            "captionMinutes": analysis["captionMinutes"],
+            # The best moment, not the intro: what the UI shows as the sample.
+            "transcriptSample": analysis["topMoments"][0]["text"],
+        })
+    return out
 
 
 def main():
