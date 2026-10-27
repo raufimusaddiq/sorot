@@ -86,6 +86,8 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
 | Subtitle burn-in | ASS + libass (`ffmpeg -vf ass=`) | Real per-word timing from Whisper, active-word highlight, editable `.ass` kept next to each export |
 | 9:16 framing | Face track (Haar/MediaPipe at 2 fps) → hysteresis → per-frame `crop` x-expression; `blur` fill option | Follows the speaker on podcasts and cuts cleanly between shots; centre-crop fallback keeps renders safe (`ai-pipeline/reframe.py`) |
 | OpenCV version | `opencv-python-headless>=4.8,<5` | OpenCV 5 removed the Haar `CascadeClassifier`; unpinned rebuilds silently lost face detection |
+| Output folders | `data/renders/{videoId}/`, `data/exports/{videoId}/` | Clip files are named by rank; the old shared folder let every new video overwrite older videos' clips |
+| Clip editing | One-clip re-render through the same render.py/subtitle.py (`backend/src/editor.ts`) | Caption fixes and timing nudges without re-running the pipeline; edits stored on the clip (`options`, `captionWords`) |
 | Silence trim | ffmpeg `select`/`aselect` from transcript gaps | One pass, no re-transcribe; render and subtitle derive identical keep-intervals (`ai-pipeline/captions.py`) |
 | Content language | Indonesian | Target audience is Indonesian TikTok |
 

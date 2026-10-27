@@ -18,6 +18,15 @@ export interface AppConfig {
   silenceGapSec: number;
   /** 9:16 framing passed to render.py: face (follow faces) | center | blur. */
   reframeMode: string;
+  /** Replay each clip's strongest line before it starts. */
+  hookFirst: boolean;
+  /** Use a YouTube video's uploaded captions instead of Whisper when present. */
+  youtubeCaptions: boolean;
+  /** …and fall back to YouTube auto-captions (weaker for Indonesian). */
+  allowAutoCaptions: boolean;
+  /** Default background music (file name in data/music; "" = none). */
+  bgmFile: string;
+  bgmVolume: number;
   /** Static Next.js export (frontend/out) served at "/"; "" disables it. */
   staticDir: string;
   /** GPU is the shared resource: one pipeline on GPU, one on CPU stages. */
@@ -57,6 +66,13 @@ export function loadConfig(env: Env = process.env): AppConfig {
     reframeMode: ["face", "center", "blur"].includes((env.REFRAME_MODE ?? "").trim().toLowerCase())
       ? (env.REFRAME_MODE as string).trim().toLowerCase()
       : "face",
+    hookFirst: bool(env.HOOK_FIRST),
+    youtubeCaptions: bool(env.YOUTUBE_CAPTIONS),
+    allowAutoCaptions: bool(env.YOUTUBE_AUTO_CAPTIONS),
+    bgmFile: (env.BGM_FILE ?? "").trim(),
+    bgmVolume: Number.parseFloat(env.BGM_VOLUME ?? "") >= 0 && Number.parseFloat(env.BGM_VOLUME ?? "") <= 1
+      ? Number.parseFloat(env.BGM_VOLUME as string)
+      : 0.12,
     silenceGapSec: Number.parseFloat(env.SILENCE_GAP_SEC ?? "") > 0 ? Number.parseFloat(env.SILENCE_GAP_SEC as string) : 0.6,
     staticDir: env.STATIC_DIR ?? "../frontend/out",
     maxConcurrentPipelines: int(env.MAX_CONCURRENT_PIPELINES, 2),

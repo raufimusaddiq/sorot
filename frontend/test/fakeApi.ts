@@ -2,7 +2,7 @@
 // Tests mutate `state` to shape responses and set `state.fail[...]` to make a
 // route return the error envelope. Every call is recorded in `calls`.
 
-import type { Clip, ClipScore, Job, StageStatus, Video } from '@/types';
+import type { CaptionWord, Clip, ClipScore, Job, StageStatus, Video } from '@/types';
 
 export type Candidate = {
   id: string; youtubeId: string; videoId: string; title: string; url: string;
@@ -28,6 +28,9 @@ export interface FakeState {
   jobDelayMs: number;
   /** Candidate listing ignores the status filter (to render statuses no filter selects). */
   candidatesListAll: boolean;
+  music: string[];
+  /** Clip id → caption words served to the editor. */
+  captions: Record<string, { words: CaptionWord[]; edited: boolean }>;
 }
 
 export interface Call { method: string; path: string; body: unknown }
@@ -79,6 +82,7 @@ export function emptyState(): FakeState {
     videos: [], jobs: [], stages: {}, clips: {}, scores: {}, candidates: [],
     weights: { version: 3, trained_on: 0, total_feedback: 0, with_actual_scores: 0 },
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
+    music: [], captions: {},
   };
 }
 
@@ -96,6 +100,31 @@ export function installFakeApi(state: FakeState) {
       return job ? ok({ job, stages: state.stages[job.id] ?? [] }) : { status: 'error', error: 'Job not found' };
     }
     if (method === 'GET' && (m = path.match(/^\/api\/videos\/([^/]+)\/clips$/))) return ok({ clips: state.clips[m[1]] ?? [] });
+    if (method === 'GET' && path === '/api/options') {
+      return ok({
+        styles: ['default', 'hormozi', 'storyteller', 'cinematic'], reframeModes: ['face', 'center', 'blur'],
+        defaults: { style: 'default', reframe: 'face', silenceTrim: false, silenceGapSec: 0.6, hookFirst: false,
+          youtubeCaptions: false, allowAutoCaptions: false, bgm: '', bgmVolume: 0.12 },
+      });
+    }
+    if (method === 'GET' && path === '/api/music') return ok({ tracks: state.music });
+    if (method === 'GET' && (m = path.match(/^\/api\/clips\/([^/]+)\/captions$/))) {
+      return ok(state.captions[m[1]] ?? { words: [], edited: false });
+    }
+    if (method === 'POST' && (m = path.match(/^\/api\/clips\/([^/]+)\/rerender$/))) {
+      for (const list of Object.values(state.clips)) {
+        const i = list.findIndex(c => c.id === m![1]);
+        if (i >= 0) {
+          list[i] = {
+            ...list[i]!, startTime: body.startTime, endTime: body.endTime, durationSec: body.endTime - body.startTime,
+            options: JSON.stringify(body.options ?? {}), captionWords: body.captionWords ? JSON.stringify(body.captionWords) : null,
+            updatedAt: '2026-10-27T12:00:00.000Z', exportPath: `/data/exports/${m[1]}_v2.mp4`,
+          };
+          return ok({ clip: list[i] });
+        }
+      }
+      return { status: 'error', error: 'Clip not found' };
+    }
     if (method === 'GET' && (m = path.match(/^\/api\/clips\/([^/]+)$/))) {
       const clip = Object.values(state.clips).flat().find(c => c.id === m![1]);
       const score = state.scores[m[1]];

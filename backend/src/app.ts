@@ -4,7 +4,9 @@ import { openDatabase } from "./db";
 import { candidateToMap, DiscoveryService } from "./discovery";
 import { FeedbackService, ValidationError } from "./feedback";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
+import { ClipEditor } from "./editor";
 import { ConflictError, JobService } from "./jobs";
+import { CAPTION_STYLES, parseOptions, parseTimestamp, REFRAME_MODES } from "./options";
 import { PipelineOrchestrator } from "./orchestrator";
 import { createPythonRunner, spawnCapture, type ExecFn, type ScriptRunner } from "./runner";
 import { ClipService, VideoService } from "./services";
@@ -40,6 +42,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const clips = new ClipService(config, store);
   const discovery = new DiscoveryService(store, runScript);
   const feedback = new FeedbackService(config, store, runScript);
+  const editor = new ClipEditor(config, store, runScript, orchestrator);
 
   const router = new Router();
 
@@ -48,8 +51,14 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   // ---- videos ----
   router.on("POST", "/api/import", async (c) => {
     const b = await c.body();
-    const v = videos.importVideo(strArg(b, "url") || null, strArg(b, "localPath") || null);
-    return ok({ videoId: v.id, sourceType: v.sourceType });
+    // Optional range: only this part of the source is downloaded/processed.
+    const start = parseTimestamp(b.startTime, "startTime");
+    const end = parseTimestamp(b.endTime, "endTime");
+    if ((start === null) !== (end === null)) return fail(400, "Give both startTime and endTime, or neither");
+    if (start !== null && end !== null && end - start < 10) return fail(400, "The range must be at least 10 s long");
+    const section = start !== null && end !== null ? { start, end } : null;
+    const v = videos.importVideo(strArg(b, "url") || null, strArg(b, "localPath") || null, section);
+    return ok({ videoId: v.id, sourceType: v.sourceType, sectionStart: v.sectionStart, sectionEnd: v.sectionEnd });
   });
   router.on("GET", "/api/videos", () => ok({ videos: videos.listVideos() }));
   router.on("GET", "/api/videos/:id", (c) => {
@@ -64,10 +73,12 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   // ---- jobs ----
   router.on("POST", "/api/process", async (c) => {
-    const videoId = strArg(await c.body(), "videoId");
+    const b = await c.body();
+    const videoId = strArg(b, "videoId");
     if (!videoId.trim()) return fail(400, "videoId required");
+    const options = parseOptions(b.options);
     try {
-      const job = jobs.createAndStartJob(videoId);
+      const job = jobs.createAndStartJob(videoId, options);
       return ok({ jobId: job.id, status: job.status, currentStage: job.currentStage ?? "" });
     } catch (e) {
       if (e instanceof ConflictError) return fail(409, e.message);
@@ -95,6 +106,20 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   // ---- clips ----
   router.on("GET", "/api/videos/:id/clips", (c) => ok({ clips: clips.listClips(c.params.id as string) }));
+  // ---- clip editor ----
+  router.on("GET", "/api/clips/:id/captions", async (c) => ok(await editor.captions(c.params.id as string)));
+  router.on("POST", "/api/clips/:id/rerender", async (c) =>
+    ok({ clip: await editor.rerender(c.params.id as string, await c.body()) }));
+  router.on("GET", "/api/music", () => ok({ tracks: editor.listMusic() }));
+  router.on("GET", "/api/options", () => ok({
+    styles: CAPTION_STYLES, reframeModes: REFRAME_MODES,
+    defaults: {
+      style: config.subtitleStyle, reframe: config.reframeMode, silenceTrim: config.silenceTrim,
+      silenceGapSec: config.silenceGapSec, hookFirst: config.hookFirst, youtubeCaptions: config.youtubeCaptions,
+      allowAutoCaptions: config.allowAutoCaptions, bgm: config.bgmFile, bgmVolume: config.bgmVolume,
+    },
+  }));
+
   router.on("GET", "/api/clips/:id", (c) => {
     const id = c.params.id as string;
     const clip = clips.getClip(id);

@@ -130,6 +130,19 @@ Weights are externalized in `weights.json`. The system learns from real TikTok p
   is found. `REFRAME_MODE=blur` shows the whole frame over a blurred fill.
 - **Silence trim** (opt-in, `SILENCE_TRIM=true`): pauses are cut out of video
   and audio in one pass, and captions are re-timed to match.
+- **Hook first** (opt-in): the clip's strongest line (a question or hook,
+  found by the scorer) plays first, then the clip.
+- **Background music**: drop files into `data/music`; the track loops under
+  the clip and ducks automatically while someone is speaking.
+- **YouTube captions** (opt-in): use the video's uploaded captions instead of
+  Whisper when it has them — names and slang come out right.
+- **Range import**: process only part of a long video ("13:25 → 25:00");
+  YouTube downloads just that window.
+
+All of these can be set per import (the **Options** panel under the URL box)
+and per clip: the **Edit** button on a clip opens an editor to nudge its
+start/end, change style/framing/trim/hook/music, and correct misheard caption
+words, then re-renders just that clip.
 
 ## Title & Description Generation
 
@@ -183,6 +196,9 @@ Copy `.env.example` to `.env` for local overrides. Docker uses `.env.docker` (co
 | `SUBTITLE_STYLE` | default | Caption preset: default, hormozi, storyteller, cinematic |
 | `SILENCE_TRIM` | false | Cut pauses out of clips (video, audio and captions stay in sync) |
 | `SILENCE_GAP_SEC` | 0.6 | Pause length that gets cut when `SILENCE_TRIM=true` |
+| `HOOK_FIRST` | false | Default for "hook first" |
+| `YOUTUBE_CAPTIONS` / `YOUTUBE_AUTO_CAPTIONS` | false / false | Default for using YouTube captions (uploaded / also auto-generated) |
+| `BGM_FILE` / `BGM_VOLUME` | (none) / 0.12 | Default background music from `data/music` |
 | `REFRAME_MODE` | face | 9:16 framing: `face` (crop follows faces), `center`, or `blur` (whole frame over a blurred fill) |
 
 ## API
@@ -200,6 +216,10 @@ Copy `.env.example` to `.env` for local overrides. Docker uses `.env.docker` (co
 | POST | /api/clips/{id}/feedback | Submit TikTok performance data |
 | POST | /api/feedback/train | Retrain scoring weights |
 | GET | /api/feedback/weights | Current weights + learning stats |
+| GET | /api/clips/{id}/captions | Caption words for the clip editor |
+| POST | /api/clips/{id}/rerender | Re-render one clip with new timing/options/captions |
+| GET | /api/options | Editing choices + defaults |
+| GET | /api/music | Tracks in data/music |
 | GET | /api/clips/{id}/preview | Stream rendered clip |
 | GET | /api/clips/{id}/export | Download exported clip |
 

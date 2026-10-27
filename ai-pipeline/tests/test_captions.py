@@ -126,23 +126,20 @@ class TestKeepIntervals:
         assert captions.keep_intervals([w("a", 0, 1)], 0) == [(0.0, 0)]
         assert captions.keep_intervals([w("a", 0.0, 4.98)], 5.0) == [(0.0, 5.0)]
 
-    def test_remap_and_select_expr(self):
+    def test_timeline_mapping_and_select_expr(self):
         keep = [(1.0, 2.0), (5.0, 6.0)]
-        assert captions.remap_time(0.5, keep) == 0.0          # in a cut → start of next span
-        assert captions.remap_time(1.5, keep) == 0.5
-        assert captions.remap_time(3.0, keep) == 1.0
-        assert captions.remap_time(5.5, keep) == 1.5
-        assert captions.remap_time(9.0, keep) == 2.0
-        assert captions.remap_words([w("x", 5.2, 5.2)], keep) == [w("x", 1.2, 1.25)]
+        words = [w("a", 0.2, 0.6), w("b", 1.2, 1.6), w("c", 5.5, 5.9), w("d", 5.9, 5.9)]
+        mapped = captions.map_words(words, keep)
+        assert [(x["text"], x["start"]) for x in mapped] == [("b", 0.2), ("c", 1.5), ("d", 1.9)]
+        assert mapped[-1]["end"] == pytest.approx(1.95)              # minimum word length kept
         assert captions.select_expr(keep) == "between(t,1.000,2.000)+between(t,5.000,6.000)"
-        assert captions.is_trimmed(keep, 10) and not captions.is_trimmed([(0.0, 10.0)], 10)
 
 
 class TestStageWiring:
     def test_render_cmd_adds_select_filters_only_when_trimming(self):
         plain = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False)
         assert "-af" not in plain and plain[plain.index("-vf") + 1].startswith("scale=")
-        trimmed = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, keep=[(0.5, 1.5)])
+        trimmed = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, timeline=[(0.5, 1.5)])
         assert trimmed[trimmed.index("-vf") + 1].startswith("select='between(t,0.500,1.500)',setpts=")
         assert trimmed[trimmed.index("-af") + 1] == "aselect='between(t,0.500,1.500)',asetpts=N/SR/TB"
 
@@ -154,8 +151,8 @@ class TestStageWiring:
             {"text": "a", "start": 11, "end": 12}, {"text": "b", "start": 17, "end": 18}]}]}))
         seen = {}
 
-        def fake_render(video, start, end, out, keep=None, reframe=None):
-            seen["keep"] = keep
+        def fake_render(video, start, end, out, timeline=None, reframe=None):
+            seen["keep"] = timeline
             open(out, "wb").write(b"x")
         monkeypatch.setattr(render, "render_clip", fake_render)
 
@@ -174,7 +171,7 @@ class TestStageWiring:
         env = run()
         assert seen["keep"] is None and env["data"]["clips"][0]["trimmedDuration"] is None
         env = run("--silence-trim")
-        assert env == {"success": False, "error": "--silence-trim requires --transcript"}
+        assert env == {"success": False, "error": "--silence-trim/--hook-first require --transcript"}
 
     def test_subtitle_words_follow_the_trimmed_timeline(self):
         segs = [{"start": 0, "end": 10, "words": [{"text": "a", "start": 1, "end": 2}, {"text": "b", "start": 7, "end": 8}]}]
@@ -193,7 +190,7 @@ class TestStageWiring:
         tr.write_text(json.dumps({"segments": []}))
         burned = {}
 
-        def burn(render_path, ass_path, out):
+        def burn(render_path, ass_path, out, **kw):
             burned["ass"] = ass_path
             open(out, "wb").write(b"x")
         monkeypatch.setattr(subtitle, "burn_subtitles", burn)
@@ -254,7 +251,7 @@ class TestRealFfmpeg:
     def test_silence_trimmed_render_has_the_kept_duration(self, av_source, tmp_path, monkeypatch):
         monkeypatch.setattr(render, "_probe_nvenc", lambda p: False)
         out = str(tmp_path / "trim.mp4")
-        render.render_clip(av_source, 1, 9, out, keep=[(0.5, 2.0), (4.0, 5.5)])   # 3 s of 8 s kept
+        render.render_clip(av_source, 1, 9, out, timeline=[(0.5, 2.0), (4.0, 5.5)])   # 3 s of 8 s kept
         assert ffprobe_duration(out) == pytest.approx(3.0, abs=0.25)
 
     def test_ass_burn_with_libass(self, av_source, tmp_path, monkeypatch):

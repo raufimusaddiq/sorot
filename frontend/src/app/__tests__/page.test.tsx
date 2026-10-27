@@ -431,7 +431,7 @@ describe('import', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Import & Process' })); });
 
     expect(calls('POST', '/api/import')[0]!.body).toEqual({ url: 'https://youtu.be/abc' });
-    expect(calls('POST', '/api/process')[0]!.body).toEqual({ videoId: 'vnew' });
+    expect(calls('POST', '/api/process')[0]!.body).toEqual({ videoId: 'vnew', options: {} });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Processing...' })).toBeInTheDocument());
     expect(input).toHaveValue('');
     expect(calls('GET', '/api/jobs/jnew').length).toBeGreaterThan(0);
@@ -636,5 +636,55 @@ describe('discovery panel', () => {
     state.fail['GET /api/discover/candidates'] = 'l';
     fireEvent.click(screen.getByRole('button', { name: 'NEW' }));
     expect(await screen.findByText('discover.listCandidates')).toBeInTheDocument();
+  });
+});
+
+describe('editing suite', () => {
+  it('imports a range with the chosen options', async () => {
+    state.music = ['lofi.mp3'];
+    await renderLoaded();
+    fireEvent.click(screen.getByRole('button', { name: /Options/ }));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'lofi.mp3' })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Caption style'), { target: { value: 'hormozi' } });
+    fireEvent.change(screen.getByLabelText('Background music'), { target: { value: 'lofi.mp3' } });
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: ' 1:00 ' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2:30' } });
+    fireEvent.change(screen.getByPlaceholderText('Paste YouTube URL...'), { target: { value: 'https://youtu.be/x' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Import & Process' })); });
+
+    expect(calls('POST', '/api/import')[0]!.body).toEqual({ url: 'https://youtu.be/x', startTime: '1:00', endTime: '2:30' });
+    expect(calls('POST', '/api/process')[0]!.body).toEqual({ videoId: 'vnew', options: { style: 'hormozi', bgm: 'lofi.mp3' } });
+  });
+
+  it('reports a failure to load the editing choices', async () => {
+    state.fail['GET /api/options'] = 'old backend';
+    await renderLoaded();
+    expect(await screen.findByText('loadOptions')).toBeInTheDocument();
+  });
+
+  it('edits a clip, re-renders it and busts the cached preview', async () => {
+    seedCompleted();
+    state.captions.c1 = { edited: false, words: [{ text: 'halo', start: 30.5, end: 31 }] };
+    await renderLoaded();
+    fireEvent.click(within(card('c1')).getByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('dialog', { name: 'Edit clip' })).toBeInTheDocument();
+    fireEvent.change(await screen.findByDisplayValue('halo'), { target: { value: 'Halo' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save & re-render' })); });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit clip' })).not.toBeInTheDocument());
+    expect(calls('GET', '/api/videos/v1/clips').length).toBeGreaterThan(1);       // clips refreshed
+    expect(within(card('c1')).getByRole('link', { name: 'Download' }))
+      .toHaveAttribute('href', '/api/clips/c1/export?v=2026-10-27T12%3A00%3A00.000Z');
+    fireEvent.click(within(card('c1')).getByRole('button', { name: 'Preview' }));
+    expect(document.querySelector('video')).toHaveAttribute('src', '/api/clips/c1/preview?v=2026-10-27T12%3A00%3A00.000Z');
+  });
+
+  it('closing the editor changes nothing', async () => {
+    seedCompleted();
+    await renderLoaded();
+    fireEvent.click(within(card('c2')).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Edit clip' })).not.toBeInTheDocument();
+    expect(calls('POST', '/api/clips/c2/rerender')).toHaveLength(0);
   });
 });

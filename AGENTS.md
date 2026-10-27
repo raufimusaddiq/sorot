@@ -75,6 +75,8 @@ cd ai-pipeline
 - `clip.rank_pos` not `rank` (SQL reserved word)
 - Whisper model: `large-v3-turbo` in Docker (`WHISPER_MODEL`); transcripts keep per-word timestamps (`segment.words`)
 - `opencv-python-headless` must stay `<5` — OpenCV 5 dropped the Haar `CascadeClassifier` used by face scoring and `reframe.py`
+- Render/export folders are per video (`data/renders/{videoId}/`): clip files are named by rank, so a shared folder overwrote other videos' clips
+- Editing options layer config defaults ← job options (import) ← clip options (editor); see `backend/src/options.ts`
 - Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README); render.py and subtitle.py must get the same silence flags
 - Python venv at `ai-pipeline/.venv`
 - Schema auto-creates + migrates in `backend/src/db.ts` (compatible with the old Java-era DB file)
@@ -106,6 +108,10 @@ cd ai-pipeline
 | GET | /api/videos/{id}/clips | List clips for video |
 | GET | /api/clips/{id} | Clip detail + score breakdown |
 | POST | /api/clips/export | Export clips by IDs |
+| GET | /api/clips/{id}/captions | Caption words for the editor |
+| POST | /api/clips/{id}/rerender | Re-render one clip (timing, options, caption fixes) |
+| GET | /api/options | Editing choices + defaults |
+| GET | /api/music | Tracks in data/music |
 | GET | /api/clips/{id}/preview | Stream rendered clip |
 | GET | /api/clips/{id}/export | Download exported clip |
 

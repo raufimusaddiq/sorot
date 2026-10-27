@@ -10,6 +10,9 @@ export interface Video {
   durationSec: number | null;
   filePath: string;
   createdAt: string;
+  /** Only this range of the source was downloaded (seconds), if set at import. */
+  sectionStart?: number | null;
+  sectionEnd?: number | null;
 }
 
 export interface Job {
@@ -20,6 +23,8 @@ export interface Job {
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
+  /** JSON-encoded PipelineOptions chosen at import. */
+  options?: string | null;
 }
 
 export interface StageStatus {
@@ -50,6 +55,11 @@ export interface Clip {
   exportStatus: string;
   exportPath: string | null;
   createdAt: string;
+  /** JSON-encoded PipelineOptions overrides from the clip editor. */
+  options?: string | null;
+  /** JSON-encoded edited caption words (absolute source seconds). */
+  captionWords?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface ClipScore {

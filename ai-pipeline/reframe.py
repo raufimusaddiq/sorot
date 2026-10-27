@@ -171,16 +171,26 @@ def crop_x_expr(track, scaled_w):
     return expr
 
 
-def remap_track(track, keep):
-    """Move track switch times onto the silence-trimmed timeline."""
-    from captions import remap_time
-    out = []
-    for t, c in track:
-        nt = round(remap_time(t, keep), 3)
-        if out and nt <= out[-1][0]:
-            out[-1] = (out[-1][0], c)            # switch fell inside a cut
-        else:
-            out.append((nt, c))
+def timeline_track(track, timeline):
+    """Re-time a source-time centre track onto an output timeline (ordered
+    clip-relative ranges, possibly jumping back for a hook replay)."""
+    def value_at(t):
+        c = track[0][1]
+        for ts, cc in track:
+            if ts <= t:
+                c = cc
+        return c
+
+    out, offset = [], 0.0
+    for a, b in timeline:
+        points = [(offset, value_at(a))] + [(offset + ts - a, c) for ts, c in track if a < ts < b]
+        for t, c in points:
+            t = round(t, 3)
+            if out and t <= out[-1][0]:
+                out[-1] = (out[-1][0], c)
+            elif not out or c != out[-1][1]:
+                out.append((t, c))
+        offset += b - a
     return out
 
 

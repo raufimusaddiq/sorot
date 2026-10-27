@@ -237,11 +237,18 @@ Cuts each PRIMARY/BACKUP clip to 1080x1920 (h264_nvenc, libx264 fallback).
 | `--transcript` | With `--silence-trim` | | Transcript JSON (word timings) |
 | `--silence-trim` | No | off | Cut pauses longer than `--silence-gap` |
 | `--silence-gap` | No | `0.6` | Pause length (s) that gets cut |
+| `--hook-first` | No | off | Replay the clip's strongest line before it (needs `--transcript`) |
 
 Each clip in the result has `reframe` (mode actually used — `face` falls back
 to `center` when no faces are found), `cropSegments` (number of crop
-positions in the face track) and `trimmedDuration` (seconds after the
-silence trim, or `null`).
+positions in the face track), `trimmedDuration` (output length after silence
+trim / hook replay, or `null`) and `hookFirst`.
+
+**Timeline** (`captions.plan_timeline`): the output is an ordered list of
+clip-relative source ranges. Silence trim gives in-order ranges (cut with
+`select`/`aselect`); hook-first prepends the hook range, so the list jumps
+back and is cut with `trim`/`atrim` + `concat`. subtitle.py maps caption
+words through the same list, and the face track is re-timed onto it.
 
 **Face reframing** (`reframe.py`): frames are sampled at 2 fps, faces found
 with MediaPipe if installed, otherwise OpenCV Haar (the Docker image ships
@@ -270,7 +277,9 @@ Burns word-timed karaoke captions onto each rendered clip.
 | `--output-dir` | Yes | | Writes `clip_{rank}_subtitled.mp4` and `clip_{rank}.ass` |
 | `--clip-index` | No | all | Subtitle one clip |
 | `--style` | No | `$SUBTITLE_STYLE` or `default` | `default`, `hormozi`, `storyteller`, `cinematic` |
-| `--silence-trim` / `--silence-gap` | No | off / `0.6` | Must match what render.py used |
+| `--silence-trim` / `--silence-gap` / `--hook-first` | No | off / `0.6` / off | Must match what render.py used |
+| `--bgm` | No | none | Music file: looped, ducked under speech (`sidechaincompress`), mixed with `amix` |
+| `--bgm-volume` | No | `0.12` | Music level before ducking |
 
 Captions are an ASS file (`captions.build_ass`) burned with ffmpeg's libass
 `ass` filter: one event per word, the spoken word drawn in the preset's
@@ -279,6 +288,23 @@ punctuation is folded into the previous word and Indonesian reduplication
 split by Whisper (`gedung` + `-gedung`) is rejoined. The `.ass` is kept next
 to the export so captions can be corrected by hand and re-burned. All presets
 use DejaVu Sans, the only font family in the Docker image.
+
+---
+
+### `youtube_captions.py`
+
+Transcript from the video's own YouTube captions (json3), same format as
+transcribe.py so later stages are unchanged. Uploaded captions first;
+auto-captions only with `--allow-auto`. `--start/--end` cut and shift the
+captions to a range download. `data.found: false` when no track exists — the
+backend then runs Whisper.
+
+### `captions.py` (library + CLI)
+
+Shared by render.py/subtitle.py. CLI mode returns the words of a clip range in
+absolute seconds for the clip editor:
+`python captions.py --transcript t.json --start 30 --end 55` →
+`{"success": true, "data": {"words": [...]}}`.
 
 ---
 

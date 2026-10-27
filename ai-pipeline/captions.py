@@ -242,33 +242,125 @@ def keep_intervals(words, duration, min_gap=0.6, pad=0.15):
     return [(round(a, 3), round(b, 3)) for a, b in merged]
 
 
-def remap_time(t, intervals):
-    """Position of source time ``t`` on the trimmed timeline. Times inside a
-    cut snap to the start of the next kept span."""
-    acc = 0.0
-    for a, b in intervals:
-        if t < a:
-            return acc
-        if t <= b:
-            return acc + (t - a)
-        acc += b - a
-    return acc
-
-
-def remap_words(words, intervals):
-    out = []
-    for w in words:
-        start, end = remap_time(w["start"], intervals), remap_time(w["end"], intervals)
-        if end - start < MIN_WORD_SEC:
-            end = start + MIN_WORD_SEC
-        out.append({**w, "start": round(start, 3), "end": round(end, 3)})
-    return out
-
-
 def select_expr(intervals):
     """ffmpeg select/aselect expression keeping only ``intervals``."""
     return "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in intervals)
 
 
-def is_trimmed(intervals, duration):
-    return not (len(intervals) == 1 and intervals[0][0] <= 0.001 and intervals[0][1] >= duration - 0.001)
+# --- timelines (silence trim + hook-first) ---------------------------------------
+# A timeline is the ordered list of clip-relative source ranges that make up
+# the output. Silence trim yields monotonic ranges; hook-first prepends the
+# clip's strongest line, so the list can jump backwards. render.py cuts the
+# video from it and subtitle.py maps caption words through the same list.
+
+HOOK_MIN_SEC = 1.2
+HOOK_MAX_SEC = 6.0
+HOOK_MIN_SCORE = 0.7
+HOOK_SKIP_LEAD_SEC = 3.0   # a hook already in the first seconds needs no replay
+
+
+def sentences(words, gap=0.6):
+    """Split words into sentences at terminal punctuation or pauses."""
+    out, cur = [], []
+    for w in words:
+        if cur and (w["start"] - cur[-1]["end"] > gap or _TERMINAL.search(cur[-1]["text"])):
+            out.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        out.append(cur)
+    return out
+
+
+def find_hook(words, duration, scorer=None):
+    """The clip's strongest stand-alone line as a (start, end) range, or None.
+
+    Candidates are sentences of 1.2–6 s that start after the opening
+    seconds; the best one by ``features.text.score_hook_strength`` wins if it
+    scores at least 0.7 (a question or a hook phrase).
+    """
+    if scorer is None:
+        from features.text import score_hook_strength as scorer
+    best = None
+    for sent in sentences(words):
+        start, end = sent[0]["start"], sent[-1]["end"]
+        if start < HOOK_SKIP_LEAD_SEC or not (HOOK_MIN_SEC <= end - start <= HOOK_MAX_SEC):
+            continue
+        score = scorer(" ".join(w["text"] for w in sent))
+        if score >= HOOK_MIN_SCORE and (best is None or score > best[0]):
+            best = (score, start, end)
+    if best is None:
+        return None
+    return (round(max(0.0, best[1] - 0.1), 3), round(min(duration, best[2] + 0.15), 3))
+
+
+def plan_timeline(words, duration, silence_trim=False, silence_gap=0.6, hook_first=False, scorer=None):
+    """Ordered source ranges for the output clip."""
+    timeline = keep_intervals(words, duration, min_gap=silence_gap) if silence_trim else [(0.0, round(duration, 3))]
+    if hook_first:
+        hook = find_hook(words, duration, scorer)
+        if hook:
+            timeline = [hook] + timeline
+    return timeline
+
+
+def is_monotonic(timeline):
+    return all(timeline[i][0] >= timeline[i - 1][1] for i in range(1, len(timeline)))
+
+
+def timeline_duration(timeline):
+    return round(sum(b - a for a, b in timeline), 3)
+
+
+def map_words(words, timeline):
+    """Words placed on the output timeline. A word inside a cut is dropped; a
+    word inside the replayed hook appears twice (hook, then in place)."""
+    out, offset = [], 0.0
+    for a, b in timeline:
+        for w in words:
+            if w["end"] > a and w["start"] < b:
+                start = max(w["start"], a) - a + offset
+                end = max(min(w["end"], b) - a + offset, start + MIN_WORD_SEC)
+                out.append({**w, "start": round(start, 3), "end": round(end, 3)})
+        offset += b - a
+    return out
+
+
+def concat_graph(timeline, out_video="[cv]", out_audio="[ca]"):
+    """filter_complex that cuts ``timeline`` from input 0 and concatenates it."""
+    parts, labels = [], ""
+    for i, (a, b) in enumerate(timeline):
+        parts.append(f"[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{i}]")
+        parts.append(f"[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS[a{i}]")
+        labels += f"[v{i}][a{i}]"
+    parts.append(f"{labels}concat=n={len(timeline)}:v=1:a=1{out_video}{out_audio}")
+    return ";".join(parts)
+
+
+# --- CLI: words for the caption editor ---------------------------------------------
+
+def main(argv=None):
+    """Absolute-time words for [--start, --end] — what the clip editor shows."""
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="Caption words for a clip range")
+    parser.add_argument("--transcript", required=True)
+    parser.add_argument("--start", type=float, required=True)
+    parser.add_argument("--end", type=float, required=True)
+    args = parser.parse_args(argv)
+    try:
+        with open(args.transcript, "r", encoding="utf-8") as f:
+            segments = json.load(f).get("segments", [])
+        words = [{**w, "start": round(w["start"] + args.start, 3), "end": round(w["end"] + args.start, 3)}
+                 for w in words_for_clip(segments, args.start, args.end)]
+        print(json.dumps({"success": True, "data": {"words": words}}, ensure_ascii=False))
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

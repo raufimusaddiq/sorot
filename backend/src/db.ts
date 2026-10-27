@@ -145,10 +145,19 @@ CREATE INDEX IF NOT EXISTS idx_discovered_youtube_id ON discovered_video(youtube
 CREATE INDEX IF NOT EXISTS idx_discovery_query_active ON discovery_query(active, last_run_at);
 `;
 
+// Columns added after a table's first release: applied with ALTER TABLE when
+// missing, so both fresh and existing databases end up with the same shape.
 const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["clip", "title", "TEXT"],
   ["clip", "description", "TEXT"],
   ["clip_score", "text_sentiment", "REAL"],
+  // editing suite (2026-10-27)
+  ["video", "section_start", "REAL"],
+  ["video", "section_end", "REAL"],
+  ["job", "options", "TEXT"],
+  ["clip", "options", "TEXT"],
+  ["clip", "caption_words", "TEXT"],
+  ["clip", "updated_at", "TEXT"],
 ];
 
 export function openDatabase(path: string): Database {
