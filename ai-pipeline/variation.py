@@ -7,29 +7,28 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 def find_ffmpeg():
     return os.environ.get("FFMPEG_PATH", "ffmpeg")
 
 
 def _detect_nvenc(ffmpeg_path):
-    try:
-        result = subprocess.run(
-            [ffmpeg_path, "-encoders"], capture_output=True, text=True, timeout=5
-        )
-        return "h264_nvenc" in result.stdout
-    except Exception:
-        return False
+    """render.py's probe-encode: a build that lists h264_nvenc can still fail
+    to open it (no GPU video capability), which left 0-byte variations."""
+    import render
+    return render._probe_nvenc(ffmpeg_path)
 
 
 VARIATION_PRESETS = {
     "zoom_center": {
         "label": "Zoom Center",
-        "vf_extra": "zoompan=z='min(zoom+0.001,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s=1080x1920",
+        "vf_extra": "zoompan=z='min(pzoom+{step},1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=30",
     },
     "zoom_top": {
         "label": "Zoom Top (Face Focus)",
-        "vf_extra": "zoompan=z='min(zoom+0.001,1.3)':x='iw/2-(iw/zoom/2)':y=0:d={frames}:s=1080x1920",
+        "vf_extra": "zoompan=z='min(pzoom+{step},1.3)':x='iw/2-(iw/zoom/2)':y=0:d=1:s=1080x1920:fps=30",
     },
     "dynamic_crop": {
         "label": "Dynamic Crop",
@@ -61,18 +60,19 @@ def generate_variation(video_path, start, end, output_path, preset_name, ffmpeg_
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     preset = VARIATION_PRESETS.get(preset_name, VARIATION_PRESETS["zoom_center"])
     duration = end - start
-    fps = 30
-    frames = int(duration * fps)
-    vf_extra = preset["vf_extra"].format(frames=frames)
+    # On video, zoompan must emit one frame per input frame (d=1) and grow
+    # from the previous frame's zoom; this spreads the 1.0 → 1.3 zoom over the clip.
+    step = f"{0.3 / max(duration * 30, 1):.6f}"
+    vf_extra = preset["vf_extra"].format(step=step)
     vf = f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,{vf_extra}"
 
     use_nvenc = _detect_nvenc(ffmpeg_path)
 
     cmd = [
         ffmpeg_path,
+        "-ss", str(start),                       # input seek: no decoding up to the clip
         "-i", video_path,
-        "-ss", str(start),
-        "-to", str(end),
+        "-t", f"{duration:.3f}",
         "-vf", vf,
         "-c:v", "h264_nvenc" if use_nvenc else "libx264",
     ]
@@ -86,6 +86,8 @@ def generate_variation(video_path, start, end, output_path, preset_name, ffmpeg_
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg variation failed: {result.stderr[-500:]}")
+    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        raise RuntimeError("ffmpeg variation produced an empty file")
     return output_path
 
 

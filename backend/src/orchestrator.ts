@@ -114,7 +114,7 @@ export class PipelineOrchestrator {
         startedAt: null, completedAt: null, errorMessage: null, outputPath: null,
       });
     }
-    this.store.updateStage(stage.id, { status: "IN_PROGRESS", startedAt: now() });
+    this.store.updateStage(stage.id, { status: "IN_PROGRESS", startedAt: now(), completedAt: null, errorMessage: null });
     this.store.updateJob(jobId, { currentStage: stageName });
 
     try {
@@ -408,7 +408,8 @@ export class PipelineOrchestrator {
   }
 
   private async stageVariation(video: Video, signal: AbortSignal) {
-    const variationDir = `${this.config.dataDir}/variations/`;
+    // Per video: files are named by rank, like renders and exports.
+    const variationDir = `${this.config.dataDir}/variations/${video.id}/`;
     await this.runScript("variation.py", [
       "--segments", this.path("segments", `${video.id}.json`),
       "--video", video.filePath,
