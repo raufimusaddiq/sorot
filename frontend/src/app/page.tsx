@@ -382,12 +382,48 @@ const NEEDS: Array<[string, string, string] | 'gap'> = [
   ['Any OS', 'Docker Compose', 'NVIDIA or CPU'],
   ['macOS', 'Docker Desktop, untested', 'CPU'],
   'gap',
-  ['Speed', '54-minute video on an RTX 4060', 'about 22 min'],
-  ['Speed', '1 hour transcribed on a 12-core CPU', 'about 30 min'],
+  ['With a GPU', '54-minute video on an RTX 4060', 'about 22 min'],
+  ['CPU only', '1 hour of talk transcribed on 12 cores', 'about 30 min'],
   'gap',
   ['Optional', 'Any OpenAI-compatible LLM', 'for reviews'],
   ['Cost', 'MIT licence', 'free'],
 ];
+
+const CLONE = 'git clone https://github.com/raufimusaddiq/sorot.git\ncd sorot\n';
+const INSTALL: Array<{ os: string; note: string; cmd: string }> = [
+  { os: 'Windows', note: 'PowerShell. The first build takes about 10 minutes.', cmd: `${CLONE}.\\scripts\\start.ps1 -Build` },
+  { os: 'Linux', note: 'Installs Docker and the GPU toolkit if missing, and the sorot CLI.', cmd: `${CLONE}scripts/install.sh` },
+  { os: 'Docker', note: 'Any OS with Docker Compose 2.24 or newer.', cmd: `${CLONE}docker compose --env-file .env.docker up -d --build backend` },
+];
+
+/** The real install commands, per platform, with a copy button. */
+function InstallCard() {
+  const [os, setOs] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const pick = INSTALL[os]!;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(pick.cmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* clipboard blocked: the text stays selectable */ }
+  };
+  return (
+    <div className="lp-install" data-ui>
+      <div className="lp-install-tabs" role="tablist" aria-label="Your system">
+        {INSTALL.map((o, i) => (
+          <button key={o.os} role="tab" aria-selected={i === os} aria-controls="install-cmd"
+            className={i === os ? 'is-on' : undefined} onClick={() => { setOs(i); setCopied(false); }}>{o.os}</button>
+        ))}
+      </div>
+      <pre id="install-cmd" role="tabpanel"><code>{pick.cmd}</code></pre>
+      <div className="lp-install-foot">
+        <p>{pick.note} Then open <b>localhost:8080/studio</b>.</p>
+        <button type="button" className="lp-btn lp-btn-sun" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+    </div>
+  );
+}
 
 const FAQ = [
   ['Does my video get uploaded anywhere?', 'No. Downloading, transcribing, scoring and rendering all happen on your machine. The only calls out are the YouTube download and, if you set one, your own LLM endpoint.'],
@@ -418,14 +454,12 @@ export default function Landing() {
         </section>
 
         <section className="lp-needs" aria-labelledby="needs-title" data-reveal>
-          <h2 id="needs-title" className="lp-h2 lp-indent">What it needs to run</h2>
-          <div className="lp-needs-body">
-            <figure className="lp-needs-photo">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/assets/wayang-kulit-1890.jpg" width={1920} height={1543} loading="lazy"
-                alt="A dalang seated before his wayang puppets, Java, around 1890" />
-              <figcaption>A dalang and his puppets, Java, around 1890.</figcaption>
-            </figure>
+          <div className="lp-needs-main">
+            <h2 id="needs-title" className="lp-h2">What it needs</h2>
+            <p className="lp-needs-lead">One command on your own machine. No account, nothing to sign up for.</p>
+            <InstallCard />
+          </div>
+          <div className="lp-needs-side">
             <table className="lp-table">
               <caption className="sr-only">Platforms, speed and cost</caption>
               <tbody>
@@ -474,22 +508,23 @@ export default function Landing() {
 
       <footer className="lp-foot" data-scroll="pass">
         <div className="lp-foot-top">
-          <div>
-            <h2 className="lp-h2">Sorot means spotlight.</h2>
-            <a href={STUDIO} className="lp-btn lp-btn-hot">Open the studio</a>
-          </div>
-          <ul className="lp-foot-links">
-            <li><a href={REPO}>GitHub</a></li>
-            <li><a href={`${REPO}/blob/master/docs/cli.md`}>The sorot CLI</a></li>
-            <li><a href={`${REPO}/blob/master/docs/linux-install.md`}>Linux install</a></li>
-            <li><a href={`${REPO}/blob/master/LICENSE`}>MIT licence</a></li>
-          </ul>
+          <h2 className="lp-h2">Sorot means spotlight.</h2>
+          <dl className="lp-define">
+            <div><dt>sorot</dt><dd>a beam of light, the kind a lamp throws on a stage</dd></div>
+            <div><dt>sorotan</dt><dd>the highlights: the part everyone remembers</dd></div>
+          </dl>
         </div>
+        <ul className="lp-foot-links">
+          <li><a href={STUDIO}>Open the studio</a></li>
+          <li><a href={REPO}>GitHub</a></li>
+          <li><a href={`${REPO}/blob/master/docs/cli.md`}>The sorot CLI</a></li>
+          <li><a href={`${REPO}/blob/master/docs/linux-install.md`}>Linux install</a></li>
+          <li><a href={`${REPO}/blob/master/LICENSE`}>MIT licence</a></li>
+        </ul>
         <p className="lp-credits">
           <span>
-            Photographs: &ldquo;Pertunjukan Wayang Kulit&rdquo; by FaizAttariqi, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>,
-            via <a href="https://commons.wikimedia.org/wiki/File:Pertunjukan_Wayang_Kulit.jpg">Wikimedia Commons</a>;
-            &ldquo;<a href="https://commons.wikimedia.org/wiki/File:Wayang_Kulit_1890.jpg">Wayang Kulit 1890</a>&rdquo;, public domain.
+            Photograph: &ldquo;Pertunjukan Wayang Kulit&rdquo; by FaizAttariqi, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>,
+            via <a href="https://commons.wikimedia.org/wiki/File:Pertunjukan_Wayang_Kulit.jpg">Wikimedia Commons</a>.
           </span>
           <span>© 2026 Raufi Musaddiq · MIT</span>
         </p>
