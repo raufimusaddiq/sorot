@@ -5,6 +5,8 @@ import { openDatabase } from "./db";
 import { Llm } from "./llm";
 import { YouTube } from "./youtube";
 import { DiscoveryService } from "./discovery";
+import { DiscoveryAgent } from "./discoveryAgent";
+import { WebSearch } from "./webSearch";
 import { FeedbackService, ValidationError } from "./feedback";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
 import { ClipEditor } from "./editor";
@@ -41,7 +43,8 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const exec = deps.exec ?? spawnCapture;
   const runScript = deps.runScript ?? createPythonRunner(config, exec);
 
-  const llm = new Llm(config, deps.fetch ?? globalThis.fetch);
+  const httpFetch = deps.fetch ?? globalThis.fetch;
+  const llm = new Llm(config, httpFetch);
   const youtube = new YouTube(exec, config.ytdlpPath);
   const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm, youtube);
   const jobs = new JobService(config, store, orchestrator);
@@ -49,6 +52,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const clips = new ClipService(config, store);
   const discovery = new DiscoveryService(store, youtube, `${config.dataDir}/corpus`);
   const channels = new ChannelCrawler(store, youtube);
+  const agent = new DiscoveryAgent(store, discovery, youtube, llm, new WebSearch(config.webSearch, httpFetch));
   const feedback = new FeedbackService(config, store);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
 
@@ -199,6 +203,24 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     if (!url.trim()) return fail(400, "channelUrl is required");
     return ok(await discovery.channel(url, intArg(b, "maxResults", 20), intArg(b, "minDuration", 0), intArg(b, "maxDuration", 0)));
   });
+  /** Auto-discover: LLM agent (web + YouTube tools), or the algorithm without an LLM. Runs in the background. */
+  router.on("POST", "/api/discover/auto", async (c) => {
+    const b = await c.body();
+    try {
+      return ok(agent.start(strArg(b, "goal"), intArg(b, "maxResults", 10)));
+    } catch (e) {
+      if (e instanceof ConflictError) return fail(409, e.message);
+      throw e;
+    }
+  });
+  router.on("GET", "/api/discover/auto", () => {
+    const run = agent.latest();
+    return run ? ok(run) : fail(404, "No auto-discover run yet");
+  });
+  router.on("GET", "/api/discover/auto/:id", (c) => {
+    const run = agent.get(c.params.id as string);
+    return run ? ok(run) : fail(404, "Run not found");
+  });
   router.on("GET", "/api/discover/candidates", (c) => {
     const rows = discovery.listCandidates(c.url.searchParams.get("status"));
     return ok({ count: rows.length, videos: rows });
@@ -270,7 +292,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   return {
     fetch,
-    store, jobs, discovery, channels, orchestrator, llm, youtube,
+    store, jobs, discovery, channels, orchestrator, llm, youtube, agent,
     start() { jobs.startMaintenance(); },
     close() {
       jobs.shutdown();

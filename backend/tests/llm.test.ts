@@ -27,7 +27,7 @@ describe("config", () => {
     expect(c).toMatchObject({ llmBaseUrl: "http://x/v1", llmModel: "qwen", llmApiKey: "k", llmTimeoutSec: 30, webSearch: "off" });
     expect(new Llm(c).enabled).toBeTrue();
     expect(new Llm(c).model).toBe("qwen");
-    expect(loadConfig({}).webSearch).toBe("duckduckgo");
+    expect(loadConfig({}).webSearch).toBe("bing");
     expect(loadConfig({}).llmTimeoutSec).toBe(120);
   });
 });

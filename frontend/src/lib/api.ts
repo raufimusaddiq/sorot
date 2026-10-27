@@ -115,6 +115,17 @@ export class ApiClient {
     });
   }
 
+  async discoverAuto(goal = '', maxResults = 10) {
+    return this.request('/api/discover/auto', {
+      method: 'POST',
+      body: JSON.stringify({ goal, maxResults }),
+    });
+  }
+
+  async discoverAutoStatus(runId: string) {
+    return this.request(`/api/discover/auto/${runId}`);
+  }
+
   async listCandidates(status?: string) {
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';
     return this.request(`/api/discover/candidates${qs}`);

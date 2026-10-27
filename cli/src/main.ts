@@ -36,6 +36,8 @@ Library
 
 Discovery
   discover search "<query>" [--max 20 --min-length SEC --max-length SEC]
+  discover auto ["<goal>"] [--max 10] [--no-wait]   LLM agent (or algorithm) finds videos
+  discover auto-status [<run>]  progress / result of the last (or given) run
   discover trending [--region ID] | discover channel <url>
   discover candidates [--status QUEUED] | queue <id...> | skip <id...> | drain
   channels [--status REJECTED] | channels reseed | refresh <id> | set <id> <STATUS>

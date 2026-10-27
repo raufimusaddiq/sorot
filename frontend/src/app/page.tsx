@@ -279,14 +279,33 @@ type DiscoveredVideo = {
   jobId: string | null;
   sourceMode: string;
   sourceQuery: string;
+  /** Plain-language reasons behind the rank (agent reason, strong moments, speech, channel…). */
+  why?: string[];
 };
 
-type DiscoveryMode = 'search' | 'trending' | 'channel';
+type AutoStep = { tool: string; args: Record<string, unknown>; result: string };
+type AutoRun = {
+  id: string;
+  status: 'RUNNING' | 'DONE' | 'FAILED';
+  mode: 'agent' | 'algorithm' | null;
+  model: string | null;
+  steps: AutoStep[];
+  notes: string | null;
+  llmError: string | null;
+  error: string | null;
+  count: number;
+};
+
+const AUTO_POLL_MS = 2000;
+
+type DiscoveryMode = 'auto' | 'search' | 'trending' | 'channel';
 type MainTab = 'import' | 'discovery' | 'learning';
 type TabKey = 'clips' | 'transcript';
 
 function DiscoveryPanel({ api }: { api: ApiClient }) {
-  const [mode, setMode] = useState<DiscoveryMode>('search');
+  const [mode, setMode] = useState<DiscoveryMode>('auto');
+  const [goal, setGoal] = useState('');
+  const [autoRun, setAutoRun] = useState<AutoRun | null>(null);
   const [query, setQuery] = useState('');
   const [channelUrl, setChannelUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -313,7 +332,30 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
     return () => clearTimeout(t);
   }, [candidates, refresh]);
 
+  // Follow a running auto-discover until it finishes, then show its picks.
+  useEffect(() => {
+    if (autoRun?.status !== 'RUNNING') return;
+    const t = setTimeout(async () => {
+      try {
+        const next = await api.discoverAutoStatus(autoRun.id) as AutoRun;
+        setAutoRun(next);
+        if (next.status === 'DONE') await refresh();
+        if (next.status === 'FAILED') setError(next.error || 'Auto-discover failed');
+      } catch (e) { reportError(e, 'discover.autoStatus'); }
+    }, AUTO_POLL_MS);
+    return () => clearTimeout(t);
+  }, [api, autoRun, refresh]);
+
   const handleSearch = async () => {
+    if (mode === 'auto') {
+      setError(null);
+      try {
+        setAutoRun(await api.discoverAuto(goal.trim()) as AutoRun);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Auto-discover failed');
+      }
+      return;
+    }
     if (mode === 'search' && !query.trim()) return;
     if (mode === 'channel' && !channelUrl.trim()) return;
     setLoading(true);
@@ -377,14 +419,20 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
     <div className="space-y-4">
       <div className="bg-surface rounded-card p-6 border border-line">
         <div className="flex gap-2 mb-4">
-          {(['search', 'trending', 'channel'] as DiscoveryMode[]).map(m => (
+          {(['auto', 'search', 'trending', 'channel'] as DiscoveryMode[]).map(m => (
             <button key={m} onClick={() => setMode(m)} className={`px-4 py-2 rounded-card text-sm font-medium transition-colors border ${
               mode === m ? 'bg-accent text-white border-accent' : 'bg-surface-2 text-muted border-line hover:bg-surface-3'
-            }`}>{m.charAt(0).toUpperCase() + m.slice(1)}</button>
+            }`}>{m === 'auto' ? '✨ Auto' : m.charAt(0).toUpperCase() + m.slice(1)}</button>
           ))}
         </div>
 
         <div className="flex gap-3">
+          {mode === 'auto' && (
+            <input type="text" value={goal} onChange={e => setGoal(e.target.value)}
+              placeholder="Optional focus (e.g. drama artis, politik, podcast bisnis)…"
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+              className="flex-1 bg-surface-2 border border-line rounded-card px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+          )}
           {mode === 'search' && (
             <input type="text" value={query} onChange={e => setQuery(e.target.value)}
               placeholder="Search keywords (e.g. rahasia penting indonesia)…"
@@ -400,16 +448,34 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
           {mode === 'trending' && (
             <div className="flex-1 text-sm text-muted py-2">Fetches current Indonesian trending videos</div>
           )}
-          <button onClick={handleSearch} disabled={loading}
+          <button onClick={handleSearch} disabled={loading || (mode === 'auto' && autoRun?.status === 'RUNNING')}
             className="px-6 bg-accent hover:bg-accent-soft disabled:bg-surface-3 disabled:text-subtle text-white rounded-card py-2 text-sm font-medium transition-colors whitespace-nowrap">
-            {loading ? 'Searching…' : 'Discover'}
+            {loading ? 'Searching…' : mode !== 'auto' ? 'Discover' : autoRun?.status === 'RUNNING' ? 'Researching…' : 'Auto-discover'}
           </button>
         </div>
         {error && <p className="text-error text-xs mt-2">{error}</p>}
+        {mode === 'auto' && autoRun && (
+          <div className="mt-3 text-xs space-y-1" data-testid="auto-run">
+            {autoRun.status === 'DONE' && (
+              <p className="text-fg">
+                {autoRun.mode === 'agent' ? `Picked ${autoRun.count} by ${autoRun.model}` : `Picked ${autoRun.count} by the algorithm`}
+                {autoRun.mode === 'algorithm' && autoRun.llmError && <span className="text-subtle"> — {autoRun.llmError}</span>}
+              </p>
+            )}
+            {autoRun.notes && <p className="text-muted">Trend: {autoRun.notes}</p>}
+            <ul className="font-mono text-subtle space-y-0.5">
+              {autoRun.steps.slice(-8).map((s, i) => (
+                <li key={i}>{s.tool} {String(s.args.query ?? s.args.video_id ?? s.args.channel ?? '')} → {s.result}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <p className="text-xs text-subtle mt-3">
-          Results persist across refreshes. Top candidates are enriched with transcript-sampled scoring in the background —
-          check back in a few seconds for a <span className="font-mono text-accent">predicted</span> score that reflects the
-          actual video content, not just the title.
+          {mode === 'auto'
+            ? 'Auto researches what is trending (web + YouTube), reads the whole captions of promising videos and picks the ones worth clipping, with a reason for each. It uses the LLM when one is configured, otherwise the algorithm.'
+            : <>Results persist across refreshes. Top candidates are scored from their whole captions in the background —
+              check back in a few seconds for a <span className="font-mono text-accent">predicted</span> score that reflects the
+              actual video content, not just the title.</>}
         </p>
       </div>
 
@@ -489,6 +555,11 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
                   {video.sourceMode && <span aria-hidden>&#8226;</span>}
                   {video.sourceMode && <span className="font-mono text-subtle">{video.sourceMode}</span>}
                 </div>
+                {video.why && video.why.length > 0 && (
+                  <ul className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-muted">
+                    {video.why.map(w => <li key={w} className="px-1.5 py-0.5 rounded bg-surface-2 border border-line">{w}</li>)}
+                  </ul>
+                )}
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
                 <div className="text-right">

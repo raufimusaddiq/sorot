@@ -256,6 +256,47 @@ describe("discovery", () => {
     expect(await j.run("discover", "search")).toBe(2);
   });
 
+  test("auto: follows the run's tool calls, then lists picks with reasons", async () => {
+    const pick = { ...cand, predictedScore: 0.81, why: ["Hot topic", "3 strong moments, best at 4:38"] };
+    let polls = 0;
+    const running = { id: "r1", status: "RUNNING", steps: [{ tool: "web_search", args: { query: "viral" }, result: "6 results" }] };
+    const done = { ...running, status: "DONE", mode: "agent", model: "qwen", notes: "Sidang X", count: 1, videos: [pick],
+      steps: [...running.steps, { tool: "analyze_video", args: { video_id: "abc" }, result: "predicted 0.81" }, { tool: "source_channels", args: {}, result: "3 results" }] };
+    const h = harness({
+      "POST /api/discover/auto": running,
+      "GET /api/discover/auto/r1": () => (++polls < 2 ? running : done),
+    });
+    expect(await h.run("discover", "auto", "drama", "artis", "--max", "3")).toBe(0);
+    expect(h.requests[0]!.body).toEqual({ goal: "drama artis", maxResults: 3 });
+    expect(h.out.filter((l) => l.startsWith("  web_search"))).toEqual(["  web_search viral → 6 results"]);   // each step once
+    expect(h.out).toContain("  analyze_video abc → predicted 0.81");
+    expect(h.out).toContain("  source_channels → 3 results");
+    expect(h.out).toContain("Picked by qwen");
+    expect(h.out).toContain("Trend: Sidang X");
+    expect(h.text()).toMatch(/c1\s+NEW\s+0\.81/);
+    expect(h.out.at(-1)).toBe("  c1  Hot topic · 3 strong moments, best at 4:38");
+
+    const algo = { ...done, mode: "algorithm", model: null, notes: null, llmError: "No LLM configured" };
+    const g = harness({ "POST /api/discover/auto": algo, "GET /api/discover/auto": running, "GET /api/discover/auto/r1": { ...algo, status: "FAILED", error: "boom" } });
+    await g.run("discover", "auto");
+    expect(g.requests[0]!.body).toEqual({ goal: "", maxResults: 10 });
+    expect(g.out).toContain("Picked by the algorithm (No LLM configured)");
+    expect(await g.run("discover", "auto", "--no-wait")).toBe(0);
+    expect(g.out.at(-1)).toBe("Auto-discover started: r1 (vclip discover auto-status r1)");
+    expect(await g.run("discover", "auto-status")).toBe(0);
+    expect(g.out.at(-1)).toBe("Running (1 steps so far)");
+    expect(await g.run("discover", "auto-status", "r1")).toBe(1);
+    expect(g.err.at(-1)).toBe("Auto-discover failed: boom");
+    expect(await g.run("discover", "auto-status", "r1", "--json")).toBe(1);
+    const j = harness({ "POST /api/discover/auto": done });
+    expect(await j.run("discover", "auto", "--json")).toBe(0);
+    expect(JSON.parse(j.text()).model).toBe("qwen");
+    expect(h.out.some((l) => l.includes("Picked by the algorithm"))).toBeFalse();
+    const plain = harness({ "POST /api/discover/auto": { ...algo, llmError: null } });
+    await plain.run("discover", "auto");
+    expect(plain.out).toContain("Picked by the algorithm");
+  });
+
   test("queue, skip, drain and unknown", async () => {
     const h = harness(routes);
     await h.run("discover", "queue", "c1", "c2");

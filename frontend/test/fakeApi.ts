@@ -8,7 +8,7 @@ export type Candidate = {
   id: string; youtubeId: string; videoId: string; title: string; url: string;
   duration: number; channel: string; viewCount: number | null; uploadDate: string;
   relevanceScore: number; transcriptScore: number | null; predictedScore: number | null;
-  status: string; jobId: string | null; sourceMode: string; sourceQuery: string;
+  status: string; jobId: string | null; sourceMode: string; sourceQuery: string; why?: string[];
 };
 
 export interface FakeState {
@@ -31,6 +31,8 @@ export interface FakeState {
   music: string[];
   /** Clip id → caption words served to the editor. */
   captions: Record<string, { words: CaptionWord[]; edited: boolean }>;
+  /** Auto-discover: POST returns the first run state; each status poll returns the next (the last repeats). */
+  autoRuns: Array<Record<string, unknown>>;
 }
 
 export interface Call { method: string; path: string; body: unknown }
@@ -82,7 +84,7 @@ export function emptyState(): FakeState {
     videos: [], jobs: [], stages: {}, clips: {}, scores: {}, candidates: [],
     weights: { version: 3, trained_on: 0, total_feedback: 0, with_actual_scores: 0 },
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
-    music: [], captions: {},
+    music: [], captions: {}, autoRuns: [],
   };
 }
 
@@ -184,6 +186,11 @@ export function installFakeApi(state: FakeState) {
     if (method === 'POST' && path === '/api/discover/queue') {
       state.candidates = state.candidates.map(c => (body.ids.includes(c.id) ? { ...c, status: 'QUEUED' } : c));
       return ok({ count: body.ids.length, videos: [] });
+    }
+    if (method === 'POST' && path === '/api/discover/auto') return ok(state.autoRuns[0]);
+    if (method === 'GET' && path.startsWith('/api/discover/auto/')) {
+      if (state.autoRuns.length > 1) state.autoRuns.shift();
+      return ok(state.autoRuns[0]);
     }
     if (method === 'POST' && path === '/api/discover/queue/drain') {
       state.candidates = state.candidates.map(c => (c.status === 'QUEUED' ? { ...c, status: 'IMPORTED' } : c));

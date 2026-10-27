@@ -17,6 +17,8 @@ export interface TestEnv {
   execCalls: Array<{ cmd: string; args: string[] }>;
   scripts: Record<string, ScriptHandler>;
   execHandler: { fn: (cmd: string, args: string[], signal?: AbortSignal) => Promise<ProcResult> | ProcResult };
+  /** Outbound HTTP (web search, LLM): tests never reach the network. */
+  fetchHandler: { fn: (url: string, init?: RequestInit) => Promise<Response> | Response };
   req(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Response>;
   json(method: string, path: string, body?: unknown): Promise<{ status: number; body: any }>;
   cleanup(): void;
@@ -141,6 +143,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   const execCalls: TestEnv["execCalls"] = [];
   const scripts = defaultScripts(config.dataDir);
   const execHandler: TestEnv["execHandler"] = { fn: defaultExec };
+  const fetchHandler: TestEnv["fetchHandler"] = { fn: (url) => { throw new Error(`no network in tests: ${url}`); } };
 
   const runScript: ScriptRunner = async (script, args, opts) => {
     calls.push({ script, args });
@@ -153,7 +156,8 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
     return execHandler.fn(cmd, args, opts?.signal);
   };
 
-  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec });
+  const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => fetchHandler.fn(String(input), init)) as typeof fetch;
+  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec, fetch: fetchFn });
   const req = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.fetch(new Request(`http://localhost${path}`, {
       method,
@@ -161,7 +165,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
       body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
     }));
   return {
-    app, config, dir, calls, execCalls, scripts, execHandler, req,
+    app, config, dir, calls, execCalls, scripts, execHandler, fetchHandler, req,
     async json(method, path, body) {
       const res = await req(method, path, body);
       return { status: res.status, body: await res.json() };

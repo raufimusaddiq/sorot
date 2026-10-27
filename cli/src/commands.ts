@@ -235,6 +235,45 @@ function printCandidates(d: Deps, a: Args, data: Json): number {
   return 0;
 }
 
+/** Auto-discover: start a run, follow its tool calls, then list the picks with their reasons. */
+async function autoDiscover(d: Deps, a: Args): Promise<number> {
+  let run = await d.api.post("/api/discover/auto", { goal: a.positionals.slice(2).join(" "), maxResults: num(a, "max") ?? 10 });
+  if (has(a, "no-wait")) {
+    d.out(`Auto-discover started: ${run.id} (vclip discover auto-status ${run.id})`);
+    return 0;
+  }
+  const quiet = has(a, "json");
+  let shown = 0;
+  for (;;) {
+    for (const s of (run.steps as Json[]).slice(shown)) {
+      const target = String(s.args.query ?? s.args.video_id ?? s.args.channel ?? "");
+      if (!quiet) d.out(`  ${s.tool}${target ? ` ${truncate(target, 50)}` : ""} → ${s.result}`);
+    }
+    shown = run.steps.length;
+    if (run.status !== "RUNNING") break;
+    await d.sleep(d.pollMs);
+    run = await d.api.get(`/api/discover/auto/${run.id}`);
+  }
+  return printRun(d, a, run);
+}
+
+function printRun(d: Deps, a: Args, run: Json): number {
+  if (json(d, a, run)) return run.status === "FAILED" ? 1 : 0;
+  if (run.status === "RUNNING") {
+    d.out(`Running (${run.steps.length} steps so far)`);
+    return 0;
+  }
+  if (run.status === "FAILED") {
+    d.err(`Auto-discover failed: ${run.error}`);
+    return 1;
+  }
+  d.out(run.mode === "agent" ? `Picked by ${run.model}` : `Picked by the algorithm${run.llmError ? ` (${run.llmError})` : ""}`);
+  if (run.notes) d.out(`Trend: ${run.notes}`);
+  printCandidates(d, a, run);
+  for (const v of run.videos as Json[]) d.out(`  ${v.id}  ${(v.why as string[]).join(" · ")}`);
+  return 0;
+}
+
 async function discoverCmd(d: Deps, a: Args): Promise<number> {
   const sub = a.positionals[1] ?? "candidates";
   const max = num(a, "max") ?? 20;
@@ -244,6 +283,12 @@ async function discoverCmd(d: Deps, a: Args): Promise<number> {
       return printCandidates(d, a, await d.api.post("/api/discover/search", { query: need(a, 2, "search query"), maxResults: max, ...durations }));
     case "trending":
       return printCandidates(d, a, await d.api.post("/api/discover/trending", { maxResults: max, region: str(a, "region") ?? "ID" }));
+    case "auto":
+      return autoDiscover(d, a);
+    case "auto-status": {
+      const id = a.positionals[2];
+      return printRun(d, a, await d.api.get(id ? `/api/discover/auto/${id}` : "/api/discover/auto"));
+    }
     case "channel":
       return printCandidates(d, a, await d.api.post("/api/discover/channel", { channelUrl: need(a, 2, "channel URL"), maxResults: max, ...durations }));
     case "candidates": {
