@@ -22,6 +22,7 @@ const AGENT_MAX_STEPS = 14;
 const MIN_DURATION_SEC = 10 * 60;
 const RECENT_DAYS = 60;
 const FALLBACK_QUERIES = 3;
+const MAX_FALLBACK_QUERIES = 6;
 const ANALYZE_CONCURRENCY = 3;
 const MAX_PICKS = 20;
 const PER_CHANNEL = 2;
@@ -62,7 +63,7 @@ export function agentPrompt(goal: string, max: number, today: string, web: boole
 
 Goal: ${goal || "whatever Indonesians are talking about right now"}.
 
-Good sources are long-form (10+ minutes) Indonesian videos from the last ~2 months: podcasts, talk shows, interviews, stand-up, debates, livestreams. Avoid compilations, "best moments", re-uploads and clip channels, and videos marked already IMPORTED or SKIPPED.
+Good sources are long-form (10+ minutes) Indonesian videos from the last ~2 months: podcasts, talk shows, interviews, stand-up, debates, livestreams. Avoid compilations, "best moments", re-uploads and clip channels, videos marked already IMPORTED or SKIPPED, and channel_rejected ones (they are dropped).
 
 How to work:
 ${web ? "1. web_search for what is trending in Indonesia now (people, controversies, events) related to the goal.\n2. " : "1. "}youtube_search with specific Indonesian queries (names, topics + \"podcast\", \"wawancara\", \"full\"). Try several angles.
@@ -173,12 +174,18 @@ export class DiscoveryAgent {
     return s && s !== "NEW" ? s : undefined;
   }
 
+  /** The crawler rejected this video's channel (clip farm / short-form); the candidate list hides it too. */
+  private rejectedChannel(v: Video): boolean {
+    return !!v.channelId && this.store.channelByYoutubeId(v.channelId)?.status === "REJECTED";
+  }
+
   private compact(v: Video): Json {
     return {
       video_id: v.videoId, title: v.title, channel: v.channel, channel_id: v.channelId || undefined,
       minutes: Math.round(v.duration / 60), views: v.viewCount ?? undefined,
       age_days: v.age_hours < 9999 ? Math.round(v.age_hours / 24) : undefined,
       type: v.contentType, status: this.knownStatus(v.videoId),
+      channel_rejected: this.rejectedChannel(v) || undefined,
     };
   }
 
@@ -241,7 +248,8 @@ export class DiscoveryAgent {
     const picks: Array<{ videoId: string; reason: string }> = [];
     for (const p of raw) {
       const id = String(p.video_id ?? p.videoId ?? "");
-      if (!seen.has(id) || picks.some((x) => x.videoId === id)) continue;   // only videos the tools returned
+      // only videos the tools returned, never from a rejected channel
+      if (!seen.has(id) || picks.some((x) => x.videoId === id) || this.rejectedChannel(seen.get(id)!)) continue;
       picks.push({ videoId: id, reason: String(p.reason ?? "").trim().slice(0, 300) || "Picked by the discovery agent" });
     }
     if (!picks.length) throw new LlmError("The LLM picked no videos it had seen");
@@ -256,9 +264,14 @@ export class DiscoveryAgent {
       const j = Math.floor(this.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j]!, pool[i]!];
     }
-    const queries = [...(run.goal ? [run.goal] : []), ...pool].slice(0, FALLBACK_QUERIES);
+    const queries = [...(run.goal ? [run.goal] : []), ...pool];
     const foundVia = new Map<string, string>();
-    for (const q of queries) {
+    const usable = () => [...seen.values()].filter((v) => !this.knownStatus(v.videoId) && !this.rejectedChannel(v));
+    // At least FALLBACK_QUERIES searches; more (up to MAX_FALLBACK_QUERIES) while too few
+    // recent long-form videos turned up — narrow queries often return none.
+    for (let i = 0; i < Math.min(queries.length, MAX_FALLBACK_QUERIES); i++) {
+      if (i >= FALLBACK_QUERIES && usable().length >= run.maxResults * 2) break;
+      const q = queries[i]!;
       try {
         const vs = await this.youtube.search(q, 10, { minDuration: MIN_DURATION_SEC, maxAgeDays: RECENT_DAYS });
         for (const v of vs) if (!seen.has(v.videoId)) { seen.set(v.videoId, v); foundVia.set(v.videoId, q); }
@@ -267,8 +280,7 @@ export class DiscoveryAgent {
         this.step(run, "youtube_search", { query: q }, `error: ${(e as Error).message}`);
       }
     }
-    const fresh = [...seen.values()].filter((v) => !this.knownStatus(v.videoId))
-      .sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0)).slice(0, Math.min(run.maxResults * 2, 16));
+    const fresh = usable().sort((a, b) => (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0)).slice(0, Math.min(run.maxResults * 2, 16));
     const scored = await mapPool(fresh, ANALYZE_CONCURRENCY, async (v) => {
       const a = await this.analyze(v, analyzed);
       this.step(run, "analyze_video", { video_id: v.videoId }, `predicted ${a.predictedScore}`);

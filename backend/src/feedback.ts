@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import type { AppConfig } from "./config";
 import { readWeightsFile, trainWeights, viralScore, writeWeightsFile, type FeedbackRecord } from "./learning";
 import { FEATURE_ORDER } from "./scoring";
@@ -63,11 +64,16 @@ export class FeedbackService {
 
   /** Re-weight the scorer from posted clips' real scores; learned weights go to data/weights.json. */
   async triggerTraining(): Promise<Json> {
-    const records: FeedbackRecord[] = this.store.feedbackWithScores().map((fb) => {
+    const rows = this.store.feedbackWithScores().map((fb) => {
       let features: Record<string, number> = {};
       try { features = JSON.parse(fb.features); } catch { /* keep {} */ }
-      return { features, actual_viral_score: fb.actualViralScore };
+      return { clipId: fb.clipId, features, predicted_score: fb.predictedScore, predicted_tier: fb.predictedTier,
+        actual_viral_score: fb.actualViralScore };
     });
+    // The same rows feed the optional LightGBM trainer: python train_scorer.py --feedback <this file>
+    mkdirSync(`${this.config.dataDir}/feedback`, { recursive: true });
+    await Bun.write(`${this.config.dataDir}/feedback/feedback_export.json`, JSON.stringify(rows));
+    const records: FeedbackRecord[] = rows;
     const { result, updated } = trainWeights(records, readWeightsFile(this.config.dataDir, this.config.pipelineDir), { minSamples: 5 });
     if (updated) writeWeightsFile(this.config.dataDir, updated);
     return { ...result, version: result.version ?? 0 };

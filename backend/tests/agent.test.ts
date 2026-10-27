@@ -130,13 +130,31 @@ describe("auto-discover without an LLM (algorithm)", () => {
     expect(run).toMatchObject({ status: "DONE", mode: "algorithm", maxResults: 20, model: null,
       llmError: "No LLM configured (set LLM_BASE_URL and LLM_MODEL)" });
     const searches = run.steps.filter((s: { tool: string }) => s.tool === "youtube_search");
-    expect(searches).toHaveLength(3);
+    expect(searches).toHaveLength(6);   // 4 usable videos < 2 × 20 wanted → keeps sampling queries, up to 6
     expect(searches[0]).toEqual({ tool: "youtube_search", args: { query: "wawancara eksklusif" }, result: "4 videos" });
     expect(run.steps.filter((s: { tool: string }) => s.tool === "analyze_video")).toHaveLength(4);
     expect(run.videos.map((v: { channel: string }) => v.channel).sort()).toEqual(["One", "One", "Two"]);
     expect(run.videos[0].reason).toBe('Algorithm pick (no LLM), found via "wawancara eksklusif"');
     const preds = run.videos.map((v: { predictedScore: number }) => v.predictedScore);
     expect(preds).toEqual([...preds].sort((x, y) => y - x));
+  });
+
+  test("stops after 3 queries with enough videos; never picks from a rejected channel", async () => {
+    const enough = await runAuto({ maxResults: 1 });
+    expect(enough.steps.filter((s: { tool: string }) => s.tool === "youtube_search")).toHaveLength(3);
+
+    env.app.store.saveChannel({ id: "ch", youtubeChannelId: "UCch", channelName: "Ch", channelUrl: "u", primaryCategory: null,
+      avgDurationSec: 120, medianViewCount: 0, uploadsPerWeek: 0, subscriberCount: 0, isLikelyClipperChannel: 1, trustScore: 0.5,
+      trustSamples: 0, pollCadenceHours: 24, status: "REJECTED", firstSeenAt: "t", lastCrawledAt: null, lastProfileRefreshAt: "t" });
+    const run = await runAuto({ maxResults: 1 });
+    expect(run.steps.filter((s: { tool: string }) => s.tool === "youtube_search")).toHaveLength(6);   // only 1 usable video left
+    expect(run.videos.map((v: { videoId: string }) => v.videoId)).toEqual(["zyxwvutsrqp"]);   // abcdefghijk is UCch
+
+    const seen = scriptLlm([{ tool_calls: [call("1", "youtube_search", { query: "x" })] },
+      { content: '{"picks":[{"video_id":"abcdefghijk","reason":"r"},{"video_id":"zyxwvutsrqp","reason":"ok"}]}' }]);
+    const agentRun = await runAuto();
+    expect(JSON.parse(seen[1]!.messages.at(-1)!.content)[0]).toMatchObject({ video_id: "abcdefghijk", channel_rejected: true });
+    expect(agentRun.videos.map((v: { videoId: string }) => v.videoId)).toEqual(["zyxwvutsrqp"]);
   });
 
   test("failed searches are logged; skipped videos are not re-picked", async () => {

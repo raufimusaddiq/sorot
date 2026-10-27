@@ -337,6 +337,9 @@ describe("feedback", () => {
     expect(learned).toMatchObject({ version: 4, trained_on: 7, thresholds: { PRIMARY: 0.8, BACKUP: 0.65 } });
     expect(learned.last_updated).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
     expect(JSON.parse(readFileSync(join(pipelineDir, "weights.json"), "utf8")).version).toBe(3);   // shipped defaults untouched
+    const exported = JSON.parse(readFileSync(join(env.config.dataDir, "feedback", "feedback_export.json"), "utf8"));
+    expect(exported).toHaveLength(7);                                     // the LightGBM trainer's input
+    expect(exported[0]).toMatchObject({ clipId: "c0", predicted_tier: "PRIMARY", features: { hookStrength: 0 } });
 
     const w = (await env.json("GET", "/api/feedback/weights")).body.data;
     expect(w).toMatchObject({ version: 4, trained_on: 7, total_feedback: 7, with_actual_scores: 7, weights: r.new_weights });
