@@ -1,6 +1,6 @@
 # Installing on Linux
 
-`scripts/install.sh` sets up Viral Clipper on Debian, Ubuntu and their
+`scripts/install.sh` sets up Sorot on Debian, Ubuntu and their
 derivatives (Mint, Pop!_OS…). Run it from a clone of the repo as your normal
 user — it calls `sudo` for the system parts and keeps the repo files owned by you.
 
@@ -11,7 +11,12 @@ scripts/install.sh                     # Docker mode (recommended)
 scripts/install.sh --mode native       # or: no Docker, systemd service
 ```
 
-When it finishes the app is on `http://localhost:8080` and `vclip` is on your
+Upgrading an install from before the rename (Viral Clipper)? Re-run the
+installer: it moves your settings from `/etc/viralclip` to `/etc/sorot`,
+replaces the `viralclip` service with `sorot`, and keeps `vclip` as an alias
+of the new `sorot` command. Your `data/` (and its `viralclipper.db`) is untouched.
+
+When it finishes the app is on `http://localhost:8080` and `sorot` is on your
 PATH (see [cli.md](cli.md)).
 
 ## Before you start
@@ -50,14 +55,14 @@ PATH (see [cli.md](cli.md)).
 2. **NVIDIA Container Toolkit** from NVIDIA's apt repository when a GPU is
    present, and registers it with Docker.
 3. Adds you to the `docker` group — **log out and back in** before using
-   `vclip up/down/logs` without sudo.
+   `sorot up/down/logs` without sudo.
 4. Writes `docker-compose.override.yml` (gitignored) for this machine: your
    port, `restart: unless-stopped` (the app comes back after a reboot), and on
    CPU-only machines it drops the GPU reservation and sets `WHISPER_DEVICE=cpu`.
 5. Builds the image (first time ~10 min: CUDA base, Python packages, the Whisper
    model baked in) and starts it.
 
-Settings: `.env.docker` in the repo (shared with Windows) — edit, then `vclip restart`.
+Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`.
 
 ### Native mode
 
@@ -69,18 +74,18 @@ Settings: `.env.docker` in the repo (shared with Windows) — edit, then `vclip 
    `LD_LIBRARY_PATH`, no system CUDA install needed).
 4. `bun install` + builds the UI into `frontend/out`.
 5. Downloads the Whisper model (`large-v3-turbo`, ~1.6 GB) into `~/.cache/huggingface`.
-6. `/etc/viralclip/viralclip.env` — the service's settings (pipeline defaults
-   from `.env.docker` plus absolute paths). Kept on re-install; edit, then `vclip restart`.
-7. systemd unit `viralclip.service`, running as you, enabled at boot.
+6. `/etc/sorot/sorot.env` — the service's settings (pipeline defaults
+   from `.env.docker` plus absolute paths). Kept on re-install; edit, then `sorot restart`.
+7. systemd unit `sorot.service`, running as you, enabled at boot.
 
 Without systemd (containers, WSL without systemd) no unit is installed; the
 installer prints the command to run the app by hand.
 
 ### Both modes
 
-- `vclip` → `/usr/local/bin/vclip` (one compiled binary; built in a Bun
+- `sorot` → `/usr/local/bin/sorot` (one compiled binary; built in a Bun
   container in Docker mode, so Bun isn't needed on the host).
-- `/etc/viralclip/cli.conf` — tells `vclip` the mode, repo path and URL.
+- `/etc/sorot/cli.conf` — tells `sorot` the mode, repo path and URL.
 - `data/input/` and `data/music/` created and owned by you.
 
 ## Files
@@ -90,10 +95,10 @@ installer prints the command to run the app by hand.
 | `<repo>/data/` | Videos, clips, database — everything you make |
 | `<repo>/data/music/` | Background music tracks (`.mp3`, `.m4a`, …) |
 | `<repo>/docker-compose.override.yml` | Docker mode: this machine's port / GPU / restart |
-| `/etc/viralclip/cli.conf` | `vclip` config |
-| `/etc/viralclip/viralclip.env` | Native mode: service settings |
-| `/etc/systemd/system/viralclip.service` | Native mode: the service |
-| `/usr/local/bin/vclip`, `/usr/local/bin/bun` | CLI; Bun (native mode) |
+| `/etc/sorot/cli.conf` | `sorot` config |
+| `/etc/sorot/sorot.env` | Native mode: service settings |
+| `/etc/systemd/system/sorot.service` | Native mode: the service |
+| `/usr/local/bin/sorot`, `/usr/local/bin/bun` | CLI; Bun (native mode) |
 
 ## Updating
 
@@ -113,13 +118,13 @@ Docker, Bun, ffmpeg and other system packages stay installed.
 
 ## Troubleshooting
 
-Start with `vclip doctor` — it checks the config, GPU, Docker or the service,
+Start with `sorot doctor` — it checks the config, GPU, Docker or the service,
 ffmpeg and the API, and says what to do about each failure.
 
 | Symptom | Fix |
 |---|---|
-| `permission denied … docker.sock` | Log out and in (docker group), or use `sudo vclip …` once |
-| `vclip up` says the app didn't answer | `vclip logs` — first start in Docker can take a minute |
+| `permission denied … docker.sock` | Log out and in (docker group), or use `sudo sorot …` once |
+| `sorot up` says the app didn't answer | `sorot logs` — first start in Docker can take a minute |
 | Very slow, `doctor` shows no GPU | Install the NVIDIA driver, then re-run the installer (it adds the container toolkit / CUDA wheels) |
 | Native: transcription fails with `metadata_errors` | An old checkout without the `av<19` pin: `git pull`, re-run the installer |
 | Port in use | `scripts/install.sh --port 8090` |

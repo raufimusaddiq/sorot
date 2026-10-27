@@ -1,4 +1,4 @@
-# What is actually "AI" in Viral Clipper
+# What is actually "AI" in Sorot
 
 An honest inventory, so nobody (including us) mistakes a rule for a model.
 Checked against the code on 2026-10-27.

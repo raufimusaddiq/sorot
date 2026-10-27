@@ -272,7 +272,7 @@ Downloads the export as `application/octet-stream` with
 ## Feedback / self-learning
 
 ### `POST /api/clips/{clipId}/feedback`
-Record real TikTok metrics. The viral score is velocity-based (normalized by
+Record the real metrics of a posted clip. The viral score is velocity-based (normalized by
 hours since posting), so `postedAt` is required.
 
 ```json

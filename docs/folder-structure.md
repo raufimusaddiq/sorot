@@ -3,7 +3,7 @@
 ## Source Code
 
 ```
-ViralVideo/
+viral-clipper/                       # the repo (the app is Sorot)
 ├── package.json · bun.lock · bunfig.toml  # Bun workspace (backend + frontend)
 ├── backend/                        # Bun + TypeScript API; also serves frontend/out
 │   ├── src/
@@ -39,7 +39,7 @@ ViralVideo/
 │   │   └── supervised.py            # LightGBM loader
 │   └── tests/                       # pytest (in-process, no GPU needed)
 │
-├── cli/                             # vclip command-line client (Bun)
+├── cli/                             # sorot command-line client (Bun)
 │   ├── src/                         # main.ts (entry + help), commands.ts, service.ts (up/down/logs), api.ts
 │   └── tests/                       # bun test (fake API, processes and files)
 │

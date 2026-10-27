@@ -1,8 +1,8 @@
-# 🎬 Viral Clipper
+# 🎬 Sorot
 
 > **Drop in a 2-hour podcast. Get back the 60 seconds people will actually watch.** ✂️🔥
 
-Viral Clipper turns long YouTube or local videos into vertical **9:16 short-form clips** for any social platform — transcribed, scored for viral potential, framed on the speaker, captioned word by word, and given a ready-to-paste title and description. Built for **Indonesian** content, runs **100% locally** on your own machine. No uploads, no subscriptions, no watermark. 🏠
+**Sorot** (Indonesian for *spotlight*) turns long YouTube or local videos into vertical **9:16 short-form clips** for any social platform — transcribed, scored for viral potential, framed on the speaker, captioned word by word, and given a ready-to-paste title and description. Built for **Indonesian** content, runs **100% locally** on your own machine. No uploads, no subscriptions, no watermark. 🏠
 
 ```
 📺 YouTube / local video  →  🎙️ Whisper  →  🧠 clip scoring (+ optional LLM)  →  📱 9:16 render  →  💬 karaoke captions  →  🚀 post-ready clips
@@ -25,7 +25,7 @@ Viral Clipper turns long YouTube or local videos into vertical **9:16 short-form
 | ✏️ **Fix anything** | Clip editor: nudge start/end, fix a misheard word, change style — re-renders just that clip in ~20 s |
 | 🔎 **Finds source videos** | ✨ Auto-discover researches what's trending, reads whole videos' captions and picks sources with a reason for each; plus search, trending and a crawler for the channels clippers harvest from |
 | 📈 **Learns what works** | Feed back real views and likes from your posts — after 5+ results the feature weights are re-fitted to what actually performed |
-| ⌨️ **Scriptable** | `vclip` CLI and a plain HTTP API for cron jobs, watched folders and your own tools |
+| ⌨️ **Scriptable** | `sorot` CLI and a plain HTTP API for cron jobs, watched folders and your own tools |
 
 ---
 
@@ -39,7 +39,7 @@ Pick the path that fits your machine:
 | 🐳 | [**Docker** — any OS, by hand](#-docker--any-os) | NVIDIA or CPU | Any OS, full control |
 | 🐧 | [**Linux** — one-command installer](#-linux--installer) | NVIDIA or CPU | Linux desktops & servers — easiest |
 | 🍎 | [**macOS** — Docker Desktop or from source](#-macos) | CPU | Apple Silicon & Intel Macs |
-| ⌨️ | [**CLI only** — `vclip` on any machine](#%EF%B8%8F-cli-only--vclip-anywhere) | — | Scripting, remote control |
+| ⌨️ | [**CLI only** — `sorot` on any machine](#%EF%B8%8F-cli-only--sorot-anywhere) | — | Scripting, remote control |
 
 Whichever you choose, the app ends up on **http://localhost:8080** 🌐 — UI and API on one port.
 
@@ -96,7 +96,7 @@ scripts/install.sh                 # 🐳 Docker mode (recommended)
 scripts/install.sh --mode native   # 🧩 or: Bun + Python + systemd, no Docker
 ```
 
-It installs what's missing (Docker + compose, the NVIDIA Container Toolkit — or ffmpeg, Python, Bun for native), detects the GPU (falls back to CPU), starts the app so it survives reboots, and installs the `vclip` CLI. Re-run to update; `--uninstall` to remove.
+It installs what's missing (Docker + compose, the NVIDIA Container Toolkit — or ffmpeg, Python, Bun for native), detects the GPU (falls back to CPU), starts the app so it survives reboots, and installs the `sorot` CLI. Re-run to update; `--uninstall` to remove.
 
 👉 Options, file locations, troubleshooting: **[docs/linux-install.md](docs/linux-install.md)**
 
@@ -129,22 +129,22 @@ cd backend && bun run src/index.ts               # 🌐 http://localhost:8080
 
 Bun reads `backend/.env` automatically; every option from `.env.docker` works there too.
 
-### ⌨️ CLI only — `vclip` anywhere
+### ⌨️ CLI only — `sorot` anywhere
 
-`vclip` is one self-contained binary that talks to any Viral Clipper over HTTP — handy on your laptop while the app runs on a GPU box. The Linux installer installs it for you; anywhere else, build it:
+`sorot` is one self-contained binary that talks to any Sorot over HTTP — handy on your laptop while the app runs on a GPU box. The Linux installer installs it for you; anywhere else, build it:
 
 ```bash
-cd cli && bun run build                          # with Bun → cli/dist/vclip (vclip.exe on Windows)
+cd cli && bun run build                          # with Bun → cli/dist/sorot (sorot.exe on Windows)
 ```
 
 No Bun? Cross-compile from Docker for your OS — `bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-arm64` (Apple Silicon), `bun-darwin-x64` (Intel Mac) or `bun-windows-x64`:
 
 ```bash
 docker run --rm -v "$PWD/cli:/cli" -w /cli oven/bun:1.3.12 \
-  bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile dist/vclip
+  bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile dist/sorot
 ```
 
-Put it on your `PATH`, then point it at the app: `VCLIP_URL=http://gpu-box:8080 vclip health` (default `http://localhost:8080`). 📖 [docs/cli.md](docs/cli.md)
+Put it on your `PATH` (`sorot`, the old name, works as an alias), then point it at the app: `SOROT_URL=http://gpu-box:8080 sorot health` (default `http://localhost:8080`). 📖 [docs/cli.md](docs/cli.md)
 
 ### 💻 No graphics card? No problem
 
@@ -167,20 +167,20 @@ Measured on a 12-core CPU, no GPU: transcribing 54 s of speech took **24 s** wit
 
 ---
 
-## ⌨️ `vclip` — the command line
+## ⌨️ `sorot` — the command line
 
 ```bash
-vclip import "https://youtu.be/…" --style hormozi --trim --hook   # 🎬 import, wait, list clips
-vclip import ~/Videos/talk.mp4 --from 13:25 --to 25:00            # ✂️ a local file, one section
-vclip clips <video> --tier PRIMARY                                # 🏆 the best clips
-vclip download --video <video> -o ~/clips                         # 💾 grab the .mp4s
-vclip rerender <clip> --start 61 --end 100                        # ✏️ fix one clip's timing
-vclip discover auto "podcast bisnis"                             # ✨ let the agent find source videos
-vclip discover search "podcast indonesia"                         # 🔎 or search yourself
-vclip up | down | logs -f | doctor                                # 🛠️ run the app
+sorot import "https://youtu.be/…" --style hormozi --trim --hook   # 🎬 import, wait, list clips
+sorot import ~/Videos/talk.mp4 --from 13:25 --to 25:00            # ✂️ a local file, one section
+sorot clips <video> --tier PRIMARY                                # 🏆 the best clips
+sorot download --video <video> -o ~/clips                         # 💾 grab the .mp4s
+sorot rerender <clip> --start 61 --end 100                        # ✏️ fix one clip's timing
+sorot discover auto "podcast bisnis"                             # ✨ let the agent find source videos
+sorot discover search "podcast indonesia"                         # 🔎 or search yourself
+sorot up | down | logs -f | doctor                                # 🛠️ run the app
 ```
 
-Every command takes `--json` for scripts and `--url` / `VCLIP_URL` to drive another machine. Getting it: [⌨️ CLI only](#%EF%B8%8F-cli-only--vclip-anywhere).
+Every command takes `--json` for scripts and `--url` / `SOROT_URL` to drive another machine. Getting it: [⌨️ CLI only](#%EF%B8%8F-cli-only--sorot-anywhere).
 📖 Full reference: **[docs/cli.md](docs/cli.md)**
 
 ### 🔌 Integrate it
@@ -204,7 +204,7 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      8. 🔁 Variations    zoom / crop presets of the top clips
                      9. 📊 Analytics     distribution + recommendations
                                      │
-              Web UI · vclip · your scripts ◄── HTTP API (same origin, port 8080)
+              Web UI · sorot · your scripts ◄── HTTP API (same origin, port 8080)
 ```
 
 ### 🏅 Scoring
@@ -264,7 +264,7 @@ Every clip gets post-ready copy: a **title** (first question or hook + hashtags,
 
 ## ⚙️ Configuration
 
-Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc/viralclip/viralclip.env`; `.env` holds local overrides for development. Every option can also be changed per import in the UI or with `vclip import` flags.
+Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc/sorot/sorot.env`; `.env` holds local overrides for development. Every option can also be changed per import in the UI or with `sorot import` flags.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
@@ -293,7 +293,7 @@ Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc
 | 🤖 LLM (optional) | Any OpenAI-compatible endpoint: Ollama, LM Studio, Groq, OpenRouter, OpenAI |
 | ⚛️ Frontend | Next.js 14, static export |
 | 🗄️ Database | SQLite |
-| ⌨️ CLI | `vclip` — one compiled Bun binary |
+| ⌨️ CLI | `sorot` — one compiled Bun binary |
 | 📦 Repo | Bun workspace monorepo (`backend` + `frontend` + `cli`, one `bun.lock`) |
 | 🐳 Runs on | Docker Compose + NVIDIA GPU, or native Linux (systemd), or CPU-only |
 
@@ -304,7 +304,7 @@ Docker reads `.env.docker` (committed defaults); native Linux installs use `/etc
 ├── ai-pipeline/    🐍 Python media scripts: transcribe, media_features, render, reframe,
 │                      subtitle, captions, variation, train_scorer / predict_supervised
 ├── frontend/       ⚛️ Next.js web UI (static export → frontend/out)
-├── cli/            ⌨️ vclip command-line client
+├── cli/            ⌨️ sorot command-line client
 ├── scripts/        🛠️ install.sh (Linux) · start/stop/verify/e2e .ps1 (Windows)
 ├── docs/           📚 architecture, API, CLI, install, integration, scoring specs
 └── data/           💾 your videos, clips and database (gitignored)
@@ -331,7 +331,7 @@ Quality gate: 100% passing, ≥ 95% coverage, zero type errors. ✅
 | | |
 |---|---|
 | 🐧 [linux-install.md](docs/linux-install.md) | Installer modes, files, updating, uninstalling, troubleshooting |
-| ⌨️ [cli.md](docs/cli.md) | Every `vclip` command and flag |
+| ⌨️ [cli.md](docs/cli.md) | Every `sorot` command and flag |
 | 🔌 [integration.md](docs/integration.md) | Scripts, timers, watched folders, remote use, HTTP API, Python |
 | 🌐 [api-spec.md](docs/api-spec.md) | HTTP API reference |
 | 🏗️ [architecture.md](docs/architecture.md) | How the pieces fit |
