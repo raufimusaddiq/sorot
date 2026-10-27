@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+// Unset → same origin (the static UI is served by the backend). `next dev`
+// sets it to http://localhost:8080 via .env.local.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 export class ApiClient {
   private baseUrl: string;

@@ -6,11 +6,12 @@ AI-powered video clip maker for Indonesian TikTok content. Imports YouTube/local
 
 | Component | Tech |
 |-----------|------|
-| Backend API | Spring Boot 3.2 (Java 17) |
+| Backend API | Bun + TypeScript (`bun:sqlite`, zero runtime deps) |
 | AI Pipeline | Python 3 + faster-whisper (CUDA) + OpenCV + NumPy |
-| Frontend | Next.js 14 |
+| Frontend | Next.js 14, static export served by the backend |
 | Database | SQLite |
-| Deployment | Docker Compose + NVIDIA GPU |
+| Repo | Bun workspace monorepo (`backend` + `frontend`, one `bun.lock`) |
+| Deployment | Docker Compose (single app image) + NVIDIA GPU |
 
 ## Architecture
 
@@ -49,24 +50,35 @@ copy .env.example .env
 # 3. Start everything
 .\scripts\start.ps1 -Build
 
-# 4. Open in browser
-# Frontend: http://localhost:3000
-# Backend:  http://localhost:8080/api/health
+# 4. Open in browser — UI and API share one port
+# App:    http://localhost:8080
+# Health: http://localhost:8080/api/health
 ```
 
 ## Commands
 
 ```powershell
-.\scripts\start.ps1              # start (cached images)
-.\scripts\start.ps1 -Build       # start (rebuild images)
+.\scripts\start.ps1              # start app on :8080 (cached image)
+.\scripts\start.ps1 -Build       # start (rebuild image)
+.\scripts\start.ps1 -Dev         # + hot-reload UI on :3000
 .\scripts\stop.ps1               # stop all services
 .\scripts\verify-env.ps1         # check dependencies
 .\scripts\e2e-test.ps1           # run E2E test suite
 ```
 
+Native dev without Docker (needs Bun 1.3+, the Python venv, ffmpeg):
+
+```powershell
+bun install                 # backend + frontend deps, one lockfile
+bun run build               # static UI → frontend/out
+bun run start               # backend on :8080, serves the UI
+bun run dev:web             # optional: hot-reload UI on :3000
+cd backend; bun test --coverage
+```
+
 ## Usage
 
-1. Open http://localhost:3000
+1. Open http://localhost:8080
 2. Paste a YouTube URL → **Import & Process**
 3. Pipeline runs all 9 stages automatically
 4. Browse clips grouped by video, filter by tier (PRIMARY / BACKUP / SKIP)
@@ -119,9 +131,10 @@ One-click **Copy** button on each clip card for pasting directly into TikTok.
 ## Project Layout
 
 ```
-├── backend/             Spring Boot API + pipeline orchestrator
-│   ├── src/main/java/   Controllers, services, models, config
-│   └── Dockerfile       CUDA base + Java + Python + ffmpeg
+├── backend/             Bun/TS API + pipeline orchestrator + static UI host
+│   ├── src/             app (routes), orchestrator, jobs, runner, store, db
+│   ├── tests/           bun test suites (fakes for Python/ffmpeg/yt-dlp)
+│   └── Dockerfile       CUDA base + Bun + Python + ffmpeg + built UI
 ├── ai-pipeline/         Python CLI scripts (stages 1-9)
 │   ├── transcribe.py    Whisper transcription
 │   ├── segment.py       Gap-based segmentation
@@ -133,13 +146,13 @@ One-click **Copy** button on each clip card for pasting directly into TikTok.
 │   ├── feedback.py      Viral score calculation from TikTok metrics
 │   ├── learn_weights.py Pearson correlation + EMA weight training
 │   ├── weights.json     Externalized scoring weights
-│   ├── utils/           Audio/video analysis helpers
 │   └── tests/           175 tests
-├── frontend/            Next.js 14 web UI
+├── frontend/            Next.js 14 web UI (output: 'export' → frontend/out)
 │   └── src/app/         Video grouping, clip cards, feedback, learning tab
 ├── scripts/             PowerShell automation
 ├── docs/                Architecture & API specs
-├── docker-compose.yml   Full stack orchestration
+├── package.json         Bun workspace root
+├── docker-compose.yml   App service (+ dev/test/lint profiles)
 └── AGENTS.md            AI agent instructions & conventions
 ```
 

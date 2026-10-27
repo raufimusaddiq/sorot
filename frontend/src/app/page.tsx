@@ -280,7 +280,7 @@ type DiscoveryMode = 'search' | 'trending' | 'channel';
 type MainTab = 'import' | 'discovery' | 'learning';
 type TabKey = 'clips' | 'transcript';
 
-function DiscoveryPanel({ api }: { api: ApiClient; onImport: (url: string) => Promise<void> }) {
+function DiscoveryPanel({ api }: { api: ApiClient }) {
   const [mode, setMode] = useState<DiscoveryMode>('search');
   const [query, setQuery] = useState('');
   const [channelUrl, setChannelUrl] = useState('');
@@ -576,7 +576,7 @@ export default function Home() {
       const jobs: Job[] = jobsData.jobs || [];
       const jobMap = new Map(jobs.map(j => [j.videoId, j]));
 
-      const runningJob = jobs.find(j => j.status === 'RUNNING' || j.status === 'PENDING');
+      const runningJob = jobs.find(j => j.status === 'RUNNING' || j.status === 'QUEUED');
 
       const groups: VideoGroup[] = [];
       for (const video of videos) {
@@ -668,7 +668,7 @@ export default function Home() {
           return { ...g, clips, job: data.job, jobDetail: data };
         }));
         setExpandedVideos(prev => new Set([...prev, data.job.videoId]));
-      } else if (data.job.status === 'FAILED') {
+      } else if (data.job.status === 'FAILED' || data.job.status === 'CANCELLED') {
         terminal = true;
         stopPolling();
         setCurrentJobId(null);
@@ -700,6 +700,13 @@ export default function Home() {
     loadAllData();
     return () => stopPolling();
   }, [loadAllData, stopPolling]);
+
+  // A job found RUNNING/QUEUED on (re)load needs its poller started, otherwise
+  // the UI sits on "Processing..." until a manual refresh. handleImport starts
+  // its own poller synchronously, so the refs are already set in that case.
+  useEffect(() => {
+    if (currentJobId && !pollAbortRef.current && !pollTimerRef.current) startPolling(currentJobId);
+  }, [currentJobId, startPolling]);
 
   useEffect(() => {
     return onError((msg, ctx) => {
@@ -1029,17 +1036,8 @@ export default function Home() {
            </section>
       )}
 
-      {mainTab === 'discovery' && (
-        <DiscoveryPanel api={api} onImport={async (url) => {
-          // Legacy one-off import path retained for callers, but the panel's
-          // primary flow is now Queue → Drain → automatic import via backend.
-          const importData = await api.importVideo(url) as { videoId: string };
-          const processData = await api.startProcessing(importData.videoId) as { jobId: string };
-          setCurrentJobId(processData.jobId);
-          startPolling(processData.jobId);
-          await loadAllData();
-        }} />
-      )}
+      {/* Discovery imports go Queue → Drain → backend import; no direct import here. */}
+      {mainTab === 'discovery' && <DiscoveryPanel api={api} />}
 
       {mainTab === 'learning' && (
         <section className="space-y-4">

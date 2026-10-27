@@ -17,19 +17,13 @@ You are a dedicated integration test runner for the Viral Clipper project. Your 
 
 Before running tests, detect which environment is available:
 
-### If Docker is available (preferred):
-```bash
-docker compose -f D:/VibeCoding/ViralVideo/docker-compose.yml run --rm backend ./mvnw verify 2>&1
-docker compose -f D:/VibeCoding/ViralVideo/docker-compose.yml run --rm ai-pipeline pytest --cov=. --cov-fail-under=95 -v 2>&1
-docker compose -f D:/VibeCoding/ViralVideo/docker-compose.yml run --rm frontend npm test 2>&1
-```
-
-### If native tools are available (fallback):
+All three suites run natively on the host (Python venv + Bun). Backend and
+frontend share one Bun workspace — run `bun install` at the repo root first if
+`node_modules/` is missing.
 
 Check in this order:
 1. Python (always available on host): `python -m pytest`
-2. Maven (`mvnw` or `mvn`): backend tests
-3. Node.js (`npm`): frontend tests
+2. Bun (`bun`): backend tests + type check, frontend tests
 
 #### AI Pipeline (Python — always runs on host):
 ```bash
@@ -37,20 +31,19 @@ python -m pytest D:/VibeCoding/ViralVideo/ai-pipeline/tests --cov=D:/VibeCoding/
 ```
 Capture: total tests, passed, failed, skipped, coverage %
 
-#### Backend (Java — requires Maven):
+#### Backend (Bun/TypeScript):
 ```bash
-cd D:/VibeCoding/ViralVideo/backend
-./mvnw verify 2>&1
-# OR
-mvn verify 2>&1
+cd D:/VibeCoding/ViralVideo/backend && bun test --coverage 2>&1
+cd D:/VibeCoding/ViralVideo/backend && bun run typecheck 2>&1
 ```
-If neither `mvnw` nor `mvn` is found: mark Backend as ❌ with reason "Maven not available on host — run via Docker"
+`bun test` enforces the 95% line/function threshold itself (bunfig.toml) and
+exits non-zero below it. Any `tsc` output = type errors → BLOCKED.
 
-#### Frontend (Node — requires npm):
+#### Frontend (Jest via Bun workspace):
 ```bash
-cd D:/VibeCoding/ViralVideo/frontend && npm test 2>&1
+cd D:/VibeCoding/ViralVideo/frontend && bun run test 2>&1
 ```
-If `npm` not found: mark Frontend as ❌ with reason "npm not available on host — run via Docker"
+If `bun` not found: mark Backend + Frontend as ❌ with reason "bun not available on host"
 
 ## Report Format
 

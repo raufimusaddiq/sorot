@@ -59,22 +59,23 @@ if (-not $PipelineOnly -and -not $UnitOnly) {
         if ($r.StatusCode -eq 200) { $backendUp = $true }
     } catch {}
 
+    # The static UI is served by the backend on the same port.
     $frontendUp = $false
     try {
-        $r = Invoke-WebRequest -Uri "http://localhost:3000" -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
+        $r = Invoke-WebRequest -Uri "http://localhost:8080/" -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
         if ($r.StatusCode -eq 200) { $frontendUp = $true }
     } catch {}
 
     if (-not $backendUp -or -not $frontendUp) {
         Write-Host "  [SKIP] Stack not running." -ForegroundColor Yellow
         if (-not $backendUp)  { Write-Host "         Backend not reachable at :8080" -ForegroundColor Yellow }
-        if (-not $frontendUp) { Write-Host "         Frontend not reachable at :3000" -ForegroundColor Yellow }
+        if (-not $frontendUp) { Write-Host "         UI not served at :8080 (static export missing?)" -ForegroundColor Yellow }
         Write-Host "         Run scripts\start.ps1 first, then re-run E2E." -ForegroundColor Yellow
     } else {
         # Push/Pop keeps CWD sane even if playwright bombs.
         Push-Location frontend
         try {
-            npx playwright test --reporter=list
+            bunx playwright test --reporter=list
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "`n  [FAIL] Browser E2E tests failed" -ForegroundColor Red
                 Write-Host "         Report: frontend\playwright-report\index.html" -ForegroundColor DarkGray

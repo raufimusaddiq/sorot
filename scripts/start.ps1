@@ -3,13 +3,15 @@
     Start Viral Clipper full stack (one command)
 .DESCRIPTION
     Builds Docker images with version tags, keeps last N versions,
-    cleans old images + build cache, then starts backend + frontend.
+    cleans old images + build cache, then starts the app. The backend image
+    serves the static UI and the API together on http://localhost:8080.
+.PARAMETER Dev
+    Also start the hot-reload Next.js dev UI on http://localhost:3000.
 #>
 
 param(
     [switch]$Build,
-    [switch]$FrontendOnly,
-    [switch]$BackendOnly,
+    [switch]$Dev,
     [int]$KeepN = 3
 )
 
@@ -85,8 +87,8 @@ Write-Host "=== Viral Clipper Startup ===" -ForegroundColor Cyan
 Write-Host "       Version: $VERSION | Keep last: $KeepN builds" -ForegroundColor DarkGray
 Write-Host ""
 
-if (-not $FrontendOnly) {
-    Write-Host "[1/5] Building backend image..." -ForegroundColor Yellow
+if ($true) {
+    Write-Host "[1/5] Building app image (API + UI + pipeline)..." -ForegroundColor Yellow
     $backendImage = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null | Select-String "viralvideo-backend"
 
     if ($Build -or -not $backendImage) {
@@ -96,8 +98,8 @@ if (-not $FrontendOnly) {
     }
 }
 
-if (-not $BackendOnly) {
-    Write-Host "[2/5] Building frontend image..." -ForegroundColor Yellow
+if ($Dev) {
+    Write-Host "[2/5] Building frontend dev image..." -ForegroundColor Yellow
     $frontendImage = docker images --format "{{.Repository}}:{{.Tag}}" 2>$null | Select-String "viralvideo-frontend"
 
     if ($Build -or -not $frontendImage) {
@@ -118,11 +120,11 @@ docker builder prune -f 2>$null | Out-Null
 Write-Host "       Cache pruned." -ForegroundColor Green
 
 Write-Host "[5/5] Starting services..." -ForegroundColor Yellow
-$services = @()
-if (-not $FrontendOnly) { $services += "backend" }
-if (-not $BackendOnly) { $services += "frontend" }
+$services = @("backend")
+$profileArgs = @()
+if ($Dev) { $services += "frontend"; $profileArgs = @("--profile", "dev") }
 
-$upResult = docker compose --env-file .env.docker up -d @services 2>&1
+$upResult = docker compose --env-file .env.docker @profileArgs up -d @services 2>&1
 $upExit = $LASTEXITCODE
 if ($upExit -ne 0) {
     Write-Host "       Docker compose up FAILED (exit code $upExit):" -ForegroundColor Red
@@ -133,8 +135,8 @@ if ($upExit -ne 0) {
 Write-Host ""
 Write-Host "=== Waiting for services ===" -ForegroundColor Yellow
 
-if (-not $FrontendOnly) {
-    Write-Host "       Backend: waiting for health check..." -NoNewline
+if ($true) {
+    Write-Host "       App: waiting for health check..." -NoNewline
     $retries = 30
     $healthy = $false
     while ($retries -gt 0) {
@@ -154,8 +156,8 @@ if (-not $FrontendOnly) {
     }
 }
 
-if (-not $BackendOnly) {
-    Write-Host "       Frontend: waiting for response..." -NoNewline
+if ($Dev) {
+    Write-Host "       Dev UI: waiting for response..." -NoNewline
     $retries = 20
     $ready = $false
     while ($retries -gt 0) {
@@ -177,9 +179,9 @@ if (-not $BackendOnly) {
 
 Write-Host ""
 Write-Host "=== Services Running ===" -ForegroundColor Green
-if (-not $FrontendOnly) { Write-Host "  Backend:  http://localhost:8080" -ForegroundColor Cyan }
-if (-not $BackendOnly)  { Write-Host "  Frontend: http://localhost:3000" -ForegroundColor Cyan }
-Write-Host "  API Docs: http://localhost:8080/api/health" -ForegroundColor DarkGray
+Write-Host "  App:      http://localhost:8080" -ForegroundColor Cyan
+if ($Dev) { Write-Host "  Dev UI:   http://localhost:3000 (hot reload)" -ForegroundColor Cyan }
+Write-Host "  Health:   http://localhost:8080/api/health" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Stop:     scripts\stop.ps1" -ForegroundColor DarkGray
 Write-Host "  Logs:     docker compose --env-file .env.docker logs -f" -ForegroundColor DarkGray

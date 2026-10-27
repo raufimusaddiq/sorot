@@ -65,6 +65,9 @@ class TestExtractVideoId:
 
 class TestNormalizeVideo:
     def test_basic_entry(self):
+        # Relative date: a hardcoded one ages past the < 999 h bound below.
+        from datetime import datetime, timedelta, timezone
+        upload = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y%m%d")
         entry = {
             "id": "abc123",
             "title": "Test Video Title",
@@ -72,7 +75,7 @@ class TestNormalizeVideo:
             "duration": 300,
             "channel": "TestChannel",
             "view_count": 15000,
-            "upload_date": "20260401",
+            "upload_date": upload,
             "description": "A test description",
         }
         result = normalize_video(entry)

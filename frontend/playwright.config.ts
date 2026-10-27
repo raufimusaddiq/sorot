@@ -8,7 +8,8 @@ export default defineConfig({
   retries: 1,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
-    baseURL: process.env.FRONTEND_URL || 'http://localhost:3000',
+    // App (static UI + API) on :8080; set FRONTEND_URL=http://localhost:3000 for `next dev`.
+    baseURL: process.env.FRONTEND_URL || 'http://localhost:8080',
     actionTimeout: 10_000,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
