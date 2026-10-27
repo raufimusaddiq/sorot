@@ -16,9 +16,9 @@ export const STAGE_LABELS: Record<string, string> = {
 };
 
 export const TIER_COLORS: Record<string, string> = {
-  PRIMARY: 'bg-success-tint text-success border-success/30',
-  BACKUP: 'bg-warning-tint text-warning border-warning/30',
-  SKIP: 'bg-error-tint text-error border-error/30',
+  PRIMARY: 'bg-success-tint text-fg',
+  BACKUP: 'bg-warning-tint text-fg',
+  SKIP: 'bg-surface-3 text-fg',
 };
 
 export const STAGE_ORDER = [

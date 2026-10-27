@@ -1,31 +1,89 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,700..900&family=IBM+Plex+Mono:wght@400;500;600;700&family=Pixelify+Sans:wght@400..700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Vercel Geist aesthetic: white surface, black text, blue primary accent.
-   Minimal, technical, pixel-precise. Borders do the work, not shadows. */
+/* Retro desktop × neo-brutalism: a dotted pink desktop, cream windows with
+   striped title bars, black 3px borders and hard offset shadows. Typewriter
+   body text, pixel labels, wide heavy headings. */
 
 :root {
   color-scheme: light;
-  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+  --font-sans: 'IBM Plex Mono', ui-monospace, 'Menlo', monospace;
+  --font-pixel: 'Pixelify Sans', ui-monospace, monospace;
+  --font-display: 'Archivo', system-ui, sans-serif;
 }
 
 body {
-  font-feature-settings: "ss01", "ss03", "cv11";
+  background-color: #FF9EC0;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.13) 1px, transparent 1.3px);
+  background-size: 5px 5px;
 }
 
 ::selection {
-  background-color: #0070F3;
-  color: #FFFFFF;
+  background-color: #FFD21F;
+  color: #000;
 }
 
 *:focus-visible {
-  outline: 2px solid #0070F3;
+  outline: 3px solid #2F4BFF;
   outline-offset: 2px;
-  border-radius: 2px;
+}
+
+@layer components {
+  /* A window: cream body, ink border, hard shadow. */
+  .win {
+    @apply bg-surface border-3 border-line rounded-card shadow-hard;
+  }
+  /* Title bar: close box, stripes, name, stripes. Colour comes from a bg-* class. */
+  .win-bar {
+    @apply flex items-center gap-2 h-8 px-2 border-b-3 border-line font-pixel text-[15px] rounded-t-[5px];
+  }
+  .win-bar .stripes {
+    @apply flex-1 h-[13px];
+    background: repeating-linear-gradient(0deg, #000 0 2px, transparent 2px 5px);
+  }
+  .win-bar .close {
+    @apply w-[17px] h-[17px] border-3 border-line bg-hot flex-none;
+  }
+  .heading {
+    font-family: var(--font-display);
+    font-stretch: 125%;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    line-height: 0.95;
+  }
+  .highlight {
+    @apply inline-block bg-sun border-3 border-line px-1.5;
+    transform: rotate(-2deg);
+  }
+  /* Buttons sink into their shadow when pressed. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 border-3 border-line rounded-md bg-surface-2 text-fg font-bold shadow-hard-sm px-3 py-1.5 text-xs transition-[transform,box-shadow] duration-75;
+  }
+  .btn:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: none;
+  }
+  .btn:disabled {
+    @apply bg-surface-3 text-subtle shadow-none cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply bg-hot text-white;
+  }
+  .field {
+    @apply bg-surface-2 border-3 border-line rounded-md px-3 py-2 text-sm text-fg;
+    box-shadow: inset 3px 3px 0 #EFE4D6;
+  }
+  .field:focus {
+    @apply outline-none;
+    background: #FFF7CC;
+  }
+  .sticker {
+    @apply inline-block border-3 border-line font-display font-black px-2.5 py-0.5 text-xs shadow-hard-sm;
+    font-stretch: 115%;
+  }
 }
 
 .line-clamp-2 {
@@ -42,11 +100,71 @@ body {
   overflow: hidden;
 }
 
+/* Retro scrollbars: striped track, yellow thumb. */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: #EAEAEA transparent;
+  scrollbar-width: auto;
+  scrollbar-color: #FFD21F #EFE4D6;
 }
-*::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb { background: #EAEAEA; border-radius: 4px; }
-*::-webkit-scrollbar-thumb:hover { background: #D4D4D4; }
+*::-webkit-scrollbar { width: 16px; height: 16px; }
+*::-webkit-scrollbar-track {
+  background: repeating-linear-gradient(45deg, #EFE4D6 0 2px, #fff 2px 4px);
+  border-left: 3px solid #000;
+}
+*::-webkit-scrollbar-thumb { background: #FFD21F; border: 3px solid #000; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------- Motion ----------
+   Windows pop open like a retro desktop, the headline sticker slams in once,
+   progress stripes march, the current pipeline step blinks. Everything else
+   moves only when you touch it. All of it is off under reduced motion (above). */
+
+@keyframes win-open {
+  from { opacity: 0; transform: translateY(10px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+.win { animation: win-open 0.32s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+
+@keyframes slam {
+  0% { opacity: 0; transform: rotate(-14deg) scale(1.8); }
+  70% { opacity: 1; transform: rotate(1deg) scale(0.95); }
+  100% { transform: rotate(-2deg) scale(1); }
+}
+.highlight { animation: slam 0.45s cubic-bezier(0.3, 1.4, 0.5, 1) 0.25s both; }
+
+.progress-stripes {
+  background: repeating-linear-gradient(-45deg, #FFD21F 0 10px, #000 10px 14px);
+  background-size: 28px 28px;
+  animation: march 0.9s linear infinite;
+}
+@keyframes march { to { background-position: 28px 0; } }
+
+@keyframes blink { 50% { background-color: #FBF3EA; } }
+.stage-blink { animation: blink 1s steps(1) infinite; }
+
+@keyframes pulse-dot { 50% { transform: scale(1.5); } }
+.pulse-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+
+/* Cards lift toward you on hover; their sticker wobbles. */
+[data-clip-card] { transition: transform 0.12s, box-shadow 0.12s; }
+[data-clip-card]:hover { transform: translate(-2px, -2px); box-shadow: 8px 8px 0 #000; }
+@keyframes wobble {
+  0%, 100% { transform: rotate(6deg); }
+  30% { transform: rotate(-6deg) scale(1.08); }
+  60% { transform: rotate(10deg); }
+}
+[data-clip-card]:hover .sticker { animation: wobble 0.5s ease-in-out; }
+
+/* Dock icons hop. */
+@keyframes hop {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-7px); }
+  70% { transform: translateY(1px); }
+}
+.dock-icon { transition: transform 0.1s; }
+button:hover > .dock-icon, button[aria-current] > .dock-icon { animation: hop 0.4s ease-out; }
+
+.btn:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 #000; }
+.btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }

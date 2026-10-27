@@ -28,15 +28,15 @@ export const REFRAME_LABELS: Record<string, string> = {
   blur: 'Full frame + blur',
 };
 
-const label = 'text-xs text-muted font-medium block mb-1';
-const field = 'w-full bg-surface-2 border border-line rounded px-2 py-1.5 text-sm text-fg';
+const label = 'font-pixel text-xs text-fg block mb-1';
+const field = 'field w-full px-2 py-1.5';
 
 export function Toggle({ checked, onChange, children }: {
   checked: boolean; onChange: (v: boolean) => void; children: React.ReactNode;
 }) {
   return (
     <label className="flex items-center gap-2 text-sm text-fg cursor-pointer">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-accent" />
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="w-4 h-4 accent-accent" />
       {children}
     </label>
   );
@@ -54,14 +54,14 @@ export function MusicPicker({ choices, bgm, volume, onChange }: {
         {choices.music.map((m) => <option key={m} value={m}>{m}</option>)}
       </select>
       {choices.music.length === 0 && (
-        <p className="text-xs text-subtle mt-1">Put .mp3/.m4a files in <span className="font-mono">data/music</span> to use them.</p>
+        <p className="text-xs text-subtle mt-1">Put .mp3/.m4a files in <span className="font-pixel">data/music</span> to use them.</p>
       )}
       {bgm && (
         <label className="text-xs text-muted flex items-center gap-2 mt-2">
           Volume
           <input type="range" aria-label="Music volume" min={0} max={0.5} step={0.01} value={volume}
             onChange={(e) => onChange({ bgmVolume: Number(e.target.value) })} className="flex-1 accent-accent" />
-          <span className="font-mono w-10 text-right">{Math.round(volume * 100)}%</span>
+          <span className="font-pixel w-10 text-right">{Math.round(volume * 100)}%</span>
         </label>
       )}
     </div>
@@ -81,11 +81,11 @@ export function ImportOptions({ value, onChange, choices, disabled }: {
   return (
     <div className="mt-3">
       <button type="button" onClick={() => setOpen(!open)} disabled={disabled}
-        className="text-xs text-muted hover:text-fg font-medium" aria-expanded={open}>
+        className="btn mt-1" aria-expanded={open}>
         {open ? '▾' : '▸'} Options
       </button>
       {open && (
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 bg-surface-2/40 border border-line rounded p-4">
+        <div className="mt-3 grid grid-cols-1 gap-4 bg-surface-2 border-3 border-line rounded-md p-4">
           <div>
             <span className={label}>Caption style</span>
             <select aria-label="Caption style" value={o.style} onChange={(e) => set({ style: e.target.value })} className={field}>

@@ -8,17 +8,26 @@ import type {
   JobDetail, ClipDetail, VideoGroup, EditChoices,
 } from '@/types';
 import {
-  STAGE_LABELS, TIER_COLORS, STAGE_ORDER, STATUS_COLORS,
+  STAGE_LABELS, STAGE_ORDER, STATUS_COLORS,
   formatTime, formatDuration, formatDurationSec, timeAgo, tierLabel, videoLabel,
 } from '@/lib/ui-utils';
 import { ProgressBar, ScoreBadge, TranscriptView } from '@/components/progress';
 import { FALLBACK_CHOICES, ImportOptions, type ImportSettings } from '@/components/ImportOptions';
 import { ClipEditor } from '@/components/ClipEditor';
+import { Window } from '@/components/Window';
+import { Dock, ICONS, MenuBar } from '@/components/Desktop';
 
 // Adaptive polling bounds for job status — start fast so stage transitions
 // feel snappy, back off so a 6-min RENDER stage doesn't fire 180 requests.
 const POLL_MIN_MS = 1000;
 const POLL_MAX_MS = 10000;
+
+/** Tier sticker fills (black text on loud colour). */
+const TIER_STICKERS: Record<string, string> = {
+  PRIMARY: 'bg-mint',
+  BACKUP: 'bg-sun',
+  SKIP: 'bg-surface-3',
+};
 
 // Kept-in-file components: ClipCard + DiscoveryPanel are deeply coupled to
 // Home's state and refresh handlers; their extraction is a separate PR.
@@ -87,108 +96,106 @@ function ClipCard({
   };
 
   return (
-    <div className={`bg-surface-2 rounded-lg overflow-hidden border transition-colors ${
-      selected ? 'border-accent ring-1 ring-accent/30' : 'border-line hover:border-line'
+    <div data-clip-card className={`relative rounded-card border-3 border-line shadow-hard ${
+      selected ? 'bg-accent-tint' : 'bg-surface'
     }`}>
+      <span className={`sticker absolute -top-3 -right-2 z-10 rotate-6 ${TIER_STICKERS[clip.tier] || 'bg-surface-3'}`}>
+        {tierLabel(clip.tier)}
+      </span>
       <div className="p-4">
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex items-end justify-between gap-2 mb-3 pr-20">
           <div className="flex items-center gap-2">
             {selectable && (
               <button
                 onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
-                className={`w-5 h-5 rounded flex items-center justify-center border transition-colors flex-shrink-0 ${
-                  selected
-                    ? 'bg-accent border-accent text-white'
-                    : 'bg-surface border-line hover:border-fg/20'
+                className={`w-6 h-6 rounded flex items-center justify-center border-3 border-line flex-shrink-0 ${
+                  selected ? 'bg-sun' : 'bg-surface-2'
                 }`}
                 aria-label="Select clip"
               >
                 {selected && (
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="square" strokeWidth={4} d="M5 13l4 4L19 7" />
                   </svg>
                 )}
               </button>
             )}
-            <span className="text-lg font-bold text-fg">#{clip.rankPos || '-'}</span>
-            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${TIER_COLORS[clip.tier] || ''}`}>
-              {tierLabel(clip.tier)}
-            </span>
+            <span className="font-pixel text-lg text-fg">#{clip.rankPos || '-'}</span>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-fg">{clip.score ? (clip.score * 100).toFixed(0) : '-'}</div>
-            <div className="text-xs text-subtle">score</div>
+          <div className="whitespace-nowrap leading-none" title="Score">
+            <span className="heading text-3xl">{clip.score ? (clip.score * 100).toFixed(0) : '-'}</span>
+            <span className="font-pixel text-xs text-muted">/100</span>
           </div>
         </div>
         {clip.title && (
-          <p className="text-sm font-medium text-fg mb-1 line-clamp-2">{clip.title}</p>
+          <p className="text-sm font-bold text-fg mb-1 line-clamp-2">{clip.title}</p>
         )}
-        <div className="flex gap-4 text-xs text-muted mb-3">
+        <div className="flex gap-3 font-pixel text-xs text-muted mb-3">
           <span>{formatTime(clip.startTime)} &#8594; {formatTime(clip.endTime)}</span>
           <span>&#8226;</span>
           <span>{formatDuration(clip.durationSec)}</span>
         </div>
         {clip.textContent && (
-          <p className="text-sm text-fg/85 line-clamp-3 mb-3">{clip.textContent}</p>
+          <p className="text-xs text-fg/80 line-clamp-3 mb-4 bg-surface-2 border-2 border-line rounded p-2">{clip.textContent}</p>
         )}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {clip.renderPath && (
-            <button onClick={onPreview} className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
-              previewing ? 'bg-accent text-white' : 'bg-surface-3 text-fg/85 hover:bg-surface-3'
-            }`}>{previewing ? 'Playing...' : 'Preview'}</button>
+            <button onClick={onPreview} className={`btn flex-1 ${previewing ? 'bg-accent text-white' : 'bg-aqua'}`}>
+              {previewing ? 'Playing...' : 'Preview'}
+            </button>
           )}
           {score && (
-            <button onClick={() => setShowScore(!showScore)} className="flex-1 py-1.5 rounded text-xs font-medium bg-surface-3 text-fg/85 hover:bg-surface-3 transition-colors">
+            <button onClick={() => setShowScore(!showScore)} className="btn flex-1">
               {showScore ? 'Hide' : 'Score'}
             </button>
           )}
           {(clip.title || clip.description) && (
-            <button onClick={() => setShowMeta(!showMeta)} className="flex-1 py-1.5 rounded text-xs font-medium bg-accent text-fg hover:bg-accent/90 transition-colors">
+            <button onClick={() => setShowMeta(!showMeta)} className="btn flex-1 bg-lilac">
               {showMeta ? 'Hide' : 'Copy'}
             </button>
           )}
           {clip.exportPath && (
-            <a href={api.getExportUrl(clip.id, clip.updatedAt)} className="flex-1 py-1.5 rounded text-xs font-medium bg-success text-white hover:bg-success/90 transition-colors text-center">Download</a>
+            <a href={api.getExportUrl(clip.id, clip.updatedAt)} className="btn flex-1 bg-mint">Download</a>
           )}
           {!clip.exportPath && clip.renderStatus === 'COMPLETED' && (
-            <button onClick={onExport} className="flex-1 py-1.5 rounded text-xs font-medium bg-surface-3 text-fg/85 hover:bg-surface-3 transition-colors">Export</button>
+            <button onClick={onExport} className="btn btn-primary flex-1">Export</button>
           )}
-          <button onClick={onEdit} className="py-1.5 px-2 rounded text-xs font-medium bg-surface-3 text-fg/85 hover:bg-surface-3 transition-colors">
+          <button onClick={onEdit} className="btn">
             Edit
           </button>
-          <button onClick={() => setShowFeedback(!showFeedback)} className="py-1.5 px-2 rounded text-xs font-medium bg-surface-3 text-muted hover:bg-surface-3 transition-colors">
+          <button onClick={() => setShowFeedback(!showFeedback)} className="btn text-muted">
             {viralScore !== null ? `${(viralScore * 100).toFixed(0)}%` : 'FB'}
           </button>
         </div>
       </div>
       {showMeta && (clip.title || clip.description) && (
-        <div className="border-t border-line px-4 py-3 space-y-2">
+        <div className="border-t-3 border-line px-4 py-3 space-y-2">
           {clip.title && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-subtle font-medium">Title</span>
-                <button onClick={() => handleCopy(clip.title!, 'title')} className="text-xs text-accent hover:text-accent/80">
+                <button onClick={() => handleCopy(clip.title!, 'title')} className="font-pixel text-xs text-accent underline">
                   {copied === 'title' ? 'Copied!' : 'Copy'}
                 </button>
               </div>
-              <p className="text-sm text-fg bg-bg rounded p-2">{clip.title}</p>
+              <p className="text-sm text-fg bg-surface-2 border-2 border-line rounded p-2">{clip.title}</p>
             </div>
           )}
           {clip.description && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-subtle font-medium">Description</span>
-                <button onClick={() => handleCopy(clip.description!, 'desc')} className="text-xs text-accent hover:text-accent/80">
+                <button onClick={() => handleCopy(clip.description!, 'desc')} className="font-pixel text-xs text-accent underline">
                   {copied === 'desc' ? 'Copied!' : 'Copy'}
                 </button>
               </div>
-              <p className="text-sm text-fg/85 bg-bg rounded p-2 whitespace-pre-wrap">{clip.description}</p>
+              <p className="text-sm text-fg/85 bg-surface-2 border-2 border-line rounded p-2 whitespace-pre-wrap">{clip.description}</p>
             </div>
           )}
         </div>
       )}
       {showFeedback && (
-        <div className="border-t border-line px-4 py-3 space-y-3">
+        <div className="border-t-3 border-line px-4 py-3 space-y-3">
           <div className="space-y-1">
             <label className="text-xs text-muted font-medium block">
               Tanggal & jam upload
@@ -199,7 +206,7 @@ function ClipCard({
               value={feedback.postedAt}
               onChange={e => setFeedback(f => ({ ...f, postedAt: e.target.value }))}
               max={new Date(Date.now() - 60000).toISOString().slice(0, 16)}
-              className="bg-surface border border-line rounded px-2 py-1.5 text-xs text-fg w-full"
+              className="field px-2 py-1.5 text-xs w-full"
             />
             <p className="text-xs text-subtle">
               Viral score dihitung per-hari (velocity), jadi durasi di platform wajib diisi.
@@ -209,29 +216,29 @@ function ClipCard({
             <span className="text-xs text-muted font-medium block">Metrik saat ini</span>
             <div className="grid grid-cols-5 gap-1">
               <input type="number" placeholder="Views" value={feedback.views} onChange={e => setFeedback(f => ({...f, views: e.target.value}))}
-                className="bg-surface border border-line rounded px-2 py-1 text-xs text-fg w-full" />
+                className="field px-2 py-1 text-xs w-full" />
               <input type="number" placeholder="Likes" value={feedback.likes} onChange={e => setFeedback(f => ({...f, likes: e.target.value}))}
-                className="bg-surface border border-line rounded px-2 py-1 text-xs text-fg w-full" />
+                className="field px-2 py-1 text-xs w-full" />
               <input type="number" placeholder="Comments" value={feedback.comments} onChange={e => setFeedback(f => ({...f, comments: e.target.value}))}
-                className="bg-surface border border-line rounded px-2 py-1 text-xs text-fg w-full" />
+                className="field px-2 py-1 text-xs w-full" />
               <input type="number" placeholder="Shares" value={feedback.shares} onChange={e => setFeedback(f => ({...f, shares: e.target.value}))}
-                className="bg-surface border border-line rounded px-2 py-1 text-xs text-fg w-full" />
+                className="field px-2 py-1 text-xs w-full" />
               <input type="number" placeholder="Saves" value={feedback.saves} onChange={e => setFeedback(f => ({...f, saves: e.target.value}))}
-                className="bg-surface border border-line rounded px-2 py-1 text-xs text-fg w-full" />
+                className="field px-2 py-1 text-xs w-full" />
             </div>
           </div>
           {feedbackError && (
-            <p className="text-xs text-error bg-error-tint border border-error/30 rounded px-2 py-1">
+            <p className="text-xs text-fg font-semibold bg-error-tint border-2 border-line rounded px-2 py-1">
               {feedbackError}
             </p>
           )}
           <div className="flex items-center gap-2">
             <button onClick={handleSubmitFeedback} disabled={submitting}
-              className="px-3 py-1.5 rounded text-xs font-medium bg-accent text-white hover:bg-accent/90 disabled:bg-surface-3 disabled:text-subtle transition-colors">
+              className="btn btn-primary">
               {submitting ? 'Saving...' : 'Submit feedback'}
             </button>
             {viralScore !== null && (
-              <span className="text-xs font-mono text-success">
+              <span className="text-xs font-pixel text-success">
                 Viral Score: {(viralScore * 100).toFixed(1)}%
               </span>
             )}
@@ -239,7 +246,7 @@ function ClipCard({
         </div>
       )}
       {showScore && score && (
-        <div className="border-t border-line px-4 py-3 space-y-1">
+        <div className="border-t-3 border-line px-4 py-3 space-y-1">
           <ScoreBadge score={score.hookStrength} label="Hook" />
           <ScoreBadge score={score.keywordTrigger} label="Keywords" />
           <ScoreBadge score={score.novelty} label="Novelty" />
@@ -250,7 +257,7 @@ function ClipCard({
           <ScoreBadge score={score.facePresence} label="Face" />
           <ScoreBadge score={score.sceneChange} label="Scenes" />
           <ScoreBadge score={score.topicFit} label="Topic Fit" />
-          <div className="border-t border-line pt-1 mt-1">
+          <div className="border-t-2 border-line pt-1 mt-1">
             <div className="flex justify-between text-xs">
               <span className="text-success">Boost +{(score.boostTotal * 100).toFixed(0)}%</span>
               <span className="text-error">Penalty -{(score.penaltyTotal * 100).toFixed(0)}%</span>
@@ -418,181 +425,181 @@ function DiscoveryPanel({ api }: { api: ApiClient }) {
   const newCount = candidates.filter(c => c.status === 'NEW').length;
 
   return (
-    <div className="space-y-4">
-      <div className="bg-surface rounded-card p-6 border border-line">
-        <div className="flex gap-2 mb-4">
+    <div className="space-y-8">
+      <Window title="Discover" bar="bg-lilac" right={autoRun?.status === 'RUNNING' ? 'researching…' : undefined}>
+        <div className="flex gap-2 mb-4 flex-wrap">
           {(['auto', 'search', 'trending', 'channel'] as DiscoveryMode[]).map(m => (
-            <button key={m} onClick={() => setMode(m)} className={`px-4 py-2 rounded-card text-sm font-medium transition-colors border ${
-              mode === m ? 'bg-accent text-white border-accent' : 'bg-surface-2 text-muted border-line hover:bg-surface-3'
+            <button key={m} onClick={() => setMode(m)} className={`btn text-sm ${
+              mode === m ? 'bg-accent text-white' : ''
             }`}>{m === 'auto' ? '✨ Auto' : m.charAt(0).toUpperCase() + m.slice(1)}</button>
           ))}
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-col sm:flex-row">
           {mode === 'auto' && (
             <input type="text" value={goal} onChange={e => setGoal(e.target.value)}
               placeholder="Optional focus (e.g. drama artis, politik, podcast bisnis)…"
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              className="flex-1 bg-surface-2 border border-line rounded-card px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+              className="field flex-1" />
           )}
           {mode === 'search' && (
             <input type="text" value={query} onChange={e => setQuery(e.target.value)}
               placeholder="Search keywords (e.g. rahasia penting indonesia)…"
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              className="flex-1 bg-surface-2 border border-line rounded-card px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+              className="field flex-1" />
           )}
           {mode === 'channel' && (
             <input type="text" value={channelUrl} onChange={e => setChannelUrl(e.target.value)}
               placeholder="YouTube channel URL (e.g. https://youtube.com/@channel)"
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
-              className="flex-1 bg-surface-2 border border-line rounded-card px-3 py-2 text-sm focus:outline-none focus:border-accent" />
+              className="field flex-1" />
           )}
           {mode === 'trending' && (
             <div className="flex-1 text-sm text-muted py-2">Fetches current Indonesian trending videos</div>
           )}
           <button onClick={handleSearch} disabled={loading || (mode === 'auto' && autoRun?.status === 'RUNNING')}
-            className="px-6 bg-accent hover:bg-accent-soft disabled:bg-surface-3 disabled:text-subtle text-white rounded-card py-2 text-sm font-medium transition-colors whitespace-nowrap">
+            className="btn btn-primary px-6 py-2 text-sm whitespace-nowrap">
             {loading ? 'Searching…' : mode !== 'auto' ? 'Discover' : autoRun?.status === 'RUNNING' ? 'Researching…' : 'Auto-discover'}
           </button>
         </div>
-        {error && <p className="text-error text-xs mt-2">{error}</p>}
+        {error && <p className="text-error text-xs font-semibold mt-2">{error}</p>}
         {mode === 'auto' && autoRun && (
-          <div className="mt-3 text-xs space-y-1" data-testid="auto-run">
+          <div className="mt-4 text-xs space-y-1" data-testid="auto-run">
             {autoRun.status === 'DONE' && (
-              <p className="text-fg">
+              <p className="text-fg font-semibold">
                 {autoRun.mode === 'agent' ? `Picked ${autoRun.count} by ${autoRun.model}` : `Picked ${autoRun.count} by the algorithm`}
-                {autoRun.mode === 'algorithm' && autoRun.llmError && <span className="text-subtle"> — {autoRun.llmError}</span>}
+                {autoRun.mode === 'algorithm' && autoRun.llmError && <span className="text-muted font-normal"> — {autoRun.llmError}</span>}
               </p>
             )}
             {autoRun.notes && <p className="text-muted">Trend: {autoRun.notes}</p>}
-            <ul className="font-mono text-subtle space-y-0.5">
-              {autoRun.steps.slice(-8).map((s, i) => (
-                <li key={i}>{s.tool} {String(s.args.query ?? s.args.video_id ?? s.args.channel ?? '')} → {s.result}</li>
-              ))}
-            </ul>
+            {autoRun.steps.length > 0 && (
+              <ul className="font-pixel bg-[#1D2B1D] text-[#9CFF9C] border-3 border-line rounded-md px-3 py-2 space-y-0.5">
+                {autoRun.steps.slice(-8).map((s, i) => (
+                  <li key={i}>{s.tool} {String(s.args.query ?? s.args.video_id ?? s.args.channel ?? '')} → {s.result}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
-        <p className="text-xs text-subtle mt-3">
+        <p className="text-xs text-muted mt-4">
           {mode === 'auto'
             ? 'Auto researches what is trending (web + YouTube), reads the whole captions of promising videos and picks the ones worth clipping, with a reason for each. It uses the LLM when one is configured, otherwise the algorithm.'
             : <>Results persist across refreshes. Top candidates are scored from their whole captions in the background —
-              check back in a few seconds for a <span className="font-mono text-accent">predicted</span> score that reflects the
+              check back in a few seconds for a <span className="font-pixel text-accent">predicted</span> score that reflects the
               actual video content, not just the title.</>}
         </p>
-      </div>
+      </Window>
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex gap-1 p-1 bg-surface rounded-card border border-line">
-          {(['ACTIVE', 'NEW', 'QUEUED', 'IMPORTED', 'SKIPPED'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
-                filter === f ? 'bg-accent text-white' : 'text-muted hover:text-fg'
-              }`}>
-              {f === 'ACTIVE' ? `All (${newCount + queuedCount})` : f}
+      <Window title="Candidates" bar="bg-aqua" right={`${candidates.length} found`} bodyClassName="">
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 flex-wrap px-4 py-3 border-b-3 border-line">
+          <div className="flex gap-1 flex-wrap">
+            {(['ACTIVE', 'NEW', 'QUEUED', 'IMPORTED', 'SKIPPED'] as const).map(f => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={`px-2.5 py-0.5 rounded-full border-2 border-line text-xs font-semibold ${
+                  filter === f ? 'bg-fg text-sun' : 'bg-surface-2 text-fg hover:bg-surface-3'
+                }`}>
+                {f === 'ACTIVE' ? `All (${newCount + queuedCount})` : f}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1" />
+          {selected.size > 0 && (
+            <button onClick={handleQueueSelected} className="btn bg-accent text-white">
+              Queue {selected.size} selected
             </button>
-          ))}
+          )}
+          {queuedCount > 0 && (
+            <button onClick={handleDrain} disabled={draining} className="btn btn-primary">
+              {draining ? 'Processing…' : `Process queue (${queuedCount})`}
+            </button>
+          )}
         </div>
-        <div className="flex-1" />
-        {selected.size > 0 && (
-          <button onClick={handleQueueSelected}
-            className="px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-card hover:bg-accent-soft transition-colors">
-            Queue {selected.size} selected
-          </button>
-        )}
-        {queuedCount > 0 && (
-          <button onClick={handleDrain} disabled={draining}
-            className="px-3 py-1.5 text-xs font-medium bg-success text-white rounded-card hover:opacity-90 disabled:bg-surface-3 transition-colors">
-            {draining ? 'Processing…' : `Process queue (${queuedCount})`}
-          </button>
-        )}
-      </div>
 
-      {candidates.length === 0 && (
-        <div className="text-center py-8 text-subtle text-sm border border-line rounded-card bg-surface">
-          {filter === 'ACTIVE'
-            ? 'No candidates yet. Run a search above to populate.'
-            : `No ${filter.toLowerCase()} candidates.`}
-        </div>
-      )}
+        {candidates.length === 0 && (
+          <div className="text-center py-10 text-muted text-sm">
+            {filter === 'ACTIVE'
+              ? 'No candidates yet. Run a search above to populate.'
+              : `No ${filter.toLowerCase()} candidates.`}
+          </div>
+        )}
 
-      <div className="space-y-2">
-        {candidates.map(video => {
-          const score = video.predictedScore ?? video.relevanceScore ?? 0;
-          const hasPredicted = video.predictedScore !== null;
-          const scoreColor = score >= 0.6 ? 'text-success' : score >= 0.3 ? 'text-warning' : 'text-subtle';
-          const isImported = video.status === 'IMPORTED';
-          const isSkipped = video.status === 'SKIPPED';
-          const dim = isImported || isSkipped;
-          const isSelected = selected.has(video.id);
-          const canSelect = video.status === 'NEW';
-          return (
-            <div key={video.id}
-              className={`rounded-card p-4 border flex items-start gap-3 transition-colors ${
-                isSelected ? 'bg-accent-tint border-accent' : 'bg-surface border-line'
-              } ${dim ? 'opacity-60' : ''}`}>
-              {canSelect ? (
-                <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(video.id)}
-                  className="mt-1 accent-accent" />
-              ) : (
-                <div className="w-4" />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2">
-                  <p className="text-sm font-medium text-fg truncate">{video.title || video.youtubeId}</p>
-                  <span className={`text-[10px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border ${
-                    video.status === 'NEW' ? 'text-accent bg-accent-tint border-accent/30' :
-                    video.status === 'QUEUED' ? 'text-warning bg-warning-tint border-warning/30' :
-                    video.status === 'IMPORTED' ? 'text-success bg-success-tint border-success/30' :
-                    video.status === 'SKIPPED' ? 'text-subtle bg-surface-2 border-line' :
-                    'text-error bg-error-tint border-error/30'
-                  }`}>{video.status}</span>
-                </div>
-                <div className="flex items-center gap-3 mt-1 text-xs text-muted flex-wrap">
-                  {video.channel && <span>{video.channel}</span>}
-                  {video.duration > 0 && <span>{formatDurationSec(video.duration)}</span>}
-                  {video.viewCount && video.viewCount > 0 && (
-                    <span>{(video.viewCount / 1000).toFixed(1)}K views</span>
-                  )}
-                  {video.sourceMode && <span aria-hidden>&#8226;</span>}
-                  {video.sourceMode && <span className="font-mono text-subtle">{video.sourceMode}</span>}
-                  {video.sourceMode === 'auto' && video.pickedBy && (
-                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-                      video.pickedBy === 'algorithm' ? 'text-subtle bg-surface-2 border-line' : 'text-accent bg-accent-tint border-accent/30'
-                    }`} title={video.pickedBy === 'algorithm' ? 'Picked by the algorithm (no LLM)' : `Picked by the LLM agent (${video.pickedBy})`}>
-                      {video.pickedBy === 'algorithm' ? 'algorithm' : `🤖 ${video.pickedBy}`}
-                    </span>
-                  )}
-                </div>
-                {video.why && video.why.length > 0 && (
-                  <ul className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] text-muted">
-                    {video.why.map(w => <li key={w} className="px-1.5 py-0.5 rounded bg-surface-2 border border-line">{w}</li>)}
-                  </ul>
+        <div>
+          {candidates.map(video => {
+            const score = video.predictedScore ?? video.relevanceScore ?? 0;
+            const hasPredicted = video.predictedScore !== null;
+            const scoreColor = score >= 0.6 ? 'text-success' : score >= 0.3 ? 'text-warning' : 'text-subtle';
+            const isImported = video.status === 'IMPORTED';
+            const isSkipped = video.status === 'SKIPPED';
+            const dim = isImported || isSkipped;
+            const isSelected = selected.has(video.id);
+            const canSelect = video.status === 'NEW';
+            return (
+              <div key={video.id} data-candidate
+                className={`px-4 py-3 border-b-2 border-dashed border-line last:border-b-0 flex items-start gap-3 ${
+                  isSelected ? 'bg-accent-tint' : ''
+                } ${dim ? 'opacity-60' : ''}`}>
+                {canSelect ? (
+                  <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(video.id)}
+                    className="mt-1 w-4 h-4 accent-accent" />
+                ) : (
+                  <div className="w-4" />
                 )}
-              </div>
-              <div className="flex items-center gap-3 flex-shrink-0">
-                <div className="text-right">
-                  <div className={`text-sm font-mono font-semibold ${scoreColor}`}>
-                    {(score * 100).toFixed(0)}%
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-sm font-bold text-fg truncate">{video.title || video.youtubeId}</p>
+                    <span className={`font-pixel text-[11px] px-1.5 rounded border-2 border-line ${
+                      video.status === 'NEW' ? 'text-accent bg-accent-tint' :
+                      video.status === 'QUEUED' ? 'text-warning bg-warning-tint' :
+                      video.status === 'IMPORTED' ? 'text-success bg-success-tint' :
+                      video.status === 'SKIPPED' ? 'text-subtle bg-surface-3' :
+                      'text-error bg-error-tint'
+                    }`}>{video.status}</span>
                   </div>
-                  <div className="text-[10px] text-subtle">
-                    {hasPredicted ? 'predicted' : video.transcriptScore === null ? 'enriching…' : 'relevance'}
+                  <div className="flex items-center gap-3 mt-1 text-xs text-muted flex-wrap">
+                    {video.channel && <span>{video.channel}</span>}
+                    {video.duration > 0 && <span>{formatDurationSec(video.duration)}</span>}
+                    {video.viewCount && video.viewCount > 0 && (
+                      <span>{(video.viewCount / 1000).toFixed(1)}K views</span>
+                    )}
+                    {video.sourceMode && <span aria-hidden>&#8226;</span>}
+                    {video.sourceMode && <span className="font-pixel text-subtle">{video.sourceMode}</span>}
+                    {video.sourceMode === 'auto' && video.pickedBy && (
+                      <span className={`font-pixel text-[11px] px-2 rounded-full border-2 border-line text-fg ${
+                        video.pickedBy === 'algorithm' ? 'bg-surface-3' : 'bg-lilac'
+                      }`} title={video.pickedBy === 'algorithm' ? 'Picked by the algorithm (no LLM)' : `Picked by the LLM agent (${video.pickedBy})`}>
+                        {video.pickedBy === 'algorithm' ? 'algorithm' : `🤖 ${video.pickedBy}`}
+                      </span>
+                    )}
                   </div>
+                  {video.why && video.why.length > 0 && (
+                    <ul className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-fg">
+                      {video.why.map(w => <li key={w} className="px-2 py-0.5 rounded-full bg-surface-2 border-2 border-line">{w}</li>)}
+                    </ul>
+                  )}
                 </div>
-                <a href={video.url} target="_blank" rel="noreferrer"
-                  className="text-xs text-subtle hover:text-accent underline">YT</a>
-                {video.status === 'SKIPPED' ? (
-                  <button onClick={() => handleUnskip(video.id)}
-                    className="px-2 py-1 text-xs text-muted hover:text-fg">Unskip</button>
-                ) : video.status === 'NEW' ? (
-                  <button onClick={() => handleSkip(video.id)}
-                    className="px-2 py-1 text-xs text-subtle hover:text-error transition-colors">Skip</button>
-                ) : null}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="text-right">
+                    <div className={`font-pixel text-xl leading-none ${scoreColor}`}>
+                      {(score * 100).toFixed(0)}%
+                    </div>
+                    <div className="text-[10px] font-semibold text-muted">
+                      {hasPredicted ? 'predicted' : video.transcriptScore === null ? 'enriching…' : 'relevance'}
+                    </div>
+                  </div>
+                  <a href={video.url} target="_blank" rel="noreferrer"
+                    className="btn px-2 py-1 bg-tang">YT</a>
+                  {video.status === 'SKIPPED' ? (
+                    <button onClick={() => handleUnskip(video.id)} className="btn px-2 py-1">Unskip</button>
+                  ) : video.status === 'NEW' ? (
+                    <button onClick={() => handleSkip(video.id)} className="btn px-2 py-1">Skip</button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </Window>
     </div>
   );
 }
@@ -863,27 +870,20 @@ export default function Home() {
   const isActiveJob = currentJobId !== null;
 
   return (
-    <main className="max-w-5xl mx-auto px-6 py-12">
-      <header className="mb-10 border-b border-line pb-6">
-        <h1 className="text-3xl font-bold tracking-tight text-fg mb-1">
-          Sorot
-        </h1>
-        <p className="text-muted text-sm">
-          Long videos → vertical clips with word-timed captions, for Indonesian short-form
-        </p>
-      </header>
-
+    <div className="min-h-screen pb-32">
+      <MenuBar tagline="Long videos → vertical clips with word-timed captions, for Indonesian short-form" />
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-16">
       {globalError && (
-        <div className="mb-6 rounded-card border border-error/30 bg-error-tint px-4 py-3 text-sm text-error flex items-start gap-3">
+        <div role="alert" className="mb-6 rounded-card border-3 border-line bg-error-tint shadow-hard px-4 py-3 text-sm text-fg flex items-start gap-3">
           <div className="flex-1">
-            <span className="font-mono text-xs uppercase tracking-wider opacity-70">
+            <span className="font-pixel text-xs">
               {globalError.ctx}
             </span>
-            <p className="mt-0.5">{globalError.msg}</p>
+            <p className="mt-0.5 font-semibold">{globalError.msg}</p>
           </div>
           <button
             onClick={() => setGlobalError(null)}
-            className="text-error hover:text-error/70 leading-none text-xl"
+            className="btn px-2 py-0 text-base leading-6"
             aria-label="Dismiss error"
           >
             ×
@@ -891,76 +891,51 @@ export default function Home() {
         </div>
       )}
 
-      <nav className="flex gap-1 mb-8 border-b border-line">
-        {([
-          { key: 'import' as const, label: 'Import & Clips' },
-          { key: 'discovery' as const, label: 'Discover' },
-          {
-            key: 'learning' as const,
-            label: `Learning${
-              learningStats && learningStats.with_actual_scores > 0
-                ? ` (${learningStats.with_actual_scores})`
-                : ''
-            }`,
-          },
-        ]).map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setMainTab(tab.key)}
-            className={`px-5 py-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              mainTab === tab.key
-                ? 'text-fg border-accent'
-                : 'text-muted border-transparent hover:text-fg'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
       {mainTab === 'import' && (
-      <section className="bg-surface rounded-lg p-6 mb-8">
-        <h2 className="text-2xl font-semibold mb-5 text-fg">Import Video</h2>
-        <form onSubmit={handleImport} className="flex gap-3">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] items-start">
+      <Window title="Import" bar="bg-aqua">
+        <h2 className="heading text-[28px] mb-4">Long video in, <span className="highlight">clips out</span></h2>
+        <form onSubmit={handleImport} className="space-y-3">
           <input
             type="text"
             value={youtubeUrl}
             onChange={e => setYoutubeUrl(e.target.value)}
             placeholder="Paste YouTube URL..."
+            aria-label="YouTube URL"
             disabled={importing || isActiveJob}
-            className="flex-1 bg-surface-2 border border-line rounded px-3 py-2 text-sm focus:outline-none focus:border-accent disabled:opacity-50"
+            className="field w-full disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={importing || !youtubeUrl.trim() || isActiveJob}
-            className="px-6 bg-accent hover:bg-accent/90 disabled:bg-surface-3 disabled:text-subtle text-white rounded py-2 text-sm font-medium transition-colors whitespace-nowrap"
+            className="btn btn-primary w-full py-2.5 text-base heading"
           >
             {importing ? 'Importing...' : isActiveJob ? 'Processing...' : 'Import & Process'}
           </button>
         </form>
-        {importError && <p className="text-error text-xs mt-2">{importError}</p>}
+        {importError && <p className="text-error text-xs font-semibold mt-2">{importError}</p>}
         <ImportOptions value={importSettings} onChange={setImportSettings} choices={choices}
           disabled={importing || isActiveJob} />
-       </section>
-      )}
+      </Window>
 
-      {mainTab === 'import' && initialLoad && (
+      <Window title="Library" bar="bg-mint" right={initialLoad ? '…' : `${videoGroups.length} videos`} bodyClassName="p-4 sm:p-5">
+      {initialLoad && (
         <div className="text-center py-12 text-subtle">
-          <div className="animate-spin inline-block w-6 h-6 border-2 border-accent border-t-transparent rounded-full mb-2" />
-          <p>Loading...</p>
+          <div className="animate-spin inline-block w-6 h-6 border-3 border-line border-t-sun rounded-full mb-2" />
+          <p className="font-pixel">Loading...</p>
         </div>
       )}
 
-      {mainTab === 'import' && !initialLoad && videoGroups.length === 0 && (
-        <div className="text-center py-12 text-subtle">
+      {!initialLoad && videoGroups.length === 0 && (
+        <div className="text-center py-12 text-muted">
           <p>No videos yet. Import a YouTube URL above to get started.</p>
         </div>
       )}
 
-      {mainTab === 'import' && !initialLoad && videoGroups.length > 0 && (
-        <section>
-          <h2 className="text-2xl font-semibold mb-5 text-fg">Videos ({videoGroups.length})</h2>
-          <div className="space-y-4">
+      {!initialLoad && videoGroups.length > 0 && (
+        <>
+          <h2 className="heading text-[28px] mb-5">Videos ({videoGroups.length})</h2>
+          <div className="space-y-5">
             {videoGroups.map(group => {
               const isExpanded = expandedVideos.has(group.video.id);
               const isRunning = currentJobId !== null && group.job?.id === currentJobId;
@@ -975,48 +950,50 @@ export default function Home() {
               };
 
               return (
-                <div key={group.video.id} className={`bg-surface rounded-lg border transition-colors ${
-                  isRunning ? 'border-accent/50' : 'border-line'
+                <div key={group.video.id} className={`rounded-card border-3 border-line shadow-hard-sm ${
+                  isRunning ? 'bg-sun/40' : 'bg-surface-2'
                 }`}>
                   <button
                     onClick={() => toggleExpanded(group.video.id)}
-                    className="w-full px-5 py-4 flex items-center gap-4 text-left hover:bg-surface-2 transition-colors"
+                    className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-surface-3/60 rounded-t-[5px]"
                   >
-                    <span className={`text-lg transition-transform ${isExpanded ? 'rotate-90' : ''}`}>&#9654;</span>
+                    <span aria-hidden className={`w-9 h-6 flex-none border-3 border-line rounded bg-tang relative before:absolute before:left-0.5 before:top-0.5 before:w-2.5 before:h-2.5 before:rounded-full before:bg-surface before:border-2 before:border-line after:absolute after:right-0.5 after:top-0.5 after:w-2.5 after:h-2.5 after:rounded-full after:bg-surface after:border-2 after:border-line ${
+                      isExpanded ? 'bg-sun' : ''
+                    }`} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[group.job?.status || 'PENDING'] || 'bg-subtle'}`} />
-                        <span className="text-sm font-medium text-fg truncate">
+                        <span className={`w-2.5 h-2.5 flex-none rounded-full border-2 border-line ${STATUS_COLORS[group.job?.status || 'PENDING'] || 'bg-subtle'}`} />
+                        <span className="text-sm font-semibold text-fg truncate">
                           {group.video.title || group.video.sourceUrl || group.video.id.substring(0, 8)}
                         </span>
-                        <span className="text-xs text-subtle">{timeAgo(group.video.createdAt)}</span>
+                        <span className="text-xs text-subtle whitespace-nowrap">{timeAgo(group.video.createdAt)}</span>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-subtle">
-                        <span>{group.job?.status || 'No job'}</span>
+                      <div className="flex items-center gap-3 text-xs text-muted flex-wrap">
+                        <span className="font-pixel">{group.job?.status || 'No job'}</span>
                         {group.clips.length > 0 && (
                           <>
                             <span aria-hidden>&#8226;</span>
                             <span>{group.clips.length} clips</span>
-                            {tierCounts.PRIMARY > 0 && <span className="text-success">{tierCounts.PRIMARY} viral</span>}
-                            {tierCounts.BACKUP > 0 && <span className="text-warning">{tierCounts.BACKUP} potential</span>}
+                            {tierCounts.PRIMARY > 0 && <span className="text-success font-semibold">{tierCounts.PRIMARY} viral</span>}
+                            {tierCounts.BACKUP > 0 && <span className="text-warning font-semibold">{tierCounts.BACKUP} potential</span>}
                           </>
                         )}
                         {isRunning && group.jobDetail && (
                           <>
                             <span aria-hidden>&#8226;</span>
-                            <span className="text-accent">
+                            <span className="text-accent font-semibold">
                               {Math.round(group.jobDetail.stages.filter(s => s.status === 'COMPLETED').length / STAGE_ORDER.length * 100)}% complete
                             </span>
                           </>
                         )}
                       </div>
                     </div>
-                    <span className="text-xs text-subtle">{isExpanded ? 'Collapse' : 'Expand'}</span>
+                    <span className="font-pixel text-xs text-muted">{isExpanded ? 'Collapse' : 'Expand'}</span>
                     {group.job && (group.job.status === 'RUNNING' || group.job.status === 'QUEUED') && (
                       <button onClick={async (e) => {
                         e.stopPropagation();
                         try { await api.cancelJob(group.job!.id); await loadAllData(); } catch (e) { reportError(e, 'cancelJob'); }
-                      }} className="ml-2 px-3 py-1 rounded text-xs font-medium bg-warning text-white hover:bg-warning/90 transition-colors">
+                      }} className="btn ml-1 bg-warning-tint">
                         Cancel
                       </button>
                     )}
@@ -1026,16 +1003,16 @@ export default function Home() {
                         if (confirm('Delete this video and all its clips?')) {
                           try { await api.deleteVideo(group.video.id); await loadAllData(); } catch (e) { reportError(e, 'deleteVideo'); }
                         }
-                      }} className="ml-2 px-3 py-1 rounded text-xs font-medium bg-error text-white hover:bg-error/90 transition-colors">
+                      }} className="btn ml-1 bg-error-tint">
                         Delete
                       </button>
                     )}
                   </button>
 
                   {isExpanded && (
-                    <div className="border-t border-line">
+                    <div className="border-t-3 border-line">
                       {isRunning && group.jobDetail && (
-                        <div className="px-5 py-4 bg-surface-2/30">
+                        <div className="px-4 py-4 bg-surface">
                           <ProgressBar stages={group.jobDetail.stages} />
                           {group.jobDetail.job.errorMessage && (
                             <p className="text-error text-xs mt-2">{group.jobDetail.job.errorMessage}</p>
@@ -1044,41 +1021,37 @@ export default function Home() {
                       )}
 
                       {group.clips.length > 0 && (
-                        <div className="px-5 py-4">
-                          <div className="flex items-center gap-2 mb-4 border-b border-line">
+                        <div className="px-4 py-4">
+                          <div className="flex items-center gap-2 mb-5 flex-wrap">
                             <button
                               onClick={() => setTab(group.video.id, 'clips')}
-                              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                                tab === 'clips' ? 'border-accent text-accent' : 'border-transparent text-subtle hover:text-fg/85'
-                              }`}
+                              className={`btn ${tab === 'clips' ? 'bg-accent text-white' : ''}`}
                             >Clips ({group.clips.length})</button>
                             <button
                               onClick={() => setTab(group.video.id, 'transcript')}
-                              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                                tab === 'transcript' ? 'border-accent text-accent' : 'border-transparent text-subtle hover:text-fg/85'
-                              }`}
+                              className={`btn ${tab === 'transcript' ? 'bg-accent text-white' : ''}`}
                             >Transcript</button>
-                            <div className="ml-auto flex gap-1">
+                            <div className="ml-auto flex gap-1 flex-wrap">
                               {['ALL', 'PRIMARY', 'BACKUP', 'SKIP'].map(tier => (
-                                <button key={tier} onClick={() => setFilter(group.video.id, tier)} className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                                  filterTier === tier ? 'bg-accent text-white' : 'bg-surface-2 text-muted hover:bg-surface-3'
+                                <button key={tier} onClick={() => setFilter(group.video.id, tier)} className={`px-2.5 py-0.5 rounded-full border-2 border-line text-xs font-semibold ${
+                                  filterTier === tier ? 'bg-fg text-sun' : 'bg-surface-2 text-fg hover:bg-surface-3'
                                 }`}>{tier === 'ALL' ? 'All' : tierLabel(tier)}</button>
                               ))}
                             </div>
                           </div>
 
                           {selectedClips.size > 0 && hasRendered && (
-                            <div className="flex items-center gap-3 mb-4 bg-surface-2 rounded-lg p-3">
-                              <span className="text-sm text-muted">{selectedClips.size} selected</span>
-                              <button onClick={() => handleExportSelected(group.video.id)} disabled={exporting} className="px-4 py-1.5 rounded text-xs font-medium bg-success text-white hover:bg-success/90 disabled:bg-surface-3 transition-colors">
+                            <div className="flex items-center gap-3 mb-5 bg-sun border-3 border-line rounded-card p-3 shadow-hard-sm">
+                              <span className="text-sm font-semibold">{selectedClips.size} selected</span>
+                              <button onClick={() => handleExportSelected(group.video.id)} disabled={exporting} className="btn btn-primary">
                                 {exporting ? 'Exporting...' : 'Export Selected'}
                               </button>
-                              <button onClick={() => setSelectedClips(new Set())} className="px-3 py-1.5 rounded text-xs font-medium bg-surface-2 text-muted hover:bg-surface-3 transition-colors">Clear</button>
+                              <button onClick={() => setSelectedClips(new Set())} className="btn">Clear</button>
                             </div>
                           )}
 
                           {tab === 'clips' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
                               {filteredClips.map(clip => (
                                 <ClipCard key={clip.id} clip={clip} score={clipScores[clip.id]} previewing={previewingClip === clip.id}
                                   selectable={!!clip.renderPath}
@@ -1106,28 +1079,28 @@ export default function Home() {
                           )}
 
                           {filteredClips.length === 0 && tab === 'clips' && (
-                            <p className="text-subtle text-sm py-8 text-center">No clips match this filter.</p>
+                            <p className="text-muted text-sm py-8 text-center">No clips match this filter.</p>
                           )}
                         </div>
                       )}
 
                       {!isRunning && group.clips.length === 0 && group.job?.status === 'COMPLETED' && (
-                        <div className="px-5 py-8 text-center text-subtle text-sm">
+                        <div className="px-4 py-8 text-center text-muted text-sm">
                           Pipeline completed but no clips were generated. The video may be too short or no segments met the minimum duration.
                         </div>
                       )}
 
                       {!isRunning && !group.job && (
-                        <div className="px-5 py-8 text-center text-subtle text-sm">
+                        <div className="px-4 py-8 text-center text-muted text-sm">
                           Video imported but not processed yet.
                         </div>
                       )}
 
                       {!isRunning && group.job?.status === 'FAILED' && (
-                        <div className="px-5 py-4">
-                          <div className="bg-error-tint border border-error/30 rounded p-3">
-                            <p className="text-error text-sm font-medium mb-1">Pipeline Failed</p>
-                            <p className="text-error/70 text-xs">{group.job.errorMessage || 'Unknown error'}</p>
+                        <div className="px-4 py-4">
+                          <div className="bg-error-tint border-3 border-line rounded-card p-3">
+                            <p className="text-fg text-sm font-bold mb-1">Pipeline Failed</p>
+                            <p className="text-fg/80 text-xs">{group.job.errorMessage || 'Unknown error'}</p>
                           </div>
                         </div>
                       )}
@@ -1137,40 +1110,37 @@ export default function Home() {
               );
             })}
           </div>
-           </section>
+        </>
+      )}
+      </Window>
+      </div>
       )}
 
       {/* Discovery imports go Queue → Drain → backend import; no direct import here. */}
       {mainTab === 'discovery' && <DiscoveryPanel api={api} />}
 
       {mainTab === 'learning' && (
-        <section className="space-y-4">
-          <div className="bg-surface rounded-lg p-6">
-            <h2 className="text-2xl font-semibold mb-5 text-fg">Learning from your posts</h2>
-            <p className="text-sm text-muted mb-4">
+        <Window title="Learning" bar="bg-sun" className="max-w-3xl mx-auto">
+            <h2 className="heading text-[28px] mb-4">Learning from your posts</h2>
+            <p className="text-sm text-muted mb-5">
               Enter how your posted clips performed. After 5+ results, retraining re-weights the 13 scoring features by how well each one matched real performance.
             </p>
             {learningStats && (
-              <div className="grid grid-cols-4 gap-4 mb-6">
-                <div className="bg-surface-2 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-fg">{learningStats.total_feedback}</div>
-                  <div className="text-xs text-subtle">Total Feedback</div>
-                </div>
-                <div className="bg-surface-2 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-success">{learningStats.with_actual_scores}</div>
-                  <div className="text-xs text-subtle">With Results</div>
-                </div>
-                <div className="bg-surface-2 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-accent">v{learningStats.version}</div>
-                  <div className="text-xs text-subtle">Weight Version</div>
-                </div>
-                <div className="bg-surface-2 rounded-lg p-4 text-center">
-                  <div className="text-2xl font-bold text-warning">{learningStats.trained_on}</div>
-                  <div className="text-xs text-subtle">Trained Samples</div>
-                </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                {[
+                  { value: learningStats.total_feedback, label: 'Total Feedback', fill: 'bg-surface-2' },
+                  { value: learningStats.with_actual_scores, label: 'With Results', fill: 'bg-success-tint' },
+                  { value: `v${learningStats.version}`, label: 'Weight Version', fill: 'bg-accent-tint' },
+                  { value: learningStats.trained_on, label: 'Trained Samples', fill: 'bg-warning-tint' },
+                ].map(s => (
+                  <div key={s.label} className={`${s.fill} border-3 border-line rounded-card shadow-hard-sm p-4 text-center`}>
+                    <div className="heading text-3xl">{s.value}</div>
+                    <div className="font-pixel text-xs mt-1">{s.label}</div>
+                  </div>
+                ))}
               </div>
             )}
-            <div className="flex gap-3">
+            <div className="flex gap-3 items-center flex-wrap">
               <button onClick={async () => {
                 setTraining(true);
                 try {
@@ -1182,22 +1152,36 @@ export default function Home() {
                     total_feedback: ws.total_feedback as number,
                     with_actual_scores: ws.with_actual_scores as number,
                   });
-    } catch (e) { console.error(e); } finally {
+                } catch (e) { console.error(e); } finally {
                   setTraining(false);
                 }
               }} disabled={training || !learningStats || learningStats.with_actual_scores < 5}
-                className="px-6 py-2.5 rounded text-sm font-medium bg-accent text-white hover:bg-accent/90 disabled:bg-surface-3 disabled:text-subtle transition-colors">
+                className="btn btn-primary px-5 py-2 text-sm">
                 {training ? 'Training...' : 'Retrain Weights'}
               </button>
               {learningStats && learningStats.with_actual_scores < 5 && (
-                <span className="text-xs text-subtle py-2">
+                <span className="text-xs text-muted">
                   Need {5 - learningStats.with_actual_scores} more clips with feedback data to enable training
                 </span>
               )}
             </div>
-          </div>
-        </section>
+        </Window>
       )}
+      </main>
+
+      <Dock current={mainTab} onOpen={setMainTab} apps={[
+        { key: 'import', label: 'Import & Clips', icon: ICONS.import },
+        { key: 'discovery', label: 'Discover', icon: ICONS.discover },
+        {
+          key: 'learning',
+          label: `Learning${
+            learningStats && learningStats.with_actual_scores > 0
+              ? ` (${learningStats.with_actual_scores})`
+              : ''
+          }`,
+          icon: ICONS.learning,
+        },
+      ]} />
 
       {editingClip && (
         <ClipEditor clip={editingClip} api={api} choices={choices}
@@ -1211,17 +1195,19 @@ export default function Home() {
       )}
 
       {previewingClip && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-lg max-w-sm w-full overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-line">
-              <h3 className="text-lg font-semibold text-fg">Preview</h3>
-              <button onClick={() => { setPreviewingClip(null); setPreviewError(null); }} className="text-muted hover:text-fg">&#10005;</button>
+        <div className="fixed inset-0 bg-bg/80 z-50 flex items-center justify-center p-4">
+          <div className="win max-w-sm w-full overflow-hidden">
+            <div className="win-bar bg-sun">
+              <button onClick={() => { setPreviewingClip(null); setPreviewError(null); }} className="close grid place-items-center text-[9px] leading-none text-white">✕</button>
+              <span className="stripes" aria-hidden />
+              <h3 className="heading text-base px-1">Preview</h3>
+              <span className="stripes" aria-hidden />
             </div>
-            <div className="aspect-[9/16] bg-black flex items-center justify-center">
+            <div className="aspect-[9/16] bg-black flex items-center justify-center border-b-3 border-line">
               {previewError ? (
                 <div className="text-center p-4">
-                  <p className="text-error text-sm">{previewError}</p>
-                  <p className="text-subtle text-xs mt-2">The clip may need to be re-rendered</p>
+                  <p className="text-error-tint text-sm font-semibold">{previewError}</p>
+                  <p className="text-surface-3 text-xs mt-2">The clip may need to be re-rendered</p>
                 </div>
               ) : (
                 <video
@@ -1233,9 +1219,12 @@ export default function Home() {
                 />
               )}
             </div>
+            <p className="px-3 py-2 font-pixel text-sm flex items-center gap-2">
+              Sorot: ON AIR <span aria-hidden className="pulse-dot w-2.5 h-2.5 rounded-full bg-hot border-2 border-line" />
+            </p>
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }
