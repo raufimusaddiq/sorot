@@ -84,6 +84,8 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
 | Video download | yt-dlp | Standard tool, handles all YouTube formats |
 | Video processing | FFmpeg + OpenCV | FFmpeg for codec/crop, OpenCV for face detection/crop |
 | Subtitle burn-in | ASS + libass (`ffmpeg -vf ass=`) | Real per-word timing from Whisper, active-word highlight, editable `.ass` kept next to each export |
+| 9:16 framing | Face track (Haar/MediaPipe at 2 fps) → hysteresis → per-frame `crop` x-expression; `blur` fill option | Follows the speaker on podcasts and cuts cleanly between shots; centre-crop fallback keeps renders safe (`ai-pipeline/reframe.py`) |
+| OpenCV version | `opencv-python-headless>=4.8,<5` | OpenCV 5 removed the Haar `CascadeClassifier`; unpinned rebuilds silently lost face detection |
 | Silence trim | ffmpeg `select`/`aselect` from transcript gaps | One pass, no re-transcribe; render and subtitle derive identical keep-intervals (`ai-pipeline/captions.py`) |
 | Content language | Indonesian | Target audience is Indonesian TikTok |
 
@@ -98,7 +100,7 @@ Each stage reads from `data/` subfolder and writes output to the next subfolder.
 | 3. Transcribe | audio WAV | faster-whisper (CUDA) | `data/transcripts/{videoId}.json` |
 | 4. Segment | transcript JSON | Python segment logic | `data/segments/{videoId}.json` |
 | 5. Score | segments JSON | Python scoring | updates segments JSON |
-| 6. Render | raw video + segments | ffmpeg center-crop | `data/renders/{clipId}.mp4` |
+| 6. Render | raw video + segments (+ transcript) | ffmpeg: face-tracking crop / centre / blur, optional silence trim | `data/renders/clip_{rank}.mp4` |
 | 7. Subtitle | render + transcript | ASS karaoke captions (libass) | `data/exports/clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` |
 
 ## Error Handling

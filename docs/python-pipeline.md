@@ -2,15 +2,17 @@
 
 ## General Protocol
 
-All Python scripts are called by Spring Boot via `ProcessBuilder`.
+All Python scripts are called by the Bun backend as subprocesses
+(`backend/src/runner.ts`), with per-script timeouts; a cancelled job kills
+the running script.
 
 **Calling convention:**
 ```bash
-python ai-pipeline/<script>.py --arg1 value1 --arg2 value2 < data/input.json
+python ai-pipeline/<script>.py --arg1 value1 --arg2 value2
 ```
 
 **Rules:**
-- Input data (JSON) is passed on **stdin**
+- Inputs are file paths passed as **CLI args** (no stdin)
 - Output data (JSON) is written to **stdout**
 - Errors and logs go to **stderr** (never stdout)
 - Exit code **0** = success, **non-zero** = failure
@@ -66,14 +68,19 @@ python ai-pipeline/transcribe.py \
         "start": 0.0,
         "end": 3.2,
         "text": "Halo semuanya",
-        "confidence": 0.95
+        "confidence": 0.95,
+        "words": [
+          { "text": "Halo", "start": 0.0, "end": 0.42, "prob": 0.98 },
+          { "text": "semuanya", "start": 0.42, "end": 1.1, "prob": 0.95 }
+        ]
       },
       {
         "index": 1,
         "start": 3.5,
         "end": 7.8,
         "text": "hari ini kita mau bahas sesuatu yang penting",
-        "confidence": 0.91
+        "confidence": 0.91,
+        "words": [ ... ]
       }
     ]
   }
@@ -82,6 +89,11 @@ python ai-pipeline/transcribe.py \
 
 **Output file:** `data/transcripts/{videoId}.json` (same content as stdout data)
 
+`words` holds Whisper's per-word timestamps; they drive karaoke captions and
+silence trimming (`captions.py`). Transcripts made before word timestamps were
+kept have no `words` key — consumers fall back to splitting the segment text
+evenly over its duration.
+
 **Args:**
 
 | Arg | Required | Default | Description |
@@ -89,8 +101,9 @@ python ai-pipeline/transcribe.py \
 | `--audio` | Yes | | Path to WAV audio file |
 | `--output` | No | auto-derived | Path to write transcript JSON |
 | `--language` | No | `id` | Language code for Whisper |
-| `--model` | No | `medium` | Whisper model size |
-| `--device` | No | `cuda` | `cuda` or `cpu` |
+| `--model` | No | `$WHISPER_MODEL` or `large-v3-turbo` | Whisper model |
+| `--device` | No | `$WHISPER_DEVICE` or `cuda` | `cuda` or `cpu` |
+| `--compute-type` | No | auto | `float16` on cuda, `int8` on cpu |
 
 ---
 
@@ -210,15 +223,77 @@ python ai-pipeline/score.py \
 
 ---
 
+### `render.py`
+
+Cuts each PRIMARY/BACKUP clip to 1080x1920 (h264_nvenc, libx264 fallback).
+
+| Arg | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `--segments` | Yes | | Scored segments JSON |
+| `--video` | Yes | | Source video |
+| `--output-dir` | Yes | | Writes `clip_{rank}.mp4` |
+| `--clip-index` | No | all | Render one clip (index into the tier-filtered list) |
+| `--reframe` | No | `$REFRAME_MODE` or `face` | `face`: crop follows faces; `center`: centre crop; `blur`: whole frame over a blurred fill |
+| `--transcript` | With `--silence-trim` | | Transcript JSON (word timings) |
+| `--silence-trim` | No | off | Cut pauses longer than `--silence-gap` |
+| `--silence-gap` | No | `0.6` | Pause length (s) that gets cut |
+
+Each clip in the result has `reframe` (mode actually used — `face` falls back
+to `center` when no faces are found), `cropSegments` (number of crop
+positions in the face track) and `trimmedDuration` (seconds after the
+silence trim, or `null`).
+
+**Face reframing** (`reframe.py`): frames are sampled at 2 fps, faces found
+with MediaPipe if installed, otherwise OpenCV Haar (the Docker image ships
+Haar only). Each sample gets a crop centre — on the whole group if all faces
+fit in the 9:16 window, else on the largest face — and the centres are
+smoothed with hysteresis so the crop only moves after a sustained shift (a
+clean cut to the new speaker, no jitter). The track becomes a per-frame
+ffmpeg `crop` x-expression, re-timed onto the trimmed timeline when
+`--silence-trim` is on.
+
+**Silence trim** (`captions.py`): speech spans come from word timestamps;
+gaps longer than `--silence-gap` (and leading/trailing silence) are cut with
+ffmpeg `select`/`aselect` in the same encode pass.
+
+---
+
+### `subtitle.py`
+
+Burns word-timed karaoke captions onto each rendered clip.
+
+| Arg | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `--transcript` | Yes | | Transcript JSON |
+| `--segments` | Yes | | Scored segments JSON |
+| `--render-dir` | Yes | | Folder with `clip_{rank}.mp4` |
+| `--output-dir` | Yes | | Writes `clip_{rank}_subtitled.mp4` and `clip_{rank}.ass` |
+| `--clip-index` | No | all | Subtitle one clip |
+| `--style` | No | `$SUBTITLE_STYLE` or `default` | `default`, `hormozi`, `storyteller`, `cinematic` |
+| `--silence-trim` / `--silence-gap` | No | off / `0.6` | Must match what render.py used |
+
+Captions are an ASS file (`captions.build_ass`) burned with ffmpeg's libass
+`ass` filter: one event per word, the spoken word drawn in the preset's
+highlight colour (no size "pop" — it makes libass lines jitter). Standalone
+punctuation is folded into the previous word and Indonesian reduplication
+split by Whisper (`gedung` + `-gedung`) is rejoined. The `.ass` is kept next
+to the export so captions can be corrected by hand and re-burned. All presets
+use DejaVu Sans, the only font family in the Docker image.
+
+---
+
 ## Python Environment
 
 ### `requirements.txt`
 
+See `ai-pipeline/requirements.txt`. Note the OpenCV pin:
+
 ```
-faster-whisper>=1.0
-opencv-python>=4.8
-numpy>=1.24
+opencv-python-headless>=4.8,<5
 ```
+
+OpenCV 5.0 removed the Haar `CascadeClassifier`; an unpinned rebuild pulled
+it and silently disabled face detection for scoring and reframing.
 
 ### Virtual environment
 
@@ -231,7 +306,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-The Spring Boot backend should call scripts using the venv Python:
+The backend calls scripts using the venv Python:
 
 ```
 ai-pipeline/.venv/Scripts/python.exe ai-pipeline/transcribe.py ...

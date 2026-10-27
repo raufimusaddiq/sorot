@@ -145,7 +145,7 @@ class TestRender:
     def test_main_reports_per_clip_outcomes(self, monkeypatch, capsys, tmp_path):
         out_dir = tmp_path / "renders"
 
-        def fake_render(video, start, end, output_path, keep=None):
+        def fake_render(video, start, end, output_path, keep=None, reframe=None):
             if start == 0:
                 open(output_path, "wb").write(b"mp4")
             elif start == 10:
@@ -162,7 +162,7 @@ class TestRender:
     def test_main_clip_index_and_exception_cleanup(self, monkeypatch, capsys, tmp_path):
         out_dir = tmp_path / "renders"
 
-        def fake_render(video, start, end, output_path, keep=None):
+        def fake_render(video, start, end, output_path, keep=None, reframe=None):
             open(output_path, "wb").close()
             raise RuntimeError("nvenc died")
         monkeypatch.setattr(render, "render_clip", fake_render)

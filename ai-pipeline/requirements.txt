@@ -1,5 +1,7 @@
 faster-whisper>=1.0
-opencv-python-headless>=4.8
+# <5: OpenCV 5.0 removed the Haar CascadeClassifier that face scoring and
+# reframe.py use (an unpinned rebuild silently disabled face detection).
+opencv-python-headless>=4.8,<5
 numpy>=1.24
 # yt-dlp is vendored here (was previously curl'd from GitHub latest on every
 # Docker build). Kept unpinned because YouTube site changes break older

@@ -16,6 +16,8 @@ export interface AppConfig {
   /** Cut pauses longer than silenceGapSec out of each clip (render + captions). */
   silenceTrim: boolean;
   silenceGapSec: number;
+  /** 9:16 framing passed to render.py: face (follow faces) | center | blur. */
+  reframeMode: string;
   /** Static Next.js export (frontend/out) served at "/"; "" disables it. */
   staticDir: string;
   /** GPU is the shared resource: one pipeline on GPU, one on CPU stages. */
@@ -52,6 +54,9 @@ export function loadConfig(env: Env = process.env): AppConfig {
     frontendUrl: env.FRONTEND_URL || "http://localhost:3000",
     subtitleStyle: env.SUBTITLE_STYLE || "default",
     silenceTrim: bool(env.SILENCE_TRIM),
+    reframeMode: ["face", "center", "blur"].includes((env.REFRAME_MODE ?? "").trim().toLowerCase())
+      ? (env.REFRAME_MODE as string).trim().toLowerCase()
+      : "face",
     silenceGapSec: Number.parseFloat(env.SILENCE_GAP_SEC ?? "") > 0 ? Number.parseFloat(env.SILENCE_GAP_SEC as string) : 0.6,
     staticDir: env.STATIC_DIR ?? "../frontend/out",
     maxConcurrentPipelines: int(env.MAX_CONCURRENT_PIPELINES, 2),

@@ -23,7 +23,7 @@ YouTube URL ──► Backend API ──► 11-Stage Pipeline
                      3. Transcribe (Whisper medium, CUDA)
                      4. Segment (gap-based)
                      5. Score (11-feature multimodal formula)
-                     6. Render 9:16 (ffmpeg)
+                     6. Render 9:16 (face-tracking crop, optional silence trim)
                      7. Karaoke Captions (word-timed ASS, libass)
                      8. Generate Variations (zoom/crop presets)
                      9. Analytics (distribution, recommendations)
@@ -119,6 +119,18 @@ Weights are externalized in `weights.json`. The system learns from real TikTok p
 4. Pearson correlation per feature + EMA blending (alpha=0.3) updates weights
 5. Next scoring run uses the improved weights automatically
 
+## Captions & Framing
+
+- **Karaoke captions**: Whisper word timestamps → ASS captions where the
+  spoken word lights up. Presets `default`, `hormozi`, `storyteller`,
+  `cinematic` (`SUBTITLE_STYLE`). Each export keeps its `clip_N.ass` so
+  misheard names can be fixed by hand and re-burned.
+- **Face-tracking crop**: the 9:16 window follows the people on screen and
+  cuts cleanly when the shot changes; falls back to a centre crop when no face
+  is found. `REFRAME_MODE=blur` shows the whole frame over a blurred fill.
+- **Silence trim** (opt-in, `SILENCE_TRIM=true`): pauses are cut out of video
+  and audio in one pass, and captions are re-timed to match.
+
 ## Title & Description Generation
 
 Every scored clip gets auto-generated TikTok-ready copy:
@@ -139,8 +151,10 @@ One-click **Copy** button on each clip card for pasting directly into TikTok.
 │   ├── transcribe.py    Whisper transcription
 │   ├── segment.py       Gap-based segmentation
 │   ├── score.py         11-feature multimodal scoring + title/description
-│   ├── render.py        9:16 ffmpeg rendering
-│   ├── subtitle.py      Word-level subtitle burning
+│   ├── render.py        9:16 render (face-tracking crop, silence trim)
+│   ├── reframe.py       Face track → per-frame crop / blur fill
+│   ├── subtitle.py      Karaoke caption burn (ASS + libass)
+│   ├── captions.py      Word timing, ASS presets, silence intervals
 │   ├── variation.py     Zoom/crop variation generator
 │   ├── analytics.py     Distribution + recommendations
 │   ├── feedback.py      Viral score calculation from TikTok metrics
@@ -169,6 +183,7 @@ Copy `.env.example` to `.env` for local overrides. Docker uses `.env.docker` (co
 | `SUBTITLE_STYLE` | default | Caption preset: default, hormozi, storyteller, cinematic |
 | `SILENCE_TRIM` | false | Cut pauses out of clips (video, audio and captions stay in sync) |
 | `SILENCE_GAP_SEC` | 0.6 | Pause length that gets cut when `SILENCE_TRIM=true` |
+| `REFRAME_MODE` | face | 9:16 framing: `face` (crop follows faces), `center`, or `blur` (whole frame over a blurred fill) |
 
 ## API
 

@@ -154,7 +154,7 @@ class TestStageWiring:
             {"text": "a", "start": 11, "end": 12}, {"text": "b", "start": 17, "end": 18}]}]}))
         seen = {}
 
-        def fake_render(video, start, end, out, keep=None):
+        def fake_render(video, start, end, out, keep=None, reframe=None):
             seen["keep"] = keep
             open(out, "wb").write(b"x")
         monkeypatch.setattr(render, "render_clip", fake_render)
