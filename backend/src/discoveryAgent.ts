@@ -18,9 +18,11 @@ import type { WebSearch } from "./webSearch";
 import { TRENDING_NICHE_QUERIES, type Video, type YouTube } from "./youtube";
 
 export const AGENT_TEMPERATURE = 0.8;
-const AGENT_MAX_STEPS = 14;
+const AGENT_MAX_STEPS = 12;
+/** When the tool rounds run out, the model answers from what it has seen instead of the run falling back. */
+const AGENT_FINAL_PROMPT = "You are out of tool calls. Answer now with the JSON picks, using only videos you have seen.";
 const MIN_DURATION_SEC = 10 * 60;
-const RECENT_DAYS = 60;
+const RECENT_DAYS = 90;   // the default candidate view shows 90 days too
 const FALLBACK_QUERIES = 3;
 const MAX_FALLBACK_QUERIES = 6;
 const ANALYZE_CONCURRENCY = 3;
@@ -63,12 +65,13 @@ export function agentPrompt(goal: string, max: number, today: string, web: boole
 
 Goal: ${goal || "whatever Indonesians are talking about right now"}.
 
-Good sources are long-form (10+ minutes) Indonesian videos from the last ~2 months: podcasts, talk shows, interviews, stand-up, debates, livestreams. Avoid compilations, "best moments", re-uploads and clip channels, videos marked already IMPORTED or SKIPPED, and channel_rejected ones (they are dropped).
+Good sources are long-form (10+ minutes) Indonesian videos from the last ~3 months: podcasts, talk shows, interviews, stand-up, debates, livestreams. Avoid compilations, "best moments", re-uploads and clip channels, videos marked already IMPORTED or SKIPPED, and channel_rejected ones (they are dropped).
 
 How to work:
 ${web ? "1. web_search for what is trending in Indonesia now (people, controversies, events) related to the goal.\n2. " : "1. "}youtube_search with specific Indonesian queries (names, topics + \"podcast\", \"wawancara\", \"full\"). Try several angles.
 - analyze_video on the most promising results: it scores the whole video's captions (predictedScore 0-1, strongMoments, best moments with timestamps).
 - Prefer high predictedScore and several strong moments; keep channels diverse.
+- You have about ${AGENT_MAX_STEPS} rounds of tool calls. Make several calls per round (e.g. analyze 3-5 videos at once), and answer as soon as you have ${max} good videos.
 
 When done, answer with JSON only:
 {"picks": [{"video_id": "<11-char id from a tool result>", "reason": "<one sentence: why this video has clip-worthy moments>"}], "notes": "<one sentence on what's trending>"}
@@ -240,7 +243,7 @@ export class DiscoveryAgent {
       { role: "system", content: agentPrompt(run.goal, run.maxResults, now().slice(0, 10), this.web.enabled) },
       { role: "user", content: run.goal ? `Find videos for: ${run.goal}` : "Find what's worth clipping this week." },
     ], tools, handlers, {
-      maxSteps: AGENT_MAX_STEPS, temperature: AGENT_TEMPERATURE,
+      maxSteps: AGENT_MAX_STEPS, temperature: AGENT_TEMPERATURE, finalPrompt: AGENT_FINAL_PROMPT,
       onCall: (name, args, result) => this.step(run, name, args, summarize(result)),
     });
     const parsed = parseJson(answer) as { picks?: unknown; notes?: unknown } | null;
@@ -293,7 +296,9 @@ export class DiscoveryAgent {
       const key = v.channelId || v.channel;
       if ((perChannel.get(key) ?? 0) >= PER_CHANNEL) continue;
       perChannel.set(key, (perChannel.get(key) ?? 0) + 1);
-      picks.push({ videoId: v.videoId, reason: `Algorithm pick (no LLM), found via "${foundVia.get(v.videoId)}"` });
+      const via = foundVia.get(v.videoId);
+      // Videos the agent found before it failed keep their place in the ranking.
+      picks.push({ videoId: v.videoId, reason: `Algorithm pick (no LLM), found via ${via ? `"${via}"` : "the agent's searches"}` });
     }
     return picks.slice(0, run.maxResults);
   }

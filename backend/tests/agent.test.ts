@@ -108,6 +108,12 @@ describe("auto-discover with an LLM", () => {
     const run = await runAuto();
     expect(run).toMatchObject({ status: "DONE", mode: "algorithm", llmError: "LLM unreachable" });
 
+    // the agent found videos, then the LLM failed: the algorithm keeps them, saying where they came from
+    scriptLlm([{ tool_calls: [call("1", "youtube_search", { query: "x" })] }, new LlmError("timeout")]);
+    const after = await runAuto();
+    expect(after).toMatchObject({ mode: "algorithm", llmError: "timeout" });
+    expect(after.videos[0].reason).toBe("Algorithm pick (no LLM), found via the agent's searches");
+
     scriptLlm([new Error("bug")]);
     expect(await runAuto()).toMatchObject({ status: "FAILED", error: "bug", finishedAt: expect.any(String) });
   });
