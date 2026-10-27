@@ -16,7 +16,7 @@ Current scoring uses fixed weights and hand-crafted rules. As more videos are an
 ```
 Clip Processing Pipeline (existing)
     │
-    ├── Score clip → Post to TikTok → Track performance
+    ├── Score clip → Post to a platform → Track performance
     │                                        │
     └────────────────────────────────────────┘
                     Feedback Loop
@@ -46,11 +46,11 @@ CREATE TABLE IF NOT EXISTS clip_feedback (
     predicted_tier TEXT NOT NULL,
     
     -- Actual outcomes (filled later)
-    tiktok_views INTEGER DEFAULT 0,
-    tiktok_likes INTEGER DEFAULT 0,
-    tiktok_comments INTEGER DEFAULT 0,
-    tiktok_shares INTEGER DEFAULT 0,
-    tiktok_saves INTEGER DEFAULT 0,
+    post_views INTEGER DEFAULT 0,
+    post_likes INTEGER DEFAULT 0,
+    post_comments INTEGER DEFAULT 0,
+    post_shares INTEGER DEFAULT 0,
+    post_saves INTEGER DEFAULT 0,
     
     -- Derived performance metric (0-1)
     actual_viral_score REAL,
@@ -230,11 +230,11 @@ class LinUCBScorer:
 
 ## Viral Score Calculation
 
-How to convert TikTok metrics into a 0-1 viral score:
+How to convert post metrics into a 0-1 viral score:
 
 ```python
 def calculate_viral_score(views, likes, comments, shares, saves, followers=0):
-    """Normalize TikTok metrics into 0-1 viral performance score."""
+    """Normalize post metrics into 0-1 viral performance score."""
     
     if views == 0:
         return 0.0
@@ -265,7 +265,7 @@ def calculate_viral_score(views, likes, comments, shares, saves, followers=0):
 
 | File | Purpose |
 |------|---------|
-| `ai-pipeline/feedback.py` | Collect clip features + TikTok performance |
+| `ai-pipeline/feedback.py` | Collect clip features + post performance |
 | `ai-pipeline/learn_weights.py` | Weight learning (Phase 1-3) |
 | `ai-pipeline/weights.json` | Current learned weights (versioned) |
 | `backend/.../FeedbackController.java` | Feedback API endpoints |
@@ -277,7 +277,7 @@ def calculate_viral_score(views, likes, comments, shares, saves, followers=0):
 |--------|------|---------|
 | GET | /api/feedback | List all feedback records |
 | POST | /api/clips/{id}/feedback | Manually submit performance data |
-| POST | /api/feedback/sync | Pull TikTok metrics for all posted clips |
+| POST | /api/feedback/sync | Pull platform metrics for all posted clips |
 | POST | /api/feedback/train | Trigger weight retraining |
 | GET | /api/feedback/weights | View current learned weights |
 | GET | /api/feedback/stats | Learning stats (samples, accuracy, version) |
@@ -295,7 +295,7 @@ def calculate_viral_score(views, likes, comments, shares, saves, followers=0):
 1. **Phase 1: Feedback collection**
    - Add `clip_feedback` table to schema.sql
    - Save features + predicted score when clip is scored
-   - Add TikTok performance sync (manual input first, auto-sync later)
+   - Add platform performance sync (manual input first, auto-sync later)
    - Calculate `actual_viral_score` from metrics
 
 2. **Phase 1: Simple weight adjustment**
@@ -322,7 +322,7 @@ def calculate_viral_score(views, likes, comments, shares, saves, followers=0):
 ## Minimum Viable Learning (ship first)
 
 The simplest useful version:
-1. After posting to TikTok, user manually enters view/like counts
+1. After posting a clip, user manually enters view/like counts
 2. System calculates viral score
 3. After 10+ clips with feedback, run correlation analysis
 4. Adjust weights and save to `weights.json`

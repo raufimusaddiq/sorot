@@ -1,4 +1,9 @@
-# TikTok Auto-Posting System
+# TikTok connector (plan)
+
+> **Roadmap, not built.** Social-media connectors are the next item for Sorot:
+> publish clips to your accounts and pull their metrics back for learning.
+> This page is the original plan for one of them, TikTok's Content Posting
+> API; other platforms get their own page here.
 
 ## Problem
 After clips are generated and scored, the user must manually download each clip and post to TikTok. We need one-click posting from the web UI.

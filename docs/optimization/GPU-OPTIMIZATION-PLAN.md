@@ -1,4 +1,4 @@
-# GPU Optimization Plan — Viral Clipper Scoring Engine
+# GPU Optimization Plan — Sorot Scoring Engine
 
 > **Target Hardware**: NVIDIA RTX 4060 (8 GB VRAM, Ada Lovelace SM 8.9, 2x NVENC)
 >
@@ -31,7 +31,7 @@
 
 ### 1.1 Problem Statement
 
-The Viral Clipper scoring engine currently underutilizes the RTX 4060 GPU. Only **1 of 9 pipeline stages** (Whisper transcription) runs on GPU. The remaining 8 stages — video rendering, frame analysis, face detection, audio analysis, and scoring — all run on CPU, resulting in:
+The Sorot scoring engine currently underutilizes the RTX 4060 GPU. Only **1 of 9 pipeline stages** (Whisper transcription) runs on GPU. The remaining 8 stages — video rendering, frame analysis, face detection, audio analysis, and scoring — all run on CPU, resulting in:
 
 - **~25% GPU utilization** during pipeline execution
 - **~2 GB VRAM used** out of 8 GB available
@@ -841,7 +841,7 @@ def gpu_histogram_correlation(hist1, hist2):
 
 ### 8.3 P3-C: Neural Scoring Model (Future)
 
-Replace the heuristic 11-feature formula with a small neural network trained on actual TikTok performance data. This would fully utilize tensor cores.
+Replace the heuristic 11-feature formula with a small neural network trained on actual post performance data. This would fully utilize tensor cores.
 
 **Architecture proposal**:
 
@@ -856,7 +856,7 @@ Input: 11 features (float32)
 **Training data**: Collected via the existing `feedback.py` + `learn_weights.py` loop.
 
 **Requirements**:
-- Minimum 50 feedback records with actual TikTok metrics
+- Minimum 50 feedback records with actual post metrics
 - Validation split to prevent overfitting
 - Keep heuristic as fallback
 
@@ -1061,7 +1061,7 @@ ffmpeg -f lavfi -i testsrc=duration=1 -c:v h264_nvenc -f null -
 
 ### Phase 3 — Advanced (Future)
 
-- [ ] Collect 50+ TikTok feedback records
+- [ ] Collect 50+ post feedback records
 - [ ] Design neural scoring model architecture
 - [ ] Train model on collected data
 - [ ] Implement model inference in `score.py`

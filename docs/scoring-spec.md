@@ -130,7 +130,7 @@ Visual activity in the segment.
 - High visual change → 0.8-1.0
 - Moderate → 0.5
 - Static (talking head, no cuts) → 0.2
-- Note: talking head isn't bad for TikTok, but scene variety helps engagement
+- Note: talking head isn't bad for short-form, but scene variety helps engagement
 
 ### topic_fit (weight: 0.08)
 How well the segment matches the user's niche/topic.

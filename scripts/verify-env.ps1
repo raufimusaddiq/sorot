@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Verify all dependencies for Viral Clipper
+    Verify all dependencies for Sorot
 .DESCRIPTION
     Checks Docker, GPU passthrough, Node.js, Bun, Python venv, ffmpeg, and the
     AI-pipeline Python packages. Returns exit code 0 if required checks pass,
@@ -59,7 +59,7 @@ function Check-DockerGPU {
     return $false
 }
 
-Write-Host "`n=== Viral Clipper Environment Check ===" -ForegroundColor Cyan
+Write-Host "`n=== Sorot Environment Check ===" -ForegroundColor Cyan
 Write-Host ""
 
 $allOk = $true

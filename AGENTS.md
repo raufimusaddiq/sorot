@@ -1,13 +1,13 @@
 # AGENTS.md
 
 ## What
-YouTube/local video → 9:16 TikTok clips with auto-subtitles. Indonesian language. Local-only.
+YouTube/local video → 9:16 short-form clips with auto-subtitles (product name: Sorot). Indonesian language. Local-only.
 
 ## Stack
 Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (static export) + SQLite + Docker
 
 ## Layout
-`backend/` Bun/TS API, orchestration, scoring, discovery, LLM (also serves the UI) · `ai-pipeline/` Python media/ML only · `frontend/` Next.js static export · `cli/` `vclip` client · `data/` media · `docs/` specs
+`backend/` Bun/TS API, orchestration, scoring, discovery, LLM (also serves the UI) · `ai-pipeline/` Python media/ML only · `frontend/` Next.js static export · `cli/` `sorot` client · `data/` media · `docs/` specs
 
 ## Build Order (strict)
 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
@@ -24,8 +24,8 @@ Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (stat
 ### Linux install / CLI
 ```
 scripts/install.sh                 # Docker install (or --mode native: systemd); --uninstall [--purge]
-vclip import <url|file> | clips <video> | download --video <video> | up | down | logs -f | doctor
-cd cli; bun test --coverage        # CLI tests (95% gate); bun run build → cli/dist/vclip
+sorot import <url|file> | clips <video> | download --video <video> | up | down | logs -f | doctor
+cd cli; bun test --coverage        # CLI tests (95% gate); bun run build → cli/dist/sorot
 ```
 
 ### Verify
@@ -91,7 +91,7 @@ cd ai-pipeline
 - Editing options layer config defaults ← job options (import) ← clip options (editor); see `backend/src/options.ts`
 - Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README); render.py and subtitle.py must get the same silence flags
 - Python venv at `ai-pipeline/.venv`
-- `scripts/install.sh` must stay shellcheck-clean; Linux machine settings go in the gitignored `docker-compose.override.yml` (Docker) or `/etc/viralclip/` (native), never in tracked files
+- `scripts/install.sh` must stay shellcheck-clean; Linux machine settings go in the gitignored `docker-compose.override.yml` (Docker) or `/etc/sorot/` (native), never in tracked files
 - Schema auto-creates + migrates in `backend/src/db.ts` (compatible with the old Java-era DB file)
 - SQLite TEXT for UUIDs
 
@@ -132,7 +132,7 @@ cd ai-pipeline
 | GET | /api/discover/candidates | Ranked candidates with `why` reasons |
 
 ## Git Strategy
-- **Repo**: `raufimusaddiq/viral-clipper` (private monorepo)
+- **Repo**: `raufimusaddiq/sorot` (private monorepo; was viral-clipper)
 - **Branch**: `master` stable. Feature: `feat/short-description`
 - **Commit**: Conventional — `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - **Merge**: `--no-ff` always. Never rebase shared branches.

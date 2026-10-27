@@ -14,7 +14,7 @@ const server = Bun.serve({
   fetch: app.fetch,
 });
 
-console.info(`viralclipper backend listening on http://localhost:${server.port}`);
+console.info(`sorot backend listening on http://localhost:${server.port}`);
 
 let stopping = false;
 const stop = async () => {

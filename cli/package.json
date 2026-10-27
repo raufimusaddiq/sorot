@@ -1,14 +1,14 @@
 {
-  "name": "viralclip-cli",
+  "name": "sorot-cli",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "bin": { "vclip": "src/main.ts" },
+  "bin": { "sorot": "src/main.ts", "vclip": "src/main.ts" },
   "scripts": {
     "start": "bun run src/main.ts",
     "test": "bun test --coverage",
     "typecheck": "tsc --noEmit",
-    "build": "bun build --compile --minify src/main.ts --outfile dist/vclip"
+    "build": "bun build --compile --minify src/main.ts --outfile dist/sorot"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

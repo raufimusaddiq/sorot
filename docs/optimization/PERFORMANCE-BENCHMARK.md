@@ -48,7 +48,7 @@
 | Test video | YouTube video, ~10 minutes |
 | Language | Indonesian |
 | Expected segments | ~8-15 segments after segmentation |
-| Content type | Talking head / educational (typical TikTok content) |
+| Content type | Talking head / educational (typical short-form content) |
 
 ### 1.4 GPU Monitoring
 
@@ -290,7 +290,7 @@ TOP-5 RANKED:
 | Criterion | Threshold |
 |-----------|-----------|
 | Neural model inference time | < 100ms per segment |
-| Ranking quality | Top-3 clips correlate with actual TikTok performance |
+| Ranking quality | Top-3 clips correlate with actual post performance |
 | VRAM usage | <= 7 GB |
 | Fallback | Heuristic formula used when model unavailable |
 
@@ -412,7 +412,7 @@ Save as `benchmark.sh`:
 
 ```bash
 #!/bin/bash
-# Quick benchmark for Viral Clipper pipeline
+# Quick benchmark for Sorot pipeline
 
 VIDEO_URL="${1:?Usage: benchmark.sh <youtube_url>}"
 

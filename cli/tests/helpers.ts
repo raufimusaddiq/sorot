@@ -35,7 +35,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
     return Response.json({ status: "ok", data: result });
   }) as unknown as typeof fetch;
 
-  const cfg: CliConfig = { url: "http://app:8080", mode: "docker", appDir: "/opt/vc", service: "viralclip", source: "/etc/viralclip/cli.conf", ...config };
+  const cfg: CliConfig = { url: "http://app:8080", mode: "docker", appDir: "/opt/vc", service: "sorot", source: "/etc/sorot/cli.conf", ...config };
 
   const deps = {
     config: cfg,

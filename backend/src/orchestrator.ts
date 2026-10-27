@@ -322,7 +322,7 @@ export class PipelineOrchestrator {
     this.store.transaction(() => {
       for (const c of this.store.clipsForVideo(videoId)) this.store.deleteClip(c.id);
       // No clip_feedback row is pre-created here: a feedback row exists only
-      // once the user submits real TikTok metrics (POST /api/clips/{id}/feedback).
+      // once the user submits the posted clip's real metrics (POST /api/clips/{id}/feedback).
       arr(scored.scoredSegments).forEach((seg, i) => {
         const clip: Clip = {
           id: crypto.randomUUID(),

@@ -50,7 +50,7 @@ function seedCompleted() {
 describe('shell', () => {
   it('renders title, tabs and the import form', async () => {
     await renderLoaded();
-    expect(screen.getByText('Viral Clipper')).toBeInTheDocument();
+    expect(screen.getByText('Sorot')).toBeInTheDocument();
     expect(screen.getByText(/vertical clips with word-timed captions/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /import & clips/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /import & process/i })).toBeDisabled();

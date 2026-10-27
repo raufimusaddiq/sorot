@@ -301,7 +301,7 @@ describe("feedback", () => {
     await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 2000 });
     expect(env.app.store.countFeedback()).toEqual({ total: 1, withScores: 1 });
     const fb = env.app.store.feedbackForClip("c1")!;
-    expect(fb.tiktokViews).toBe(2000);
+    expect(fb.postViews).toBe(2000);
     expect(fb.features).toBe("{}"); // no clip_score row existed at first submit
     await env.json("POST", "/api/clips/c1/feedback", { postedAt: "2026-01-01T00:00:00Z", views: 0 });
     expect(env.app.store.feedbackForClip("c1")!.actualViralScore).toBe(0);

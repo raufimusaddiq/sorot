@@ -30,7 +30,7 @@ const COLUMNS: Record<Table, string[]> = {
   ],
   clip_feedback: [
     "id", "clip_id", "video_id", "features", "predicted_score", "predicted_tier",
-    "tiktok_views", "tiktok_likes", "tiktok_comments", "tiktok_shares", "tiktok_saves",
+    "post_views", "post_likes", "post_comments", "post_shares", "post_saves",
     "actual_viral_score", "posted_at", "last_checked", "created_at",
   ],
   discovered_video: [

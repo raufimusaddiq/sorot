@@ -11,6 +11,8 @@ import * as R from "../src/textRules";
 import golden from "./fixtures/text-rules.json";
 
 type Row = (typeof golden.rows)[number];
+/** The one deliberate difference: the generic hashtag no longer names a platform. */
+const neutral = (s: string) => s.replaceAll("#tiktokindonesia", "#indonesia");
 
 describe("matches the Python rules on every fixture row", () => {
   const rows = golden.rows as Row[];
@@ -38,7 +40,7 @@ describe("matches the Python rules on every fixture row", () => {
     const bad = rows.filter((r, i) => {
       const tier = ["PRIMARY", "BACKUP", "SKIP"][i % 3]!;
       const got = R.clipDescription(r.text, tier).split("\n");
-      const want = r.description.split("\n");
+      const want = neutral(r.description).split("\n");
       return JSON.stringify(got.slice(0, -1)) !== JSON.stringify(want.slice(0, -1)) || !CTA_PHRASES.includes(got.at(-1)!);
     });
     expect(bad.map((r) => r.text.slice(0, 60))).toEqual([]);

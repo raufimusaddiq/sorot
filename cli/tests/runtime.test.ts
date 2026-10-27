@@ -4,16 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main, realDeps } from "../src/main";
 
-const dir = mkdtempSync(join(tmpdir(), "vclip-"));
+const dir = mkdtempSync(join(tmpdir(), "sorot-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 test("real process and file wiring", async () => {
   const conf = join(dir, "cli.conf");
-  writeFileSync(conf, "VCLIP_MODE=native\nVCLIP_URL=http://box:1\n");
-  const prev = process.env.VCLIP_CONFIG;
-  process.env.VCLIP_CONFIG = conf;
+  writeFileSync(conf, "SOROT_MODE=native\nSOROT_URL=http://box:1\n");
+  const prev = process.env.SOROT_CONFIG;
+  process.env.SOROT_CONFIG = conf;
   const d = realDeps();
-  process.env.VCLIP_CONFIG = prev;
+  process.env.SOROT_CONFIG = prev;
   expect(d.config).toMatchObject({ mode: "native", url: "http://box:1", source: conf });
   expect(d.pollMs).toBe(2000);
 
@@ -21,7 +21,7 @@ test("real process and file wiring", async () => {
   const v = await d.capture([bun, "--version"]);
   expect(v.code).toBe(0);
   expect(v.stdout.trim()).toBe(Bun.version);
-  expect((await d.capture(["definitely-not-a-command-vclip"])).code).toBe(127);
+  expect((await d.capture(["definitely-not-a-command-sorot"])).code).toBe(127);
   expect(await d.run([bun, "-e", "process.exit(3)"], { cwd: dir })).toBe(3);
   expect(await d.run([bun, "-e", "0"])).toBe(0);
   await d.sleep(1);
@@ -65,7 +65,7 @@ test("unexpected errors are not swallowed", async () => {
   await expect(main(["jobs"], { ...d, err: () => {}, fetchFn })).rejects.toBeInstanceOf(TypeError);
   expect(realDeps().config.mode).toBeDefined();
   const unreadable = join(dir, "missing.conf");
-  process.env.VCLIP_CONFIG = unreadable;
+  process.env.SOROT_CONFIG = unreadable;
   expect(realDeps().config.source).not.toBe(unreadable);
-  delete process.env.VCLIP_CONFIG;
+  delete process.env.SOROT_CONFIG;
 });

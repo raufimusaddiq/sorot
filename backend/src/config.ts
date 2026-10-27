@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 export interface AppConfig {
   port: number;
   pythonPath: string;
@@ -56,6 +57,13 @@ function int(value: string | undefined, fallback: number): number {
 }
 
 /** Same env vars and defaults as the old application.yml. Empty = unset. */
+/** data/sorot.db; an install from before the rename keeps using its data/viralclipper.db. */
+export function defaultDbPath(dataDir: string, exists: (p: string) => boolean = existsSync): string {
+  const current = `${dataDir}/sorot.db`;
+  const legacy = `${dataDir}/viralclipper.db`;
+  return !exists(current) && exists(legacy) ? legacy : current;
+}
+
 export function loadConfig(env: Env = process.env): AppConfig {
   const dataDir = env.DATA_DIR || "data";
   return {
@@ -65,7 +73,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     ffmpegPath: env.FFMPEG_PATH || "ffmpeg",
     ytdlpPath: env.YTDLP_PATH || "yt-dlp",
     dataDir,
-    dbPath: env.DB_PATH || `${dataDir}/viralclipper.db`,
+    dbPath: env.DB_PATH || defaultDbPath(dataDir),
     whisperModel: env.WHISPER_MODEL || "medium",
     whisperDevice: env.WHISPER_DEVICE || "cuda",
     whisperLanguage: env.WHISPER_LANGUAGE || "id",

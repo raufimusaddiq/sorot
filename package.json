@@ -1,5 +1,5 @@
 {
-  "name": "viral-clipper",
+  "name": "sorot",
   "private": true,
   "workspaces": [
     "backend",
@@ -7,12 +7,12 @@
     "cli"
   ],
   "scripts": {
-    "dev": "bun run --filter viralclipper-backend dev",
-    "dev:web": "bun run --filter viral-clipper-frontend dev",
-    "build": "bun run --filter viral-clipper-frontend build",
-    "start": "bun run --filter viralclipper-backend start",
+    "dev": "bun run --filter sorot-backend dev",
+    "dev:web": "bun run --filter sorot-frontend dev",
+    "build": "bun run --filter sorot-frontend build",
+    "start": "bun run --filter sorot-backend start",
     "test": "bun run --filter '*' test",
-    "typecheck": "bun run --filter viralclipper-backend --filter viralclip-cli typecheck",
-    "vclip": "bun run cli/src/main.ts"
+    "typecheck": "bun run --filter sorot-backend --filter sorot-cli typecheck",
+    "sorot": "bun run cli/src/main.ts"
   }
 }

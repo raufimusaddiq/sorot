@@ -3,14 +3,14 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../src/config";
+import { defaultDbPath, loadConfig } from "../src/config";
 import { openDatabase } from "../src/db";
 import { extractYoutubeId } from "../src/discovery";
 
 describe("openDatabase", () => {
   test("migrates a pre-ALTER legacy database and keeps its rows", () => {
     const dir = mkdtempSync(join(tmpdir(), "vc-db-"));
-    const path = join(dir, "nested", "viralclipper.db");
+    const path = join(dir, "nested", "sorot.db");
     try {
       // Simulate a DB created by the earliest schema.sql (no title/description/text_sentiment).
       const legacy = openDatabase(path);
@@ -38,6 +38,38 @@ describe("openDatabase", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("renames the old tiktok_* feedback columns and keeps their values", () => {
+    const dir = mkdtempSync(join(tmpdir(), "vc-db-"));
+    const path = join(dir, "viralclipper.db");
+    try {
+      const raw = new Database(path, { create: true });
+      raw.run(`CREATE TABLE clip_feedback (id TEXT PRIMARY KEY, clip_id TEXT NOT NULL, video_id TEXT NOT NULL,
+        features TEXT NOT NULL, predicted_score REAL NOT NULL, predicted_tier TEXT NOT NULL,
+        tiktok_views INTEGER DEFAULT 0, tiktok_likes INTEGER DEFAULT 0, tiktok_comments INTEGER DEFAULT 0,
+        tiktok_shares INTEGER DEFAULT 0, tiktok_saves INTEGER DEFAULT 0, actual_viral_score REAL,
+        posted_at TEXT, last_checked TEXT, created_at TEXT NOT NULL)`);
+      raw.run(`INSERT INTO clip_feedback (id, clip_id, video_id, features, predicted_score, predicted_tier, tiktok_views, tiktok_saves, created_at)
+        VALUES ('f1', 'c1', 'v1', '{}', 0.5, 'BACKUP', 1200, 7, 't')`);
+      raw.close();
+      const db = openDatabase(path);
+      const cols = (db.query("PRAGMA table_info(clip_feedback)").all() as Array<{ name: string }>).map((c) => c.name);
+      expect(cols.filter((c) => c.startsWith("tiktok_"))).toEqual([]);
+      expect(db.query("SELECT post_views, post_saves FROM clip_feedback").get()).toEqual({ post_views: 1200, post_saves: 7 });
+      db.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("defaultDbPath", () => {
+  test("new installs get sorot.db; older ones keep their viralclipper.db", () => {
+    expect(defaultDbPath("/d", () => false)).toBe("/d/sorot.db");
+    expect(defaultDbPath("/d", (p) => p === "/d/viralclipper.db")).toBe("/d/viralclipper.db");
+    expect(defaultDbPath("/d", () => true)).toBe("/d/sorot.db");
+    expect(defaultDbPath(tmpdir())).toBe(`${tmpdir()}/sorot.db`);
+  });
 });
 
 describe("loadConfig", () => {
@@ -45,7 +77,7 @@ describe("loadConfig", () => {
     const c = loadConfig({});
     expect(c).toMatchObject({
       port: 8080, pythonPath: "python3", pipelineDir: "ai-pipeline", ffmpegPath: "ffmpeg", ytdlpPath: "yt-dlp",
-      dataDir: "data", dbPath: "data/viralclipper.db", whisperModel: "medium", whisperDevice: "cuda",
+      dataDir: "data", dbPath: "data/sorot.db", whisperModel: "medium", whisperDevice: "cuda",
       whisperLanguage: "id", maxConcurrentPipelines: 2, queueCapacity: 50, staticDir: "../frontend/out",
       subtitleStyle: "default", silenceTrim: false, silenceGapSec: 0.6, reframeMode: "face",
     });
@@ -65,7 +97,7 @@ describe("loadConfig", () => {
   test("env overrides; empty strings fall back; bad ints fall back", () => {
     const c = loadConfig({ SERVER_PORT: "9000", DATA_DIR: "/app/data", WHISPER_MODEL: "", MAX_PARALLEL_RENDERS: "x", STATIC_DIR: "" });
     expect(c.port).toBe(9000);
-    expect(c.dbPath).toBe("/app/data/viralclipper.db");
+    expect(c.dbPath).toBe("/app/data/sorot.db");
     expect(c.whisperModel).toBe("medium");
     expect(c.maxParallelRenders).toBe(2);
     expect(c.staticDir).toBe("");

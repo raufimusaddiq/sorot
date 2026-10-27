@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Viral Clipper installer for Linux (Debian / Ubuntu and derivatives).
+# Sorot installer for Linux (Debian / Ubuntu and derivatives).
 #
 #   scripts/install.sh                  Docker install (recommended)
 #   scripts/install.sh --mode native    Bun + Python venv + systemd, no Docker
@@ -11,10 +11,14 @@ set -euo pipefail
 
 BUN_VERSION=1.3.12
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONF_DIR=/etc/viralclip
-BIN=/usr/local/bin/vclip
-SERVICE=viralclip
+CONF_DIR=/etc/sorot
+BIN=/usr/local/bin/sorot
+SERVICE=sorot
 UNIT=/etc/systemd/system/$SERVICE.service
+# Before the rename the app was "Viral Clipper": viralclip service, /etc/viralclip, vclip.
+LEGACY_CONF_DIR=/etc/viralclip
+LEGACY_BIN=/usr/local/bin/vclip
+LEGACY_SERVICE=viralclip
 
 MODE=docker
 PORT=8080
@@ -136,28 +140,30 @@ write_root_file() { # path, content on stdin
 
 write_cli_conf() {
   write_root_file "$CONF_DIR/cli.conf" <<EOF
-# Written by scripts/install.sh — read by the vclip CLI.
-VCLIP_MODE=$MODE
-VCLIP_APP_DIR=$APP_DIR
-VCLIP_URL=http://localhost:$PORT
-VCLIP_SERVICE=$SERVICE
+# Written by scripts/install.sh — read by the sorot CLI.
+SOROT_MODE=$MODE
+SOROT_APP_DIR=$APP_DIR
+SOROT_URL=http://localhost:$PORT
+SOROT_SERVICE=$SERVICE
 EOF
   ok "CLI config: $CONF_DIR/cli.conf"
 }
 
-# vclip is one self-contained binary built with Bun (from a Bun container
-# when Bun isn't installed on the host, as in Docker mode).
+# sorot is one self-contained binary built with Bun (from a Bun container
+# when Bun isn't installed on the host, as in Docker mode). `vclip`, its old
+# name, stays as a link so existing scripts keep working.
 install_cli() {
-  step "Building the vclip CLI"
-  local out="$APP_DIR/cli/dist/vclip"
+  step "Building the sorot CLI"
+  local out="$APP_DIR/cli/dist/sorot"
   if have bun; then
-    (cd "$APP_DIR/cli" && as_user bun build --compile --minify src/main.ts --outfile dist/vclip >/dev/null)
+    (cd "$APP_DIR/cli" && as_user bun build --compile --minify src/main.ts --outfile dist/sorot >/dev/null)
   else
     $SUDO docker run --rm -v "$APP_DIR/cli:/cli" -w /cli "oven/bun:$BUN_VERSION" \
-      bun build --compile --minify src/main.ts --outfile dist/vclip >/dev/null
+      bun build --compile --minify src/main.ts --outfile dist/sorot >/dev/null
   fi
   $SUDO install -m 0755 "$out" "$BIN"
-  ok "vclip → $BIN ($("$BIN" --version))"
+  $SUDO ln -sf "$BIN" "$LEGACY_BIN"
+  ok "sorot → $BIN ($("$BIN" --version)); vclip still works"
 }
 
 wait_healthy() {
@@ -173,18 +179,19 @@ finish() {
   echo
   if [ "$START" -eq 1 ]; then
     if wait_healthy; then
-      ok "Viral Clipper is running: ${BOLD}http://localhost:$PORT${RESET}"
+      ok "Sorot is running: ${BOLD}http://localhost:$PORT${RESET}"
     else
-      warn "The app didn't answer on :$PORT yet — check: vclip logs"
+      warn "The app didn't answer on :$PORT yet — check: sorot logs"
     fi
   fi
   cat <<EOF
 
 Try:
-  vclip import "https://www.youtube.com/watch?v=…"   # make clips
-  vclip videos | vclip clips <video> | vclip download --video <video>
-  vclip up | down | logs -f | doctor                 # manage the app
-  vclip --help
+  sorot import "https://www.youtube.com/watch?v=…"   # make clips
+  sorot discover auto                                # ✨ find source videos
+  sorot videos | sorot clips <video> | sorot download --video <video>
+  sorot up | down | logs -f | doctor                 # manage the app
+  sorot --help
 EOF
 }
 
@@ -268,7 +275,7 @@ install_docker() {
   as_user mkdir -p "$APP_DIR/data/input" "$APP_DIR/data/music"
   if [ "$RUN_USER" != root ] && ! id -nG "$RUN_USER" | grep -qw docker; then
     $SUDO usermod -aG docker "$RUN_USER"
-    warn "Added $RUN_USER to the docker group — log out and back in before using vclip up/down/logs"
+    warn "Added $RUN_USER to the docker group — log out and back in before using sorot up/down/logs"
   fi
   step "Building the app image (first time: ~10 min, downloads the Whisper model)"
   (cd "$APP_DIR" && $SUDO docker compose --env-file .env.docker build backend)
@@ -321,7 +328,7 @@ write_native_env() {
   fi
   {
     echo "# Written by scripts/install.sh — settings for the $SERVICE service."
-    echo "# Edit, then: vclip restart. Options are described in README.md / .env.docker."
+    echo "# Edit, then: sorot restart. Options are described in README.md / .env.docker."
     # Same pipeline defaults as Docker, minus its container paths. CRs dropped:
     # a checkout made on Windows has CRLF lines, and "id\r" is no language code.
     tr -d '\r' < "$APP_DIR/.env.docker" | grep -E '^[A-Z_]+=' \
@@ -348,7 +355,7 @@ write_native_env() {
 write_unit() {
   write_root_file "$UNIT" <<EOF
 [Unit]
-Description=Viral Clipper (web UI + API on :$PORT)
+Description=Sorot (web UI + API on :$PORT)
 After=network-online.target
 Wants=network-online.target
 
@@ -404,15 +411,42 @@ EOF
   finish
 }
 
+# --- rename (Viral Clipper → Sorot) ------------------------------------------------
+
+# Installs from before the rename: settings move to /etc/sorot, the old
+# viralclip service and paths go away (the database keeps its file name).
+migrate_legacy() {
+  local legacy_unit="/etc/systemd/system/$LEGACY_SERVICE.service"
+  [ -d "$LEGACY_CONF_DIR" ] || [ -f "$legacy_unit" ] || return 0
+  step "Moving the Viral Clipper install to its new name, Sorot"
+  if [ -f "$legacy_unit" ]; then
+    $SUDO systemctl disable --now "$LEGACY_SERVICE" >/dev/null 2>&1 || true
+    $SUDO rm -f "$legacy_unit"
+    $SUDO systemctl daemon-reload
+  fi
+  if [ -f "$LEGACY_CONF_DIR/$LEGACY_SERVICE.env" ] && [ ! -f "$CONF_DIR/$SERVICE.env" ]; then
+    $SUDO mkdir -p "$CONF_DIR"
+    $SUDO cp -p "$LEGACY_CONF_DIR/$LEGACY_SERVICE.env" "$CONF_DIR/$SERVICE.env"
+    ok "Kept your settings: $CONF_DIR/$SERVICE.env"
+  fi
+  $SUDO rm -f "$LEGACY_CONF_DIR/cli.conf" "$LEGACY_CONF_DIR/$LEGACY_SERVICE.env"
+  $SUDO rmdir "$LEGACY_CONF_DIR" 2>/dev/null || true
+  ok "Removed the old $LEGACY_SERVICE service and $LEGACY_CONF_DIR"
+}
+
 # --- uninstall --------------------------------------------------------------------
 
 uninstall() {
   local mode=""
-  if [ -f "$CONF_DIR/cli.conf" ]; then mode="$(sed -n 's/^VCLIP_MODE=//p' "$CONF_DIR/cli.conf")"; fi
+  local conf
+  for conf in "$CONF_DIR/cli.conf" "$LEGACY_CONF_DIR/cli.conf"; do
+    if [ -z "$mode" ] && [ -f "$conf" ]; then mode="$(sed -n 's/^\(SOROT\|VCLIP\)_MODE=//p' "$conf")"; fi
+  done
   if [ "$PURGE" -eq 1 ]; then
     confirm "Delete $APP_DIR/data (all videos, clips and the database), the venv and the Docker image?" || die "Cancelled"
   fi
   step "Uninstalling"
+  migrate_legacy
   if [ -f "$UNIT" ]; then
     $SUDO systemctl disable --now "$SERVICE" >/dev/null 2>&1 || true
     $SUDO rm -f "$UNIT"
@@ -428,10 +462,10 @@ uninstall() {
     fi
     rm -f "$APP_DIR/docker-compose.override.yml"
   fi
-  $SUDO rm -f "$BIN" "$CONF_DIR/cli.conf" "$CONF_DIR/$SERVICE.env"
+  $SUDO rm -f "$BIN" "$LEGACY_BIN" "$CONF_DIR/cli.conf" "$CONF_DIR/$SERVICE.env"
   $SUDO rmdir "$CONF_DIR" 2>/dev/null || true
   rm -rf "$APP_DIR/cli/dist"
-  ok "Removed vclip and $CONF_DIR"
+  ok "Removed sorot and $CONF_DIR"
   if [ "$PURGE" -eq 1 ]; then
     $SUDO rm -rf "$APP_DIR/data" "$APP_DIR/ai-pipeline/.venv"
     ok "Deleted data/ and the venv"
@@ -448,6 +482,7 @@ if [ "$UNINSTALL" -eq 1 ]; then uninstall; exit 0; fi
 case "$MODE" in docker|native) ;; *) die "--mode must be docker or native" ;; esac
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then die "--port must be 1-65535"; fi
 
-printf '%sViral Clipper installer%s — %s mode, port %s, from %s\n' "$BOLD" "$RESET" "$MODE" "$PORT" "$APP_DIR"
+printf '%sSorot installer%s — %s mode, port %s, from %s\n' "$BOLD" "$RESET" "$MODE" "$PORT" "$APP_DIR"
 confirm "Install system packages with sudo as needed and set up the app?" || die "Cancelled"
+migrate_legacy
 if [ "$MODE" = docker ]; then install_docker; else install_native; fi

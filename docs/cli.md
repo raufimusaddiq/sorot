@@ -1,29 +1,30 @@
-# vclip — command-line client
+# sorot — command-line client
 
-`vclip` drives Viral Clipper from a terminal: import and process videos, follow
+`sorot` drives Sorot from a terminal: import and process videos, follow
 jobs, list and download clips, run discovery, and start/stop the app. It is a
 thin client over the [HTTP API](api-spec.md), compiled into one binary with
 `bun build --compile` (no runtime needed). `scripts/install.sh` builds and
-installs it to `/usr/local/bin/vclip`.
+installs it to `/usr/local/bin/sorot` (with `sorot`, the app's old name, as an alias).
 
-Run from source instead: `bun run cli/src/main.ts <command>` (or `bun run vclip <command>` at the repo root).
+Run from source instead: `bun run cli/src/main.ts <command>` (or `bun run sorot <command>` at the repo root).
 
 Installing: [linux-install.md](linux-install.md). Using it from scripts, cron,
 another machine or another program: [integration.md](integration.md).
 
 ## Configuration
 
-Written by the installer to `/etc/viralclip/cli.conf` (first match wins:
-`$VCLIP_CONFIG`, `~/.config/viralclip/cli.conf`, `/etc/viralclip/cli.conf`):
+Written by the installer to `/etc/sorot/cli.conf` (first match wins:
+`$SOROT_CONFIG`, `~/.config/sorot/cli.conf`, `/etc/sorot/cli.conf`; installs from
+before the rename are still found at `/etc/sorot/cli.conf` with `SOROT_*` keys):
 
 ```
-VCLIP_MODE=docker          # docker | native — how `up/down/logs` work
-VCLIP_APP_DIR=/home/me/viral-clipper
-VCLIP_URL=http://localhost:8080
-VCLIP_SERVICE=viralclip    # systemd unit (native)
+SOROT_MODE=docker          # docker | native — how `up/down/logs` work
+SOROT_APP_DIR=/home/me/sorot
+SOROT_URL=http://localhost:8080
+SOROT_SERVICE=sorot       # systemd unit (native)
 ```
 
-`VCLIP_URL` in the environment, or `--url`, overrides the URL — e.g. to drive
+`SOROT_URL` in the environment, or `--url`, overrides the URL — e.g. to drive
 the app on another machine (`up/down/logs` still act on the local install).
 
 ## Commands
@@ -61,10 +62,10 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `--yt-captions` / `--auto-captions` | use the video's YouTube captions (auto-generated too) |
 | `--music FILE [--music-volume 0.12]` | background music from `data/music` |
 
-Unset options use the server defaults (`vclip options`). `rerender` takes the same flags.
+Unset options use the server defaults (`sorot options`). `rerender` takes the same flags.
 
 Local files: with a native install the backend reads the path directly; with
-Docker only `data/` is mounted, so `vclip` copies the file into `data/input/` first.
+Docker only `data/` is mounted, so `sorot` copies the file into `data/input/` first.
 
 ## Output and exit codes
 

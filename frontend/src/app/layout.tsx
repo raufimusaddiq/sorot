@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Viral Clipper',
+  title: 'Sorot',
   description: 'Long videos → vertical clips with word-timed captions, for Indonesian short-form',
 };
 

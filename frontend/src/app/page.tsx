@@ -857,7 +857,7 @@ export default function Home() {
     <main className="max-w-5xl mx-auto px-6 py-12">
       <header className="mb-10 border-b border-line pb-6">
         <h1 className="text-3xl font-bold tracking-tight text-fg mb-1">
-          Viral Clipper
+          Sorot
         </h1>
         <p className="text-muted text-sm">
           Long videos → vertical clips with word-timed captions, for Indonesian short-form

@@ -13,6 +13,6 @@ describe('RootLayout', () => {
   });
 
   it('exports page metadata', () => {
-    expect(metadata.title).toBe('Viral Clipper');
+    expect(metadata.title).toBe('Sorot');
   });
 });

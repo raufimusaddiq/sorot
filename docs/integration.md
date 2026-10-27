@@ -1,9 +1,9 @@
-# Integrating Viral Clipper
+# Integrating Sorot
 
 Three ways in, from simplest to most flexible:
 
-1. **`vclip`** in shell scripts, cron jobs and other tools (`--json` + exit codes).
-2. **The HTTP API** from any language — the same API the web UI and `vclip` use
+1. **`sorot`** in shell scripts, cron jobs and other tools (`--json` + exit codes).
+2. **The HTTP API** from any language — the same API the web UI and `sorot` use
    ([api-spec.md](api-spec.md)).
 3. **The files** in `data/` — finished clips are plain `.mp4` files you can pick up.
 
@@ -11,7 +11,7 @@ There is no authentication: the app is meant for one machine or a trusted
 network. Don't expose its port to the internet — use an SSH tunnel or a VPN
 (Tailscale, WireGuard) to reach it from elsewhere.
 
-## 1. Scripting with vclip
+## 1. Scripting with sorot
 
 Every list/detail command takes `--json` and prints the API's data. Exit codes:
 `0` ok, `1` the API or a job failed, `2` bad usage.
@@ -19,20 +19,20 @@ Every list/detail command takes `--json` and prints the API's data. Exit codes:
 ```bash
 # Process a list of URLs, one after another; stop at the first failure
 while read -r url; do
-  vclip import "$url" --style hormozi --trim || exit 1
+  sorot import "$url" --style hormozi --trim || exit 1
 done < urls.txt
 
 # Start everything at once instead (the server queues them), then wait
-for url in $(cat urls.txt); do vclip import "$url" --no-wait; done
-vclip jobs --json | jq -r '.[] | select(.status=="RUNNING" or .status=="QUEUED") | .id' \
-  | while read -r job; do vclip watch "$job"; done
+for url in $(cat urls.txt); do sorot import "$url" --no-wait; done
+sorot jobs --json | jq -r '.[] | select(.status=="RUNNING" or .status=="QUEUED") | .id' \
+  | while read -r job; do sorot watch "$job"; done
 
 # Download the PRIMARY clips of the newest video into a dated folder
-video=$(vclip videos --json | jq -r '.[0].id')
-vclip download --video "$video" --tier PRIMARY -o ~/clips/$(date +%F)
+video=$(sorot videos --json | jq -r '.[0].id')
+sorot download --video "$video" --tier PRIMARY -o ~/clips/$(date +%F)
 
 # Clip ids and titles, best first, for a posting queue
-vclip clips "$video" --json | jq -r '.[] | select(.tier=="PRIMARY") | [.id, .score, .title] | @tsv'
+sorot clips "$video" --json | jq -r '.[] | select(.tier=="PRIMARY") | [.id, .score, .title] | @tsv'
 ```
 
 ### Watch a folder
@@ -41,7 +41,7 @@ Drop videos into a folder and have them processed:
 
 ```bash
 inotifywait -m -e close_write --format '%w%f' ~/to-clip | while read -r f; do
-  vclip import "$f" --no-wait
+  sorot import "$f" --no-wait
 done
 ```
 
@@ -53,29 +53,29 @@ Find new source videos every night and process the best three. A small script:
 
 ```bash
 #!/bin/sh
-# ~/bin/vclip-nightly
+# ~/bin/sorot-nightly
 set -e
 # ✨ Auto-discover waits for its run (1-5 min) and stores its picks as candidates.
-vclip discover auto --max 6 --json > /dev/null
-vclip discover candidates --json \
+sorot discover auto --max 6 --json > /dev/null
+sorot discover candidates --json \
   | jq -r '[.videos[] | select(.status == "NEW")] | sort_by(-(.rankScore // .predictedScore // 0)) | .[:3][] | .id' \
-  | xargs -r vclip discover queue
-vclip discover drain
+  | xargs -r sorot discover queue
+sorot discover drain
 ```
 
 Prefer a fixed topic? Replace the first line with
-`vclip discover auto "podcast bisnis" --max 6 --json` or a plain search:
-`vclip discover search "podcast indonesia" --max 20 --min-length 1800`.
+`sorot discover auto "podcast bisnis" --max 6 --json` or a plain search:
+`sorot discover search "podcast indonesia" --max 20 --min-length 1800`.
 
 run by a systemd user timer (no root needed):
 
 ```ini
-# ~/.config/systemd/user/vclip-nightly.service
+# ~/.config/systemd/user/sorot-nightly.service
 [Service]
 Type=oneshot
-ExecStart=%h/bin/vclip-nightly
+ExecStart=%h/bin/sorot-nightly
 
-# ~/.config/systemd/user/vclip-nightly.timer
+# ~/.config/systemd/user/sorot-nightly.timer
 [Timer]
 OnCalendar=*-*-* 02:00
 Persistent=true
@@ -84,23 +84,23 @@ WantedBy=timers.target
 ```
 
 ```bash
-chmod +x ~/bin/vclip-nightly
-systemctl --user daemon-reload && systemctl --user enable --now vclip-nightly.timer
+chmod +x ~/bin/sorot-nightly
+systemctl --user daemon-reload && systemctl --user enable --now sorot-nightly.timer
 ```
 
-Or cron: `0 2 * * * $HOME/bin/vclip-nightly >> $HOME/vclip.log 2>&1`.
-`vclip channels reseed` (weekly is plenty) refreshes the source-channel list.
+Or cron: `0 2 * * * $HOME/bin/sorot-nightly >> $HOME/sorot.log 2>&1`.
+`sorot channels reseed` (weekly is plenty) refreshes the source-channel list.
 
 ### Another machine
 
-Point `vclip` at a remote install:
+Point `sorot` at a remote install:
 
 ```bash
 ssh -N -L 8080:localhost:8080 gpu-box &        # tunnel; the app stays private
-VCLIP_URL=http://localhost:8080 vclip import "https://youtu.be/…"
+SOROT_URL=http://localhost:8080 sorot import "https://youtu.be/…"
 ```
 
-`vclip up/down/logs` always act on the local install; everything else goes over HTTP.
+`sorot up/down/logs` always act on the local install; everything else goes over HTTP.
 Local file imports need the file on the machine running the app — copy it to
 its `data/input/` and pass that path.
 

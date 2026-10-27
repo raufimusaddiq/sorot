@@ -1,6 +1,6 @@
 # Data Model
 
-SQLite database: `data/viralclipper.db`
+SQLite database: `data/sorot.db` (installs from before the rename keep `data/viralclipper.db`)
 
 ## Entity-Relationship Diagram
 

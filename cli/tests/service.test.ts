@@ -15,15 +15,15 @@ describe("up / down / restart", () => {
   });
 
   test("native: systemctl through sudo unless root", async () => {
-    const h = harness(healthy, { mode: "native", service: "viralclip" });
+    const h = harness(healthy, { mode: "native", service: "sorot" });
     await h.run("up");
     await h.run("down");
     h.state.isRoot = true;
     await h.run("restart");
     expect(h.runs.map((r) => r.cmd)).toEqual([
-      ["sudo", "systemctl", "start", "viralclip"],
-      ["sudo", "systemctl", "stop", "viralclip"],
-      ["systemctl", "restart", "viralclip"],
+      ["sudo", "systemctl", "start", "sorot"],
+      ["sudo", "systemctl", "stop", "sorot"],
+      ["systemctl", "restart", "sorot"],
     ]);
   });
 
@@ -33,7 +33,7 @@ describe("up / down / restart", () => {
     expect(await h.run("up")).toBe(3);
     h.state.runCode = 0;
     expect(await h.run("up")).toBe(1);
-    expect(h.err.at(-1)).toBe("The app didn't answer on http://app:8080. Check: vclip logs");
+    expect(h.err.at(-1)).toBe("The app didn't answer on http://app:8080. Check: sorot logs");
     const none = harness(healthy, { mode: "none" });
     expect(await none.run("up")).toBe(2);
     expect(none.err.at(-1)).toContain("No install found");
@@ -47,7 +47,7 @@ test("logs: docker compose or journalctl, -f follows", async () => {
   expect(d.runs[0]!.cmd).toEqual(["docker", "compose", "--env-file", ".env.docker", "logs", "--tail", "200", "-f", "backend"]);
   const n = harness({}, { mode: "native" });
   await n.run("logs");
-  expect(n.runs[0]!.cmd).toEqual(["sudo", "journalctl", "-u", "viralclip", "-n", "200", "--no-pager"]);
+  expect(n.runs[0]!.cmd).toEqual(["sudo", "journalctl", "-u", "sorot", "-n", "200", "--no-pager"]);
 });
 
 test("health", async () => {
@@ -71,7 +71,7 @@ describe("doctor", () => {
     };
     expect(await h.run("doctor")).toBe(0);
     expect(h.out).toEqual([
-      "✓ install: docker (/etc/viralclip/cli.conf)",
+      "✓ install: docker (/etc/sorot/cli.conf)",
       "✓ app dir: /opt/vc",
       "✓ GPU: NVIDIA GeForce RTX 4060, 617.42",
       "✓ docker compose 2.27.0",
@@ -86,7 +86,7 @@ describe("doctor", () => {
     const text = h.text();
     expect(text).toContain("✗ app dir: ?\n    → re-run the installer");
     expect(text).toContain("· GPU: none found");
-    expect(text).toContain("✗ service viralclip: inactive\n    → vclip up");
+    expect(text).toContain("✗ service sorot: inactive\n    → sorot up");
     expect(text).toContain("✓ ffmpeg");
     expect(text).not.toContain("NVENC");
     expect(text).toContain("✗ API http://app:8080");
@@ -98,7 +98,7 @@ describe("doctor", () => {
     h.state.captures = { "nvidia-smi": { code: 0, stdout: "GPU" }, ffmpeg: { code: 0, stdout: "h264_nvenc" }, systemctl: { code: 0, stdout: "" } };
     await h.run("doctor");
     expect(h.text()).toContain("✓ ffmpeg NVENC encoder available");
-    expect(h.text()).toContain("✗ service viralclip: unknown");
+    expect(h.text()).toContain("✗ service sorot: unknown");
     const noNvenc = harness(healthy, { mode: "native" });
     noNvenc.state.captures = { "nvidia-smi": { code: 0, stdout: "GPU" }, ffmpeg: { code: 1, stdout: "" } };
     await noNvenc.run("doctor");

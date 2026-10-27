@@ -8,7 +8,7 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
 
 ```
 [Static Next.js UI] ─┐
-[vclip CLI]  ────────┼─ HTTP ─→  [Bun API :8080]  →  [SQLite (bun:sqlite)]
+[sorot CLI]  ────────┼─ HTTP ─→  [Bun API :8080]  →  [SQLite (bun:sqlite)]
 [scripts / other apps]┘
                         |
                   [Worker Thread]
@@ -63,7 +63,7 @@ What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 - Export/download controls
 
 ### CLI (`cli/`)
-- `vclip`: a client of the same HTTP API (import, jobs, clips, download,
+- `sorot`: a client of the same HTTP API (import, jobs, clips, download,
   discovery) plus `up/down/logs` for the local install; compiled to one binary
   with `bun build --compile`. See [cli.md](cli.md), [integration.md](integration.md).
 
@@ -73,7 +73,7 @@ What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 |---|---|
 | Windows | Docker Desktop + `scripts\start.ps1` |
 | Linux, Docker | `scripts/install.sh` — compose app container, GPU via NVIDIA Container Toolkit, `restart: unless-stopped` |
-| Linux, native | `scripts/install.sh --mode native` — Bun + venv on the host, systemd `viralclip.service` |
+| Linux, native | `scripts/install.sh --mode native` — Bun + venv on the host, systemd `sorot.service` |
 
 See [linux-install.md](linux-install.md).
 
@@ -117,7 +117,7 @@ See [linux-install.md](linux-install.md).
 | Output folders | `data/renders/{videoId}/`, `data/exports/{videoId}/` | Clip files are named by rank; the old shared folder let every new video overwrite older videos' clips |
 | Clip editing | One-clip re-render through the same render.py/subtitle.py (`backend/src/editor.ts`) | Caption fixes and timing nudges without re-running the pipeline; edits stored on the clip (`options`, `captionWords`) |
 | Silence trim | ffmpeg `select`/`aselect` from transcript gaps | One pass, no re-transcribe; render and subtitle derive identical keep-intervals (`ai-pipeline/captions.py`) |
-| Content language | Indonesian | Target audience is Indonesian TikTok |
+| Content language | Indonesian | Target audience is Indonesian short-form viewers |
 | CLI | Bun-compiled single binary over the HTTP API | No runtime to install; same API as the UI, so scripts and the UI never disagree |
 | Linux install | One bash script, Docker or native | Docker is the reproducible default; native avoids Docker on small/headless boxes |
 

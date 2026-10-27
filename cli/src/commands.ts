@@ -66,7 +66,7 @@ export function localSource(d: Deps, path: string): string {
   const abs = resolve(d.cwd, path);
   if (!d.fs.exists(abs)) throw new UsageError(`File not found: ${path}`);
   if (d.config.mode !== "docker") return abs;
-  if (!d.config.appDir) throw new UsageError("Docker install has no VCLIP_APP_DIR in its config; re-run the installer");
+  if (!d.config.appDir) throw new UsageError("Docker install has no SOROT_APP_DIR in its config; re-run the installer");
   const name = `${Date.now().toString(36)}-${basename(abs).replace(/[^\w.-]+/g, "_")}`;
   const dir = join(d.config.appDir, "data", "input");
   d.fs.mkdir(dir);
@@ -86,7 +86,7 @@ async function importCmd(d: Deps, a: Args): Promise<number> {
   const job = await d.api.post("/api/process", { videoId: video.videoId, options: pipelineOptions(a) });
   d.out(`Video ${video.videoId}\nJob   ${job.jobId}`);
   if (has(a, "no-wait")) {
-    d.out(`Follow it with: vclip watch ${job.jobId}`);
+    d.out(`Follow it with: sorot watch ${job.jobId}`);
     return 0;
   }
   return watch(d, job.jobId as string, a);
@@ -108,7 +108,7 @@ export async function watch(d: Deps, jobId: string, a: Args): Promise<number> {
     if (TERMINAL.has(job.status)) {
       if (job.status !== "COMPLETED") {
         d.err(`Job ${job.status}${job.errorMessage ? `: ${job.errorMessage}` : ""}`);
-        if (job.status === "FAILED") d.err(`Retry with: vclip retry ${jobId}`);
+        if (job.status === "FAILED") d.err(`Retry with: sorot retry ${jobId}`);
         return 1;
       }
       d.out("");
@@ -169,7 +169,7 @@ async function clipsCmd(d: Deps, a: Args): Promise<number> {
     c.id, truncate(c.title, 50),
   ])));
   const ready = (clips as Json[]).filter((c) => c.exportStatus === "COMPLETED").length;
-  d.out(`\n${ready} ready. Download: vclip download --video ${videoId} [--tier PRIMARY] [-o DIR]`);
+  d.out(`\n${ready} ready. Download: sorot download --video ${videoId} [--tier PRIMARY] [-o DIR]`);
   return 0;
 }
 
@@ -239,7 +239,7 @@ function printCandidates(d: Deps, a: Args, data: Json): number {
 async function autoDiscover(d: Deps, a: Args): Promise<number> {
   let run = await d.api.post("/api/discover/auto", { goal: a.positionals.slice(2).join(" "), maxResults: num(a, "max") ?? 10 });
   if (has(a, "no-wait")) {
-    d.out(`Auto-discover started: ${run.id} (vclip discover auto-status ${run.id})`);
+    d.out(`Auto-discover started: ${run.id} (sorot discover auto-status ${run.id})`);
     return 0;
   }
   const quiet = has(a, "json");
