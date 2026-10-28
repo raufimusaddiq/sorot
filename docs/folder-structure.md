@@ -48,8 +48,9 @@ sorot/
 │   └── tests/                       # pytest (in-process, no GPU needed)
 │
 ├── cli/                             # sorot command-line client (Bun)
-│   ├── src/                         # main.ts (entry + help), commands.ts, service.ts (up/down/logs), api.ts
-│   └── tests/                       # bun test (fake API, processes, files and stdin: helpers.ts)
+│   ├── src/                         # main.ts (entry + help), commands.ts, service.ts (up/down/logs/doctor), api.ts,
+│   │                                # social.ts (accounts, publish, posts, sync, connect setup), prompt.ts (terminal questions)
+│   └── tests/                       # bun test (fake API, processes, files, stdin and a scripted terminal: helpers.ts)
 │
 ├── scripts/
 │   ├── install.sh                   # Linux installer: Docker or native (systemd), --uninstall

@@ -55,8 +55,10 @@ the pipeline falls back to rules and clips are posted by hand. Design:
   the same questions answered by text rules; FAIL → tier SKIP, ranked last
 - Hooks (`hooks.ts`): every clip's `hookStart`/`hookEnd` is decided here;
   render.py / subtitle.py only replay it
-- Publishing (`publisher.ts`, `tebar.ts`): drafts copy, posts through Tebar,
-  and every `TEBAR_SYNC_HOURS` pulls post metrics into `clip_feedback`
+- Publishing (`publisher.ts`, `tebar.ts`; the studio's Publish panel or
+  `sorot publish`): drafts copy, posts through Tebar inside one workspace
+  (Tebar profile), retries failed accounts or cancels a scheduled post, and
+  every `TEBAR_SYNC_HOURS` pulls post metrics into `clip_feedback`
 - Connections (`settings.ts`): LLM / Jev / Tebar URL, model, key and on/off,
   saved in the `setting` table over the env from the studio's Settings or
   `sorot connect`; applied without a restart
