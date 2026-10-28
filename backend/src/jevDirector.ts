@@ -24,6 +24,15 @@ export const MIN_SEC = 15;
 /** A window grows to at least this long, then ends at the next sentence end. */
 export const TARGET_SEC = 25;
 export const MAX_SEC = 60;
+/** Longer cuts of each Jev pick (same start, grown to these, then to a sentence end); the best-judged one is kept. */
+export const LONGER_SEC = [40, 55];
+/** A longer cut must add at least this much to be worth asking about. */
+const MIN_GROWTH_SEC = 5;
+/**
+ * Jev's questions favour tight excerpts (Bahlul, 69 min: the 25 s cut won for
+ * 27 of 31 picks, usually by a hair). A longer cut wins when it is this close.
+ */
+export const LONGER_SLACK = 0.05;
 /** Windows Jev keeps after screening (the rule windows are kept as well). */
 export const JEV_PICKS = 40;
 /** Final candidates judged with the full questions (best rule scores first, plus every Jev pick). */
@@ -31,6 +40,7 @@ export const JUDGE_MAX = 200;
 const CONCURRENCY = 6;
 const MAX_FAILURES = 3;
 const TERMINAL = /[.!?…]["')\]]*$/;
+const PAUSE_SEC = 0.6;
 
 export const DIRECTION_QUESTION: Record<string, Question> = {
   fits_direction: {
@@ -54,25 +64,39 @@ export interface Window {
 }
 
 /**
+ * Line j ends a sentence: it ends with . ! ? … or a pause follows it. Whisper
+ * sometimes drops punctuation for a whole video; the pauses still mark sentences.
+ */
+function endsSentence(lines: Line[], j: number): boolean {
+  const next = lines[j + 1];
+  return TERMINAL.test(lines[j]!.text.trim()) || !next || next.start - lines[j]!.end >= PAUSE_SEC;
+}
+
+/**
  * One window per line that starts a sentence (the first line, or after a
- * sentence end or a pause): it grows to TARGET_SEC, then to the next sentence
- * end, never past MAX_SEC; shorter than MIN_SEC is dropped.
+ * sentence end): it grows to TARGET_SEC, then to the next sentence end, never
+ * past MAX_SEC; shorter than MIN_SEC is dropped.
  */
 export function sentenceWindows(lines: Line[]): Window[] {
   const out: Window[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const prev = lines[i - 1];
-    if (prev && !TERMINAL.test(prev.text.trim()) && lines[i]!.start - prev.end < 0.6) continue;
-    const start = lines[i]!.start;
-    let j = i;
-    while (j + 1 < lines.length && lines[j + 1]!.end - start <= MAX_SEC
-      && (lines[j]!.end - start < TARGET_SEC || !TERMINAL.test(lines[j]!.text.trim()))) j++;
-    const end = lines[j]!.end;
-    if (end - start < MIN_SEC || end - start > MAX_SEC) continue;
-    out.push({ startTime: pyRound(start, 2), endTime: pyRound(end, 2), duration: pyRound(end - start, 2),
-      text: lines.slice(i, j + 1).map((l) => l.text.trim()).join(" ") });
+    if (i > 0 && !endsSentence(lines, i - 1)) continue;
+    const w = windowAt(lines, i, TARGET_SEC);
+    if (w) out.push(w);
   }
   return out;
+}
+
+/** The window starting at line i, grown to `target` s then to the next sentence end; null outside MIN_SEC-MAX_SEC. */
+export function windowAt(lines: Line[], i: number, target: number): Window | null {
+  const start = lines[i]!.start;
+  let j = i;
+  while (j + 1 < lines.length && lines[j + 1]!.end - start <= MAX_SEC
+    && (lines[j]!.end - start < target || !endsSentence(lines, j))) j++;
+  const end = lines[j]!.end;
+  if (end - start < MIN_SEC || end - start > MAX_SEC) return null;
+  return { startTime: pyRound(start, 2), endTime: pyRound(end, 2), duration: pyRound(end - start, 2),
+    text: lines.slice(i, j + 1).map((l) => l.text.trim()).join(" ") };
 }
 
 /** Jev's 0-1 judgement: the quality composite, or 50/50 with the direction fit when there is one. */
@@ -162,6 +186,50 @@ export async function screenMoments(
     .map(({ w, r }): Pick => ({ ...w, source: "jev", jevScore: jevScore(r.answers) }))
     .sort((a, b) => b.jevScore - a.jevScore);
   return { picks: dropOverlaps(ok).slice(0, JEV_PICKS), judged: results.filter(Boolean).length, tokens, error };
+}
+
+/**
+ * Screening judges ~25 s windows, so every pick would be ~25 s. Ask Jev about
+ * longer cuts of each pick (LONGER_SEC, same start, at most MAX_SEC) and keep
+ * the longest one within LONGER_SLACK of the best-judged; FAIL cuts are out.
+ */
+export async function growPicks(
+  jev: Jev, picks: Pick[], lines: Line[], direction: string, onProgress?: (done: number, total: number) => void,
+): Promise<{ picks: Pick[]; grown: number; tokens: number; error: string | null }> {
+  const questions = { ...SCREEN_QUESTIONS, ...(direction ? DIRECTION_QUESTION : {}) };
+  const cuts: Array<{ pick: Pick; w: Window }> = [];
+  for (const pick of picks) {
+    const i = lines.findIndex((l) => pyRound(l.start, 2) === pick.startTime);
+    if (i < 0) continue;
+    let longest = pick.endTime;
+    for (const target of LONGER_SEC) {
+      const w = windowAt(lines, i, target);
+      if (w && w.endTime >= longest + MIN_GROWTH_SEC) {
+        cuts.push({ pick, w });
+        longest = w.endTime;
+      }
+    }
+  }
+  let tokens = 0;
+  const { results, error } = await withJev(cuts, async ({ w }) => {
+    const r = await ask(jev, gateState(w.text, null, direction), questions);
+    tokens += r.tokens;
+    return r;
+  }, (n) => onProgress?.(n, cuts.length));
+  // Each pick and its passing cuts, shortest first.
+  const options = new Map<Pick, Pick[]>(picks.map((p) => [p, [p]]));
+  cuts.forEach(({ pick, w }, k) => {
+    const r = results[k];
+    if (!r || verdictFrom(r.answers, r.payoffConfidence).verdict === "FAIL") return;
+    options.get(pick)!.push({ ...w, source: "jev", jevScore: jevScore(r.answers) });
+  });
+  const out = picks.map((p) => {
+    const all = options.get(p)!;
+    const top = Math.max(...all.map((c) => c.jevScore));
+    return all.findLast((c) => c.jevScore >= top - LONGER_SLACK)!;
+  });
+  const grown = out.filter((p, k) => p !== picks[k]).length;
+  return { picks: dropOverlaps(out.sort((a, b) => b.jevScore - a.jevScore)), grown, tokens, error };
 }
 
 export interface Judgeable {

@@ -5,7 +5,7 @@ import type { AppConfig } from "./config";
 import { dropOverlaps, mineMoments, videoBrief, type Line, type VideoBrief } from "./director";
 import { ruleHook, type TranscriptSeg } from "./hooks";
 import { Jev, JevError } from "./jev";
-import { hookAndTitle, judgeClips, quoteTitle, screenMoments, sentenceWindows } from "./jevDirector";
+import { growPicks, hookAndTitle, judgeClips, quoteTitle, screenMoments, sentenceWindows } from "./jevDirector";
 import { Llm, LlmError } from "./llm";
 import { captionFlags, decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
 import { timeoutFor, type ExecFn, type ScriptRunner } from "./runner";
@@ -322,10 +322,13 @@ export class PipelineOrchestrator {
       const windows = sentenceWindows(lines);
       const screened = await screenMoments(this.jev, windows, opts.direction,
         (done, total) => { if (done % 10 === 0 || done === total) progress(`Jev reading moments ${done}/${total}`); });
-      for (const p of screened.picks) segments.push({ ...p, index: segments.length });
+      const longer = await growPicks(this.jev, screened.picks, lines, opts.direction,
+        (done, total) => { if (done % 10 === 0 || done === total) progress(`Jev trying longer cuts ${done}/${total}`); });
+      for (const p of longer.picks) segments.push({ ...p, index: segments.length });
+      const error = screened.error ?? longer.error;
       Object.assign(director, { by: "jev", model: this.jev.model, windows: windows.length, judged: screened.judged,
-        picks: screened.picks.length, tokens: screened.tokens }, screened.error ? { pickError: screened.error } : {});
-      if (screened.error) console.warn(`Jev screening partly failed for ${video.id}: ${screened.error}`);
+        picks: longer.picks.length, grown: longer.grown, tokens: screened.tokens + longer.tokens }, error ? { pickError: error } : {});
+      if (error) console.warn(`Jev screening partly failed for ${video.id}: ${error}`);
     } else if (this.llm.enabled && this.config.llmDirector && lines.length) {
       const ctx = { title: video.title, direction: opts.direction };
       let brief: VideoBrief | null = null;
