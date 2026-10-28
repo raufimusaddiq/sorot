@@ -13,7 +13,7 @@
 // When a Jev call fails the clip keeps the rules' answers (clipGate.ts
 // `ruleGate`); after MAX_FAILURES in a row the rest of the video does too.
 
-import { gateQuestions, gateState, NO, qualityOf, QUALITY_QUESTIONS, ruleGate, verdictFrom, YES, type GateResult } from "./clipGate";
+import { gateQuestions, gateState, jevState, NO, qualityOf, QUALITY_QUESTIONS, ruleGate, verdictFrom, YES, type GateResult } from "./clipGate";
 import { dropOverlaps, hookSpan, type Line } from "./director";
 import { JevError, type Jev, type Question } from "./jev";
 import { mapPool } from "./pool";
@@ -101,8 +101,8 @@ function toGate(answers: Record<string, number>, model: string, payoffConfidence
 }
 
 /** Ask one request; numbers by question id plus the payoff confidence. */
-async function ask(jev: Jev, state: object, questions: Record<string, Question>) {
-  const d = await jev.decide(state as Record<string, unknown>, questions);
+async function ask(jev: Jev, state: Record<string, unknown>, questions: Record<string, Question>) {
+  const d = await jev.decide(state, questions);
   const answers: Record<string, number> = {};
   let payoffConfidence: number | null = null;
   for (const [id, a] of Object.entries(d.answers)) {
@@ -153,7 +153,7 @@ export async function screenMoments(
   const questions = { ...SCREEN_QUESTIONS, ...(direction ? DIRECTION_QUESTION : {}) };
   let tokens = 0;
   const { results, error } = await withJev(windows, async (w) => {
-    const r = await ask(jev, { ...gateState(w.text), ...(direction ? { direction } : {}) }, questions);
+    const r = await ask(jev, gateState(w.text, null, direction), questions);
     tokens += r.tokens;
     return { w, r };
   }, (n) => onProgress?.(n, windows.length));
@@ -191,7 +191,7 @@ export async function judgeClips<T extends Judgeable>(
   const targets = segments.filter((s) => asked.has(s));
   const questions = { ...gateQuestions(false), ...(direction ? DIRECTION_QUESTION : {}) };
   const { results, error } = await withJev(targets,
-    (s) => ask(jev, { ...gateState(s.text), ...(direction ? { direction } : {}) }, questions),
+    (s) => ask(jev, gateState(s.text, null, direction), questions),
     (n) => onProgress?.(n, targets.length));
   targets.forEach((s, i) => {
     const r = results[i];
@@ -226,42 +226,62 @@ export function titleCandidates(text: string): string[] {
   return text.split(/(?<=[.!?…])\s+/).map((s) => s.trim()).filter((s) => s.length >= 15 && s.length <= 110);
 }
 
+/** Is this line an ad? Asked per line next to its hook question (a single Choice picked a sponsor read). */
+function adQuestion(ref: string): Question {
+  return {
+    type: "noul",
+    instructions: `Is ${ref} an advertisement, a sponsor read or a request to like, subscribe or follow?`,
+    criteria: {
+      true: `${ref} promotes a sponsor's product, deal or code, or asks viewers to like, subscribe, follow or share. `
+        + "Example: \"Pakai kode SOROT buat diskon 20%.\"",
+      false: `${ref} is part of the conversation, even when it names a product or brand.`,
+    },
+  };
+}
+
 /**
- * Hook line and title for one clip. Hook: the line after the opening seconds
- * with the highest hook probability (the gate's hook criteria, one Noul per
- * line — a single Choice picked a sponsor read) that isn't an ad, if ≥ YES;
- * otherwise none. Title: Jev's choice among the clip's sentences.
+ * Hook line and title for one clip. Every line gets the gate's hook question
+ * (one Noul per line), so a teaser is measured against the clip's own opening
+ * (line 0): a strong opening needs no replay; otherwise the best non-ad line
+ * from 3 s on is replayed if it is a strong hook, or at least better than even
+ * when the opening is clearly weak. `hook: null` is Jev's decision (no replay);
+ * undefined when there was no line to ask about (the rules decide).
+ * Title: Jev's choice among the clip's sentences — a quote, so it can't claim
+ * more than the clip says.
  */
 export async function hookAndTitle(
   jev: Jev, clipLines: Line[], clipStart: number, text: string,
-): Promise<{ hook: [number, number] | null; title: string | null }> {
+): Promise<{ hook?: [number, number] | null; title: string | null }> {
   const hookQ = QUALITY_QUESTIONS.hook_opening as Extract<Question, { type: "noul" }>;
   const ref = (i: number) => `\`lines.L${i}\``;
   const questions: Record<string, Question> = {};
   const eligible = clipLines.map((l, i) => ({ l, i })).filter(({ l }) => l.start - clipStart >= 3);
-  for (const { i } of eligible) {
+  if (eligible.length) clipLines.forEach((_, i) => {
     questions[`hook_${i}`] = {
       type: "noul", instructions: hookQ.instructions.replace("`opening`", ref(i)),
       criteria: { true: hookQ.criteria!.true.replaceAll("`opening`", ref(i)), false: hookQ.criteria!.false.replaceAll("`opening`", ref(i)) },
     };
-    questions[`ad_${i}`] = { type: "noul", instructions: `Is ${ref(i)} an advertisement, sponsor read or promotion?` };
-  }
+  });
+  for (const { i } of eligible) questions[`ad_${i}`] = adQuestion(ref(i));
   const sentences = titleCandidates(text);
   if (sentences.length >= 2) {
     questions.title = {
       type: "choice",
-      instructions: "Which sentence of `sentences` would make the best post title for `excerpt`: true to it and most likely to make people watch?",
-      criteria: Object.fromEntries(sentences.map((_, i) => [`S${i}`, null as unknown as string])),
+      instructions: "Which of these sentences from `excerpt`, used as the clip's post title, would make the most viewers want to watch it?",
+      criteria: Object.fromEntries(sentences.map((s, i) => [`S${i}`, s])),   // options described by the sentence itself
     };
   }
-  if (!Object.keys(questions).length) return { hook: null, title: sentences[0] ?? null };
-  const d = await jev.decide({
+  if (!Object.keys(questions).length) return { title: sentences[0] ?? null };
+  const d = await jev.decide(jevState({
     lines: Object.fromEntries(clipLines.map((l, i) => [`L${i}`, l.text.trim()])),
-    ...(questions.title ? { excerpt: text.slice(0, 3000), sentences: Object.fromEntries(sentences.map((s, i) => [`S${i}`, s])) } : {}),
-  }, questions);
+    ...(questions.title ? { excerpt: text.slice(0, 3000) } : {}),
+  }), questions);
   const p = (id: string) => { const a = d.answers[id]; return a?.type === "noul" ? a.noul : 0; };
+  const opening = p("hook_0");
   const best = eligible.filter(({ i }) => p(`ad_${i}`) < 0.5).sort((a, b) => p(`hook_${b.i}`) - p(`hook_${a.i}`))[0];
-  const hook = best && p(`hook_${best.i}`) >= YES ? hookSpan(best.l) : null;
+  const strength = best ? p(`hook_${best.i}`) : 0;
+  const replay = opening < YES && (strength >= YES || (opening <= NO && strength >= 0.5));
+  const hook = !eligible.length ? undefined : best && replay ? hookSpan(best.l) : null;
   const t = d.answers.title;
   const title = t?.type === "choice" ? sentences[Number(t.choice.slice(1))] ?? null : sentences[0] ?? null;
   return { hook, title };

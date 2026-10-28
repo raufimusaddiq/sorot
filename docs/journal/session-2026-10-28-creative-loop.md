@@ -144,3 +144,36 @@ fallback everywhere, and "Bun first, Python second". Design + sources:
   tsc clean; CLI 38/38; UI 133/133 + static build. Live: runs 3-4 above
   (COMPLETED; the Jev-down fallback is covered by "Jev-first falls back to
   the rules when Jev is down"). No Python changed.
+
+## Jev context + measurement, test compression (same day, later)
+- Owner: Jev needs the RIGHT questions and the RIGHT thing measured ("it
+  depends how the code runs"); keep Jev as primary director; make its
+  "system prompt" good; compress the tests.
+- Jev has no system-prompt field (`/v1/systemone` takes model, state,
+  questions; checked against TypeSafe's OpenAPI). The briefing goes in the
+  state: `jevState()` adds `context` {task, viewer, text, fields} to every
+  request (gate, screening, judging, hooks/titles, publish copy).
+- Audit found: the hook/title request had no context; the title Choice asked
+  two things ("true to it and most likely to make people watch") with options
+  named S0.. and no description; the old note said "podcast, interview, talk
+  show" (the test video is a phone review).
+- Measured, 3 live runs per version on the fixture: separation up on every
+  question (`needs_prior_context` 0.73-0.74 → 0.80-0.83, no overlap), verdicts
+  12/12 throughout; 206 real windows: Jev-score rank correlation 0.976, FAIL
+  windows 120 → 107, +10 % tokens.
+- Hook decision fixed in code: a teaser is compared with the clip's own
+  opening (same question, same request); Jev's "no replay" is no longer
+  overwritten by the rules' hook; `hook: undefined` when Jev had no line to
+  judge (one long transcript line) so the rules still fill those. My first
+  comparison script mapped hook times to the wrong line (off by one) and made
+  a good pick look bad — caught with a per-line probe.
+- Run 5 (live, new code): SEGMENT 3 s, SCORE 7 s, 1 rendered (BACKUP 0.65,
+  33.1-60.4 s, no replay by Jev's decision, title "Kedengeran absurd nggak?" —
+  a quote that leans on the clip; a per-sentence "makes sense alone" Noul is a
+  candidate, not built). Top clip differs from runs 3-4 again: borderline
+  flips remain the main open issue.
+- Tests compressed (branch-added code only): shared Jev fake in
+  `tests/helpers.ts` (`fakeJev`, `clipAnswer`, `jevReply`, and
+  `unknownFields`, which checks every backticked field in a request exists
+  in its state), tables via `test.each`. AGENTS.md now carries the
+  compact-tests rule.

@@ -12,6 +12,7 @@
 //             scorer's weights learn from real results (feedback.ts).
 
 import { existsSync, statSync } from "node:fs";
+import { jevState } from "./clipGate";
 import type { AppConfig } from "./config";
 import type { VideoBrief } from "./director";
 import type { FeedbackService } from "./feedback";
@@ -198,7 +199,7 @@ export class Publisher {
       },
     }]));
     try {
-      const d = await this.jev.decide({ excerpt: (clip.textContent ?? "").slice(0, 3000), posts: copies }, questions);
+      const d = await this.jev.decide(jevState({ excerpt: (clip.textContent ?? "").slice(0, 3000), posts: copies }), questions);
       return Object.fromEntries(ids.map((p, i) => [p, (d.answers[`overclaims_${i}`] as { noul: number }).noul]));
     } catch (e) {
       if (e instanceof JevError) return null;

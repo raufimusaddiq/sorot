@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { createApp, type App } from "../src/app";
 import { loadConfig, type AppConfig } from "../src/config";
 import { openDatabase } from "../src/db";
+import { Jev } from "../src/jev";
 import type { ExecFn, ProcResult, ScriptOptions, ScriptRunner } from "../src/runner";
 import type { Json } from "../src/types";
 
@@ -179,4 +180,57 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
       rmSync(dir, { recursive: true, force: true });
     },
   };
+}
+
+// ---- Jev ------------------------------------------------------------------
+
+export const JEV_ON = { jevUrl: "http://jev/v1/systemone", jevModel: "jev-1.14.0", jevApiKey: "k", jevTimeoutSec: 5 };
+export type JevRequest = { state: any; questions: Record<string, any> };
+/** Answer for one question id about a state; an Error makes the request fail (HTTP 500). */
+export type JevAnswer = (state: any, id: string) => unknown;
+
+export const noulA = (p: number) => ({ type: "noul", noul: p });
+export const scoreA = (score: number, confidence = 0.9) => ({ type: "score", score, confidence });
+
+/**
+ * Clip answers: good, unless the excerpt is weak ("Halo…", "Hari ini…", "lemah": filler, no hook,
+ * no payoff); "korupsi" is a risk, "harga"/"rahasia" fit the direction, a "BOHONG" title over-claims.
+ */
+export const clipAnswer: JevAnswer = (state, id) => {
+  const text = String(state.excerpt ?? "");
+  const weak = /^(Halo|Hari ini)|lemah/.test(text);
+  if (id === "payoff") return scoreA(weak ? 0.2 : 1.9);
+  if (id === "title") return { type: "choice", choice: "S0", confidence: 0.8, probabilities: { S0: 0.8 } };
+  if (id === "hook_opening" || id === "ends_complete") return noulA(weak ? 0.1 : 0.9);
+  if (id === "mostly_filler") return noulA(weak ? 0.9 : 0.05);
+  if (id === "fits_direction") return noulA(/harga|rahasia/i.test(text) ? 0.95 : 0.05);
+  if (id === "risk_accusation") return noulA(text.includes("korupsi") ? 0.8 : 0.02);
+  if (id === "title_overclaims") return noulA(String(state.title).includes("BOHONG") ? 0.9 : 0.1);
+  return noulA(0.05);
+};
+
+/** Jev's HTTP reply to a request body, logged in `log`. */
+export function jevReply(init: RequestInit | undefined, answer: JevAnswer, log: JevRequest[] = []): Response {
+  const { state, questions } = JSON.parse(String(init?.body));
+  log.push({ state, questions });
+  const answers: Record<string, unknown> = {};
+  for (const id of Object.keys(questions)) {
+    const a = answer(state, id);
+    if (a instanceof Error) return new Response(a.message, { status: 500 });
+    answers[id] = a;
+  }
+  return Response.json({ model: "jev-1.14.0", answers, usage: { input_tokens: 10, output_tokens: 1 } });
+}
+
+/** A Jev client over `jevReply`. */
+export function fakeJev(answer: JevAnswer = clipAnswer) {
+  const requests: JevRequest[] = [];
+  const fetchFn = (async (_url: string, init?: RequestInit) => jevReply(init, answer, requests)) as unknown as typeof fetch;
+  return { jev: new Jev(JEV_ON, fetchFn, 0), requests };
+}
+
+/** Backticked paths in a request's questions that don't exist in its state (TypeSafe: name the field you mean). */
+export function unknownFields({ state, questions }: JevRequest): string[] {
+  const paths = [...JSON.stringify(questions).matchAll(/`([\w.]+)`/g)].map((m) => m[1]!);
+  return paths.filter((p) => p.split(".").reduce((o: any, k) => (o == null ? undefined : o[k]), state) === undefined);
 }

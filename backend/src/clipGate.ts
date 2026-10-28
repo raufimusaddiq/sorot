@@ -52,10 +52,32 @@ export interface GateResult {
 // literally, and English is its strongest language — the Indonesian examples
 // show what the markers look like). Counting, lengths and timing stay in code.
 
-export const STATE_NOTE =
-  "A short vertical video was cut from a longer Indonesian video (podcast, interview, talk show). "
-  + "`excerpt` is everything said in it, transcribed by speech recognition (spelling errors are possible). "
-  + "`opening` is how it starts and `closing` is how it ends.";
+// Jev has no system prompt — a request is `state` + `questions` — so the
+// briefing rides in the state, as TypeSafe's state guide says ("the material
+// you would present to a panel of experts"). Every request carries this
+// `context`, describing only the fields that request sends.
+const CONTEXT = {
+  task: "Judging moments of a longer Indonesian video (a talk, podcast, interview, review or vlog) as short vertical clips "
+    + "of 15 to 60 seconds for TikTok, Instagram Reels and YouTube Shorts.",
+  viewer: "Each clip is posted on its own. Its viewers have not seen the rest of the video, decide within the first "
+    + "seconds whether to keep watching, and stay only if the clip pays off.",
+  text: "All text is Indonesian speech from speech recognition: punctuation is guessed and some words may be misheard.",
+};
+const FIELDS: Record<string, string> = {
+  excerpt: "everything said in the clip, in order",
+  opening: "the first sentence or two of `excerpt`",
+  closing: "the last sentence or two of `excerpt`",
+  title: "a title written for the clip",
+  direction: "what the creator wants the clips to be about",
+  lines: "the clip's lines in order; one of them may be replayed as a teaser before the clip starts",
+  posts: "the post text written for each platform",
+};
+
+/** A Jev state: the shared context (describing the fields present), then the fields. */
+export function jevState<T extends Record<string, unknown>>(fields: T): T & { context: Record<string, unknown> } {
+  const described = Object.keys(fields).filter((k) => FIELDS[k]).map((k) => [k, FIELDS[k]]);
+  return { context: { ...CONTEXT, fields: Object.fromEntries(described) }, ...fields };
+}
 
 export const QUALITY_QUESTIONS: Record<string, Question> = {
   hook_opening: {
@@ -194,15 +216,15 @@ export function openingAndClosing(text: string): { opening: string; closing: str
 /** Title as Jev should read it: without hashtags. */
 export const plainTitle = (title: string) => title.replace(/#\S+/g, "").replace(/\s+/g, " ").trim();
 
-export function gateState(text: string, title?: string | null) {
+export function gateState(text: string, title?: string | null, direction?: string) {
   const { opening, closing } = openingAndClosing(text);
-  return {
-    clip: STATE_NOTE,
+  return jevState({
     opening,
     closing,
     excerpt: text.slice(0, MAX_EXCERPT),
     ...(title ? { title: plainTitle(title) } : {}),
-  };
+    ...(direction ? { direction } : {}),
+  });
 }
 
 export function gateQuestions(withTitle: boolean): Record<string, Question> {

@@ -56,14 +56,59 @@ title are all questions of that shape once code proposes the options.
 |---|---|---|---|
 | **Find** (SEGMENT) | one window per line that starts a sentence (previous line ends with `. ! ? …` or a ≥ 0.6 s pause), grown to 25 s then to the next sentence end; 15-60 s | the five quality questions (§3) + `fits_direction` when there is a direction | non-FAIL windows, best first, no overlaps > 50 %; top 40 as `source: "jev"` next to the rule windows |
 | **Score + gate** (SCORE) | every candidate (best 200 by rule score + every Jev pick) | the full gate questions (quality + risks) + `fits_direction` | `finalScore` = 0.5 × Jev (quality composite, 50/50 with the fit) + 0.5 × rules; the verdict from the *same* answers (`verdictFrom`); a reason built from them ("Jev: strong opening, complete ending, clear payoff, fits your direction") |
-| **Hook** | each line ≥ 3 s after the clip start | per line: the gate's hook question and "is this an ad / sponsor read?" (one Noul each — a single Choice picked a sponsor line) | best non-ad line if ≥ 0.7, cut to one sentence (`hookSpan`); else the rules' hook |
-| **Title** | the clip's sentences of 15-110 chars | a Choice: "best post title for `excerpt`: true to it and most likely to make people watch" | the quote (≤ 80 chars) + 2 rule hashtags. A quote can't over-claim, so no title check is needed |
+| **Hook** | every line of the clip; lines ≥ 3 s in are teaser candidates | per line: the gate's hook question, and for candidates "is this an ad, a sponsor read or a like/subscribe request?" (one Noul each — a single Choice picked a sponsor line) | measured against the clip's **own opening** (line 0): opening ≥ 0.7 → no replay; else the best non-ad line if ≥ 0.7, or ≥ 0.5 when the opening is ≤ 0.3. Jev's "no replay" stands — the rules' hook only fills clips Jev had no line to judge |
+| **Title** | the clip's sentences of 15-110 chars | a Choice, one judgment: "which of these sentences, used as the clip's post title, would make the most viewers want to watch it?" — each option described by the sentence itself | the quote (≤ 80 chars) + 2 rule hashtags. A quote can't over-claim, so no title check is needed |
 
 Hooks and titles are asked only for the clips that will render
 (`MAX_RENDER_CLIPS` on CPU). A Jev failure keeps the rules' answers for that
 clip; after 3 failures in a row the rest of the video uses the rules.
 `JEV_DIRECTOR=false` (or the Settings / `sorot connect jev --director false`
 toggle) makes Jev a gate only, and the LLM director (§2) runs if configured.
+
+### The context Jev reads (its "system prompt")
+
+Jev has no system prompt: a request is `model` + `state` + `questions`.
+TypeSafe's [state guide](https://docs.typesafe.ai/concepts/state.md) puts the
+briefing in the state — "the material you would present to a panel of
+experts before asking them to make a judgment". So every request Sorot sends
+(screening, judging, the gate, hooks/titles, the publish-copy check) is built
+by `jevState()` (`clipGate.ts`) and carries one `context` object:
+
+- `task` — judging moments of a longer Indonesian video as 15-60 s vertical
+  clips for TikTok, Reels and Shorts;
+- `viewer` — each clip is posted on its own: viewers haven't seen the rest,
+  decide in the first seconds, stay only for a payoff;
+- `text` — Indonesian speech recognition: guessed punctuation, misheard words;
+- `fields` — what each field *in this request* is (`excerpt`, `opening`,
+  `closing`, `title`, `direction`, `lines`, `posts`), and nothing else.
+
+Before, only the gate state had a one-line note ("…cut from a podcast,
+interview, talk show"), and the hook/title request had no context at all.
+Measured live (`jev-1.14.0`, 2026-10-28; three runs per version):
+
+| | old note | `context` |
+|---|---|---|
+| Fixture separation (yes-mean − no-mean): `needs_prior_context` | 0.727 / 0.737 / 0.728 | 0.802 / 0.827 / 0.815 |
+| `hook_opening` | 0.775 / 0.765 / 0.775 | 0.790 / 0.795 / 0.790 |
+| `ends_complete` · `mostly_filler` · `title_overclaims` | ~0.94 · ~0.95 · ~0.93 | ~0.96 · ~0.96 · 0.94 |
+| Fixture verdicts | 12/12 ×3 | 12/12 ×3 |
+| 206 real windows: rank correlation of the Jev score, old vs new | — | 0.976 |
+| Real windows that FAIL screening | 120 | 107 |
+| Input tokens for the 206 windows | 241 902 | 266 416 (+10 %, ≈ $0.001) |
+
+Small fixture (16 synthetic cases, 5 labelled for `needs_prior_context`), so
+read this as "better on every question, consistently", not as a calibrated
+accuracy. On the real clips the hook question ranks lines sensibly with the
+context ("Sekarang kok berani jualan seri Note di harga flagship?" 0.83-0.89;
+"Dominant di kelas entry level." 0.17; "Huh!" 0.31).
+
+**What is measured, and where code decides.** The hook is the clearest case
+of "the right question is not enough": before, any line ≥ 0.7 was replayed
+and Jev's "none" was overwritten by the rules' hook. Now the teaser is
+compared with the clip's own opening (same question, same request), and Jev's
+decision stands — a clip that opens with its strongest line (0.89) gets no
+replay; one that opens with "Halo guys…" (~0.2) replays "Ini adalah HP
+Infinix termahal yang pernah dijual di Indonesia." (~0.6), in 3 of 3 runs.
 
 ### Where the LLM is still needed
 
@@ -183,6 +228,8 @@ checks mechanically):
 - **Risks as separate Nouls, not one Choice** — they can co-occur, and a Choice
   "leans toward the option that comes first".
 - **Score levels that stand alone** (no "better than the previous").
+- **Context in the state** (Jev has no system prompt; see §1): the same
+  `context` object in every request, describing only the fields sent.
 - **State filtered** to what the questions need (≤ 3 000 chars of excerpt; no
   LLM reason, which would bias the judge).
 

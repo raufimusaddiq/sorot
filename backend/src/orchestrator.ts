@@ -395,10 +395,13 @@ export class PipelineOrchestrator {
     // Clips the gate held back rank after the rest (render tiers stay first: render.py indexes them in order).
     const ranked = kept.sort(heldLast).map((s, i) => ({ ...s, rank: i + 1 }));
     const words = (ctx.transcript ?? []) as TranscriptSeg[];
-    if (this.jevFirst) await this.jevHooksAndTitles(ranked, words, progress);
-    // Every clip's hook is decided here (render.py only replays it): Jev's or the LLM's line, else the rules' (null = none).
+    const jevDecided = this.jevFirst ? await this.jevHooksAndTitles(ranked, words, progress) : new Set<object>();
+    // Every clip's hook is decided here (render.py only replays it): Jev's decision (null = its opening needs
+    // no replay) or the LLM's line, else the rules' (null = none).
     for (const s of ranked) {
-      if (typeof (s as Json).hookStart !== "number") Object.assign(s, ruleHook(words, s.startTime, s.endTime) ?? { hookStart: null, hookEnd: null });
+      if (!jevDecided.has(s) && typeof (s as Json).hookStart !== "number") {
+        Object.assign(s, ruleHook(words, s.startTime, s.endTime) ?? { hookStart: null, hookEnd: null });
+      }
     }
     const result: Json = {
       videoId: video.id,
@@ -422,15 +425,17 @@ export class PipelineOrchestrator {
 
   /**
    * Hook line and quote title from Jev for the clips that will render first
-   * (the CPU cap, else every render-tier clip up to the gate's limit). A clip
-   * Jev can't answer keeps the rules' hook and title.
+   * (the CPU cap, else every render-tier clip up to the gate's limit). Returns
+   * the clips whose hook Jev decided; the others get the rules' hook (and a
+   * clip Jev couldn't answer keeps the rules' title).
    */
   private async jevHooksAndTitles(ranked: Array<{ startTime: number; endTime: number; text: string; tier: string; title: string }>,
-    words: TranscriptSeg[], progress: (text: string) => void) {
+    words: TranscriptSeg[], progress: (text: string) => void): Promise<Set<object>> {
     const cap = this.config.maxRenderClips > 0 ? this.config.maxRenderClips : GATE_MAX;
     const targets = ranked.filter((s) => RENDER_TIERS.includes(s.tier)).slice(0, cap);
     let done = 0;
     let failures = 0;
+    const decided = new Set<object>();
     await mapPool(targets, 4, async (s) => {
       if (failures >= 3) return;
       const lines: Line[] = words.filter((w) => Number(w.start) >= s.startTime - 0.05 && Number(w.end) <= s.endTime + 0.05)
@@ -439,7 +444,10 @@ export class PipelineOrchestrator {
       try {
         const r = await hookAndTitle(this.jev, lines, s.startTime, s.text);
         failures = 0;
-        Object.assign(s, r.hook ? { hookStart: r.hook[0], hookEnd: r.hook[1] } : { hookStart: null, hookEnd: null });
+        if (r.hook !== undefined) {
+          Object.assign(s, r.hook ? { hookStart: r.hook[0], hookEnd: r.hook[1] } : { hookStart: null, hookEnd: null });
+          decided.add(s);
+        }
         if (r.title) s.title = quoteTitle(r.title, s.text, s.tier);
       } catch (e) {
         if (!(e instanceof JevError)) throw e;
@@ -447,6 +455,7 @@ export class PipelineOrchestrator {
       }
       progress(`Jev picking hooks and titles ${++done}/${targets.length}`);
     });
+    return decided;
   }
 
   /** Predictions of the optional trained model (ai-pipeline/model.lgb), by segment index. */
