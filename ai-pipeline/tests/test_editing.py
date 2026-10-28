@@ -63,28 +63,18 @@ class TestHookPlanning:
         assert both[0] == (5.9, 7.95) and captions.is_monotonic(both[1:])
         assert captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=lambda t: 0) == [(0.0, 10.0)]
         assert captions.timeline_duration(hook) == 12.05
+        given = captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=hook_scorer, hook=(3.9, 5.45))
+        assert given == [(3.9, 5.45), (0.0, 10.0)]                       # a given hook wins over the rules
+        assert captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=hook_scorer, hook=False) == [(0.0, 10.0)]
+        assert captions.plan_timeline(TALK, 10.0, hook=(3.9, 5.45)) == [(0.0, 10.0)]   # only with hook_first
 
     def test_llm_hook_from_segment(self):
         seg = {"startTime": 100.0, "endTime": 110.0}
         assert captions.seg_hook(seg) is None                                   # old segments file: rules here pick
-        assert captions.seg_hook({**seg, "hookStart": None, "hookEnd": None}) is False     # backend chose no hook
         assert captions.seg_hook({**seg, "hookStart": 106.0, "hookEnd": 107.8}) == (5.9, 7.95)
-        assert captions.seg_hook({**seg, "hookStart": 101.0, "hookEnd": 102.5}) is False   # already the opening
-        assert captions.seg_hook({**seg, "hookStart": 108.0, "hookEnd": 112.0}) is False   # runs past the clip
-        assert captions.seg_hook({**seg, "hookStart": 104.0, "hookEnd": 104.2}) is False   # too short to be a line
-        assert captions.seg_hook({**seg, "hookStart": "106", "hookEnd": 107}) is False
-
-    def test_plan_timeline_explicit_hook_wins_over_rules(self):
-        llm = captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=hook_scorer, hook=(3.9, 5.45))
-        assert llm == [(3.9, 5.45), (0.0, 10.0)]
-        assert captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=hook_scorer, hook=False) == [(0.0, 10.0)]
-        assert captions.plan_timeline(TALK, 10.0, hook=(3.9, 5.45)) == [(0.0, 10.0)]   # only with hook_first
-
-    def test_clip_words_use_the_llm_hook(self):
-        segs = [{"start": 0, "end": 10, "words": TALK}]
-        seg = {"startTime": 0, "endTime": 10, "hookStart": 4.0, "hookEnd": 5.3}
-        words = subtitle.clip_words(segs, seg, hook_first=True)
-        assert [x["text"] for x in words[:3]] == ["Ini", "biasa", "saja."]
+        # backend chose none, already the opening, runs past the clip, too short to be a line, not numbers
+        for start, end in [(None, None), (101.0, 102.5), (108.0, 112.0), (104.0, 104.2), ("106", 107)]:
+            assert captions.seg_hook({**seg, "hookStart": start, "hookEnd": end}) is False
 
     def test_hook_words_play_twice(self):
         mapped = captions.map_words(TALK, [(5.9, 7.95), (0.0, 10.0)])
@@ -122,9 +112,13 @@ class TestRenderHookFirst:
                                        timeline=[(5.0, 6.0), (0.0, 10.0)], reframe=reframe.video_filter("blur"))
         assert ";[cv]null[in];[in]split=2" in cmd[cmd.index("-filter_complex") + 1]
 
-    def test_main_reports_hook(self, monkeypatch, capsys, tmp_path):
+    @pytest.mark.parametrize("hook, timeline, duration", [
+        ({}, [(5.9, 7.95), (0.0, 10.0)], 12.05),                                   # no hook keys: find_hook picks
+        ({"hookStart": 4.0, "hookEnd": 5.3}, [(3.9, 5.45), (0.0, 10.0)], 11.55),   # the segment's hook wins
+    ])
+    def test_main_reports_hook(self, monkeypatch, capsys, tmp_path, hook, timeline, duration):
         seg = tmp_path / "s.json"
-        seg.write_text(json.dumps({"scoredSegments": [{"rank": 1, "tier": "PRIMARY", "startTime": 0, "endTime": 10}]}))
+        seg.write_text(json.dumps({"scoredSegments": [{"rank": 1, "tier": "PRIMARY", "startTime": 0, "endTime": 10, **hook}]}))
         tr = tmp_path / "t.json"
         tr.write_text(json.dumps({"segments": [{"start": 0, "end": 10, "text": "x", "words": TALK}]}))
         seen = {}
@@ -139,27 +133,8 @@ class TestRenderHookFirst:
                                           "--reframe", "center"])
         render.main()
         clip = json.loads(capsys.readouterr().out)["data"]["clips"][0]
-        assert seen["timeline"] == [(5.9, 7.95), (0.0, 10.0)]
-        assert clip["hookFirst"] is True and clip["trimmedDuration"] == 12.05
-
-    def test_main_uses_the_segments_llm_hook(self, monkeypatch, capsys, tmp_path):
-        seg = tmp_path / "s.json"
-        seg.write_text(json.dumps({"scoredSegments": [{"rank": 1, "tier": "PRIMARY", "startTime": 0, "endTime": 10,
-                                                       "hookStart": 4.0, "hookEnd": 5.3}]}))
-        tr = tmp_path / "t.json"
-        tr.write_text(json.dumps({"segments": [{"start": 0, "end": 10, "text": "x", "words": TALK}]}))
-        seen = {}
-
-        def fake_render(video, start, end, out, timeline=None, reframe=None, burn=None):
-            seen["timeline"] = timeline
-            open(out, "wb").write(b"x")
-        monkeypatch.setattr(render, "render_clip", fake_render)
-        monkeypatch.setattr(captions, "find_hook", lambda words, d, scorer=None: (5.9, 7.95))
-        monkeypatch.setattr(sys, "argv", ["render.py", "--segments", str(seg), "--video", "v", "--output-dir",
-                                          str(tmp_path / "r"), "--transcript", str(tr), "--hook-first",
-                                          "--reframe", "center"])
-        render.main()
-        assert seen["timeline"] == [(3.9, 5.45), (0.0, 10.0)]
+        assert seen["timeline"] == timeline
+        assert clip["hookFirst"] is True and clip["trimmedDuration"] == duration
 
 
 # --- subtitle: hook-first words, music -------------------------------------------------
@@ -170,6 +145,8 @@ class TestSubtitleEditing:
         segs = [{"start": 0, "end": 10, "words": TALK}]
         words = subtitle.clip_words(segs, {"startTime": 0, "endTime": 10}, hook_first=True)
         assert words[0]["text"] == "Kenapa" and words[0]["start"] == pytest.approx(0.1)
+        given = subtitle.clip_words(segs, {"startTime": 0, "endTime": 10, "hookStart": 4.0, "hookEnd": 5.3}, hook_first=True)
+        assert [x["text"] for x in given[:3]] == ["Ini", "biasa", "saja."]   # the segment's hook wins over find_hook
 
     def test_burn_cmd_with_music_ducking(self):
         cmd = subtitle._build_burn_cmd("ffmpeg", "r.mp4", "c.ass", "o.mp4", False, bgm="song.mp3", bgm_volume=0.2)

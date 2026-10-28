@@ -862,8 +862,9 @@ describe('editing suite', () => {
 });
 
 describe('LLM, gate and publishing on clip cards; the Settings app', () => {
-  it('shows the gate verdict, an LLM or Jev pick and the reason; Publish only with Tebar connected', async () => {
+  it('shows the gate verdict, an LLM or Jev pick and the reason; Publish on rendered clips once Tebar is connected', async () => {
     seedCompleted();
+    state.settings = makeConnections({ tebar: { active: true, apiKeySet: true, apiKey: '••••1234' } });
     state.clips.v1 = [
       makeClip('c1', 'v1', 'PRIMARY', 1, { source: 'llm', reason: 'LLM pick: setup and payoff', gateVerdict: 'PASS',
         gate: JSON.stringify({ verdict: 'PASS', by: 'jev', model: 'jev-1.14.0', reasons: [], answers: {}, quality: 0.9 }) }),
@@ -871,23 +872,24 @@ describe('LLM, gate and publishing on clip cards; the Settings app', () => {
         gate: JSON.stringify({ verdict: 'FAIL', by: 'rules', model: null, reasons: ['needs earlier context to make sense'], answers: {}, quality: 0.3 }) }),
       makeClip('c3', 'v1', 'BACKUP', 3, { gateVerdict: 'REVIEW', gate: '{broken' }),
       makeClip('c4', 'v1', 'BACKUP', 4, { source: 'jev', reason: 'Jev: strong opening, clear payoff' }),
-      makeClip('c5', 'v1', 'BACKUP', 5, { source: 'rules' }),
+      makeClip('c5', 'v1', 'BACKUP', 5, { source: 'rules', renderPath: null, renderStatus: 'PENDING' }),
     ];
     await renderLoaded();
-    const c1 = card('c1');
-    expect(within(c1).getByText('Gate PASS')).toHaveAttribute('title', 'Jev (jev-1.14.0)');
-    expect(within(c1).getByText('LLM pick')).toBeInTheDocument();
-    expect(within(c1).getByText('LLM pick: setup and payoff')).toBeInTheDocument();
+    expect(within(card('c1')).getByText('Gate PASS')).toHaveAttribute('title', 'Jev (jev-1.14.0)');
+    expect(within(card('c1')).getByText('LLM pick')).toHaveAttribute('title', 'Moment picked by the LLM director');
+    expect(within(card('c1')).getByText('LLM pick: setup and payoff')).toBeInTheDocument();
     expect(within(card('c2')).getByText('Gate FAIL · rules')).toHaveAttribute('title', 'Rules: needs earlier context to make sense');
     expect(within(card('c3')).getByText('Gate REVIEW')).toHaveAttribute('title', 'Rules');
     expect(within(card('c4')).getByText('Jev pick')).toHaveAttribute('title', 'Moment picked by the Jev director');
     expect(within(card('c5')).queryByText(/ pick$/)).not.toBeInTheDocument();
-    expect(within(c1).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(await waitFor(() => within(card('c1')).getByRole('button', { name: 'Publish' }))).toBeInTheDocument();
+    expect(within(card('c5')).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();   // not rendered yet
   });
 
   it('connecting Tebar in Settings turns on Publish, which opens the publish window', async () => {
     seedCompleted();
     await renderLoaded();
+    expect(within(card('c1')).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     const tebar = await screen.findByRole('region', { name: 'Tebar publishing' });
     fireEvent.change(within(tebar).getByLabelText('Tebar publishing API key'), { target: { value: 'tb_live_abcd1234' } });
@@ -900,13 +902,7 @@ describe('LLM, gate and publishing on clip cards; the Settings app', () => {
     expect(screen.queryByRole('dialog', { name: 'Publish clip' })).not.toBeInTheDocument();
   });
 
-  it('a connected Tebar from the start shows Publish; settings load failures are reported', async () => {
-    seedCompleted();
-    state.settings = makeConnections({ tebar: { ...makeConnections().tebar, active: true, apiKeySet: true, apiKey: '••••1234' } });
-    const first = await renderLoaded();
-    expect(await waitFor(() => within(card('c1')).getByRole('button', { name: 'Publish' }))).toBeInTheDocument();
-    expect(within(card('c3')).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();   // not rendered yet
-    first.unmount();
+  it('reports a settings load failure', async () => {
     state.fail['GET /api/settings'] = 'db locked';
     await renderLoaded();
     expect(await screen.findByText(/db locked/)).toBeInTheDocument();

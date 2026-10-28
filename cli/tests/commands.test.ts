@@ -336,68 +336,54 @@ describe("discovery", () => {
 });
 
 describe("connect", () => {
-  const view = (over: Record<string, unknown> = {}) => ({
-    llm: { active: true, enabled: true, baseUrl: "https://api.groq.com/openai/v1", model: "llama", apiKey: "••••1234", apiKeySet: true, director: true, saved: ["model"] },
-    jev: { active: false, enabled: true, url: "https://api.typesafe.ai/v1/systemone", model: "jev-1.14.0", apiKey: "", apiKeySet: false, saved: [] },
-    tebar: { active: false, enabled: false, baseUrl: "https://api.tebar.app/v1", apiKey: "", apiKeySet: false, saved: ["enabled"] },
-    ...over,
-  });
+  const llm = { active: true, enabled: true, baseUrl: "https://api.groq.com/openai/v1", model: "llama", apiKey: "••••1234", apiKeySet: true, director: true, saved: ["model"] };
+  const view = { llm, jev: { active: false, enabled: true, url: "https://api.typesafe.ai/v1/systemone", model: "jev-1.14.0", apiKey: "", apiKeySet: false, saved: [] },
+    tebar: { active: false, enabled: false, baseUrl: "https://api.tebar.app/v1", apiKey: "", apiKeySet: false, saved: ["enabled"] } };
+  const routes = { "GET /api/settings": view, "PUT /api/settings/llm": { ...view, llm: { ...llm, director: false } }, "PUT /api/settings/jev": view,
+    "PUT /api/settings/tebar": view, "POST /api/settings/llm/test": { ok: true, ms: 420, model: "qwen", detail: "OK" },
+    "POST /api/settings/jev/test": { ok: true, ms: 80 }, "POST /api/settings/tebar/test": { ok: false, ms: 120, error: "Tebar 401 invalid_api_key: revoked" } };
 
   test("shows the three connections with masked keys", async () => {
-    const h = harness({ "GET /api/settings": view() });
+    const h = harness(routes);
     expect(await h.run("connect")).toBe(0);
     expect(h.text()).toMatch(/llm\s+yes\s+https:\/\/api\.groq\.com\/openai\/v1\s+llama\s+••••1234\s+model/);
     expect(h.text()).toMatch(/jev\s+no\s+https:\/\/api\.typesafe\.ai\/v1\/systemone\s+jev-1\.14\.0\s+-\s+-/);
     expect(h.text()).toMatch(/tebar\s+off/);
-    expect(h.text()).toContain("LLM director (brief + own clip picks): on");
-    expect(h.text()).toContain("Jev picks moments, hooks and titles: off");
-    const j = harness({ "GET /api/settings": view() });
-    await j.run("connect", "show", "--json");
-    expect(JSON.parse(j.out[0]!).jev.model).toBe("jev-1.14.0");
+    expect(h.text()).toContain("Jev picks moments, hooks and titles: off (wins over the LLM director when Jev is active)\nLLM director (brief + own clip picks): on");
+    await h.run("connect", "show", "--json");
+    expect(JSON.parse(h.out.at(-1)!).jev.model).toBe("jev-1.14.0");
   });
 
   test("sets fields, reads a key from stdin, switches on/off, resets", async () => {
-    const h = harness({ "PUT /api/settings/llm": (body: unknown) => view({ llm: { ...view().llm, director: false, body } }),
-      "PUT /api/settings/jev": view(), "PUT /api/settings/tebar": view() });
+    const h = harness(routes);
+    const put = async (...args: string[]) => { await h.run("connect", ...args); return h.requests.at(-1)!.body; };
     h.state.stdin = "sk-secret-from-stdin\n";
-    expect(await h.run("connect", "llm", "--base-url", "http://localhost:11434/v1", "--model", "qwen2.5:7b", "--key", "-", "--director", "off", "--on")).toBe(0);
-    expect(h.requests[0]).toEqual({ method: "PUT", path: "/api/settings/llm", body: {
-      baseUrl: "http://localhost:11434/v1", model: "qwen2.5:7b", apiKey: "sk-secret-from-stdin", director: false, enabled: true } });
+    expect(await put("llm", "--base-url", "http://localhost:11434/v1", "--model", "qwen2.5:7b", "--key", "-", "--director", "off", "--on")).toEqual({
+      baseUrl: "http://localhost:11434/v1", model: "qwen2.5:7b", apiKey: "sk-secret-from-stdin", director: false, enabled: true });
     expect(h.text()).toContain("LLM director (brief + own clip picks): off");
-    await h.run("connect", "jev", "--base-url", "https://openrouter.ai/api/alpha/decisions", "--model", "typesafe/jev-1.14", "--key", "or-key", "--off");
-    expect(h.requests[1]!.body).toEqual({ url: "https://openrouter.ai/api/alpha/decisions", model: "typesafe/jev-1.14", apiKey: "or-key", enabled: false });
-    await h.run("connect", "tebar", "--reset");
-    expect(h.requests[2]!.body).toEqual({ enabled: null, baseUrl: null, apiKey: null });
-    await h.run("connect", "jev", "--reset");
-    expect(Object.keys(h.requests[3]!.body)).toEqual(["enabled", "url", "model", "apiKey", "director"]);
-    await h.run("connect", "llm", "--reset");
-    expect(Object.keys(h.requests[4]!.body)).toContain("director");
+    expect(await put("jev", "--base-url", "https://openrouter.ai/api/alpha/decisions", "--model", "typesafe/jev-1.14", "--key", "or-key", "--off"))
+      .toEqual({ url: "https://openrouter.ai/api/alpha/decisions", model: "typesafe/jev-1.14", apiKey: "or-key", enabled: false });
+    expect(await put("tebar", "--reset")).toEqual({ enabled: null, baseUrl: null, apiKey: null });
+    expect(await put("jev", "--reset")).toEqual({ enabled: null, url: null, model: null, apiKey: null, director: null });
+    expect(await put("llm", "--reset")).toEqual({ enabled: null, baseUrl: null, model: null, apiKey: null, director: null });
   });
 
-  test("usage errors", async () => {
+  test.each([
+    ["llm", 0, "out", "llm: OK in 420 ms (qwen) — OK"], ["jev", 0, "out", "jev: OK in 80 ms"],
+    ["tebar", 1, "err", "tebar: Tebar 401 invalid_api_key: revoked"],
+  ] as const)("connect test %s", async (kind, code, stream, line) => {
+    const h = harness(routes);
+    expect(await h.run("connect", "test", kind)).toBe(code);
+    expect(h[stream]).toEqual([line]);
+    expect(await h.run("connect", "test", kind, "--json")).toBe(code);
+  });
+
+  test.each([
+    ["openai --model x", "Unknown connection: openai"], ["llm", "Nothing to change"], ["llm --on --off", "Give --on or --off, not both"],
+    ["tebar --director on", "--director takes on or off"], ["llm --director maybe", "--director takes on or off"], ["test", "Missing connection"],
+  ])("connect %s is a usage error", async (args, message) => {
     const h = harness();
-    expect(await h.run("connect", "openai", "--model", "x")).toBe(2);
-    expect(await h.run("connect", "llm")).toBe(2);
-    expect(h.err.at(-1)).toContain("Nothing to change");
-    expect(await h.run("connect", "llm", "--on", "--off")).toBe(2);
-    expect(await h.run("connect", "tebar", "--director", "on")).toBe(2);
-    expect(await h.run("connect", "llm", "--director", "maybe")).toBe(2);
-    expect(await h.run("connect", "test")).toBe(2);
-  });
-
-  test("test a connection", async () => {
-    const h = harness({
-      "POST /api/settings/llm/test": { ok: true, ms: 420, model: "qwen", detail: "OK" },
-      "POST /api/settings/jev/test": { ok: true, ms: 80 },
-      "POST /api/settings/tebar/test": { ok: false, ms: 120, error: "Tebar 401 invalid_api_key: revoked" },
-    });
-    expect(await h.run("connect", "test", "llm")).toBe(0);
-    expect(h.out.at(-1)).toBe("llm: OK in 420 ms (qwen) — OK");
-    expect(await h.run("connect", "test", "jev")).toBe(0);
-    expect(h.out.at(-1)).toBe("jev: OK in 80 ms");
-    expect(await h.run("connect", "test", "tebar")).toBe(1);
-    expect(h.err.at(-1)).toBe("tebar: Tebar 401 invalid_api_key: revoked");
-    expect(await h.run("connect", "test", "tebar", "--json")).toBe(1);
-    expect(await h.run("connect", "test", "llm", "--json")).toBe(0);
+    expect(await h.run("connect", ...args.split(" "))).toBe(2);
+    expect(h.err[0]).toContain(message);
   });
 });

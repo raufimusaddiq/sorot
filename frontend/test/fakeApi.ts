@@ -46,12 +46,12 @@ export interface FakeState {
   posts: Record<string, SocialPost[]>;
 }
 
-export function makeConnections(over: Partial<Connections> = {}): Connections {
+/** Every connection off by default; `over` changes fields of single connections. */
+export function makeConnections(over: { [K in keyof Connections]?: Partial<Connections[K]> } = {}): Connections {
   return {
-    llm: { active: false, enabled: true, saved: [], baseUrl: '', model: '', apiKey: '', apiKeySet: false, director: true },
-    jev: { active: false, enabled: true, saved: [], url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', apiKey: '', apiKeySet: false, director: true },
-    tebar: { active: false, enabled: true, saved: [], baseUrl: 'https://api.tebar.app/v1', apiKey: '', apiKeySet: false },
-    ...over,
+    llm: { active: false, enabled: true, saved: [], baseUrl: '', model: '', apiKey: '', apiKeySet: false, director: true, ...over.llm },
+    jev: { active: false, enabled: true, saved: [], url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', apiKey: '', apiKeySet: false, director: true, ...over.jev },
+    tebar: { active: false, enabled: true, saved: [], baseUrl: 'https://api.tebar.app/v1', apiKey: '', apiKeySet: false, ...over.tebar },
   };
 }
 
