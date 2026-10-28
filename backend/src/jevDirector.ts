@@ -28,6 +28,11 @@ export const MAX_SEC = 60;
 export const LONGER_SEC = [40, 55];
 /** A longer cut must add at least this much to be worth asking about. */
 const MIN_GROWTH_SEC = 5;
+/**
+ * Jev's questions favour tight excerpts (Bahlul, 69 min: the 25 s cut won for
+ * 27 of 31 picks, usually by a hair). A longer cut wins when it is this close.
+ */
+export const LONGER_SLACK = 0.05;
 /** Windows Jev keeps after screening (the rule windows are kept as well). */
 export const JEV_PICKS = 40;
 /** Final candidates judged with the full questions (best rule scores first, plus every Jev pick). */
@@ -186,7 +191,7 @@ export async function screenMoments(
 /**
  * Screening judges ~25 s windows, so every pick would be ~25 s. Ask Jev about
  * longer cuts of each pick (LONGER_SEC, same start, at most MAX_SEC) and keep
- * whichever it judges best (a tie goes to the longer one); FAIL cuts are out.
+ * the longest one within LONGER_SLACK of the best-judged; FAIL cuts are out.
  */
 export async function growPicks(
   jev: Jev, picks: Pick[], lines: Line[], direction: string, onProgress?: (done: number, total: number) => void,
@@ -211,14 +216,18 @@ export async function growPicks(
     tokens += r.tokens;
     return r;
   }, (n) => onProgress?.(n, cuts.length));
-  const best = new Map<Pick, Pick>(picks.map((p) => [p, p]));
+  // Each pick and its passing cuts, shortest first.
+  const options = new Map<Pick, Pick[]>(picks.map((p) => [p, [p]]));
   cuts.forEach(({ pick, w }, k) => {
     const r = results[k];
     if (!r || verdictFrom(r.answers, r.payoffConfidence).verdict === "FAIL") return;
-    const cut: Pick = { ...w, source: "jev", jevScore: jevScore(r.answers) };
-    if (cut.jevScore >= best.get(pick)!.jevScore) best.set(pick, cut);
+    options.get(pick)!.push({ ...w, source: "jev", jevScore: jevScore(r.answers) });
   });
-  const out = picks.map((p) => best.get(p)!);
+  const out = picks.map((p) => {
+    const all = options.get(p)!;
+    const top = Math.max(...all.map((c) => c.jevScore));
+    return all.findLast((c) => c.jevScore >= top - LONGER_SLACK)!;
+  });
   const grown = out.filter((p, k) => p !== picks[k]).length;
   return { picks: dropOverlaps(out.sort((a, b) => b.jevScore - a.jevScore)), grown, tokens, error };
 }

@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import type { Line } from "../src/director";
 import {
   growPicks, hookAndTitle, JEV_PICKS, jevReason, jevScore, judgeClips, JUDGE_MAX, quoteTitle, screenMoments, sentenceWindows,
-  titleCandidates, windowAt, type Judgeable, type Window,
+  LONGER_SLACK, titleCandidates, windowAt, type Judgeable, type Window,
 } from "../src/jevDirector";
 import { determineTier } from "../src/scoring";
-import { fakeJev, noulA, unknownFields } from "./helpers";
+import { clipAnswer, fakeJev, noulA, unknownFields } from "./helpers";
 
 const line = (start: number, end: number, text: string, words?: Line["words"]): Line => ({ start, end, text, ...(words ? { words } : {}) });
 const win = (startTime: number, text: string): Window => ({ startTime, endTime: startTime + 30, duration: 30, text });
@@ -91,6 +91,22 @@ describe("growPicks", () => {
     expect([r.grown, r.tokens, r.error, progress.at(-1)]).toEqual([1, 40, null, "4/4"]);   // 2 cuts each at 0 and 100
     expect(requests[0]!.questions).toHaveProperty("fits_direction");
     expect(r.picks[0]!.duration).toBe(60);
+  });
+
+  test("a longer cut wins when it is within LONGER_SLACK of the best, not when clearly worse", async () => {
+    const tail = ["Dua.", "Tiga."];
+    const more = [...run(300, ["Mulai bagus.", ...tail, "Agak turun.", "Lima.", "Enam."]),
+      ...run(400, ["Mulai bagus.", ...tail, "Jauh turun.", "Lima.", "Enam."])];
+    // "Agak" costs the opening a little (score -0.025), "Jauh" a lot (-0.15).
+    const { jev } = fakeJev((state, id) => {
+      const text = String(state.excerpt);
+      if (id === "hook_opening") return noulA(text.includes("Jauh") ? 0.3 : text.includes("Agak") ? 0.8 : 0.9);
+      return clipAnswer(state, id);
+    });
+    const at = (i: number) => ({ ...windowAt(more, i, 25)!, source: "jev" as const, jevScore: 0.9 });
+    const r = await growPicks(jev, [at(0), at(6)], more, "");
+    expect(r.picks.map((p) => [p.startTime, p.endTime])).toEqual([[300, 360], [400, 430]]);
+    expect(LONGER_SLACK).toBe(0.05);
   });
 
   test("a Jev failure keeps the screened picks", async () => {
