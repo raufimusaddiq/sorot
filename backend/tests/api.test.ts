@@ -73,7 +73,7 @@ describe("videos (VideoControllerIT)", () => {
     expect(r.body.data.videos.map((v: any) => v.id)).toEqual(["v2", "v1"]);
     // Jackson-compatible camelCase keys, nulls included
     expect(Object.keys(r.body.data.videos[0]).sort()).toEqual(
-      ["createdAt", "durationSec", "filePath", "id", "sectionEnd", "sectionStart", "sourceType", "sourceUrl", "title"]);
+      ["brief", "createdAt", "durationSec", "filePath", "id", "sectionEnd", "sectionStart", "sourceType", "sourceUrl", "title"]);
   });
 
   test("get existing video", async () => {

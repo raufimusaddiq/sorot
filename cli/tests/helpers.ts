@@ -20,6 +20,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
     runCode: 0,
     captures: {} as Record<string, { code: number; stdout: string }>,
     isRoot: false,
+    stdin: "",
   };
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -47,6 +48,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
       return state.runCode;
     },
     capture: async (cmd: string[]) => state.captures[cmd[0] as string] ?? { code: 127, stdout: "" },
+    readStdin: async () => state.stdin.trim(),
     fs: {
       exists: (p: string) => existing.has(p.replaceAll("\\", "/")),
       mkdir: () => {},

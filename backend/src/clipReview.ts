@@ -1,20 +1,22 @@
 // Optional LLM judgement on scored clip candidates; the rule score is the
 // fallback. With an LLM configured (llm.ts) each candidate's transcript is
 // rated 0-100 with a reason and fresh post copy (title, description,
-// hashtags), and the final score blends 50/50 with the rule score. Batches the
-// LLM can't answer keep their rule score and template copy.
+// hashtags), and the final score blends 50/50 with the rule score. The LLM
+// sees the director's video brief and the creator's direction when there
+// are some. Batches the LLM can't answer keep their rule score and template copy.
 //
 // Every segment gets `scoredBy` ("llm+rules" | "rules") and a plain-language
 // `reason`, so the UI can show where a score came from.
 
 import { LlmError, parseJson, type Llm } from "./llm";
 import { pyRound } from "./pyCompat";
+import type { VideoBrief } from "./director";
 import type { ScoredSegment } from "./scoring";
 import type { Json } from "./types";
 
 export const REVIEW_BATCH = 6;  // small batches fit the default 4k context of local models
 export const LLM_WEIGHT = 0.5;
-const MAX_TEXT = 900;
+const MAX_TEXT = 1200;
 
 export const REVIEW_SYSTEM = `You are a short-form video editor. You judge transcript excerpts of long
 videos (podcasts, talk shows, stories) as candidates for 20-60 second vertical
@@ -29,6 +31,10 @@ For every excerpt return:
 - title: a punchy post title in the excerpt's language, max 70 characters, no hashtags
 - description: 1-2 sentences in the excerpt's language
 - hashtags: 3-6 relevant hashtags in the excerpt's language
+
+The request may include "video" (its title, a summary and the people in it: spell their names that way)
+and "direction" (what the creator wants from this video). With a direction, the score also says how well
+the excerpt fits it, and the copy follows it.
 
 Answer with JSON only: {"clips": [{"id": 0, "score": 0, "reason": "", "title": "", "description": "", "hashtags": []}]}`;
 
@@ -60,13 +66,22 @@ function hashtags(tags: unknown, limit: number): string[] {
   return out.slice(0, limit);
 }
 
-async function ask(llm: Llm, batch: ScoredSegment[], offset: number): Promise<Map<number, Json>> {
+export interface ReviewContext {
+  title?: string | null;
+  brief?: VideoBrief | null;
+  direction?: string;
+}
+
+async function ask(llm: Llm, batch: ScoredSegment[], offset: number, ctx: ReviewContext): Promise<Map<number, Json>> {
   const excerpts = batch.map((s, i) => ({
     id: offset + i, start: clock(s.startTime), seconds: Math.round(s.duration), text: s.text.slice(0, MAX_TEXT),
   }));
+  const video = ctx.brief
+    ? { title: ctx.title ?? "", summary: ctx.brief.summary, people: ctx.brief.people }
+    : ctx.title ? { title: ctx.title } : null;
   const msg = await llm.chat([
     { role: "system", content: REVIEW_SYSTEM },
-    { role: "user", content: JSON.stringify({ excerpts }) },
+    { role: "user", content: JSON.stringify({ ...(video ? { video } : {}), ...(ctx.direction ? { direction: ctx.direction } : {}), excerpts }) },
   ], { temperature: 0.3 });
   const data = parseJson(msg.content);
   const clips = Array.isArray(data) ? data : (data as Json | null)?.clips;
@@ -79,16 +94,19 @@ async function ask(llm: Llm, batch: ScoredSegment[], offset: number): Promise<Ma
  * Returns the reviewed segments and the first LLM error, if any.
  */
 export async function reviewClips(
-  segments: ScoredSegment[], llm: Llm, tierOf: (score: number) => string,
+  segments: ScoredSegment[], llm: Llm, tierOf: (score: number) => string, ctx: ReviewContext = {},
 ): Promise<{ segments: ReviewedSegment[]; error: string | null }> {
-  const out: ReviewedSegment[] = segments.map((s) => ({ ...s, scoredBy: "rules", reason: rulesReason(s.scores) }));
+  // A moment the director picked keeps its "why" until a review replaces it.
+  const out: ReviewedSegment[] = segments.map((s) => ({
+    ...s, scoredBy: "rules", reason: typeof s.why === "string" && s.why ? `LLM pick: ${s.why}` : rulesReason(s.scores),
+  }));
   if (!llm.enabled) return { segments: out, error: null };
   let error: string | null = null;
   for (let offset = 0; offset < out.length; offset += REVIEW_BATCH) {
     const batch = out.slice(offset, offset + REVIEW_BATCH);
     let answers: Map<number, Json>;
     try {
-      answers = await ask(llm, batch, offset);
+      answers = await ask(llm, batch, offset, ctx);
     } catch (e) {
       if (!(e instanceof LlmError)) throw e;
       error ??= e.message;

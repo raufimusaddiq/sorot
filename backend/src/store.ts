@@ -1,17 +1,17 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type {
-  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, Job, StageStatus, Video,
+  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, Job, SocialPost, StageStatus, Video,
 } from "./types";
 
 type Row = Record<string, unknown>;
 type Table =
   | "video" | "job" | "stage_status" | "clip" | "clip_score"
-  | "clip_feedback" | "discovered_video" | "discovery_channel";
+  | "clip_feedback" | "discovered_video" | "discovery_channel" | "social_post";
 
 const COLUMNS: Record<Table, string[]> = {
   video: [
     "id", "source_url", "source_type", "title", "duration_sec", "file_path", "created_at",
-    "section_start", "section_end",
+    "section_start", "section_end", "brief",
   ],
   job: ["id", "video_id", "status", "current_stage", "error_message", "created_at", "updated_at", "options"],
   stage_status: [
@@ -21,7 +21,7 @@ const COLUMNS: Record<Table, string[]> = {
     "id", "video_id", "rank_pos", "score", "tier", "title", "description", "start_time",
     "end_time", "duration_sec", "text_content", "render_status", "render_path",
     "export_status", "export_path", "created_at", "options", "caption_words", "updated_at",
-    "reason", "scored_by",
+    "reason", "scored_by", "source", "hook_start", "hook_end", "gate_verdict", "gate",
   ],
   clip_score: [
     "id", "clip_id", "hook_strength", "keyword_trigger", "novelty", "clarity",
@@ -45,6 +45,10 @@ const COLUMNS: Record<Table, string[]> = {
     "avg_duration_sec", "median_view_count", "uploads_per_week", "subscriber_count",
     "is_likely_clipper_channel", "trust_score", "trust_samples", "poll_cadence_hours", "status",
     "first_seen_at", "last_crawled_at", "last_profile_refresh_at",
+  ],
+  social_post: [
+    "id", "clip_id", "provider", "provider_post_id", "status", "scheduled_at", "idempotency_key",
+    "request", "targets", "error_message", "created_at", "updated_at", "last_synced_at",
   ],
 };
 
@@ -150,10 +154,11 @@ export class Store {
   // ---- clip / clip_score ----
   saveClip(c: Clip) { return this.upsert("clip", c); }
   getClip(id: string) { return this.one<Clip>("SELECT * FROM clip WHERE id = ?", id); }
-  /** Score order; rank_pos breaks ties so the order is deterministic. */
+  /** Rank order (render results map back by rank). Ranks follow the score,
+   *  except clips the quality gate held back, which rank last. */
   clipsForVideo(videoId: string) {
     return this.all<Clip>(
-      "SELECT * FROM clip WHERE video_id = ? ORDER BY score DESC, rank_pos ASC", videoId,
+      "SELECT * FROM clip WHERE video_id = ? ORDER BY rank_pos IS NULL, rank_pos ASC, score DESC", videoId,
     );
   }
   updateClip(id: string, fields: Partial<Clip>) { this.patch("clip", id, fields); }
@@ -252,5 +257,33 @@ export class Store {
   }
   updateChannel(id: string, fields: Partial<DiscoveryChannel>) {
     this.patch("discovery_channel", id, fields);
+  }
+
+  // ---- social_post ----
+  saveSocialPost(p: SocialPost) { return this.upsert("social_post", p); }
+  getSocialPost(id: string) { return this.one<SocialPost>("SELECT * FROM social_post WHERE id = ?", id); }
+  socialPostsForClip(clipId: string) {
+    return this.all<SocialPost>("SELECT * FROM social_post WHERE clip_id = ? ORDER BY created_at DESC", clipId);
+  }
+  /** Posts whose status or metrics can still change. */
+  socialPostsToSync() {
+    return this.all<SocialPost>(
+      "SELECT * FROM social_post WHERE provider_post_id IS NOT NULL AND status NOT IN ('CANCELLED', 'FAILED') ORDER BY created_at",
+    );
+  }
+  updateSocialPost(id: string, fields: Partial<SocialPost>) { this.patch("social_post", id, { ...fields, updatedAt: now() }); }
+
+  // ---- setting ----
+  settings(): Record<string, string> {
+    const rows = this.db.query("SELECT key, value FROM setting").all() as Array<{ key: string; value: string }>;
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  }
+  /** null removes the setting (back to the env value). */
+  setSetting(key: string, value: string | null) {
+    if (value === null) this.db.query("DELETE FROM setting WHERE key = ?").run(key);
+    else {
+      this.db.query("INSERT INTO setting (key, value, updated_at) VALUES (?, ?, ?) "
+        + "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").run(key, value, now());
+    }
   }
 }

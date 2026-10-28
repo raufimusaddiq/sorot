@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LlmError } from "../src/llm";
+import { BRIEF_SYSTEM, MINE_SYSTEM } from "../src/director";
+import { LlmError, type ChatMessage } from "../src/llm";
 import { mapPool } from "../src/orchestrator";
 import { argAfter, defaultExec, FAKE_SEGMENTS, makeEnv, procOk, type TestEnv } from "./helpers";
 
@@ -288,6 +289,7 @@ describe("full pipeline", () => {
   test("an LLM blends its judgement into the scores and writes the copy", async () => {
     env.config.llmBaseUrl = "http://llm/v1";
     env.config.llmModel = "qwen";
+    env.config.llmDirector = false;   // review only (the director has its own tests)
     env.app.llm.chat = async (messages) => {
       const ids = JSON.parse(messages[1]!.content).excerpts.map((e: any) => e.id);
       return { role: "assistant", content: JSON.stringify({ clips: ids.map((id: number) => ({
@@ -304,6 +306,102 @@ describe("full pipeline", () => {
     const fallback = await importAndRun();
     expect(env.app.store.clipsForVideo(fallback.videoId).map((c) => c.scoredBy)).toEqual(["rules", "rules", "rules"]);
     expect((await Bun.file(`${env.config.dataDir}/segments/${fallback.videoId}.json`).json()).llmError).toBe("down");
+  });
+
+  /** Import with job options, run the pipeline, return ids. */
+  async function runWith(options: Record<string, unknown>) {
+    const videoId = (await env.json("POST", "/api/import", { url: "https://www.youtube.com/watch?v=abcdefghijk" })).body.data.videoId as string;
+    const jobId = (await env.json("POST", "/api/process", { videoId, options })).body.data.jobId as string;
+    await env.app.jobs.whenIdle();
+    return { videoId, jobId };
+  }
+
+  /** A fake LLM: brief, one pick spanning the first two transcript lines, and a review that loves that pick. */
+  function directorLlm(seen: ChatMessage[][]) {
+    env.config.llmBaseUrl = "http://llm/v1";
+    env.config.llmModel = "qwen";
+    env.app.llm.chat = async (messages) => {
+      seen.push(messages);
+      const system = messages[0]!.content;
+      if (system === BRIEF_SYSTEM) {
+        return { role: "assistant", content: JSON.stringify({ summary: "Pak Budi tells a secret.", topics: ["rahasia"],
+          people: ["Pak Budi"], audience: "workers", angle: "surprise" }) };
+      }
+      if (system === MINE_SYSTEM) {
+        return { role: "assistant", content: JSON.stringify({ moments: [{ start: 0, end: 1, hook: 1, why: "setup and payoff" }] }) };
+      }
+      const excerpts = JSON.parse(messages[1]!.content).excerpts as Array<{ id: number; text: string }>;
+      return { role: "assistant", content: JSON.stringify({ clips: excerpts.map((e) => ({
+        id: e.id, score: e.text.includes("sederhana") && e.text.startsWith("Kenapa") ? 99 : 40, reason: "r", title: "Judul", hashtags: [],
+      })) }) };
+    };
+  }
+
+  test("the LLM director reads the video, picks its own moment and hook, and follows the direction", async () => {
+    const seen: ChatMessage[][] = [];
+    directorLlm(seen);
+    const { videoId, jobId } = await runWith({ direction: "yang serius saja" });
+    expect((await detail(jobId)).job.status).toBe("COMPLETED");
+    expect(JSON.parse(env.app.store.getVideo(videoId)!.brief!)).toMatchObject({ summary: "Pak Budi tells a secret.", people: ["Pak Budi"] });
+    for (const m of seen) expect(m[1]!.content).toContain("yang serius saja");
+    const review = seen.find((m) => m[0]!.content !== BRIEF_SYSTEM && m[0]!.content !== MINE_SYSTEM)!;
+    expect(JSON.parse(review[1]!.content).video).toEqual({ title: "Judul Video Test", summary: "Pak Budi tells a secret.", people: ["Pak Budi"] });
+
+    const file = await Bun.file(`${env.config.dataDir}/segments/${videoId}.json`).json();
+    expect(file.scoredSegments.length).toBe(2);   // the pick covered the first two rule windows: they were dropped
+    const clips = env.app.store.clipsForVideo(videoId);
+    expect(clips[0]).toMatchObject({ source: "llm", startTime: 0, endTime: 55, hookStart: 30, hookEnd: 36, scoredBy: "llm+rules" });
+    expect(clips[1]).toMatchObject({ source: "rules", hookStart: null });
+    const render = env.calls.find((c) => c.script === "render.py")!.args;
+    const sent = JSON.parse(await Bun.file(argAfter(render, "--segments")).text()).scoredSegments[0];
+    expect([sent.hookStart, sent.hookEnd]).toEqual([30, 36]);
+    const stage = (await detail(jobId)).stages.find((x: any) => x.stage === "SEGMENT");
+    expect(stage.outputPath).toBe(`${env.config.dataDir}/segments/${videoId}.json`);
+  });
+
+  test("the director falls back to the rules when the LLM fails", async () => {
+    env.config.llmBaseUrl = "http://llm/v1";
+    env.config.llmModel = "qwen";
+    env.app.llm.chat = async () => { throw new LlmError("down"); };
+    const { videoId, jobId } = await runWith({});
+    expect((await detail(jobId)).job.status).toBe("COMPLETED");
+    const seg = await Bun.file(`${env.config.dataDir}/segments/${videoId}.json`).json();
+    expect(seg.llmError).toBe("down");
+    expect(env.app.store.getVideo(videoId)!.brief).toBeNull();
+    expect(env.app.store.clipsForVideo(videoId).map((c) => [c.source, c.scoredBy])).toEqual([
+      ["rules", "rules"], ["rules", "rules"], ["rules", "rules"]]);
+  });
+
+  test("the quality gate: rules by default, Jev when configured; held-back clips rank last and don't render", async () => {
+    const plain = await importAndRun();
+    const file = await Bun.file(`${env.config.dataDir}/segments/${plain.videoId}.json`).json();
+    expect(file.gatedBy).toBe("rules");
+    expect(env.app.store.clipsForVideo(plain.videoId).map((c) => c.gateVerdict)).toEqual(["PASS", "PASS", null]);
+
+    env.config.jevApiKey = "k";
+    const asked: string[] = [];
+    env.fetchHandler.fn = async (url, init) => {
+      expect(url).toBe("https://api.typesafe.ai/v1/systemone");
+      const { state, questions } = JSON.parse(String(init!.body));
+      asked.push(state.opening);
+      const filler = state.excerpt.startsWith("Kenapa");
+      const answers = Object.fromEntries(Object.entries(questions as Record<string, { type: string }>).map(([id, q]) => [id,
+        q.type === "score" ? { type: "score", score: 1.5, confidence: 0.7 }
+          : { type: "noul", noul: id === "hook_opening" || id === "ends_complete" || (id === "mostly_filler" && filler) ? 0.9 : 0.1 }]));
+      return new Response(JSON.stringify({ model: "jev-1.14.0", answers, usage: { input_tokens: 5, output_tokens: 1 } }));
+    };
+    env.calls.length = 0;
+    const gated = await importAndRun();
+    expect(asked).toHaveLength(2);
+    const g = await Bun.file(`${env.config.dataDir}/segments/${gated.videoId}.json`).json();
+    expect(g.gatedBy).toBe("jev");
+    const clips = env.app.store.clipsForVideo(gated.videoId);
+    expect(clips.map((c) => [c.textContent!.slice(0, 5), c.tier, c.gateVerdict])).toEqual([
+      ["Terny", "BACKUP", "PASS"], ["Hari ", "SKIP", null], ["Kenap", "SKIP", "FAIL"]]);
+    expect(clips[2]!.reason).toStartWith("Held back: mostly greetings, promos or small talk.");
+    expect(JSON.parse(clips[2]!.gate!)).toMatchObject({ by: "jev", model: "jev-1.14.0", verdict: "FAIL" });
+    expect(env.calls.filter((c) => c.script === "render.py")).toHaveLength(1);
+    expect(clips[0]!.renderStatus).toBe("COMPLETED");
   });
 
   test("score with no scoredSegments yields no clips; re-score replaces clips", async () => {

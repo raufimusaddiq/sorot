@@ -75,7 +75,13 @@ cd ai-pipeline
 - **KEEP MEMORY LEAN**: details → journal, memory = pointers only
 - Python is only for media/ML (Whisper, `media_features.py`, render/subtitle/variation, captions/reframe, LightGBM); segmenting, scoring rules, analytics, feedback learning, discovery and the LLM live in Bun. Don't add new Python for non-media logic
 - Ports from Python keep golden fixtures (`backend/tests/fixtures/*.json`, generated from the Python originals); `pyCompat.ts` reproduces Python rounding/splitting
-- LLM is optional: any OpenAI-compatible endpoint via `LLM_BASE_URL` + `LLM_MODEL`; every LLM path must fall back to the rules on `LlmError`. Secrets (`LLM_API_KEY`) go in gitignored `.env.llm`, never `.env.docker`
+- LLM is optional: any OpenAI-compatible endpoint via `LLM_BASE_URL` + `LLM_MODEL`; every LLM path must fall back to the rules on `LlmError`. Secrets (`LLM_API_KEY`, `JEV_API_KEY`, `TEBAR_API_KEY`) go in gitignored `.env.llm`, never `.env.docker`
+- LLM / Jev / Tebar connections are also editable in the UI (Settings) and `sorot connect`: saved in the SQLite `setting` table, they override the env (`settings.ts`); Llm/Jev/Tebar read the shared config per call, so no restart. Keys are never returned (masked). CLI flag is `--base-url` (`--url` is the global server option)
+- LLM director (`director.ts`, `LLM_DIRECTOR`, default on with an LLM): SEGMENT adds a video brief (`video.brief`) and the LLM's own moments (line ids → validated 10-60 s, `source: "llm"`) next to the rule windows; SCORE drops overlaps (> 50% of the shorter) keeping the better score. Job option `direction` (≤ 500 chars) reaches brief, picks, review and post copy
+- Quality gate (`clipGate.ts`) runs in SCORE before render on the best ≤ 40 render-tier clips: Jev (`jev.ts`, TypeSafe `/v1/systemone`, pinned `jev-1.14.0`) or, when off/failing, `ruleAnswers()` on the same questions. Verdict is decided in code (`verdictFrom`): FAIL → tier SKIP, ranked last; REVIEW = content risk, never auto-FAIL. Questions follow TypeSafe's design rules — one judgment each, name the state field, no counting; `tests/clipGate.test.ts` enforces it; `bun run jev-eval` measures them on labelled excerpts. Thresholds (0.7/0.3) are uncalibrated for Indonesian
+- `clipsForVideo` orders by `rank_pos` (gate-held clips rank last); render.py indexes render-tier segments in file order, so render tiers must come first in `scoredSegments`
+- Hooks are decided in Bun (`hooks.ts`, golden port of `captions.find_hook`; LLM hook line for director picks): segments carry `hookStart`/`hookEnd` (absolute s; null = no replay). render.py/subtitle.py only run `find_hook` themselves for segment files without the keys
+- Publishing (`publisher.ts`, `tebar.ts`): draft (LLM copy per platform, Jev copy check, Tebar's platform limits) → user choices (TikTok privacy, YouTube title + made-for-kids are never auto-filled) → upload + `POST /v1/posts` with `Idempotency-Key`; the `social_post` row and exact body are saved first so retry can't double-post. Metrics sync (`TEBAR_SYNC_HOURS`) → `clip_feedback` → training. Polling only (Tebar webhooks need a public URL)
 - Web search for auto-discover defaults to Bing HTML (`WEB_SEARCH`): DuckDuckGo is blocked by Indonesian ISPs
 - Learned feature weights are written to `data/weights.json` (wins over shipped `ai-pipeline/weights.json`)
 - Backend shells out to Python via `backend/src/runner.ts` (per-script timeouts — transcribe/media_features scale with video length via `timeoutFor` — and abort-on-cancel that kills the whole process tree: own process group on POSIX, `taskkill /T` on Windows, so ffmpeg children die too); tests inject fakes via `createApp(config, deps)` (`exec`, `runScript`, `fetch`)
@@ -141,6 +147,15 @@ cd ai-pipeline
 | POST | /api/discover/auto | ✨ Auto-discover run (LLM agent or algorithm), background |
 | GET | /api/discover/auto[/{id}] | Auto-discover progress / picks |
 | GET | /api/discover/candidates | Ranked candidates with `why` reasons |
+| GET | /api/settings | LLM / Jev / Tebar connections (keys masked) |
+| PUT | /api/settings/{llm\|jev\|tebar} | Save fields (null = back to env) |
+| POST | /api/settings/{kind}/test | One small real call |
+| GET | /api/social/accounts | Tebar accounts (`enabled: false` when not connected) |
+| POST | /api/clips/{id}/publish/draft | Copy per account + checks (sends nothing) |
+| POST | /api/clips/{id}/publish | Upload + post/schedule via Tebar |
+| GET | /api/clips/{id}/posts | The clip's social posts |
+| POST | /api/social/posts/{id}/refresh \| retry | Status / idempotent re-send |
+| POST | /api/social/sync | Pull status + metrics into feedback |
 
 ## Git Strategy
 - **Repo**: `raufimusaddiq/sorot` (public monorepo, MIT license; was viral-clipper)

@@ -2,7 +2,9 @@
 // Tests mutate `state` to shape responses and set `state.fail[...]` to make a
 // route return the error envelope. Every call is recorded in `calls`.
 
-import type { CaptionWord, Clip, ClipScore, Job, StageStatus, Video } from '@/types';
+import type {
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+} from '@/types';
 
 export type Candidate = {
   id: string; youtubeId: string; videoId: string; title: string; url: string;
@@ -35,6 +37,28 @@ export interface FakeState {
   captions: Record<string, { words: CaptionWord[]; edited: boolean }>;
   /** Auto-discover: POST returns the first run state; each status poll returns the next (the last repeats). */
   autoRuns: Array<Record<string, unknown>>;
+  /** Connection settings (GET/PUT /api/settings) and test results by kind. */
+  settings: Connections;
+  tests: Record<string, ConnectionTest>;
+  /** Tebar accounts, the draft served for any clip, and posts by clip. */
+  accounts: SocialAccount[];
+  draft: PublishDraft | null;
+  posts: Record<string, SocialPost[]>;
+}
+
+export function makeConnections(over: Partial<Connections> = {}): Connections {
+  return {
+    llm: { active: false, enabled: true, saved: [], baseUrl: '', model: '', apiKey: '', apiKeySet: false, director: true },
+    jev: { active: false, enabled: true, saved: [], url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', apiKey: '', apiKeySet: false },
+    tebar: { active: false, enabled: true, saved: [], baseUrl: 'https://api.tebar.app/v1', apiKey: '', apiKeySet: false },
+    ...over,
+  };
+}
+
+export function makePost(id: string, clipId: string, extra: Partial<SocialPost> = {}): SocialPost {
+  return { id, clipId, provider: 'tebar', providerPostId: `p-${id}`, status: 'PUBLISHING', scheduledAt: null,
+    targets: JSON.stringify([{ platform: 'tiktok', status: 'pending', permalink: null, errorCode: null }]),
+    errorMessage: null, createdAt: ts(0), ...extra };
 }
 
 export interface Call { method: string; path: string; body: unknown }
@@ -88,6 +112,7 @@ export function emptyState(): FakeState {
     results: [],
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
+    settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {},
   };
 }
 
@@ -203,6 +228,35 @@ export function installFakeApi(state: FakeState) {
     if (method === 'GET' && path.startsWith('/api/discover/auto/')) {
       if (state.autoRuns.length > 1) state.autoRuns.shift();
       return ok(state.autoRuns[0]);
+    }
+    if (method === 'GET' && path === '/api/settings') return ok(state.settings);
+    if (method === 'PUT' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar)$/))) {
+      const kind = m[1] as keyof Connections;
+      const view = { ...state.settings[kind] } as Record<string, unknown>;
+      for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+        if (k === 'apiKey') Object.assign(view, { apiKeySet: v !== null && v !== '', apiKey: v ? `••••${String(v).slice(-4)}` : '' });
+        else view[k] = v;
+        view.saved = v === null ? (view.saved as string[]).filter((x) => x !== k) : [...new Set([...(view.saved as string[]), k])];
+      }
+      view.active = view.enabled !== false && (kind === 'llm' ? !!view.baseUrl && !!view.model : !!view.apiKeySet);
+      state.settings = { ...state.settings, [kind]: view };
+      return ok(state.settings);
+    }
+    if (method === 'POST' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar)\/test$/))) return ok(state.tests[m[1]!] ?? { ok: false, ms: 1, error: 'Not configured' });
+    if (method === 'GET' && path === '/api/social/accounts') return ok({ enabled: state.settings.tebar.active, accounts: state.accounts });
+    if (method === 'POST' && (m = path.match(/^\/api\/clips\/([^/]+)\/publish\/draft$/))) {
+      return ok({ ...state.draft!, targets: state.draft!.targets.filter((t) => body.accountIds.includes(t.accountId)) });
+    }
+    if (method === 'POST' && (m = path.match(/^\/api\/clips\/([^/]+)\/publish$/))) {
+      const post = makePost(`post${Object.values(state.posts).flat().length + 1}`, m[1]!,
+        { status: body.scheduledAt ? 'SCHEDULED' : 'PUBLISHING', scheduledAt: body.scheduledAt ?? null });
+      state.posts[m[1]!] = [post, ...(state.posts[m[1]!] ?? [])];
+      return ok({ post });
+    }
+    if (method === 'GET' && (m = path.match(/^\/api\/clips\/([^/]+)\/posts$/))) return ok({ posts: state.posts[m[1]!] ?? [] });
+    if (method === 'POST' && (m = path.match(/^\/api\/social\/posts\/([^/]+)\/refresh$/))) {
+      const post = Object.values(state.posts).flat().find((p) => p.id === m![1])!;
+      return ok({ post: { ...post, status: 'PUBLISHED', targets: JSON.stringify([{ platform: 'tiktok', status: 'published', permalink: 'https://tiktok.com/@x/video/1', errorCode: null }]) } });
     }
     if (method === 'POST' && path === '/api/discover/queue/drain') {
       state.candidates = state.candidates.map(c => (c.status === 'QUEUED' ? { ...c, status: 'IMPORTED' } : c));

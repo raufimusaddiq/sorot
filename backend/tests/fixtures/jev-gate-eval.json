@@ -1,0 +1,105 @@
+{
+  "note": "Synthetic Indonesian excerpts written to exercise each gate question (not real data). Labels are what a careful editor would answer; null/missing = deliberately unlabelled (ambiguous). Add your own labelled clips before trusting thresholds.",
+  "cases": [
+    {
+      "id": "strong-standalone",
+      "excerpt": "Kenapa orang kaya nggak pernah nabung di bank? Ternyata mereka taruh uangnya di aset yang nilainya naik, bukan di rekening yang kalah sama inflasi. Jadi kalau gaji kamu cuma ditabung, sebenarnya kamu lagi pelan-pelan rugi.",
+      "expect": { "hook_opening": true, "needs_prior_context": false, "ends_complete": true, "mostly_filler": false, "payoff": 2 },
+      "verdict": "PASS"
+    },
+    {
+      "id": "continues-earlier-story",
+      "excerpt": "Terus dia bilang ke saya, ya udah kalau gitu kamu yang tanggung semuanya. Saya cuma bisa diam. Habis itu kita nggak ngomong lagi sampai acara selesai.",
+      "expect": { "needs_prior_context": true, "mostly_filler": false },
+      "verdict": "FAIL"
+    },
+    {
+      "id": "greetings-and-promo",
+      "excerpt": "Halo semuanya, selamat datang lagi di channel kita. Jangan lupa like, subscribe dan nyalakan lonceng ya. Episode ini disponsori oleh aplikasi belanja favorit kalian, pakai kode voucher di deskripsi. Oke, langsung aja kita mulai.",
+      "expect": { "hook_opening": false, "mostly_filler": true, "payoff": 0 },
+      "verdict": "FAIL"
+    },
+    {
+      "id": "cut-off-ending",
+      "excerpt": "Oke jadi tadi kita udah bahas sedikit soal itu. Nah sekarang yang paling penting, kalau kamu mau mulai usaha dengan modal kecil, langkah pertama yang harus kamu lakukan adalah",
+      "expect": { "hook_opening": false, "ends_complete": false },
+      "verdict": "FAIL"
+    },
+    {
+      "id": "accuses-named-official",
+      "excerpt": "Saya bilang terang-terangan ya, Pak Hendra Wijaya di dinas itu yang menggelapkan dana bantuan miliaran rupiah. Semua orang di kantor tahu, cuma nggak ada yang berani ngomong.",
+      "expect": { "risk_accusation": true, "mostly_filler": false },
+      "verdict": "REVIEW"
+    },
+    {
+      "id": "health-cure-claim",
+      "excerpt": "Minum air rebusan daun ini setiap pagi, dijamin diabetes kamu sembuh total dalam dua minggu tanpa obat dokter. Saya sudah buktikan sendiri ke ratusan orang.",
+      "expect": { "risk_health_money": true },
+      "verdict": "REVIEW"
+    },
+    {
+      "id": "group-stereotype",
+      "excerpt": "Orang dari suku itu memang semuanya pelit dan licik, sudah bawaan dari lahir. Makanya saya nggak pernah mau kerja sama mereka.",
+      "expect": { "risk_sara": true },
+      "verdict": "REVIEW"
+    },
+    {
+      "id": "dangerous-challenge",
+      "excerpt": "Ayo kita coba tantangan tahan napas sampai pingsan, siapa yang paling lama dia yang menang. Rekam terus kirim ke kita ya, yang paling ekstrem kita kasih hadiah.",
+      "expect": { "risk_dangerous": true },
+      "verdict": "REVIEW"
+    },
+    {
+      "id": "joke-with-punchline",
+      "excerpt": "Saya pernah ditanya calon mertua, kerja di mana? Saya jawab, di rumah. Dia bilang, oh usaha sendiri? Saya bilang, bukan Pak, rebahan. Langsung ditolak lamarannya.",
+      "expect": { "needs_prior_context": false, "ends_complete": true, "mostly_filler": false, "payoff": 2 },
+      "verdict": "PASS"
+    },
+    {
+      "id": "small-talk-no-payoff",
+      "excerpt": "Wah hari ini panas banget ya. Iya, tadi pagi juga macet di jalan. Kamu udah makan belum? Belum sih, nanti aja habis ini. Oke deh.",
+      "expect": { "mostly_filler": true, "payoff": 0 },
+      "verdict": "FAIL"
+    },
+    {
+      "id": "jadi-gini-opener",
+      "excerpt": "Jadi gini, waktu umur dua puluh saya bangkrut total dan tidur di musala selama tiga bulan. Dari situ saya belajar satu hal: jangan pernah pinjam uang buat gaya hidup. Sekarang usaha saya sudah punya tiga cabang.",
+      "expect": { "needs_prior_context": false, "ends_complete": true, "payoff": 2 },
+      "verdict": "PASS"
+    },
+    {
+      "id": "cliffhanger-question-end",
+      "excerpt": "Dia datang ke kantor saya jam tiga pagi, bawa tas besar, mukanya pucat. Dia taruh tasnya di meja, terus bilang, buka. Dan kalian tahu apa isinya?",
+      "expect": { "hook_opening": true, "ends_complete": false },
+      "verdict": null
+    },
+    {
+      "id": "title-overclaims",
+      "excerpt": "Kalau mau mulai investasi, sisihkan sepuluh persen gaji tiap bulan dan taruh di reksa dana pasar uang dulu. Pelan-pelan aja, yang penting rutin.",
+      "title": "Cara jadi miliarder dalam 7 hari tanpa modal",
+      "llmTitle": true,
+      "expect": { "title_overclaims": true, "payoff": 1 },
+      "verdict": null
+    },
+    {
+      "id": "title-faithful",
+      "excerpt": "Kalau mau mulai investasi, sisihkan sepuluh persen gaji tiap bulan dan taruh di reksa dana pasar uang dulu. Pelan-pelan aja, yang penting rutin.",
+      "title": "Mulai investasi dari 10% gaji",
+      "llmTitle": true,
+      "expect": { "title_overclaims": false },
+      "verdict": null
+    },
+    {
+      "id": "sponsor-mention-mostly-content",
+      "excerpt": "Ternyata otak kita butuh tidur minimal tujuh jam supaya bisa menyimpan ingatan baru dengan baik. Kurang dari itu, apa yang kamu pelajari hari ini sebagian besar hilang. Oh iya, makasih buat sponsor kita. Jadi kalau besok ujian, tidur lebih awal itu justru strategi belajar.",
+      "expect": { "mostly_filler": false, "ends_complete": true, "payoff": 2 },
+      "verdict": "PASS"
+    },
+    {
+      "id": "pronoun-start-ambiguous",
+      "excerpt": "Dia itu dulu tukang parkir di depan pasar. Sekarang dia punya lima restoran. Saya tanya rahasianya apa, dia cuma bilang: jangan pernah malu mulai dari bawah.",
+      "expect": { "ends_complete": true, "payoff": 2 },
+      "verdict": null
+    }
+  ]
+}

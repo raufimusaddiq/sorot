@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { AppConfig } from "./config";
 import { CHANNEL_STATUSES, ChannelCrawler, channelToMap } from "./channels";
 import { openDatabase } from "./db";
+import { Jev } from "./jev";
 import { Llm } from "./llm";
 import { YouTube } from "./youtube";
 import { DiscoveryService } from "./discovery";
@@ -13,9 +14,12 @@ import { ClipEditor } from "./editor";
 import { ConflictError, JobService } from "./jobs";
 import { CAPTION_STYLES, parseOptions, parseTimestamp, REFRAME_MODES } from "./options";
 import { PipelineOrchestrator } from "./orchestrator";
+import { Publisher } from "./publisher";
 import { createPythonRunner, spawnCapture, type ExecFn, type ScriptRunner } from "./runner";
 import { ClipService, VideoService } from "./services";
+import { ConnectionSettings } from "./settings";
 import { Store } from "./store";
+import { Tebar } from "./tebar";
 
 export interface AppDeps {
   db?: Database;
@@ -45,8 +49,12 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   const httpFetch = deps.fetch ?? globalThis.fetch;
   const llm = new Llm(config, httpFetch);
+  const jev = new Jev(config, httpFetch);
+  const tebar = new Tebar(config, httpFetch);
+  // Saved UI / CLI connection settings go over the env before anything uses them.
+  const settings = new ConnectionSettings(config, store, { llm, jev, tebar });
   const youtube = new YouTube(exec, config.ytdlpPath);
-  const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm, youtube);
+  const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm, youtube, jev);
   const jobs = new JobService(config, store, orchestrator);
   const videos = new VideoService(config, store);
   const clips = new ClipService(config, store);
@@ -55,6 +63,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const agent = new DiscoveryAgent(store, discovery, youtube, llm, new WebSearch(config.webSearch, httpFetch));
   const feedback = new FeedbackService(config, store);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
+  const publisher = new Publisher(config, store, tebar, llm, jev, feedback);
 
   const router = new Router();
 
@@ -128,9 +137,27 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     defaults: {
       style: config.subtitleStyle, reframe: config.reframeMode, silenceTrim: config.silenceTrim,
       silenceGapSec: config.silenceGapSec, hookFirst: config.hookFirst, youtubeCaptions: config.youtubeCaptions,
-      allowAutoCaptions: config.allowAutoCaptions, bgm: config.bgmFile, bgmVolume: config.bgmVolume,
+      allowAutoCaptions: config.allowAutoCaptions, bgm: config.bgmFile, bgmVolume: config.bgmVolume, direction: "",
     },
   }));
+
+  // ---- connections (LLM, Jev, Tebar): UI / CLI settings over the env ----
+  router.on("GET", "/api/settings", () => ok(settings.view()));
+  router.on("PUT", "/api/settings/:kind", async (c) => ok(settings.update(c.params.kind as string, await c.body())));
+  router.on("POST", "/api/settings/:kind/test", async (c) => ok(await settings.test(c.params.kind as string)));
+
+  // ---- publishing (Tebar) ----
+  router.on("GET", "/api/social/accounts", async () =>
+    ok(publisher.enabled ? { enabled: true, accounts: await publisher.accounts() } : { enabled: false, accounts: [] }));
+  router.on("POST", "/api/clips/:id/publish/draft", async (c) => {
+    const ids = (await c.body()).accountIds;
+    return ok(await publisher.draft(c.params.id as string, Array.isArray(ids) ? ids.map(String) : []));
+  });
+  router.on("POST", "/api/clips/:id/publish", async (c) => ok({ post: await publisher.publish(c.params.id as string, await c.body()) }));
+  router.on("GET", "/api/clips/:id/posts", (c) => ok({ posts: publisher.posts(c.params.id as string) }));
+  router.on("POST", "/api/social/posts/:id/refresh", async (c) => ok({ post: await publisher.refresh(c.params.id as string) }));
+  router.on("POST", "/api/social/posts/:id/retry", async (c) => ok({ post: await publisher.retry(c.params.id as string) }));
+  router.on("POST", "/api/social/sync", async () => ok(await publisher.syncMetrics()));
 
   router.on("GET", "/api/clips/:id", (c) => {
     const id = c.params.id as string;
@@ -293,9 +320,13 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   return {
     fetch,
-    store, jobs, discovery, channels, orchestrator, llm, youtube, agent,
-    start() { jobs.startMaintenance(); },
+    store, jobs, discovery, channels, orchestrator, llm, jev, tebar, settings, publisher, youtube, agent,
+    start() {
+      jobs.startMaintenance();
+      publisher.start();
+    },
     close() {
+      publisher.stop();
       jobs.shutdown();
       db.close();
     },

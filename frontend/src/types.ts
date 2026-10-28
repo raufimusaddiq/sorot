@@ -52,6 +52,77 @@ export type Clip = {
   /** JSON-encoded edited caption words. */
   captionWords?: string | null;
   updatedAt?: string | null;
+  /** Why it scored as it did (LLM reason, or the strongest rule signals). */
+  reason?: string | null;
+  /** "llm+rules" or "rules". */
+  scoredBy?: string | null;
+  /** Who found the moment: "rules" or "llm" (the director). */
+  source?: string | null;
+  /** Quality gate: PASS | REVIEW | FAIL (null = not gated) and its JSON result. */
+  gateVerdict?: string | null;
+  gate?: string | null;
+};
+
+/** Parsed `clip.gate`. */
+export type GateResult = {
+  verdict: 'PASS' | 'REVIEW' | 'FAIL';
+  by: 'jev' | 'rules';
+  model: string | null;
+  reasons: string[];
+  answers: Record<string, number>;
+  quality: number;
+  titleReplaced?: boolean;
+};
+
+/** One connection as GET /api/settings shows it (keys masked). */
+export type ConnectionView = {
+  active: boolean;
+  enabled: boolean;
+  saved: string[];
+  baseUrl?: string;
+  url?: string;
+  model?: string;
+  apiKey: string;
+  apiKeySet: boolean;
+  director?: boolean;
+};
+
+export type Connections = { llm: ConnectionView; jev: ConnectionView; tebar: ConnectionView };
+export type ConnectionKind = keyof Connections;
+
+export type ConnectionTest = { ok: boolean; ms: number; model?: string; detail?: string; error?: string };
+
+export type SocialAccount = { id: string; platform: string; name: string };
+
+export type DraftTarget = {
+  accountId: string;
+  platform: string;
+  name: string;
+  content: string;
+  title?: string;
+  copyBy: 'llm' | 'template';
+  needs: { tiktokPrivacy?: string[]; madeForKids?: boolean };
+  warnings: string[];
+  blockers: string[];
+  overclaims?: number;
+};
+
+export type PublishDraft = {
+  clip: { id: string; title: string | null; gateVerdict: string | null; gateReasons: string[] };
+  targets: DraftTarget[];
+  copyCheckedBy: string | null;
+};
+
+export type SocialPost = {
+  id: string;
+  clipId: string;
+  provider: string;
+  providerPostId: string | null;
+  status: string;
+  scheduledAt: string | null;
+  targets: string | null;
+  errorMessage: string | null;
+  createdAt: string;
 };
 
 export type PipelineOptions = {
@@ -64,6 +135,8 @@ export type PipelineOptions = {
   allowAutoCaptions?: boolean;
   bgm?: string;
   bgmVolume?: number;
+  /** Free-text direction for the LLM ("only the funny parts"). */
+  direction?: string;
 };
 
 export type CaptionWord = { text: string; start: number; end: number };

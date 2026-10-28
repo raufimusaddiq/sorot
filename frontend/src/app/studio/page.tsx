@@ -5,7 +5,7 @@ import { ApiClient } from '@/lib/api';
 import { reportError, onError, isAbortError } from '@/lib/errors';
 import type {
   Video, Job, StageStatus, Clip, ClipScore,
-  JobDetail, ClipDetail, VideoGroup, EditChoices,
+  JobDetail, ClipDetail, VideoGroup, EditChoices, Connections, GateResult,
 } from '@/types';
 import {
   STAGE_LABELS, STAGE_ORDER, STATUS_COLORS,
@@ -18,6 +18,8 @@ import { Window } from '@/components/Window';
 import { ResultsForm } from '@/components/ResultsForm';
 import { LearningPanel, type LearningStats } from '@/components/LearningPanel';
 import { Dock, ICONS, MenuBar } from '@/components/Desktop';
+import { ConnectionsPanel } from '@/components/ConnectionsPanel';
+import { PublishPanel } from '@/components/PublishPanel';
 
 // Adaptive polling bounds for job status — start fast so stage transitions
 // feel snappy, back off so a 6-min RENDER stage doesn't fire 180 requests.
@@ -34,16 +36,30 @@ const TIER_STICKERS: Record<string, string> = {
 // Kept-in-file components: ClipCard + DiscoveryPanel are deeply coupled to
 // Home's state and refresh handlers; their extraction is a separate PR.
 
+const GATE_STYLES: Record<string, string> = { PASS: 'bg-mint', REVIEW: 'bg-sun', FAIL: 'bg-hot text-white' };
+
+/** Parsed clip.gate, or null. */
+function gateOf(clip: Clip): GateResult | null {
+  try {
+    return clip.gate ? JSON.parse(clip.gate) as GateResult : null;
+  } catch {
+    return null;
+  }
+}
+
 function ClipCard({
   clip, score, previewing, onPreview, onExport, onEdit, api,
-  selectable, selected, onSelect, onRender, rendering,
+  selectable, selected, onSelect, onRender, rendering, onPublish,
 }: {
   clip: Clip; score?: ClipScore; previewing: boolean;
   onPreview: () => void; onExport: () => void; onEdit: () => void; api: ApiClient;
   selectable?: boolean; selected?: boolean; onSelect?: () => void;
   /** Render a clip the pipeline left for later (on a CPU only the best are rendered); absent while its video is processing. */
   onRender?: () => void; rendering?: boolean;
+  /** Post through Tebar; absent when Tebar isn't connected. */
+  onPublish?: () => void;
 }) {
+  const gate = gateOf(clip);
   const [showScore, setShowScore] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
@@ -91,6 +107,20 @@ function ClipCard({
         {clip.title && (
           <p className="text-sm font-bold text-fg mb-1 line-clamp-2">{clip.title}</p>
         )}
+        {(clip.gateVerdict || clip.source === 'llm') && (
+          <div className="flex flex-wrap gap-1.5 mb-1">
+            {clip.gateVerdict && (
+              <span className={`font-pixel text-[11px] px-1.5 border-2 border-line rounded ${GATE_STYLES[clip.gateVerdict] ?? 'bg-surface-3'}`}
+                title={`${gate?.by === 'jev' ? `Jev (${gate.model})` : 'Rules'}${gate?.reasons.length ? `: ${gate.reasons.join('; ')}` : ''}`}>
+                Gate {clip.gateVerdict}{gate?.by === 'rules' ? ' · rules' : ''}
+              </span>
+            )}
+            {clip.source === 'llm' && (
+              <span className="font-pixel text-[11px] px-1.5 border-2 border-line rounded bg-lilac" title="Moment picked by the LLM director">LLM pick</span>
+            )}
+          </div>
+        )}
+        {clip.reason && <p className="text-xs text-muted mb-1 line-clamp-2">{clip.reason}</p>}
         <div className="flex gap-3 font-pixel text-xs text-muted mb-3">
           <span>{formatTime(clip.startTime)} &#8594; {formatTime(clip.endTime)}</span>
           <span>&#8226;</span>
@@ -130,6 +160,9 @@ function ClipCard({
           <button onClick={onEdit} className="btn">
             Edit
           </button>
+          {onPublish && clip.renderPath && (
+            <button onClick={onPublish} className="btn bg-mint" title="Post to your social accounts through Tebar">Publish</button>
+          )}
           <button onClick={() => setShowFeedback(!showFeedback)} className="btn" aria-expanded={showFeedback} title="Log how this clip did after you posted it">
             {viralScore !== null ? `${(viralScore * 100).toFixed(0)}%` : 'Results'}
           </button>
@@ -233,7 +266,7 @@ const WHY_SHOWN = 3;
 const statusLabel = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 type DiscoveryMode = 'auto' | 'search' | 'trending' | 'channel';
-type MainTab = 'import' | 'discovery' | 'learning';
+type MainTab = 'import' | 'discovery' | 'learning' | 'settings';
 type TabKey = 'clips' | 'transcript';
 
 function DiscoveryPanel({ api }: { api: ApiClient }) {
@@ -593,6 +626,8 @@ export default function Studio() {
   const [versions, setVersions] = useState<Record<string, string>>({});
   const [renderingClips, setRenderingClips] = useState<Set<string>>(new Set());
   const [globalError, setGlobalError] = useState<{ msg: string; ctx: string } | null>(null);
+  const [connections, setConnections] = useState<Connections | null>(null);
+  const [publishingClip, setPublishingClip] = useState<Clip | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -769,6 +804,10 @@ export default function Studio() {
     Promise.all([api.getOptions(), api.listMusic()])
       .then(([opts, music]) => setChoices({ ...opts, music: music.tracks }))
       .catch((e) => reportError(e, 'loadOptions'));
+  }, [api]);
+
+  useEffect(() => {
+    api.getSettings().then(setConnections, (e) => reportError(e, 'getSettings'));
   }, [api]);
 
   useEffect(() => {
@@ -1047,6 +1086,7 @@ export default function Studio() {
                                   }}
                                   onEdit={() => setEditingClip(clip)}
                                   onRender={processing ? undefined : () => handleRender(clip)}
+                                  onPublish={connections?.tebar.active ? () => setPublishingClip(clip) : undefined}
                                   rendering={renderingClips.has(clip.id)}
                                   api={api} />
                               ))}
@@ -1101,6 +1141,8 @@ export default function Studio() {
       {mainTab === 'learning' && (
         <LearningPanel api={api} groups={videoGroups} stats={learningStats} onStats={setLearningStats} />
       )}
+
+      {mainTab === 'settings' && <ConnectionsPanel api={api} onChange={setConnections} />}
       </main>
 
       <Dock current={mainTab} onOpen={setMainTab} apps={[
@@ -1115,7 +1157,10 @@ export default function Studio() {
           }`,
           icon: ICONS.learning,
         },
+        { key: 'settings', label: 'Settings', icon: ICONS.settings },
       ]} />
+
+      {publishingClip && <PublishPanel clip={publishingClip} api={api} onClose={() => setPublishingClip(null)} />}
 
       {editingClip && (
         <ClipEditor clip={editingClip} api={api} choices={choices}

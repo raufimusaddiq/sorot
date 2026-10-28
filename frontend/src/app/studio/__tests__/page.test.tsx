@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Studio from '@/app/studio/page';
 import {
-  emptyState, installFakeApi, makeCandidate, makeClip, makeJob, makeScore, makeStages, makeVideo, ts,
+  emptyState, installFakeApi, makeCandidate, makeClip, makeConnections, makeJob, makeScore, makeStages, makeVideo, ts,
   type FakeState,
 } from '../../../../test/fakeApi';
 
@@ -858,5 +858,53 @@ describe('editing suite', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog', { name: 'Edit clip' })).not.toBeInTheDocument();
     expect(calls('POST', '/api/clips/c2/rerender')).toHaveLength(0);
+  });
+});
+
+describe('LLM, gate and publishing on clip cards; the Settings app', () => {
+  it('shows the gate verdict, an LLM pick and the reason; Publish only with Tebar connected', async () => {
+    seedCompleted();
+    state.clips.v1 = [
+      makeClip('c1', 'v1', 'PRIMARY', 1, { source: 'llm', reason: 'LLM pick: setup and payoff', gateVerdict: 'PASS',
+        gate: JSON.stringify({ verdict: 'PASS', by: 'jev', model: 'jev-1.14.0', reasons: [], answers: {}, quality: 0.9 }) }),
+      makeClip('c2', 'v1', 'BACKUP', 2, { gateVerdict: 'FAIL', reason: 'Held back: needs earlier context to make sense.',
+        gate: JSON.stringify({ verdict: 'FAIL', by: 'rules', model: null, reasons: ['needs earlier context to make sense'], answers: {}, quality: 0.3 }) }),
+      makeClip('c3', 'v1', 'BACKUP', 3, { gateVerdict: 'REVIEW', gate: '{broken' }),
+    ];
+    await renderLoaded();
+    const c1 = card('c1');
+    expect(within(c1).getByText('Gate PASS')).toHaveAttribute('title', 'Jev (jev-1.14.0)');
+    expect(within(c1).getByText('LLM pick')).toBeInTheDocument();
+    expect(within(c1).getByText('LLM pick: setup and payoff')).toBeInTheDocument();
+    expect(within(card('c2')).getByText('Gate FAIL · rules')).toHaveAttribute('title', 'Rules: needs earlier context to make sense');
+    expect(within(card('c3')).getByText('Gate REVIEW')).toHaveAttribute('title', 'Rules');
+    expect(within(c1).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+  });
+
+  it('connecting Tebar in Settings turns on Publish, which opens the publish window', async () => {
+    seedCompleted();
+    await renderLoaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    const tebar = await screen.findByRole('region', { name: 'Tebar publishing' });
+    fireEvent.change(within(tebar).getByLabelText('Tebar publishing API key'), { target: { value: 'tb_live_abcd1234' } });
+    fireEvent.click(within(tebar).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(within(tebar).getByText('active')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /import & clips/i }));
+    fireEvent.click(await waitFor(() => within(card('c1')).getByRole('button', { name: 'Publish' })));
+    expect(await screen.findByRole('dialog', { name: 'Publish clip' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: 'Publish clip' })).not.toBeInTheDocument();
+  });
+
+  it('a connected Tebar from the start shows Publish; settings load failures are reported', async () => {
+    seedCompleted();
+    state.settings = makeConnections({ tebar: { ...makeConnections().tebar, active: true, apiKeySet: true, apiKey: '••••1234' } });
+    const first = await renderLoaded();
+    expect(await waitFor(() => within(card('c1')).getByRole('button', { name: 'Publish' }))).toBeInTheDocument();
+    expect(within(card('c3')).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();   // not rendered yet
+    first.unmount();
+    state.fail['GET /api/settings'] = 'db locked';
+    await renderLoaded();
+    expect(await screen.findByText(/db locked/)).toBeInTheDocument();
   });
 });

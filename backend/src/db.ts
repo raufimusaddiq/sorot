@@ -152,6 +152,32 @@ CREATE TABLE IF NOT EXISTS discovery_channel (
     UNIQUE(youtube_channel_id)
 );
 
+-- Connection settings saved from the UI / CLI (settings.ts); they override the env.
+CREATE TABLE IF NOT EXISTS setting (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Clips sent to social accounts through a publisher (Tebar). targets holds the
+-- provider's per-account status / permalink; request is the exact body sent,
+-- so a retry re-sends it with the same idempotency key.
+CREATE TABLE IF NOT EXISTS social_post (
+    id TEXT PRIMARY KEY,
+    clip_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    provider_post_id TEXT,
+    status TEXT NOT NULL,
+    scheduled_at TEXT,
+    idempotency_key TEXT NOT NULL,
+    request TEXT,
+    targets TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_synced_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_job_video ON job(video_id);
 CREATE INDEX IF NOT EXISTS idx_job_status ON job(status);
 CREATE INDEX IF NOT EXISTS idx_clip_video ON clip(video_id);
@@ -169,6 +195,7 @@ CREATE INDEX IF NOT EXISTS idx_discovery_query_active ON discovery_query(active,
 CREATE INDEX IF NOT EXISTS idx_dc_status_poll ON discovery_channel(status, last_crawled_at);
 CREATE INDEX IF NOT EXISTS idx_dc_trust ON discovery_channel(trust_score DESC);
 CREATE INDEX IF NOT EXISTS idx_dc_category ON discovery_channel(primary_category);
+CREATE INDEX IF NOT EXISTS idx_social_post_clip ON social_post(clip_id);
 `;
 
 // Indexes on LEGACY_COLUMNS: created after the ALTERs so old databases have the columns.
@@ -206,6 +233,13 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["discovered_video", "top_moments", "TEXT"],
   ["discovered_video", "reason", "TEXT"],
   ["discovered_video", "picked_by", "TEXT"],
+  // LLM director + quality gate (2026-10-28)
+  ["video", "brief", "TEXT"],
+  ["clip", "source", "TEXT"],
+  ["clip", "hook_start", "REAL"],
+  ["clip", "hook_end", "REAL"],
+  ["clip", "gate_verdict", "TEXT"],
+  ["clip", "gate", "TEXT"],
 ];
 
 // Fills a column just added to an old database, where the value can be recovered.

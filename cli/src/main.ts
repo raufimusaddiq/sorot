@@ -21,6 +21,7 @@ Make clips
       --hook                    replay the best line at the start
       --yt-captions             use the video's YouTube captions (--auto-captions: auto ones too)
       --music FILE [--music-volume 0.12]   background music from data/music
+      --direction "TEXT"        steer the LLM: "only the funny parts", "for TikTok, under 40 s"
       --no-wait                 return right after starting the job
   watch <job>                   follow a job until it finishes
   jobs | job <job>              list jobs / show one job's stages
@@ -41,6 +42,14 @@ Discovery
   discover trending [--region ID] | discover channel <url>
   discover candidates [--status QUEUED] | queue <id...> | skip <id...> | drain
   channels [--status REJECTED] | channels reseed | refresh <id> | set <id> <STATUS>
+
+Connections (saved in the app; they win over .env)
+  connect                       LLM, Jev and Tebar: active?, URL, model, key (masked)
+  connect llm --base-url URL --model M [--key -] [--director on|off]
+  connect jev [--model jev-1.14.0] [--base-url URL] [--key -]
+  connect tebar [--key -]       --key - reads the key from stdin (not shell history)
+  connect <llm|jev|tebar> --on | --off | --reset    --reset = back to .env
+  connect test <llm|jev|tebar>  make one small real call
 
 App
   up | down | restart           start / stop the app (Docker or systemd)
@@ -95,6 +104,7 @@ export function realDeps(): Omit<Deps, "api"> {
     err: (s) => console.error(s),
     sleep: (ms) => Bun.sleep(ms),
     run: async (cmd, opts) => Bun.spawn(cmd, { cwd: opts?.cwd || undefined, stdio: ["inherit", "inherit", "inherit"] }).exited,
+    readStdin: async () => (await Bun.stdin.text()).trim(),
     capture: async (cmd) => {
       try {
         const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore" });

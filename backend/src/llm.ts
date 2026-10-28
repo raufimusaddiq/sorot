@@ -2,8 +2,9 @@
 // speaking `/chat/completions`: a local Ollama (http://localhost:11434/v1),
 // LM Studio, vLLM, Groq, OpenRouter, OpenAI…
 //
-// Off unless LLM_BASE_URL and LLM_MODEL are set; every caller then uses its
-// rule-based path, and must also fall back when a call throws LlmError.
+// Off unless LLM_BASE_URL and LLM_MODEL are set (env, or the UI / CLI
+// connection settings, which read this config live); every caller then uses
+// its rule-based path, and must also fall back when a call throws LlmError.
 
 import type { AppConfig } from "./config";
 import type { Json } from "./types";
@@ -62,12 +63,12 @@ export function parseJson(text: string | null | undefined): unknown {
 
 export class Llm {
   constructor(
-    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec">,
+    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmEnabled?: boolean },
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
   get enabled(): boolean {
-    return !!this.config.llmBaseUrl && !!this.config.llmModel;
+    return this.config.llmEnabled !== false && !!this.config.llmBaseUrl && !!this.config.llmModel;
   }
 
   get model(): string {

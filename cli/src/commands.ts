@@ -14,6 +14,8 @@ export interface Deps {
   run: (cmd: string[], opts?: { cwd?: string }) => Promise<number>;
   /** Runs a command and captures stdout. */
   capture: (cmd: string[]) => Promise<{ code: number; stdout: string }>;
+  /** All of stdin, trimmed (`--key -` reads an API key from it, out of the shell history). */
+  readStdin: () => Promise<string>;
   fs: {
     exists: (path: string) => boolean;
     mkdir: (path: string) => void;
@@ -55,6 +57,7 @@ export function pipelineOptions(a: Args): Json {
   if (has(a, "auto-captions")) Object.assign(o, { youtubeCaptions: true, allowAutoCaptions: true });
   if (str(a, "music")) o.bgm = str(a, "music");
   if (num(a, "music-volume") !== undefined) o.bgmVolume = num(a, "music-volume");
+  if (str(a, "direction")) o.direction = str(a, "direction");
   return o;
 }
 
@@ -162,8 +165,8 @@ async function clipsCmd(d: Deps, a: Args): Promise<number> {
   const tiers = str(a, "tier")?.toUpperCase().split(",");
   if (tiers) clips = (clips as Json[]).filter((c) => tiers.includes(c.tier));
   if (json(d, a, clips)) return 0;
-  d.out(table(["#", "TIER", "SCORE", "RANGE", "LEN", "FILE", "CLIP", "TITLE"], (clips as Json[]).map((c) => [
-    c.rankPos, c.tier, typeof c.score === "number" ? c.score.toFixed(2) : "-",
+  d.out(table(["#", "TIER", "SCORE", "GATE", "RANGE", "LEN", "FILE", "CLIP", "TITLE"], (clips as Json[]).map((c) => [
+    c.rankPos, c.tier, typeof c.score === "number" ? c.score.toFixed(2) : "-", c.gateVerdict ?? "-",
     `${clock(c.startTime)}-${clock(c.endTime)}`, `${Math.round(c.durationSec)}s`,
     c.exportStatus === "COMPLETED" ? "ready" : c.renderStatus === "COMPLETED" ? "no subs" : c.renderStatus.toLowerCase(),
     c.id, truncate(c.title, 50),
@@ -344,6 +347,65 @@ async function channelsCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
+// ---- connections (LLM, Jev, Tebar) -----------------------------------------------
+
+const CONNECTIONS = ["llm", "jev", "tebar"];
+const yesNo = (v: unknown) => (v ? "yes" : "no");
+
+function showConnections(d: Deps, a: Args, s: Json): number {
+  if (json(d, a, s)) return 0;
+  d.out(table(["CONNECTION", "ACTIVE", "URL", "MODEL", "KEY", "SAVED HERE"], CONNECTIONS.map((k) => {
+    const c = s[k] as Json;
+    return [k, c.enabled === false ? "off" : yesNo(c.active), c.baseUrl ?? c.url, c.model ?? "-", c.apiKeySet ? c.apiKey : "-",
+      (c.saved as string[]).join(",") || "-"];
+  })));
+  const llm = s.llm as Json;
+  d.out(`
+LLM director (brief + own clip picks): ${llm.director ? "on" : "off"}`);
+  d.out("Change: sorot connect llm --base-url URL --model M [--key -]   ·   test: sorot connect test llm");
+  return 0;
+}
+
+/**
+ * Show or change the LLM / Jev / Tebar connections. Saved in the app (they
+ * win over .env); --reset goes back to the server's env values. `--key -`
+ * reads the key from stdin so it stays out of the shell history.
+ */
+async function connectCmd(d: Deps, a: Args): Promise<number> {
+  const sub = a.positionals[1];
+  if (!sub || sub === "show") return showConnections(d, a, await d.api.get("/api/settings"));
+  if (sub === "test") {
+    const kind = need(a, 2, "connection (llm, jev or tebar)");
+    const r = await d.api.post(`/api/settings/${kind}/test`);
+    if (json(d, a, r)) return r.ok ? 0 : 1;
+    if (r.ok) d.out(`${kind}: OK in ${r.ms} ms${r.model ? ` (${r.model})` : ""}${r.detail ? ` — ${r.detail}` : ""}`);
+    else d.err(`${kind}: ${r.error}`);
+    return r.ok ? 0 : 1;
+  }
+  if (!CONNECTIONS.includes(sub)) throw new UsageError(`Unknown connection: ${sub} (llm, jev or tebar)`);
+  const patch: Json = {};
+  if (has(a, "reset")) {
+    const fields = sub === "llm" ? ["enabled", "baseUrl", "model", "apiKey", "director"]
+      : sub === "jev" ? ["enabled", "url", "model", "apiKey"] : ["enabled", "baseUrl", "apiKey"];
+    for (const f of fields) patch[f] = null;
+  }
+  // Not --url: that one is the global "which sorot server" option.
+  if (str(a, "base-url") !== undefined) patch[sub === "jev" ? "url" : "baseUrl"] = str(a, "base-url");
+  if (str(a, "model") !== undefined) patch.model = str(a, "model");
+  const key = str(a, "key");
+  if (key !== undefined) patch.apiKey = key === "-" ? await d.readStdin() : key;
+  if (has(a, "on") && has(a, "off")) throw new UsageError("Give --on or --off, not both");
+  if (has(a, "on")) patch.enabled = true;
+  if (has(a, "off")) patch.enabled = false;
+  const director = str(a, "director");
+  if (director !== undefined) {
+    if (sub !== "llm" || !["on", "off"].includes(director)) throw new UsageError("--director takes on or off (llm only)");
+    patch.director = director === "on";
+  }
+  if (!Object.keys(patch).length) throw new UsageError("Nothing to change: give --base-url, --model, --key, --on/--off or --reset");
+  return showConnections(d, a, await d.api.put(`/api/settings/${sub}`, patch));
+}
+
 // ---- misc ---------------------------------------------------------------------
 
 async function optionsCmd(d: Deps, a: Args): Promise<number> {
@@ -371,4 +433,5 @@ export const COMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   discover: discoverCmd,
   channels: channelsCmd,
   options: optionsCmd,
+  connect: connectCmd,
 };

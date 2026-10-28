@@ -13,6 +13,8 @@ export interface Video {
   /** Only this range of the source was downloaded (seconds), if set at import. */
   sectionStart?: number | null;
   sectionEnd?: number | null;
+  /** JSON VideoBrief the LLM director wrote (topic, people, audience, angle). */
+  brief?: string | null;
 }
 
 export interface Job {
@@ -64,6 +66,34 @@ export interface Clip {
   reason?: string | null;
   /** "llm+rules" or "rules". */
   scoredBy?: string | null;
+  /** Who found the moment: "rules" (pause-based windows) or "llm" (director). */
+  source?: string | null;
+  /** The LLM's hook line (absolute source seconds), replayed first with hook-first. */
+  hookStart?: number | null;
+  hookEnd?: number | null;
+  /** Quality gate: PASS | REVIEW | FAIL (null = not gated), and its JSON GateResult. */
+  gateVerdict?: string | null;
+  gate?: string | null;
+}
+
+/** A clip sent to social accounts through a publisher (Tebar). */
+export interface SocialPost {
+  id: string;
+  clipId: string;
+  provider: string;
+  providerPostId: string | null;
+  /** PUBLISHING (sent) | SCHEDULED | PUBLISHED | PARTIAL | FAILED | CANCELLED */
+  status: string;
+  scheduledAt: string | null;
+  idempotencyKey: string;
+  /** JSON body sent to the provider. */
+  request: string | null;
+  /** JSON per-account results: platform, status, permalink, error. */
+  targets: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastSyncedAt: string | null;
 }
 
 export interface ClipScore {

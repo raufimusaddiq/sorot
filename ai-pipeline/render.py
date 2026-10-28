@@ -21,7 +21,7 @@ import tempfile
 
 from captions import (
     DEFAULT_PRESET, PRESETS, build_ass, clip_words, concat_graph, ffmpeg_filter_path, is_monotonic, music_graph,
-    plan_timeline, select_expr, timeline_duration, words_for_clip, x264_preset,
+    plan_timeline, seg_hook, select_expr, timeline_duration, words_for_clip, x264_preset,
 )
 import reframe as reframe_mod
 
@@ -278,7 +278,8 @@ def main():
                 # captions stay in sync with the cut video.
                 duration = seg["endTime"] - seg["startTime"]
                 words = words_for_clip(transcript_segments, seg["startTime"], seg["endTime"])
-                planned = plan_timeline(words, duration, args.silence_trim, args.silence_gap, args.hook_first)
+                planned = plan_timeline(words, duration, args.silence_trim, args.silence_gap, args.hook_first,
+                                        hook=seg_hook(seg))
                 timeline = None if planned == [(0.0, round(duration, 3))] else planned
             framing, crop_segments = plan_framing(args.reframe, args.video, seg["startTime"], seg["endTime"], timeline)
             try:

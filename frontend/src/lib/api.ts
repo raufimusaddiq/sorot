@@ -1,6 +1,8 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
-import type { CaptionWord, Clip, PipelineOptions } from '@/types';
+import type {
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+} from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
@@ -174,6 +176,50 @@ export class ApiClient {
   /** Logged results for posted clips, newest post first. */
   async listFeedback() {
     return this.request('/api/feedback');
+  }
+
+  // ---- connections (LLM, Jev, Tebar) ----
+
+  async getSettings() {
+    return this.request<Connections>('/api/settings');
+  }
+
+  /** A value saves the field; null clears it (back to the server's env value). */
+  async updateSettings(kind: ConnectionKind, patch: Record<string, string | boolean | null>) {
+    return this.request<Connections>(`/api/settings/${kind}`, { method: 'PUT', body: JSON.stringify(patch) });
+  }
+
+  async testConnection(kind: ConnectionKind) {
+    return this.request<ConnectionTest>(`/api/settings/${kind}/test`, { method: 'POST' });
+  }
+
+  // ---- publishing (Tebar) ----
+
+  async socialAccounts() {
+    return this.request<{ enabled: boolean; accounts: SocialAccount[] }>('/api/social/accounts');
+  }
+
+  async publishDraft(clipId: string, accountIds: string[]) {
+    return this.request<PublishDraft>(`/api/clips/${clipId}/publish/draft`, { method: 'POST', body: JSON.stringify({ accountIds }) });
+  }
+
+  async publish(clipId: string, body: {
+    targets: Array<{ accountId: string; content: string; title?: string; madeForKids?: boolean; privacyLevel?: string }>;
+    scheduledAt?: string; confirmReview?: boolean; override?: boolean;
+  }) {
+    return this.request<{ post: SocialPost }>(`/api/clips/${clipId}/publish`, { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async clipPosts(clipId: string) {
+    return this.request<{ posts: SocialPost[] }>(`/api/clips/${clipId}/posts`);
+  }
+
+  async refreshPost(postId: string) {
+    return this.request<{ post: SocialPost }>(`/api/social/posts/${postId}/refresh`, { method: 'POST' });
+  }
+
+  async syncSocial() {
+    return this.request<{ posts: number; clips: number; errors: string[] }>('/api/social/sync', { method: 'POST' });
   }
 
   /** ``version`` (e.g. clip.updatedAt) busts the browser cache after a re-render. */

@@ -16,7 +16,9 @@
 |---|---|
 | 🎙️ **Hears every word** | faster-whisper `large-v3-turbo` with word timestamps — or the video's own YouTube captions |
 | 🧠 **Finds the gold** | 13 weighted signals (hooks, keywords, energy, faces, motion…) rank every moment **PRIMARY / BACKUP / SKIP** |
-| 🤖 **Optional LLM** | Ollama, Groq, OpenRouter or OpenAI reviews clips, writes titles, runs auto-discover — off by default |
+| 🤖 **Optional LLM director** | Ollama, Groq, OpenRouter or OpenAI reads the whole video, picks its own moments and hooks, follows your direction ("only the funny parts"), writes copy per platform — off by default |
+| 🚦 **Quality gate** | [Jev](https://docs.typesafe.ai) answers fixed yes/no questions per clip (hook, needs context, ending, filler, payoff, risks) — without it the same questions are answered by rules |
+| 🚀 **Publish via Tebar** | Post to TikTok, Instagram, YouTube, Threads… through [Tebar](https://tebar.app) and pull views/likes back into learning |
 | 🎯 **Speaker in frame** | Face tracking moves the crop with whoever's talking, cutting on scene changes |
 | 💬 **Captions that pop** | Karaoke ASS captions in 4 looks: `default`, `hormozi`, `storyteller`, `cinematic` |
 | 🪝 **Hook first** | Replays the strongest line up front — stop the scroll |
@@ -24,7 +26,7 @@
 | 🎵 **Background music** | Tracks in `data/music` loop under the clip and duck under speech |
 | ✏️ **Fix anything** | Nudge timing, fix a word, change style — re-renders one clip in ~20 s |
 | 🔎 **Finds source videos** | ✨ Auto-discover reads what's trending and picks sources with reasons; plus search and a channel crawler |
-| 📈 **Learns what works** | Feed back views and likes — after 5+ results the weights re-fit to reality |
+| 📈 **Learns what works** | Views and likes come back (from Tebar, or typed in) — after 5+ results the weights re-fit to reality |
 | ⌨️ **Scriptable** | `sorot` CLI + plain HTTP API |
 
 ---
@@ -211,8 +213,8 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      1. 📥 Import        yt-dlp (or a time range)
                      2. 🔊 Audio         ffmpeg
                      3. 🎙️ Transcribe    faster-whisper, word timestamps
-                     4. ✂️ Segment       gap-based candidates
-                     5. 🧠 Score         13 signals + optional LLM, title/description
+                     4. ✂️ Segment       gap-based candidates (+ LLM director: brief, own moments, hook)
+                     5. 🧠 Score         13 signals + optional LLM review, copy → quality gate (Jev or rules)
                      6. 📱 Render 9:16   crop, silence trim, hook, captions + music — one encode
                      7. 💬 Captions      (re-burns only clips rendered the old way)
                      8. 🔁 Variations    zoom / crop presets
@@ -245,13 +247,21 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
 
 With an LLM, the score is 50% formula + 50% LLM judgement, and the LLM writes the copy; if it's unreachable, the formula decides. Each clip records who scored it and why.
 
+### 🎬 LLM director, 🚦 quality gate, 🚀 publishing
+
+- 🎬 **Director** (with an LLM): a brief of the whole video, then the LLM's own clip picks from the full transcript (start, end, hook line) next to the rule windows; overlaps keep the better one. Give a **direction** at import to steer it.
+- 🚦 **Gate** before render: PASS / REVIEW (content risk — you decide) / FAIL (held back, renderable on request). Jev when connected, text rules otherwise. Measure the questions with `bun run jev-eval`.
+- 🚀 **Publish** (Tebar): LLM copy per platform → you edit and choose (TikTok privacy, YouTube "made for kids") → post or schedule → metrics sync every 6 h into learning.
+
+👉 [docs/creative-loop.md](docs/creative-loop.md) — the design, the questions and their sources.
+
 ### 🔬 What's actually "AI" here?
 
 Whisper is a neural network, and so is the LLM if you add one. Faces use classic ML (Haar cascades). The clip score is a **hand-tuned formula** — fast, explainable, offline — not a trained model; LightGBM can take over after 200+ real results. 👉 [docs/ai-audit.md](docs/ai-audit.md)
 
 ### 📈 Learning from your posts
 
-📤 Log views / likes / comments / shares / saves → 🧮 a time-normalised viral score → 🔄 after 5+, **Retrain Weights** (Pearson + EMA, α = 0.3) → ✅ next import uses them. Learned weights live in `data/weights.json` and survive updates.
+📤 Views / likes / comments / shares / saves — synced from Tebar, or logged by hand → 🧮 a time-normalised viral score → 🔄 after 5+, **Retrain Weights** (Pearson + EMA, α = 0.3) → ✅ next import uses them. Learned weights live in `data/weights.json` and survive updates.
 
 ### 🔎 Discovery
 
@@ -292,8 +302,15 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 | `VARIATIONS` | `false` | Also make zoom-preset copies of the top clips (not shown in the app yet) |
 | `LLM_BASE_URL` / `LLM_MODEL` | empty (off) | OpenAI-compatible endpoint, e.g. Ollama `http://host.docker.internal:11434/v1` + `qwen2.5:7b` |
 | `LLM_API_KEY` | empty | Hosted LLMs — in `.env.llm` (gitignored), never `.env.docker` |
+| `LLM_DIRECTOR` | `true` | With an LLM: brief + own moment picks + hook. `false` = review and copy only |
+| `JEV_API_KEY` | empty (off) | Jev quality gate ([TypeSafe](https://docs.typesafe.ai)) — in `.env.llm`. Off = the rules answer the gate's questions |
+| `JEV_MODEL` / `JEV_URL` | `jev-1.14.0` / TypeSafe's `/v1/systemone` | Pinned model; OpenRouter works too (`https://openrouter.ai/api/alpha/decisions` + its model id) |
+| `TEBAR_API_KEY` | empty (off) | Publishing via [Tebar](https://docs.tebar.app/api) (paid plan) — in `.env.llm` |
+| `TEBAR_SYNC_HOURS` | `6` | Pull posted clips' metrics into learning every N hours (`0` = only on request) |
 | `WEB_SEARCH` | `bing` | `bing` (no key), a SearXNG URL, or `off` |
 | `SOROT_VERSION` | `latest` | Image tag to run, e.g. `1.0.0` |
+
+🔌 LLM, Jev and Tebar can also be set in the app (**Settings** in the dock) or with `sorot connect` — saved in the database, they win over these variables; *Use .env* / `sorot connect <name> --reset` goes back.
 
 ---
 
@@ -354,13 +371,15 @@ To ship: merge to `master` → *Draft a new release* tagged `v1.2.3`. 🔓 If an
 | 🏗️ [architecture.md](docs/architecture.md) | How the pieces fit |
 | 🏅 [scoring-spec.md](docs/scoring-spec.md) | Scoring in depth |
 | 🔬 [ai-audit.md](docs/ai-audit.md) | Model vs rule vs LLM |
+| 🎬 [creative-loop.md](docs/creative-loop.md) | LLM director, Jev quality gate, Tebar publishing |
 | 🐍 [python-pipeline.md](docs/python-pipeline.md) | Each pipeline script's inputs and outputs |
 
 ---
 
 ## 🗺️ Roadmap
 
-- 🔗 **Social connectors** — publish straight to your accounts and pull views / likes back automatically, so the scorer keeps learning hands-free
+- 🎯 **Calibrate the gate** on real labelled clips (`bun run jev-eval`) and feed its answers to training as features
+- 💬 **Comments** — Tebar comment inbox with LLM-drafted replies you approve
 
 ---
 

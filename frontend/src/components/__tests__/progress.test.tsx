@@ -23,6 +23,8 @@ describe('ProgressBar', () => {
   it('shows transcription progress; other stages show no live text', () => {
     const { rerender } = render(<ProgressBar stages={[stage('IMPORT', 'COMPLETED'), stage('TRANSCRIBE', 'IN_PROGRESS', 'Transcribing 37%')]} />);
     expect(screen.getByText('Transcribing 37%')).toBeInTheDocument();
+    rerender(<ProgressBar stages={[stage('TRANSCRIBE', 'COMPLETED'), stage('SEGMENT', 'IN_PROGRESS', 'LLM picking moments 3/14')]} />);
+    expect(screen.getByText('LLM picking moments 3/14')).toBeInTheDocument();
     rerender(<ProgressBar stages={[stage('IMPORT', 'IN_PROGRESS', 'data/raw/old.mp4'), stage('TRANSCRIBE', 'COMPLETED', 't.json')]} />);
     expect(screen.queryByText('data/raw/old.mp4')).not.toBeInTheDocument();
     expect(screen.queryByText('t.json')).not.toBeInTheDocument();

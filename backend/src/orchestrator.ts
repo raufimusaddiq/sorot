@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { gateClips } from "./clipGate";
 import { reviewClips } from "./clipReview";
 import type { AppConfig } from "./config";
-import { Llm } from "./llm";
+import { dropOverlaps, mineMoments, videoBrief, type Line, type VideoBrief } from "./director";
+import { ruleHook, type TranscriptSeg } from "./hooks";
+import { Jev } from "./jev";
+import { Llm, LlmError } from "./llm";
 import { captionFlags, decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
 import { timeoutFor, type ExecFn, type ScriptRunner } from "./runner";
 import { now, type Store } from "./store";
@@ -9,6 +13,9 @@ import { analyticsReport, findSegments, type ScoredSummary } from "./segments";
 import { determineTier, FEATURE_ORDER, loadWeights, scoreSegments, type MediaFeatures, type SegmentIn } from "./scoring";
 import type { Clip, ClipScore, Json, Stage, Video } from "./types";
 import { YouTube } from "./youtube";
+import { mapPool } from "./pool";
+
+export { mapPool };
 import { captionTranscript } from "./youtubeCaptions";
 
 const DATA_SUBDIRS = [
@@ -32,20 +39,6 @@ const arr = (v: unknown): Json[] => (Array.isArray(v) ? v.map(obj) : []);
 const fileNonEmpty = (p: string) => existsSync(p) && statSync(p).size > 0;
 const readJson = (p: string): Json => obj(JSON.parse(readFileSync(p, "utf8")));
 
-/** Run `fn` over `items` with at most `limit` in flight; results keep input order. */
-export async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i] as T);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
-
 export class PipelineOrchestrator {
   constructor(
     private readonly config: AppConfig,
@@ -54,6 +47,7 @@ export class PipelineOrchestrator {
     private readonly exec: ExecFn,
     private readonly llm: Llm = new Llm(config),
     private readonly youtube: YouTube = new YouTube(exec, config.ytdlpPath),
+    private readonly jev: Jev = new Jev(config),
   ) {}
 
   /** Per-video render/export folders: clip files are named by rank, so a
@@ -88,8 +82,8 @@ export class PipelineOrchestrator {
         ["IMPORT", () => this.stageImport(video, opts, signal)],
         ["AUDIO_EXTRACT", () => this.stageAudioExtract(video, signal)],
         ["TRANSCRIBE", () => this.stageTranscribe(jobId, video, opts, signal)],
-        ["SEGMENT", () => this.stageSegment(video)],
-        ["SCORE", () => this.stageScore(video, signal)],
+        ["SEGMENT", () => this.stageSegment(jobId, video, opts)],
+        ["SCORE", () => this.stageScore(jobId, video, opts, signal)],
         ["RENDER", () => this.stageRender(jobId, video, opts, signal)],
         ["SUBTITLE", () => this.stageSubtitle(jobId, video, opts, signal)],
         ["VARIATION", () => this.stageVariation(video, signal)],
@@ -188,7 +182,10 @@ export class PipelineOrchestrator {
     );
     if (title.aborted) throw new CancelledError();
     const t = title.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ");
-    if (title.exitCode === 0 && t) this.store.updateVideo(video.id, { title: t });
+    if (title.exitCode === 0 && t) {
+      this.store.updateVideo(video.id, { title: t });
+      video.title = t;   // later stages (director, review) read it from here
+    }
 
     // A retry after a completed download skips straight to the cached file.
     if (!fileNonEmpty(outputPath)) {
@@ -285,12 +282,46 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async stageSegment(video: Video) {
+  /**
+   * Candidate clips: the rules' pause-based windows, plus — with an LLM and
+   * LLM_DIRECTOR on — a video brief and the LLM's own picks (director.ts).
+   * Overlaps between the two are settled after scoring.
+   */
+  private async stageSegment(jobId: string, video: Video, opts: ResolvedOptions) {
     const outputPath = this.path("segments", `${video.id}.json`);
     const transcript = readJson(this.path("transcripts", `${video.id}.json`));
-    const lines = arr(transcript.segments).map((s) => ({ start: num(s.start), end: num(s.end), text: str(s.text) ?? "" }));
-    const segments = findSegments(lines);
-    await Bun.write(outputPath, JSON.stringify({ videoId: str(transcript.videoId) ?? "", segmentCount: segments.length, segments }));
+    const lines: Line[] = arr(transcript.segments).map((s) => ({
+      start: num(s.start), end: num(s.end), text: str(s.text) ?? "",
+      ...(Array.isArray(s.words) ? { words: s.words as Line["words"] } : {}),
+    }));
+    const segments: Json[] = findSegments(lines).map((s) => ({ ...s, source: "rules" }));
+    const director: Json = {};
+    if (this.llm.enabled && this.config.llmDirector && lines.length) {
+      const stage = this.store.getStage(jobId, "SEGMENT");
+      const progress = (text: string) => { if (stage) this.store.updateStage(stage.id, { outputPath: text }); };
+      const ctx = { title: video.title, direction: opts.direction };
+      let brief: VideoBrief | null = null;
+      progress("LLM reading the video");
+      try {
+        brief = await videoBrief(this.llm, lines, ctx);
+        this.store.updateVideo(video.id, { brief: JSON.stringify(brief) });
+      } catch (e) {
+        if (!(e instanceof LlmError)) throw e;
+        director.briefError = e.message;
+      }
+      const mined = await mineMoments(this.llm, lines, { ...ctx, brief },
+        (done, total) => progress(`LLM picking moments ${done}/${total}`));
+      for (const m of mined.moments) segments.push({ ...m, index: segments.length });
+      Object.assign(director, { brief, picks: mined.moments.length, parts: mined.parts, model: this.llm.model },
+        mined.error ? { pickError: mined.error } : {});
+      if (director.briefError || mined.error) {
+        console.warn(`LLM director partly fell back to rules for ${video.id}: ${director.briefError ?? mined.error}`);
+      }
+    }
+    await Bun.write(outputPath, JSON.stringify({
+      videoId: str(transcript.videoId) ?? "", segmentCount: segments.length, segments,
+      ...(Object.keys(director).length ? { director } : {}),
+    }));
     return outputPath;
   }
 
@@ -299,7 +330,7 @@ export class PipelineOrchestrator {
    * weighting, tiers and post copy run here (scoring.ts), then the optional
    * LLM review (clipReview.ts) blends in its judgement.
    */
-  private async stageScore(video: Video, signal: AbortSignal) {
+  private async stageScore(jobId: string, video: Video, opts: ResolvedOptions, signal: AbortSignal) {
     const segmentsPath = this.path("segments", `${video.id}.json`);
     const audioPath = this.path("audio", `${video.id}.wav`);
     const transcriptPath = this.path("transcripts", `${video.id}.json`);
@@ -309,7 +340,9 @@ export class PipelineOrchestrator {
     const measured = await this.runScript("media_features.py", args,
       { signal, timeoutMinutes: timeoutFor("media_features.py", this.audioSeconds(video), 0.3) });
 
-    const segments = arr(readJson(segmentsPath).segments) as unknown as SegmentIn[];
+    const segmentsFile = readJson(segmentsPath);
+    const segments = arr(segmentsFile.segments) as unknown as SegmentIn[];
+    const brief = (obj(segmentsFile.director).brief ?? null) as VideoBrief | null;
     const media = new Map<number, MediaFeatures>(arr(measured.segments).map((m) => [num(m.index), {
       rmsRatio: typeof m.rmsRatio === "number" ? m.rmsRatio : null,
       onsetDensity: num(m.onsetDensity, 0.5), facePresence: num(m.facePresence, 0.5),
@@ -325,14 +358,29 @@ export class PipelineOrchestrator {
     let scored = scoreSegments(segments, media, ctx);
     const supervised = await this.supervisedPredictions(video.id, scored, signal);
     if (supervised) scored = scoreSegments(segments, media, { ...ctx, supervised });
-    const review = await reviewClips(scored, this.llm, determineTier);
+    const review = await reviewClips(scored, this.llm, determineTier, { title: video.title, brief, direction: opts.direction });
     if (review.error) console.warn(`LLM review skipped for some clips of ${video.id}: ${review.error}`);
-    const ranked = review.segments.sort((a, b) => b.finalScore - a.finalScore).map((s, i) => ({ ...s, rank: i + 1 }));
+    // The LLM's picks and the rule windows can cover the same moment: keep the better-scored one.
+    const kept = dropOverlaps(review.segments.sort((a, b) => b.finalScore - a.finalScore));
+    const stage = this.store.getStage(jobId, "SCORE");
+    if (stage) this.store.updateStage(stage.id, { outputPath: this.jev.enabled ? "Jev checking clips" : "Checking clips" });
+    const gate = await gateClips(kept, this.jev, RENDER_TIERS);
+    if (gate.error) console.warn(`Jev gate fell back to rules for some clips of ${video.id}: ${gate.error}`);
+    // Clips the gate held back rank after the rest (render tiers stay first: render.py indexes them in order).
+    const held = (s: Json) => (obj(s.gate).verdict === "FAIL" ? 1 : 0);
+    const ranked = kept.sort((a, b) => held(a) - held(b) || b.finalScore - a.finalScore).map((s, i) => ({ ...s, rank: i + 1 }));
+    // Every clip's hook is decided here (render.py only replays it): the LLM's line, else the rules' (null = none).
+    const words = (ctx.transcript ?? []) as TranscriptSeg[];
+    for (const s of ranked) {
+      if (typeof (s as Json).hookStart !== "number") Object.assign(s, ruleHook(words, s.startTime, s.endTime) ?? { hookStart: null, hookEnd: null });
+    }
     const result: Json = {
       videoId: video.id,
       scoredSegments: ranked,
       scoredBy: ranked.some((s) => s.scoredBy !== "rules") ? "llm+rules" : "rules",
       ...(review.error ? { llmError: review.error } : {}),
+      ...(gate.by ? { gatedBy: gate.by } : {}),
+      ...(gate.error ? { gateError: gate.error } : {}),
     };
     await Bun.write(segmentsPath, JSON.stringify(result));
     this.saveClipsFromScoredSegments(video.id, result);
@@ -372,6 +420,11 @@ export class PipelineOrchestrator {
           textContent: str(seg.text),
           reason: str(seg.reason, null),
           scoredBy: str(seg.scoredBy, null),
+          source: str(seg.source, "rules"),
+          hookStart: typeof seg.hookStart === "number" ? seg.hookStart : null,
+          hookEnd: typeof seg.hookEnd === "number" ? seg.hookEnd : null,
+          gateVerdict: seg.gate ? str(obj(seg.gate).verdict, null) : null,
+          gate: seg.gate ? JSON.stringify(seg.gate) : null,
           renderStatus: "PENDING",
           renderPath: null,
           exportStatus: "PENDING",

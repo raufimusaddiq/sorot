@@ -1,7 +1,8 @@
 'use client';
 
-// Collapsible per-import settings: caption style, framing, editing passes,
-// YouTube captions, background music and an optional time range.
+// Collapsible per-import settings: a free-text direction for the LLM, caption
+// style, framing, editing passes, YouTube captions, background music and an
+// optional time range.
 
 import { useState } from 'react';
 import type { EditChoices, PipelineOptions } from '@/types';
@@ -18,9 +19,12 @@ export const FALLBACK_CHOICES: EditChoices = {
   music: [],
   defaults: {
     style: 'default', reframe: 'face', silenceTrim: false, silenceGapSec: 0.6, hookFirst: false,
-    youtubeCaptions: false, allowAutoCaptions: false, bgm: '', bgmVolume: 0.12,
+    youtubeCaptions: false, allowAutoCaptions: false, bgm: '', bgmVolume: 0.12, direction: '',
   },
 };
+
+/** The backend's limit for the LLM direction (options.ts MAX_DIRECTION). */
+export const MAX_DIRECTION = 500;
 
 export const REFRAME_LABELS: Record<string, string> = {
   face: 'Follow faces',
@@ -86,6 +90,13 @@ export function ImportOptions({ value, onChange, choices, disabled }: {
       </button>
       {open && (
         <div className="mt-3 grid grid-cols-1 gap-4 bg-surface-2 border-3 border-line rounded-md p-4">
+          <div>
+            <span className={label}>Direction for the LLM (optional)</span>
+            <textarea aria-label="Direction for the LLM" rows={2} maxLength={MAX_DIRECTION} value={o.direction ?? ''}
+              placeholder="e.g. only the funny parts · Pak Budi's money advice · for TikTok, 30-45 s"
+              onChange={(e) => set({ direction: e.target.value })} className={`${field} resize-y`} />
+            <p className="text-xs text-subtle mt-1">With an LLM connected (Settings) it picks the moments, hook and copy to fit this.</p>
+          </div>
           <div>
             <span className={label}>Caption style</span>
             <select aria-label="Caption style" value={o.style} onChange={(e) => set({ style: e.target.value })} className={field}>

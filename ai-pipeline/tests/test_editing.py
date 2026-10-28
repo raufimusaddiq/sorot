@@ -64,6 +64,28 @@ class TestHookPlanning:
         assert captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=lambda t: 0) == [(0.0, 10.0)]
         assert captions.timeline_duration(hook) == 12.05
 
+    def test_llm_hook_from_segment(self):
+        seg = {"startTime": 100.0, "endTime": 110.0}
+        assert captions.seg_hook(seg) is None                                   # old segments file: rules here pick
+        assert captions.seg_hook({**seg, "hookStart": None, "hookEnd": None}) is False     # backend chose no hook
+        assert captions.seg_hook({**seg, "hookStart": 106.0, "hookEnd": 107.8}) == (5.9, 7.95)
+        assert captions.seg_hook({**seg, "hookStart": 101.0, "hookEnd": 102.5}) is False   # already the opening
+        assert captions.seg_hook({**seg, "hookStart": 108.0, "hookEnd": 112.0}) is False   # runs past the clip
+        assert captions.seg_hook({**seg, "hookStart": 104.0, "hookEnd": 104.2}) is False   # too short to be a line
+        assert captions.seg_hook({**seg, "hookStart": "106", "hookEnd": 107}) is False
+
+    def test_plan_timeline_explicit_hook_wins_over_rules(self):
+        llm = captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=hook_scorer, hook=(3.9, 5.45))
+        assert llm == [(3.9, 5.45), (0.0, 10.0)]
+        assert captions.plan_timeline(TALK, 10.0, hook_first=True, scorer=hook_scorer, hook=False) == [(0.0, 10.0)]
+        assert captions.plan_timeline(TALK, 10.0, hook=(3.9, 5.45)) == [(0.0, 10.0)]   # only with hook_first
+
+    def test_clip_words_use_the_llm_hook(self):
+        segs = [{"start": 0, "end": 10, "words": TALK}]
+        seg = {"startTime": 0, "endTime": 10, "hookStart": 4.0, "hookEnd": 5.3}
+        words = subtitle.clip_words(segs, seg, hook_first=True)
+        assert [x["text"] for x in words[:3]] == ["Ini", "biasa", "saja."]
+
     def test_hook_words_play_twice(self):
         mapped = captions.map_words(TALK, [(5.9, 7.95), (0.0, 10.0)])
         texts = [x["text"] for x in mapped]
@@ -119,6 +141,25 @@ class TestRenderHookFirst:
         clip = json.loads(capsys.readouterr().out)["data"]["clips"][0]
         assert seen["timeline"] == [(5.9, 7.95), (0.0, 10.0)]
         assert clip["hookFirst"] is True and clip["trimmedDuration"] == 12.05
+
+    def test_main_uses_the_segments_llm_hook(self, monkeypatch, capsys, tmp_path):
+        seg = tmp_path / "s.json"
+        seg.write_text(json.dumps({"scoredSegments": [{"rank": 1, "tier": "PRIMARY", "startTime": 0, "endTime": 10,
+                                                       "hookStart": 4.0, "hookEnd": 5.3}]}))
+        tr = tmp_path / "t.json"
+        tr.write_text(json.dumps({"segments": [{"start": 0, "end": 10, "text": "x", "words": TALK}]}))
+        seen = {}
+
+        def fake_render(video, start, end, out, timeline=None, reframe=None, burn=None):
+            seen["timeline"] = timeline
+            open(out, "wb").write(b"x")
+        monkeypatch.setattr(render, "render_clip", fake_render)
+        monkeypatch.setattr(captions, "find_hook", lambda words, d, scorer=None: (5.9, 7.95))
+        monkeypatch.setattr(sys, "argv", ["render.py", "--segments", str(seg), "--video", "v", "--output-dir",
+                                          str(tmp_path / "r"), "--transcript", str(tr), "--hook-first",
+                                          "--reframe", "center"])
+        render.main()
+        assert seen["timeline"] == [(3.9, 5.45), (0.0, 10.0)]
 
 
 # --- subtitle: hook-first words, music -------------------------------------------------

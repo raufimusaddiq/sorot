@@ -279,7 +279,9 @@ describe("clip editor", () => {
     const render = env.calls.find((c) => c.script === "render.py")!.args;
     expect(env.calls.some((c) => c.script === "subtitle.py")).toBeFalse();    // captions in the same pass
     const segs = JSON.parse(readFileSync(argAfter(render, "--segments"), "utf-8"));
-    expect(segs.scoredSegments).toEqual([{ index: 0, rank: clip.rankPos, tier: clip.tier, startTime: 30, endTime: 42 }]);
+    // No hook line in the corrected words: decided here (null), so render.py won't pick one itself.
+    expect(segs.scoredSegments).toEqual([{ index: 0, rank: clip.rankPos, tier: clip.tier, startTime: 30, endTime: 42,
+      hookStart: null, hookEnd: null }]);
     expect(argAfter(render, "--tiers")).toBe(clip.tier);
     expect(argAfter(render, "--output-dir")).toBe(`${env.config.dataDir}/renders/${videoId}/`);
     expect(render).toContain("--silence-trim");

@@ -1,0 +1,461 @@
+// Publishing clips through Tebar, and closing the learning loop.
+//
+// 1. draft:   per selected account, the LLM writes platform-fitting copy
+//             (template copy without it); Jev checks the copy doesn't claim
+//             more than the clip says; code checks the platform's limits and
+//             the clip's quality-gate verdict. Nothing is sent.
+// 2. publish: the user's final copy + choices (TikTok privacy, YouTube
+//             title / made-for-kids are always theirs to make) → upload the
+//             clip → one Tebar post with an Idempotency-Key. The exact body is
+//             saved first, so a retry re-sends it and can't post twice.
+// 3. sync:    status and metrics of posted clips → clip_feedback → the
+//             scorer's weights learn from real results (feedback.ts).
+
+import { existsSync, statSync } from "node:fs";
+import type { AppConfig } from "./config";
+import type { VideoBrief } from "./director";
+import type { FeedbackService } from "./feedback";
+import { HttpError } from "./http";
+import { JevError, type Jev, type Question } from "./jev";
+import { LlmError, parseJson, type Llm } from "./llm";
+import { decodeOptions } from "./options";
+import { now, type Store } from "./store";
+import { TebarError, type PostMetrics, type Tebar, type TebarAccount, type TebarPost } from "./tebar";
+import type { Clip, Json, SocialPost } from "./types";
+
+/** Tebar's documented limits for a single-video post (docs.tebar.app/batasan). */
+export const PLATFORMS: Record<string, { text: number; hashtags?: number; minSec?: number; maxSec?: number; title?: number }> = {
+  tiktok: { text: 2200, maxSec: 600 },
+  instagram: { text: 2200, hashtags: 30, minSec: 3, maxSec: 900 },
+  youtube: { text: 5000, title: 100 },
+  threads: { text: 500, maxSec: 300 },
+  x: { text: 280, maxSec: 1200 },
+  linkedin: { text: 3000, minSec: 3, maxSec: 1800 },
+  telegram: { text: 1024 },
+  discord: { text: 2000 },
+};
+export const VIDEO_MAX_BYTES = 300 * 1024 * 1024;
+/** Copy Jev rates at or above this as over-claiming gets a warning. */
+export const OVERCLAIM = 0.7;
+const SYNC_STATUSES = new Set(["PUBLISHING", "SCHEDULED", "PARTIAL", "PUBLISHED"]);
+
+export const COPY_SYSTEM = `You write the post text for a short vertical video clip, once per social platform.
+You get the clip's transcript, its current title and description, the video's brief and the creator's direction (if any).
+Write in the clip's language (usually Indonesian), say only what the clip says, and fit each platform:
+- tiktok: one punchy hook line, then 3-5 hashtags
+- instagram: 1-3 sentences, then up to 10 hashtags
+- youtube: "title" (max 90 characters, no < or >) and a description of 1-3 sentences ending with #shorts
+- threads: conversational, max 400 characters, 0-2 hashtags
+- x: max 250 characters including 1-2 hashtags
+- linkedin: 2-4 sentences, professional, 0-3 hashtags
+- other platforms: 1-2 sentences and a few hashtags
+Answer with JSON only: {"posts": {"<platform>": {"text": "...", "title": "<youtube only>"}}}`;
+
+export interface DraftTarget {
+  accountId: string;
+  platform: string;
+  name: string;
+  content: string;
+  title?: string;
+  copyBy: "llm" | "template";
+  /** Choices Sorot never makes for the user: TikTok privacy options, YouTube made-for-kids. */
+  needs: { tiktokPrivacy?: string[]; madeForKids?: boolean };
+  warnings: string[];
+  blockers: string[];
+  /** Jev's probability that the copy claims more than the clip says. */
+  overclaims?: number;
+}
+
+const plainTitle = (t: string) => t.replace(/#\S+/g, "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
+
+function templateCopy(clip: Clip, platform: string): { content: string; title?: string } {
+  const title = (clip.title ?? "").trim();
+  const desc = (clip.description ?? "").trim();
+  const limit = PLATFORMS[platform]?.text ?? 1000;
+  if (platform === "youtube") {
+    return { title: plainTitle(title).slice(0, 100) || "Clip", content: [desc, "#shorts"].filter(Boolean).join("\n").slice(0, limit) };
+  }
+  return { content: [title, desc].filter(Boolean).join("\n\n").slice(0, limit) };
+}
+
+/** Over-long copy is cut at the platform limit (at a word) and hashtags capped; returns warnings. */
+export function fitCopy(text: string, platform: string): { text: string; warnings: string[] } {
+  const p = PLATFORMS[platform];
+  const warnings: string[] = [];
+  let out = text.trim();
+  if (p?.hashtags) {
+    let n = 0;
+    out = out.replace(/#\S+/g, (tag) => (++n > p.hashtags! ? "" : tag)).replace(/[ \t]+$/gm, "").trim();
+    if (n > p.hashtags) warnings.push(`kept the first ${p.hashtags} hashtags (platform limit)`);
+  }
+  if (p && [...out].length > p.text) {
+    const cut = [...out].slice(0, p.text).join("");
+    out = cut.slice(0, Math.max(cut.lastIndexOf(" "), p.text - 20)).trim();
+    warnings.push(`shortened to the ${p.text}-character limit`);
+  }
+  return { text: out, warnings };
+}
+
+export class Publisher {
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(
+    private readonly config: AppConfig,
+    private readonly store: Store,
+    private readonly tebar: Tebar,
+    private readonly llm: Llm,
+    private readonly jev: Jev,
+    private readonly feedback: FeedbackService,
+  ) {}
+
+  get enabled() {
+    return this.tebar.enabled;
+  }
+
+  private clip(id: string): Clip {
+    const clip = this.store.getClip(id);
+    if (!clip) throw new HttpError(404, "Clip not found");
+    return clip;
+  }
+
+  private requireTebar() {
+    if (!this.tebar.enabled) throw new HttpError(409, "Tebar is not connected: add your API key in Settings (or TEBAR_API_KEY)");
+  }
+
+  /** The clip file to post: the finished export (captions + music), else the render. */
+  private clipFile(clip: Clip): string | null {
+    const path = clip.exportPath ?? clip.renderPath;
+    return path && existsSync(path) ? path : null;
+  }
+
+  async accounts(): Promise<TebarAccount[]> {
+    this.requireTebar();
+    try {
+      return await this.tebar.accounts();
+    } catch (e) {
+      throw asHttp(e);
+    }
+  }
+
+  private gateOf(clip: Clip): { verdict: string | null; reasons: string[] } {
+    let reasons: string[] = [];
+    try {
+      reasons = clip.gate ? (JSON.parse(clip.gate).reasons ?? []) : [];
+    } catch {
+      /* unreadable gate → no reasons */
+    }
+    return { verdict: clip.gateVerdict ?? null, reasons };
+  }
+
+  private context(clip: Clip): { brief: VideoBrief | null; direction: string } {
+    let brief: VideoBrief | null = null;
+    try {
+      brief = this.store.getVideo(clip.videoId)?.brief ? JSON.parse(this.store.getVideo(clip.videoId)!.brief!) : null;
+    } catch {
+      /* corrupt brief → none */
+    }
+    return { brief, direction: decodeOptions(this.store.latestJobForVideo(clip.videoId)?.options).direction ?? "" };
+  }
+
+  private async llmCopy(clip: Clip, platforms: string[]): Promise<Record<string, { text: string; title?: string }> | null> {
+    if (!this.llm.enabled) return null;
+    const { brief, direction } = this.context(clip);
+    try {
+      const msg = await this.llm.chat([
+        { role: "system", content: COPY_SYSTEM },
+        { role: "user", content: JSON.stringify({
+          platforms, transcript: (clip.textContent ?? "").slice(0, 2000), title: clip.title ?? "", description: clip.description ?? "",
+          ...(brief ? { brief: { summary: brief.summary, people: brief.people, audience: brief.audience } } : {}),
+          ...(direction ? { direction } : {}),
+        }) },
+      ], { temperature: 0.5, maxTokens: 1500 });
+      const posts = ((parseJson(msg.content) as Json | null)?.posts ?? null) as Record<string, Json> | null;
+      if (!posts || typeof posts !== "object") return null;
+      const out: Record<string, { text: string; title?: string }> = {};
+      for (const p of platforms) {
+        const text = typeof posts[p]?.text === "string" ? (posts[p]!.text as string).trim() : "";
+        const title = typeof posts[p]?.title === "string" ? plainTitle(posts[p]!.title as string).slice(0, 100) : undefined;
+        if (text) out[p] = { text, ...(title ? { title } : {}) };
+      }
+      return out;
+    } catch (e) {
+      if (e instanceof LlmError) return null;
+      throw e;
+    }
+  }
+
+  /** One Jev request: does each platform's copy claim more than the clip says? Null without Jev. */
+  private async checkCopy(clip: Clip, copies: Record<string, string>): Promise<Record<string, number> | null> {
+    if (!this.jev.enabled || !Object.keys(copies).length) return null;
+    const ids = Object.keys(copies);
+    const questions: Record<string, Question> = Object.fromEntries(ids.map((p, i) => [`overclaims_${i}`, {
+      type: "noul",
+      instructions: `Does \`posts.${p}\` claim something that \`excerpt\` does not say?`,
+      criteria: {
+        true: `\`posts.${p}\` states a fact, number, name, outcome or promise that is not in \`excerpt\`, or exaggerates what \`excerpt\` says.`,
+        false: `Everything \`posts.${p}\` claims is said or clearly implied in \`excerpt\` (hashtags and calls to follow don't count).`,
+      },
+    }]));
+    try {
+      const d = await this.jev.decide({ excerpt: (clip.textContent ?? "").slice(0, 3000), posts: copies }, questions);
+      return Object.fromEntries(ids.map((p, i) => [p, (d.answers[`overclaims_${i}`] as { noul: number }).noul]));
+    } catch (e) {
+      if (e instanceof JevError) return null;
+      throw e;
+    }
+  }
+
+  async draft(clipId: string, accountIds: string[]): Promise<{ clip: Json; targets: DraftTarget[]; copyCheckedBy: string | null }> {
+    this.requireTebar();
+    const clip = this.clip(clipId);
+    if (!accountIds.length) throw new HttpError(400, "Pick at least one account");
+    const all = await this.accounts();
+    const chosen = accountIds.map((id) => {
+      const a = all.find((x) => x.id === id);
+      if (!a) throw new HttpError(400, `Unknown Tebar account: ${id}`);
+      return a;
+    });
+    const platforms = [...new Set(chosen.map((a) => a.platform))];
+    const llm = await this.llmCopy(clip, platforms);
+    const gate = this.gateOf(clip);
+    const file = this.clipFile(clip);
+    const base: string[] = [];
+    if (!file) base.push("The clip has no rendered file yet: render it first");
+    else if (statSync(file).size > VIDEO_MAX_BYTES) base.push("The clip file is over Tebar's 300 MB limit");
+    if (gate.verdict === "FAIL") base.push(`Held back by the quality gate: ${gate.reasons[0] ?? "failed"}`);
+
+    const targets: DraftTarget[] = [];
+    for (const a of chosen) {
+      const fallback = templateCopy(clip, a.platform);
+      const picked = llm?.[a.platform];
+      const fitted = fitCopy(picked?.text ?? fallback.content, a.platform);
+      const t: DraftTarget = {
+        accountId: a.id, platform: a.platform, name: a.name, content: fitted.text, copyBy: picked ? "llm" : "template",
+        needs: {}, warnings: [...fitted.warnings], blockers: [...base],
+      };
+      if (a.platform === "youtube") {
+        t.title = picked?.title || fallback.title;
+        t.needs.madeForKids = true;
+      }
+      if (a.platform === "tiktok") {
+        try {
+          const info = await this.tebar.tiktokCreatorInfo(a.id);
+          const opts = (info.privacy_level_options ?? (info.data as Json | undefined)?.privacy_level_options) as unknown;
+          if (Array.isArray(opts) && opts.length && info.video_public_only !== true) t.needs.tiktokPrivacy = opts.map(String);
+        } catch (e) {
+          t.warnings.push(`Couldn't read TikTok's privacy options: ${(e as Error).message}`);
+        }
+      }
+      const p = PLATFORMS[a.platform];
+      if (!p) t.blockers.push(`${a.platform || "This platform"} doesn't take a single video post here`);
+      else if (p.maxSec && clip.durationSec > p.maxSec) t.blockers.push(`${a.platform} allows videos up to ${p.maxSec} s`);
+      else if (p.minSec && clip.durationSec < p.minSec) t.blockers.push(`${a.platform} needs videos of at least ${p.minSec} s`);
+      if (gate.verdict === "REVIEW") t.warnings.push(`Quality gate: ${gate.reasons.join("; ")}`);
+      if (!gate.verdict) t.warnings.push("Not checked by the quality gate");
+      targets.push(t);
+    }
+    const llmCopies = Object.fromEntries(targets.filter((t) => t.copyBy === "llm").map((t) => [t.platform, t.content]));
+    const check = await this.checkCopy(clip, llmCopies);
+    for (const t of targets) {
+      const p = check?.[t.platform];
+      if (p === undefined) continue;
+      t.overclaims = Math.round(p * 1000) / 1000;
+      if (p >= OVERCLAIM) t.warnings.push("Jev: this copy may claim more than the clip says — check it");
+    }
+    return {
+      clip: { id: clip.id, title: clip.title, gateVerdict: gate.verdict, gateReasons: gate.reasons },
+      targets,
+      copyCheckedBy: check ? this.jev.model : null,
+    };
+  }
+
+  async publish(clipId: string, body: Json): Promise<SocialPost> {
+    this.requireTebar();
+    const clip = this.clip(clipId);
+    const file = this.clipFile(clip);
+    if (!file) throw new HttpError(409, "The clip has no rendered file yet: render it first");
+    if (statSync(file).size > VIDEO_MAX_BYTES) throw new HttpError(400, "The clip file is over Tebar's 300 MB limit");
+    const gate = this.gateOf(clip);
+    if (gate.verdict === "FAIL" && body.override !== true) {
+      throw new HttpError(409, `Held back by the quality gate (${gate.reasons[0] ?? "failed"}); send override: true to post it anyway`);
+    }
+    if (gate.verdict === "REVIEW" && body.confirmReview !== true) {
+      throw new HttpError(409, `The quality gate asks for a review (${gate.reasons.join("; ")}); send confirmReview: true after checking`);
+    }
+    const rawTargets = Array.isArray(body.targets) ? (body.targets as Json[]) : [];
+    if (!rawTargets.length) throw new HttpError(400, "targets: pick at least one account");
+    const accounts = await this.accounts();
+    const targets = rawTargets.map((t, i) => buildTarget(t, i, accounts, clip));
+    let scheduledAt: string | null = null;
+    if (body.scheduledAt !== undefined && body.scheduledAt !== null && body.scheduledAt !== "") {
+      const at = String(body.scheduledAt);
+      if (!/(Z|[+-]\d{2}:\d{2})$/.test(at) || Number.isNaN(Date.parse(at))) {
+        throw new HttpError(400, "scheduledAt must be ISO-8601 with a time zone, e.g. 2026-11-01T19:00:00+07:00");
+      }
+      if (Date.parse(at) <= Date.now()) throw new HttpError(400, "scheduledAt is in the past");
+      scheduledAt = at;
+    }
+
+    const post: SocialPost = {
+      id: crypto.randomUUID(), clipId, provider: "tebar", providerPostId: null, status: "PUBLISHING", scheduledAt,
+      idempotencyKey: crypto.randomUUID(), request: null, targets: null, errorMessage: null,
+      createdAt: now(), updatedAt: now(), lastSyncedAt: null,
+    };
+    this.store.saveSocialPost(post);
+    try {
+      const mediaId = await this.tebar.uploadVideo(file);
+      const request: Json = {
+        content: targets[0]!.content, media_ids: [mediaId], targets,
+        ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
+      };
+      this.store.updateSocialPost(post.id, { request: JSON.stringify(request) });
+      return this.applyPost(post.id, await this.tebar.createPost(request, post.idempotencyKey));
+    } catch (e) {
+      this.store.updateSocialPost(post.id, { status: "FAILED", errorMessage: (e as Error).message });
+      throw asHttp(e);
+    }
+  }
+
+  /** Re-send a post that never reached Tebar (same key and body: no double post). */
+  async retry(postId: string): Promise<SocialPost> {
+    this.requireTebar();
+    const post = this.store.getSocialPost(postId);
+    if (!post) throw new HttpError(404, "Post not found");
+    if (post.providerPostId) return this.refresh(postId);
+    if (!post.request) throw new HttpError(409, "This post failed before its upload finished; publish the clip again");
+    try {
+      return this.applyPost(post.id, await this.tebar.createPost(JSON.parse(post.request), post.idempotencyKey));
+    } catch (e) {
+      this.store.updateSocialPost(post.id, { status: "FAILED", errorMessage: (e as Error).message });
+      throw asHttp(e);
+    }
+  }
+
+  private applyPost(id: string, p: TebarPost): SocialPost {
+    this.store.updateSocialPost(id, {
+      providerPostId: p.id, status: postStatus(p), targets: JSON.stringify(p.targets),
+      scheduledAt: p.scheduledAt, errorMessage: failures(p), lastSyncedAt: now(),
+    });
+    return this.store.getSocialPost(id) as SocialPost;
+  }
+
+  async refresh(postId: string): Promise<SocialPost> {
+    this.requireTebar();
+    const post = this.store.getSocialPost(postId);
+    if (!post) throw new HttpError(404, "Post not found");
+    if (!post.providerPostId) return post;
+    try {
+      return this.applyPost(post.id, await this.tebar.getPost(post.providerPostId));
+    } catch (e) {
+      throw asHttp(e);
+    }
+  }
+
+  posts(clipId: string): SocialPost[] {
+    this.clip(clipId);
+    return this.store.socialPostsForClip(clipId);
+  }
+
+  /**
+   * Status + metrics of every live post; a clip's metrics (summed over its
+   * posts and platforms) become its feedback row, which training learns from.
+   */
+  async syncMetrics(): Promise<{ posts: number; clips: number; errors: string[] }> {
+    if (!this.tebar.enabled) return { posts: 0, clips: 0, errors: [] };
+    const errors: string[] = [];
+    const perClip = new Map<string, { metrics: PostMetrics; postedAt: string }>();
+    const rows = this.store.socialPostsToSync().filter((p) => SYNC_STATUSES.has(p.status));
+    if (rows.length) await this.tebar.refreshInsights().catch((e) => errors.push((e as Error).message));
+    for (const row of rows) {
+      try {
+        const post = this.applyPost(row.id, await this.tebar.getPost(row.providerPostId as string));
+        const published = (JSON.parse(post.targets ?? "[]") as Array<{ status: string; publishedAt: string | null }>)
+          .filter((t) => t.status === "published");
+        if (!published.length) continue;
+        const m = await this.tebar.postInsights(row.providerPostId as string);
+        if (!m) continue;
+        const postedAt = published.map((t) => t.publishedAt).filter((x): x is string => !!x).sort()[0] ?? post.createdAt;
+        const acc = perClip.get(row.clipId);
+        if (!acc) perClip.set(row.clipId, { metrics: { ...m }, postedAt });
+        else {
+          for (const k of Object.keys(m) as Array<keyof PostMetrics>) acc.metrics[k] += m[k];
+          if (postedAt < acc.postedAt) acc.postedAt = postedAt;
+        }
+      } catch (e) {
+        errors.push(`${row.id}: ${(e as Error).message}`);
+      }
+    }
+    for (const [clipId, { metrics, postedAt }] of perClip) {
+      try {
+        await this.feedback.submitPostMetrics(clipId, metrics, postedAt);
+      } catch (e) {
+        errors.push(`${clipId}: ${(e as Error).message}`);
+      }
+    }
+    return { posts: rows.length, clips: perClip.size, errors };
+  }
+
+  /** Background sync every TEBAR_SYNC_HOURS (Tebar itself refreshes post numbers hourly to daily). */
+  start() {
+    const hours = this.config.tebarSyncHours;
+    if (hours <= 0) return;
+    const tick = async () => {
+      try {
+        const r = await this.syncMetrics();
+        if (r.clips) console.info(`Tebar sync: metrics for ${r.clips} clips`);
+        if (r.errors.length) console.warn(`Tebar sync: ${r.errors.slice(0, 3).join("; ")}`);
+      } catch (e) {
+        console.warn(`Tebar sync failed: ${(e as Error).message}`);
+      }
+      this.timer = setTimeout(tick, hours * 3_600_000);
+    };
+    this.timer = setTimeout(tick, Math.min(hours * 3_600_000, 600_000));
+  }
+
+  stop() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+}
+
+function asHttp(e: unknown): Error {
+  if (e instanceof HttpError) return e;
+  if (e instanceof TebarError) return new HttpError(e.status >= 400 && e.status < 500 ? 400 : 502, e.message);
+  return e as Error;
+}
+
+export function postStatus(p: TebarPost): string {
+  const s = p.targets.map((t) => t.status);
+  if (p.status === "scheduled" || (s.length && s.every((x) => x === "scheduled"))) return "SCHEDULED";
+  if (s.length && s.every((x) => x === "published")) return "PUBLISHED";
+  if (s.length && s.every((x) => x === "failed")) return "FAILED";
+  if (s.includes("failed") && s.includes("published")) return "PARTIAL";
+  return "PUBLISHING";
+}
+
+const failures = (p: TebarPost) =>
+  p.targets.filter((t) => t.status === "failed").map((t) => `${t.platform}: ${t.errorCode ?? "failed"}${t.errorMessage ? ` (${t.errorMessage})` : ""}`).join("; ") || null;
+
+/** One Tebar target from the user's final choices, checked against the platform's rules. */
+function buildTarget(t: Json, i: number, accounts: TebarAccount[], clip: Clip): Json {
+  const id = typeof t.accountId === "string" ? t.accountId : "";
+  const account = accounts.find((a) => a.id === id);
+  if (!account) throw new HttpError(400, `targets[${i}]: unknown Tebar account ${id}`);
+  const p = PLATFORMS[account.platform];
+  if (!p) throw new HttpError(400, `targets[${i}]: ${account.platform} doesn't take a single video post here`);
+  const content = typeof t.content === "string" ? t.content.trim() : "";
+  if ([...content].length > p.text) throw new HttpError(400, `targets[${i}]: ${account.platform} allows ${p.text} characters`);
+  if (p.maxSec && clip.durationSec > p.maxSec) throw new HttpError(400, `targets[${i}]: ${account.platform} allows videos up to ${p.maxSec} s`);
+  const options: Json = {};
+  if (account.platform === "youtube") {
+    const title = typeof t.title === "string" ? t.title.trim() : "";
+    if (!title || title.length > 100 || /[<>]/.test(title)) throw new HttpError(400, `targets[${i}]: YouTube needs a title of 1-100 characters without < or >`);
+    if (typeof t.madeForKids !== "boolean") throw new HttpError(400, `targets[${i}]: say whether the video is made for kids (YouTube asks every upload)`);
+    Object.assign(options, { title, made_for_kids: t.madeForKids });
+  }
+  if (account.platform === "tiktok") {
+    if (typeof t.privacyLevel === "string" && t.privacyLevel) options.privacy_level = t.privacyLevel;
+    if (t.postMode === "draft" || t.postMode === "direct") options.post_mode = t.postMode;
+  }
+  return { account_id: account.id, content, ...(Object.keys(options).length ? { options } : {}) };
+}

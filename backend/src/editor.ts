@@ -2,8 +2,9 @@
 // timing, options or corrected caption text. Uses the same one-pass render.py
 // (framing + captions + music) as the pipeline, on a one-clip segments file.
 
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import type { AppConfig } from "./config";
+import { ruleHook, type TranscriptSeg } from "./hooks";
 import { HttpError } from "./http";
 import {
   captionFlags, decodeOptions, MUSIC_EXTENSIONS, musicDir, parseOptions, parseTimestamp, renderFlags, resolveOptions,
@@ -100,6 +101,23 @@ export class ClipEditor {
     };
   }
 
+  /** The clip's hook while it is still inside the (possibly re-timed) clip, else the rules' pick on its words. */
+  private hookFor(clip: Clip, startTime: number, endTime: number, words: CaptionWord[] | null) {
+    if (clip.hookStart != null && clip.hookEnd != null && clip.hookStart >= startTime && clip.hookEnd <= endTime) {
+      return { hookStart: clip.hookStart, hookEnd: clip.hookEnd };
+    }
+    let segments: TranscriptSeg[] = [];
+    if (words) segments = [{ start: startTime, end: endTime, text: "", words }];
+    else {
+      try {
+        segments = (JSON.parse(readFileSync(this.transcriptPath(clip.videoId), "utf8")).segments ?? []) as TranscriptSeg[];
+      } catch {
+        /* no transcript: no hook */
+      }
+    }
+    return ruleHook(segments, startTime, endTime) ?? { hookStart: null, hookEnd: null };
+  }
+
   async rerender(clipId: string, body: Json): Promise<Clip> {
     const clip = this.clip(clipId);
     const video = this.store.getVideo(clip.videoId);
@@ -137,10 +155,12 @@ export class ClipEditor {
       const edits = `${this.config.dataDir}/edits`;
       mkdirSync(edits, { recursive: true });
       const segmentsFile = `${edits}/${clipId}.segments.json`;
+      const hook = this.hookFor(clip, startTime, endTime, words);
       await Bun.write(segmentsFile, JSON.stringify({
         videoId: clip.videoId,
-        scoredSegments: [{ index: 0, rank: clip.rankPos ?? 1, tier: clip.tier, startTime, endTime }],
+        scoredSegments: [{ index: 0, rank: clip.rankPos ?? 1, tier: clip.tier, startTime, endTime, ...hook }],
       }));
+      this.store.updateClip(clipId, hook);
       let transcript = this.transcriptPath(clip.videoId);
       if (words) {
         // Edited words become a one-segment transcript: render (silence trim,
