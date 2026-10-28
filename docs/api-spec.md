@@ -64,8 +64,11 @@ still creates a `LOCAL` row (legacy behavior); its pipeline fails at IMPORT.
 
 `startTime`/`endTime` (optional, both or neither, at least 10 s apart) limit
 processing to that part of the source: YouTube downloads only that window
-(`yt-dlp --download-sections`, stream-copied — cut exactly, i.e. re-encoded,
-only with YouTube captions on), a local file is cut once. Accepted formats:
+(`yt-dlp --download-sections`), or, for a range of at least a tenth of the
+video, downloads it whole (yt-dlp's own downloader is ~10x faster than the
+ffmpeg one sections use) and cuts it locally. Either way it is stream-copied —
+cut exactly, i.e. re-encoded, only with YouTube captions on. A local file is
+cut once. Accepted formats:
 `85`, `85s`, `1:25`, `01:02:03`, `13m25s`. 400 on a bad or one-sided range.
 
 ```json

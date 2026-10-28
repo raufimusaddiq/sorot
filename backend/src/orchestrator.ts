@@ -25,6 +25,11 @@ const DATA_SUBDIRS = [
 ];
 const RENDER_TIERS = ["PRIMARY", "BACKUP"];
 const YTDLP_FORMAT = "bv[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/bv[vcodec^=avc1]+ba/b[ext=mp4]/b";
+// yt-dlp hands --download-sections to ffmpeg, whose single long request
+// YouTube throttles to ~1.5x real time; its own downloader fetches the whole
+// file at ~18x (measured: 60 s section 40 s, 63 min video 212 s). A range
+// longer than this share of the video is faster downloaded whole, then cut.
+const WHOLE_DOWNLOAD_SHARE = 0.1;
 
 export class CancelledError extends Error {
   constructor() { super("Job cancelled by user"); }
@@ -165,12 +170,7 @@ export class PipelineOrchestrator {
       if (!section) return video.filePath;
       // Range import of a local file: cut once so every stage sees only it.
       const cut = this.path("raw", `${video.id}.mp4`);
-      if (!fileNonEmpty(cut)) {
-        await this.run(this.config.ffmpegPath, [
-          "-ss", String(section[0]), "-to", String(section[1]), "-i", video.filePath,
-          "-c", "copy", "-avoid_negative_ts", "make_zero", "-y", cut,
-        ], signal, "ffmpeg range cut");
-      }
+      if (!fileNonEmpty(cut)) await this.cutRange(video.filePath, section, cut, false, signal);
       this.store.updateVideo(video.id, { filePath: cut });
       video.filePath = cut;
       return cut;
@@ -178,32 +178,41 @@ export class PipelineOrchestrator {
     const sourceUrl = video.sourceUrl ?? "";
     const outputPath = this.path("raw", `${video.id}.mp4`);
 
-    const title = await this.exec(
-      this.config.ytdlpPath, ["--print", "title", "--no-warnings", sourceUrl], { signal },
+    const info = await this.exec(
+      this.config.ytdlpPath, ["--print", "duration", "--print", "title", "--no-warnings", sourceUrl], { signal },
     );
-    if (title.aborted) throw new CancelledError();
-    const t = title.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" ");
-    if (title.exitCode === 0 && t) {
+    if (info.aborted) throw new CancelledError();
+    const lines = info.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    // Duration comes first ("NA" when unknown, e.g. a live stream).
+    const duration = lines.length > 1 && /^(\d+(\.\d+)?|NA)$/.test(lines[0]!) ? Number(lines.shift()) : NaN;
+    const t = lines.join(" ");
+    if (info.exitCode === 0 && t) {
       this.store.updateVideo(video.id, { title: t });
       video.title = t;   // later stages (director, review) read it from here
     }
 
     // A retry after a completed download skips straight to the cached file.
     if (!fileNonEmpty(outputPath)) {
+      // A short range downloads only that window, as a stream copy (ffmpeg
+      // reads it on the same timeline); a long one downloads whole and is cut
+      // here (WHOLE_DOWNLOAD_SHARE). YouTube captions are timed on the
+      // original video, so with them on the cut is exact (re-encoded).
+      const whole = section != null && duration > 0 && section[1] - section[0] >= duration * WHOLE_DOWNLOAD_SHARE;
+      const download = whole ? this.path("raw", `${video.id}.whole.mp4`) : outputPath;
       try {
-        // A range import downloads only that window, not the whole video, as a
-        // stream copy: 1.3 s for a 60 s section where forcing keyframes at the
-        // cuts re-encoded it in 46 s (4 cores), and ffmpeg reads the copy on
-        // the same timeline. YouTube captions are timed on the original video,
-        // so with them on the cut stays exact (re-encoded).
-        const sectionFlags = section
+        const sectionFlags = section && !whole
           ? ["--download-sections", `*${section[0]}-${section[1]}`, ...(opts.youtubeCaptions ? ["--force-keyframes-at-cuts"] : [])]
           : [];
         await this.run(this.config.ytdlpPath, [
           "-f", YTDLP_FORMAT, "--merge-output-format", "mp4", "--no-warnings", ...sectionFlags,
-          "-o", outputPath, sourceUrl,
+          "-o", download, sourceUrl,
         ], signal, "yt-dlp download");
+        if (whole && section) {
+          if (!existsSync(download)) throw new Error(`Downloaded file not found: ${download}`);
+          await this.cutRange(download, section, outputPath, opts.youtubeCaptions, signal);
+        }
       } finally {
+        if (whole) rmSync(download, { force: true });
         this.cleanupPartials(video.id);
       }
       if (!existsSync(outputPath)) throw new Error(`Downloaded file not found: ${outputPath}`);
@@ -211,6 +220,15 @@ export class PipelineOrchestrator {
     this.store.updateVideo(video.id, { filePath: outputPath });
     video.filePath = outputPath;
     return outputPath;
+  }
+
+  /** Cut [start, end] out of src: a stream copy, or re-encoded when it must be exact. */
+  private async cutRange(src: string, section: [number, number], out: string, exact: boolean, signal: AbortSignal) {
+    const codec = exact ? ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac"] : ["-c", "copy"];
+    await this.run(this.config.ffmpegPath, [
+      "-ss", String(section[0]), "-to", String(section[1]), "-i", src,
+      ...codec, "-avoid_negative_ts", "make_zero", "-y", out,
+    ], signal, "ffmpeg range cut");
   }
 
   /** Only this video's partials — a concurrent pipeline may be mid-download. */
