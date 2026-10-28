@@ -19,6 +19,15 @@ const scripts: Record<string, string> = {
   "garbage.js": `console.log("not json at all")`,
   "hang.js": `setInterval(() => {}, 1000)`,
   "spam.js": `process.stderr.write("x".repeat(200000) + "TAIL"); console.log(JSON.stringify({ success: true, data: {} }))`,
+  // A line split across two writes, a CRLF line and a last line without a newline
+  "progress.js": `const w = (s) => new Promise((r) => process.stderr.write(s, r));
+    (async () => {
+      await w("PROGRESS 10\\nloading model\\nPROG");
+      await new Promise((r) => setTimeout(r, 30));
+      await w("RESS 55\\r\\nPROGRESS 99");
+      console.log(JSON.stringify({ success: true, data: { done: true } }));
+    })()`,
+  "progressfail.js": `console.error("PROGRESS 5"); console.error("Traceback: boom"); process.exit(3)`,
 };
 
 beforeAll(() => {
@@ -78,6 +87,19 @@ describe("createPythonRunner", () => {
     const p = runner()("hang.js", [], { signal: ctrl.signal });
     setTimeout(() => ctrl.abort(), 50);
     expect(p).rejects.toThrow("Job cancelled by user");
+  });
+
+  test("PROGRESS lines on stderr reach onProgress as they arrive", async () => {
+    const seen: number[] = [];
+    expect(await runner()("progress.js", [], { onProgress: (p) => seen.push(p) })).toEqual({ done: true });
+    expect(seen).toEqual([10, 55, 99]);
+    expect(await runner()("progress.js", [])).toEqual({ done: true });   // no callback: ignored
+  });
+
+  test("progress lines stay out of errors", async () => {
+    const err = await runner()("progressfail.js", [], { onProgress: () => {} }).catch((e: Error) => e.message);
+    expect(err).toMatch(/failed \(exit=3\): Traceback: boom/);
+    expect(err).not.toContain("PROGRESS");
   });
 
   test("stderr is clipped to the tail", async () => {

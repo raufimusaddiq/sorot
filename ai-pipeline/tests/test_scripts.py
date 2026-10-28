@@ -25,7 +25,9 @@ def run_main(module, monkeypatch, capsys, *argv):
         module.main()
     except SystemExit as e:
         code = e.code
-    out = capsys.readouterr().out.strip().splitlines()
+    captured = capsys.readouterr()
+    run_main.err = captured.err           # stderr of the last run, for tests that check it
+    out = captured.out.strip().splitlines()
     return code, json.loads(out[-1]) if out else None
 
 
@@ -42,11 +44,12 @@ class FakeWhisper:
         FakeWhisper.created.append((model, device, compute_type))
         FakeWhisper.threads = cpu_threads
 
-    def transcribe(self, audio, language, word_timestamps, vad_filter):
+    def transcribe(self, audio, language, word_timestamps, vad_filter, beam_size):
         assert word_timestamps and vad_filter
+        FakeWhisper.beam = beam_size
         segs = [types.SimpleNamespace(start=0.0, end=1.234, text=" halo ", avg_logprob=-0.123),
                 types.SimpleNamespace(start=1.5, end=2.0, text="dunia", avg_logprob=None)]
-        return iter(segs), types.SimpleNamespace(language=language)
+        return iter(segs), types.SimpleNamespace(language=language, duration=2.5)
 
 
 class TestTranscribe:
@@ -54,7 +57,7 @@ class TestTranscribe:
     def whisper(self, monkeypatch):
         FakeWhisper.created = []
         monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeWhisper))
-        for var in ("WHISPER_MODEL", "WHISPER_DEVICE", "WHISPER_COMPUTE_TYPE"):
+        for var in ("WHISPER_MODEL", "WHISPER_DEVICE", "WHISPER_COMPUTE_TYPE", "WHISPER_BEAM_SIZE"):
             monkeypatch.delenv(var, raising=False)
 
     def test_writes_transcript_and_envelope(self, monkeypatch, capsys, tmp_path):
@@ -64,12 +67,20 @@ class TestTranscribe:
         assert code == 0
         assert FakeWhisper.created == [("large-v3-turbo", "cpu", "int8")]
         assert FakeWhisper.threads == transcribe.cpu_threads("cpu") > 0   # every core, not the library's 4
+        assert FakeWhisper.beam == 5
+        # progress from each segment's end over the audio length (capped below 100)
+        assert run_main.err.splitlines() == ["PROGRESS 49", "PROGRESS 80"]
         data = env["data"]
         assert data["videoId"] == "vid" and data["language"] == "id"
         assert data["segments"][0] == {"index": 0, "start": 0.0, "end": 1.23, "text": "halo", "confidence": -0.12,
                                          "words": []}
         assert data["segments"][1]["confidence"] is None
         assert json.loads(out.read_text(encoding="utf-8")) == data
+
+    @pytest.mark.parametrize("value,expected", [("1", 1), ("3", 3), ("", 5), ("0", 5), ("x", 5)])
+    def test_beam_size_from_env(self, monkeypatch, value, expected):
+        monkeypatch.setenv("WHISPER_BEAM_SIZE", value)
+        assert transcribe.beam_size() == expected
 
     def test_compute_type_selection(self, monkeypatch, capsys, tmp_path):
         run_main(transcribe, monkeypatch, capsys, "--audio", "a.wav")

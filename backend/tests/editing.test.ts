@@ -102,11 +102,14 @@ describe("range import and per-job options", () => {
     expect((await env.json("POST", "/api/import", { url: "u", startTime: "x", endTime: 15 })).status).toBe(400);
   });
 
-  test("a YouTube range downloads only that window", async () => {
+  test("a YouTube range downloads only that window: copied, or cut exactly for YouTube captions", async () => {
+    const download = () => env.execCalls.filter((c) => c.cmd === "yt-dlp" && c.args.includes("--download-sections")).at(-1)!;
     await processed({ url: "https://youtu.be/abcdefghijk", startTime: 30, endTime: 90 });
-    const dl = env.execCalls.find((c) => c.cmd === "yt-dlp" && c.args[0] !== "--print")!;
-    expect(argAfter(dl.args, "--download-sections")).toBe("*30-90");
-    expect(dl.args).toContain("--force-keyframes-at-cuts");
+    expect(argAfter(download().args, "--download-sections")).toBe("*30-90");
+    expect(download().args).not.toContain("--force-keyframes-at-cuts");   // Whisper: a stream copy
+
+    await processed({ url: "https://youtu.be/zyxwvutsrqp", startTime: 30, endTime: 90 }, { youtubeCaptions: true });
+    expect(download().args).toContain("--force-keyframes-at-cuts");
   });
 
   test("a local range is cut once; an existing cut is reused", async () => {
@@ -351,6 +354,33 @@ describe("clip editor", () => {
     expect((await env.json("POST", `/api/clips/${clip.id}/rerender`, {})).status).toBe(200);
     expect(env.app.store.getClip(clip.id)).toMatchObject({ renderStatus: "COMPLETED", exportStatus: "COMPLETED",
       renderPath: "/e/clip_1_subtitled.mp4", exportPath: "/e/clip_1_subtitled.mp4" });
+  });
+
+  test("renders requested together wait for a slot (maxParallelRenders)", async () => {
+    const { videoId } = await processed();
+    const clips = env.app.store.clipsForVideo(videoId);
+    env.config.maxParallelRenders = 2;
+    let inFlight = 0;
+    let most = 0;
+    const gates: Array<() => void> = [];
+    const orig = env.scripts["render.py"]!;
+    env.scripts["render.py"] = async (args) => {
+      most = Math.max(most, ++inFlight);
+      await new Promise<void>((r) => gates.push(r));
+      inFlight--;
+      return orig(args);
+    };
+    const reqs = clips.map((c) => env.json("POST", `/api/clips/${c.id}/rerender`, {}));
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+    await tick();
+    expect(gates).toHaveLength(2);                       // the third waits for a slot
+    expect(env.app.store.getClip(clips[2]!.id)!.renderStatus).toBe("RENDERING");
+    gates.shift()!();
+    await tick();
+    expect(gates).toHaveLength(2);                       // …and takes the freed one
+    while (gates.length) { gates.shift()!(); await tick(); }
+    expect((await Promise.all(reqs)).map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(most).toBe(2);
   });
 
   test("music listing", async () => {

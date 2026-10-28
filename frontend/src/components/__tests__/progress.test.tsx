@@ -20,6 +20,14 @@ describe('ProgressBar', () => {
     expect(screen.getByTitle('Analytics')).toHaveTextContent('○');
   });
 
+  it('shows transcription progress; other stages show no live text', () => {
+    const { rerender } = render(<ProgressBar stages={[stage('IMPORT', 'COMPLETED'), stage('TRANSCRIBE', 'IN_PROGRESS', 'Transcribing 37%')]} />);
+    expect(screen.getByText('Transcribing 37%')).toBeInTheDocument();
+    rerender(<ProgressBar stages={[stage('IMPORT', 'IN_PROGRESS', 'data/raw/old.mp4'), stage('TRANSCRIBE', 'COMPLETED', 't.json')]} />);
+    expect(screen.queryByText('data/raw/old.mp4')).not.toBeInTheDocument();
+    expect(screen.queryByText('t.json')).not.toBeInTheDocument();
+  });
+
   it('shows Waiting… with no active stage; unknown current stage falls back to its key', () => {
     const { rerender } = render(<ProgressBar stages={[]} />);
     expect(screen.getByText('Waiting…')).toBeInTheDocument();

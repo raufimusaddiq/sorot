@@ -11,14 +11,15 @@ import {
   tierLabel,
 } from '@/lib/ui-utils';
 
+const LIVE_STAGES = ['TRANSCRIBE', 'RENDER', 'SUBTITLE'];
+
 export function ProgressBar({ stages }: { stages: StageStatus[] }) {
   const total = STAGE_ORDER.length;
   const completed = stages.filter(s => s.status === 'COMPLETED').length;
   const current = stages.find(s => s.status === 'RUNNING' || s.status === 'IN_PROGRESS');
   const pct = Math.round((completed / total) * 100);
-  const renderStage = stages.find(
-    s => s.stage === 'RENDER' && (s.status === 'RUNNING' || s.status === 'IN_PROGRESS'),
-  );
+  // Stages that report as they go: "Transcribing 37%", "Rendering 3/8 clips".
+  const live = current && LIVE_STAGES.includes(current.stage) ? current.outputPath : null;
 
   return (
     <div className="space-y-3">
@@ -34,8 +35,8 @@ export function ProgressBar({ stages }: { stages: StageStatus[] }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      {renderStage?.outputPath && (
-        <p className="font-pixel text-sm bg-[#1D2B1D] text-[#9CFF9C] border-3 border-line rounded-md px-3 py-1">{renderStage.outputPath}</p>
+      {live && (
+        <p className="font-pixel text-sm bg-[#1D2B1D] text-[#9CFF9C] border-3 border-line rounded-md px-3 py-1">{live}</p>
       )}
       <div className="grid grid-cols-9 border-3 border-line rounded-md overflow-hidden">
         {STAGE_ORDER.map((stage, i) => {

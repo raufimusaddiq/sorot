@@ -95,7 +95,11 @@ cd ai-pipeline
 - Render/export folders are per video (`data/renders/{videoId}/`): clip files are named by rank, so a shared folder overwrote other videos' clips
 - Editing options layer config defaults ← job options (import) ← clip options (editor); see `backend/src/options.ts`
 - Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README). render.py `--export-dir` burns captions + music in the same encode as the 9:16 render (one encode per clip — never add a second full re-encode); the SUBTITLE stage/subtitle.py only re-burns clips rendered without captions and must get the same silence flags
-- CPU tuning env: `X264_PRESET` (default `veryfast`), `WHISPER_THREADS` (default all cores; faster-whisper alone uses 4), `VARIATIONS` (default off — the VARIATION stage's output isn't shown anywhere and it can't fail a job)
+- CPU tuning env: `X264_PRESET` (default `veryfast`), `WHISPER_THREADS` (default all cores; faster-whisper alone uses 4), `WHISPER_BEAM_SIZE` (default 5), `VARIATIONS` (default off — the VARIATION stage's output isn't shown anywhere and it can't fail a job)
+- CPU vs GPU defaults key off `WHISPER_DEVICE` (`config.ts`): CPU renders only the best `MAX_RENDER_CLIPS` (10) — the rest stay PENDING and render on request (studio **Render** = rerender with an empty body) — and runs `MAX_CONCURRENT_PIPELINES` 1; GPU renders all PRIMARY/BACKUP, 2 pipelines
+- TRANSCRIBE reuses `data/transcripts/{videoId}.json` when its `model`/`language` match the config (retries don't re-run Whisper). Scripts report progress as `PROGRESS <n>` lines on stderr (runner `onProgress`; `transcribe.py` → stage text "Transcribing n%")
+- YouTube range imports are a stream copy (`--download-sections` without `--force-keyframes-at-cuts`, which re-encoded the section at ffmpeg's slow default: 46 s per minute of 1080p on 4 cores); only with YouTube captions on is the cut forced exact, since caption times are offset by the section start
+- `media_features.py` samples each time at its nearest **keyframe** (`-skip_frame nokey`; falls back to a 1 fps decode only for sparse-keyframe files): decoding every frame of an hour of 1080p took 264 s on 4 cores and overran its limit
 - 9:16 framing crops in source pixels before scaling (`reframe.py`), never scale the whole frame up first
 - Python venv at `ai-pipeline/.venv`
 - `scripts/install.sh` must stay shellcheck-clean; Linux machine settings go in the gitignored `docker-compose.override.yml` (Docker) or `/etc/sorot/` (native), never in tracked files

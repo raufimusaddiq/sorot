@@ -113,6 +113,13 @@ evenly over its duration.
 | `--device` | No | `$WHISPER_DEVICE` or `cuda` | `cuda` or `cpu` |
 | `--compute-type` | No | auto | `float16` on cuda, `int8` on cpu |
 
+Env: `WHISPER_THREADS` (CPU threads, default every core), `WHISPER_BEAM_SIZE`
+(default 5; 1 is faster on a CPU and a little less accurate).
+
+Progress: as segments arrive it prints `PROGRESS <n>` lines (segment end ÷
+audio length, at most 99) on **stderr**; the backend runner turns them into the
+TRANSCRIBE stage's `"Transcribing n%"` and drops them from logs.
+
 ---
 
 ### `media_features.py`
@@ -133,6 +140,13 @@ python ai-pipeline/media_features.py --segments "data/segments/{videoId}.json" \
 - `onsetDensity`: audio onsets per second, mapped to 0-1
 - `facePresence`: faces in 3 of 5 full-resolution frames (Haar cascades; MediaPipe if installed), smiles boost it
 - `sceneChange`, `motion`: histogram difference, Farneback optical flow
+
+Frames: each sample time (5 face checks + start/mid/end per segment) uses its
+nearest **keyframe** — one ffmpeg pass with `-skip_frame nokey` (an hour of
+1080p H.264: ~23 s on 4 cores, against 264 s to decode every frame). Close
+times can share a keyframe, so the face majority counts distinct frames. Files
+whose keyframes are more than 3 s from over 10% of the samples (screen
+recordings) decode every frame at 1 fps instead.
 
 The backend combines these with its text rules and weights
 (`docs/scoring-spec.md`) and writes `scoredSegments` back to the segments file.

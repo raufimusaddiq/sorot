@@ -33,17 +33,46 @@ def video_file(tmp_path):
     return str(p)
 
 
-@pytest.fixture(scope="module")
-def real_video(tmp_path_factory):
+def make_video(tmp_path_factory, name, seconds, gop):
     if not HAS_FFMPEG:
         pytest.skip("ffmpeg not on PATH")
-    out = tmp_path_factory.mktemp("vid") / "testsrc.mp4"
+    out = tmp_path_factory.mktemp("vid") / name
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
-         "-i", "testsrc=size=160x120:rate=10:duration=4", "-pix_fmt", "yuv420p", str(out)],
+         "-i", f"testsrc=size=160x120:rate=10:duration={seconds}", "-g", str(gop), "-pix_fmt", "yuv420p", str(out)],
         check=True, capture_output=True,
     )
     return str(out)
+
+
+@pytest.fixture(scope="module")
+def real_video(tmp_path_factory):
+    """4 s, a keyframe every second (like a YouTube download, only denser)."""
+    return make_video(tmp_path_factory, "testsrc.mp4", 4, 10)
+
+
+@pytest.fixture(scope="module")
+def sparse_video(tmp_path_factory):
+    """12 s with a single keyframe (like a screen recording)."""
+    return make_video(tmp_path_factory, "sparse.mp4", 12, 1000)
+
+
+def spy_ffmpeg(monkeypatch, fail=(), quiet=()):
+    """Record each ffmpeg command. Commands containing a string in ``fail``
+    exit 1; those containing one in ``quiet`` run but lose their log."""
+    calls = []
+    real_run = subprocess.run
+
+    def run(cmd, **kw):
+        calls.append(" ".join(map(str, cmd)))
+        if any(f in calls[-1] for f in fail):
+            return types.SimpleNamespace(returncode=1, stderr=b"")
+        res = real_run(cmd, **kw)
+        if any(q in calls[-1] for q in quiet):
+            res.stderr = b""
+        return res
+    monkeypatch.setattr(subprocess, "run", run)
+    return calls
 
 
 # --- singletons --------------------------------------------------------------
@@ -117,17 +146,30 @@ class TestExtractFrames:
     def test_no_timestamps(self, real_video):
         assert visual._extract_frames_ffmpeg(real_video, []) == {}
 
-    def test_per_frame_fallback_when_batch_fails(self, real_video, monkeypatch):
-        real_run = subprocess.run
+    def test_keyframes_only_nearest_one_per_time(self, real_video, monkeypatch):
+        calls = spy_ffmpeg(monkeypatch)
+        frames = visual._extract_frames_ffmpeg(real_video, [1.1, 1.2, 2.9])
+        assert len(calls) == 1 and "-skip_frame nokey" in calls[0]
+        # 1.1 and 1.2 share the keyframe at 1 s; 2.9 takes the one at 3 s
+        assert sorted(round(t, 2) for t in frames) == [1.0, 3.0]
 
-        def run(cmd, **kw):
-            if any("fps=1" in str(c) for c in cmd):
-                return types.SimpleNamespace(returncode=1)
-            return real_run(cmd, **kw)
+    def test_sparse_keyframes_decode_every_frame(self, sparse_video, monkeypatch):
+        calls = spy_ffmpeg(monkeypatch)
+        # Only 0.4 is near the one keyframe (0 s): too many far → every frame at 1 fps
+        frames = visual._extract_frames_ffmpeg(sparse_video, [0.4, 5.0, 10.0])
+        assert len(calls) == 2 and "fps=1" in calls[1]
+        assert len(frames) == 3 and all(any(abs(k - t) <= 0.5 for k in frames) for t in (0.4, 5.0, 10.0))
 
-        monkeypatch.setattr(subprocess, "run", run)
-        frames = visual._extract_frames_ffmpeg(real_video, [1.0, 2.5])
-        assert set(frames) == {1.0, 2.5}
+    @pytest.mark.parametrize("how", ["fail", "quiet"])
+    def test_keyframe_pass_failure_falls_back(self, real_video, monkeypatch, how):
+        # quiet: frames written but no showinfo times to match them with
+        calls = spy_ffmpeg(monkeypatch, **{how: ["nokey"]})
+        assert visual._extract_frames_ffmpeg(real_video, [1.0, 2.5])
+        assert len(calls) == 2 and "fps=1" in calls[1]
+
+    def test_both_passes_failing_gives_nothing(self, real_video, monkeypatch):
+        spy_ffmpeg(monkeypatch, fail=["ffmpeg"])
+        assert visual._extract_frames_ffmpeg(real_video, [1.0]) == {}
 
     def test_missing_video_and_crash_return_empty(self, tmp_path, monkeypatch):
         if HAS_FFMPEG:
@@ -170,14 +212,19 @@ class TestFaceResolution:
         small = visual._frame_entry(np.zeros((100, 200, 3), np.uint8), keep_face=False)
         assert small["gray"].shape == (100, 200)        # never upscaled
 
-    def test_face_times_and_tolerance(self):
+    def test_face_times_and_sampling_helpers(self):
         assert visual._face_times(10, 20) == [12.0, 16.0, 20.0, 24.0, 28.0]
-        assert visual._near_any(15.5, [15.0]) and not visual._near_any(16.0, [15.0])
+        # majority of the distinct frames: 3 of 5 as before, the same share of fewer
+        assert [visual._face_need(n) for n in range(1, 6)] == [1, 2, 2, 3, 3]
+        a, b = frame(), frame()
+        assert visual._distinct([a, None, b, a]) == [a, b]
+        times = [0.0, 4.0, 8.0]
+        assert [visual._nearest_index(times, t) for t in (-1, 1.9, 2.1, 6.0, 9)] == [0, 0, 1, 1, 2]
 
     def test_detectors_get_the_full_size_frame(self, video_file, monkeypatch):
         seen = []
-        big = {**frame(), "face_gray": np.zeros((360, 640), np.uint8)}
-        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: {t: big for t in (0.0, 5.0, 10.0)})
+        big = {t: {**frame(), "face_gray": np.zeros((360, 640), np.uint8)} for t in (0.0, 1.0, 3.0, 5.0, 7.0, 9.0, 10.0)}
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: big)
 
         class Det(FakeDetector):
             def process(self, rgb):
@@ -215,12 +262,12 @@ class TestBatchDispatch:
 
 class TestMediapipeBatch:
     def test_faces_scene_motion_per_segment(self, video_file, monkeypatch):
-        # seg0 frames at 0/5/10 (exact keys), seg1 at 20/25/30 → nearest-frame lookup
-        data = {0.0: frame(10), 5.0: frame(240), 10.0: frame(10), 22.0: frame(128, v=50, s=20)}
+        # seg0 frames at 0/5/10, seg1 at 20/25/30 (same dull picture) → nearest-frame lookup
+        data = {0.0: frame(10), 5.0: frame(240), 10.0: frame(10), **{t: frame(128, v=50, s=20) for t in (20.0, 25.0, 30.0)}}
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: data)
-        # 5 checks per segment, majority (3) needed: seg0 3 hits → face; seg1 2 hits → none.
-        det = FakeDetector([["face"], ["face"], [], ["face"], [],
-                            ["face"], [], ["face"], [], []])
+        # One check per distinct frame, majority needed: seg0's five face times
+        # share 0/5/10 → 2 of 3 hits → face; seg1's share 20/25/30 → 1 of 3 → none.
+        det = FakeDetector([["face"], ["face"], [], [], ["face"], []])
         monkeypatch.setattr(visual, "_get_mediapipe_face_detector", lambda: det)
 
         res = visual._batch_analyze_video_mediapipe(video_file, segs(2))
@@ -248,7 +295,7 @@ class TestMediapipeBatch:
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", extract)
         monkeypatch.setattr(visual, "_get_mediapipe_face_detector", lambda: FakeDetector([]))
         res = visual._batch_analyze_video_mediapipe(video_file, segs(25))
-        assert seen["n"] == 60                      # 75 unique timestamps capped at 60
+        assert seen["n"] == 75                      # every scene time, no cap
         assert res[0] == {"faces": 0.0, "scene": 0.5, "motion": 0.5}
 
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: {0.0: frame(), 5.0: frame()})
@@ -294,11 +341,23 @@ class TestHaarBatch:
         install_cascades(monkeypatch,
                          [face, face, [], face, face,  face, [], face, face, [],  face, [], [], face, []],
                          [[(1, 1, 2, 2)]] + [[]] * 20)
-        data = {0.0: frame(10), 5.0: frame(240), 10.0: frame(10)}
+        # A frame at every face time (each segment: 5 distinct frames)
+        data = {float(s + o): frame(10) for s in (0, 20, 40) for o in (0, 1, 3, 7, 9, 10)}
+        data.update({5.0: frame(240), 25.0: frame(240), 45.0: frame(240)})
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: data)
         res = visual._batch_analyze_video_haar(video_file, segs(3))
         assert [res[i]["faces"] for i in range(3)] == [1.0, 0.7, 0.0]
         assert res[0]["scene"] == 1.0
+
+    def test_face_majority_counts_distinct_frames(self, video_file, monkeypatch):
+        # Keyframes at 0, 5, 10 s: the five face times share 3 frames, so
+        # 2 hits of 3 is a majority; one frame seen 3 times is not 3 hits.
+        face = [(2, 2, 10, 10)]
+        install_cascades(monkeypatch, [face, face, [],  [], [], face], [], smile_exists=False)
+        data = {0.0: frame(10), 5.0: frame(240), 10.0: frame(10), 20.0: frame(10), 25.0: frame(10), 30.0: frame(10)}
+        monkeypatch.setattr(visual, "_extract_frames_ffmpeg", lambda v, ts, face_ts=None: data)
+        res = visual._batch_analyze_video_haar(video_file, segs(2))
+        assert [res[i]["faces"] for i in range(2)] == [0.7, 0.0]
 
     @pytest.mark.parametrize("corr,base", [(0.4, 0.9), (0.6, 0.7), (0.8, 0.5), (0.95, 0.3)])
     def test_scene_change_bands(self, video_file, monkeypatch, corr, base):
@@ -317,7 +376,7 @@ class TestHaarBatch:
             return {3.0: frame(), 7.0: frame()}
         monkeypatch.setattr(visual, "_extract_frames_ffmpeg", extract)
         res = visual._batch_analyze_video_haar(video_file, segs(25))
-        assert seen["n"] == 60
+        assert seen["n"] == 75
         assert res[0]["faces"] == 0.0
 
     def test_no_frames_and_crash(self, video_file, monkeypatch):

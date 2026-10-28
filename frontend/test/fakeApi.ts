@@ -120,10 +120,14 @@ export function installFakeApi(state: FakeState) {
       for (const list of Object.values(state.clips)) {
         const i = list.findIndex(c => c.id === m![1]);
         if (i >= 0) {
+          // An empty body (the Render button) keeps the clip's timing and options.
+          const startTime = body.startTime ?? list[i]!.startTime;
+          const endTime = body.endTime ?? list[i]!.endTime;
           list[i] = {
-            ...list[i]!, startTime: body.startTime, endTime: body.endTime, durationSec: body.endTime - body.startTime,
+            ...list[i]!, startTime, endTime, durationSec: endTime - startTime,
             options: JSON.stringify(body.options ?? {}), captionWords: body.captionWords ? JSON.stringify(body.captionWords) : null,
-            updatedAt: '2026-10-27T12:00:00.000Z', exportPath: `/data/exports/${m[1]}_v2.mp4`,
+            updatedAt: '2026-10-27T12:00:00.000Z', renderStatus: 'COMPLETED', renderPath: `/data/exports/${m[1]}_v2.mp4`,
+            exportStatus: 'COMPLETED', exportPath: `/data/exports/${m[1]}_v2.mp4`,
           };
           return ok({ clip: list[i] });
         }

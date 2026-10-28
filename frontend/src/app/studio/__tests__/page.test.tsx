@@ -811,6 +811,46 @@ describe('editing suite', () => {
     expect(document.querySelector('video')).toHaveAttribute('src', '/api/clips/c1/preview?v=2026-10-27T12%3A00%3A00.000Z');
   });
 
+  it('renders a clip the pipeline left for later', async () => {
+    seedCompleted();
+    await renderLoaded();
+    expect(within(card('c2')).queryByRole('button', { name: 'Render' })).not.toBeInTheDocument();   // already rendered
+    expect(within(card('c3')).queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument();
+    await act(async () => { fireEvent.click(within(card('c3')).getByRole('button', { name: 'Render' })); });
+
+    expect(calls('POST', '/api/clips/c3/rerender')[0]!.body).toEqual({});
+    await waitFor(() => expect(within(card('c3')).getByRole('button', { name: 'Preview' })).toBeInTheDocument());
+    expect(within(card('c3')).queryByRole('button', { name: 'Render' })).not.toBeInTheDocument();
+    expect(within(card('c3')).getByRole('link', { name: 'Download' }))
+      .toHaveAttribute('href', '/api/clips/c3/export?v=2026-10-27T12%3A00%3A00.000Z');
+  });
+
+  it('a failed render can be retried', async () => {
+    seedCompleted();
+    state.clips.v1![2] = { ...state.clips.v1![2]!, renderStatus: 'FAILED' };
+    state.fail['POST /api/clips/c3/rerender'] = 'ffmpeg died';
+    await renderLoaded();
+    await act(async () => { fireEvent.click(within(card('c3')).getByRole('button', { name: 'Retry render' })); });
+    expect(await screen.findByText('renderClip')).toBeInTheDocument();
+    expect(within(card('c3')).getByRole('button', { name: 'Retry render' })).toBeEnabled();
+  });
+
+  it('offers no Render while the video is still processing', async () => {
+    jest.useFakeTimers();
+    seedCompleted();
+    state.jobs = [makeJob('j1', 'v1', 'RUNNING', { currentStage: 'RENDER' })];
+    state.stages.j1 = makeStages('j1', 5, 'RENDER');
+    await renderLoaded();
+    expect(within(card('c3')).queryByRole('button', { name: 'Render' })).not.toBeInTheDocument();
+  });
+
+  it('shows a clip being rendered elsewhere as busy', async () => {
+    seedCompleted();
+    state.clips.v1![2] = { ...state.clips.v1![2]!, renderStatus: 'RENDERING' };
+    await renderLoaded();
+    expect(within(card('c3')).getByRole('button', { name: 'Rendering...' })).toBeDisabled();
+  });
+
   it('closing the editor changes nothing', async () => {
     seedCompleted();
     await renderLoaded();

@@ -1,7 +1,7 @@
-"""Visual feature extraction: GPU-decoded keyframe dump, batch face + scene
-analysis via MediaPipe (preferred) or Haar cascades (fallback), plus the
-legacy per-segment ``score_face_presence`` / ``score_scene_change`` helpers
-that still back unit tests.
+"""Visual feature extraction: keyframe dump (each sample time uses its nearest
+keyframe), batch face + scene analysis via MediaPipe (preferred) or Haar
+cascades (fallback), plus the legacy per-segment ``score_face_presence`` /
+``score_scene_change`` helpers that still back unit tests.
 
 Heavy models are hoisted to module-level singletons so a 20-candidate video
 does not reload TF Lite or Haar XML 20 times.
@@ -102,10 +102,31 @@ FACE_WIDTH = 640
 FACE_FRACTIONS = (0.1, 0.3, 0.5, 0.7, 0.9)
 FACE_MIN_HITS = 3
 HAAR_PARAMS = {"scaleFactor": 1.1, "minNeighbors": 8, "minSize": (40, 40)}
+# Each sample time takes its nearest keyframe: decoding only keyframes took
+# 23 s for an hour of 1080p H.264 on 4 cores, every frame 264 s (which overran
+# the old fixed 120 s limit and left every segment scored "no face"). Files
+# with sparser keyframes (screen recordings) decode every frame at 1 fps.
+KEYFRAME_MAX_OFFSET = 3.0     # seconds between a sample time and its keyframe
+KEYFRAME_MAX_FAR = 0.1        # share of samples allowed further away than that
 
 
 def _face_times(start, dur):
     return [start + dur * f for f in FACE_FRACTIONS]
+
+
+def _face_need(n):
+    """Hits needed among n distinct face frames: FACE_MIN_HITS of the full
+    FACE_FRACTIONS, the same share of fewer (close times can share a keyframe)."""
+    return max(1, -(-n * FACE_MIN_HITS // len(FACE_FRACTIONS)))
+
+
+def _distinct(frames):
+    """The frames in order, each once and without None."""
+    out = []
+    for f in frames:
+        if f is not None and all(f is not g for g in out):
+            out.append(f)
+    return out
 
 
 def _frame_entry(img, keep_face):
@@ -123,76 +144,83 @@ def _frame_entry(img, keep_face):
     return entry
 
 
-def _near_any(t, targets, tol=0.6):
-    return any(abs(t - x) <= tol for x in targets)
+def _nearest_index(times, t):
+    import bisect
+    i = bisect.bisect_left(times, t)
+    if i == 0:
+        return 0
+    if i == len(times):
+        return i - 1
+    return i if times[i] - t < t - times[i - 1] else i - 1
+
+
+def _decode_frames(video_path, start, end, width, keyframes, tmpdir):
+    """``[(t, jpg_path)]`` between start and end: every keyframe, or 1 fps.
+    None when ffmpeg fails."""
+    import re
+    import subprocess
+    prefix = "k_" if keyframes else "f_"
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-nostats", "-loglevel", "info" if keyframes else "error"]
+    if keyframes:
+        cmd += ["-skip_frame", "nokey"]
+    cmd += ["-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", video_path, "-an"]
+    if keyframes:
+        # showinfo logs one pts_time per written frame, in order, from start.
+        cmd += ["-fps_mode", "passthrough", "-vf", f"scale={width}:-2,showinfo"]
+    else:
+        cmd += ["-vf", f"fps=1,scale={width}:-2"]
+    cmd += ["-q:v", "5", os.path.join(tmpdir, prefix + "%06d.jpg")]
+    # Limits grow with the span: a fixed one cut long videos off.
+    res = subprocess.run(cmd, capture_output=True, timeout=max(120, (end - start) * (0.1 if keyframes else 0.25)))
+    if res.returncode != 0:
+        return None
+    paths = sorted(os.path.join(tmpdir, n) for n in os.listdir(tmpdir) if n.startswith(prefix))
+    if not keyframes:
+        return [(start + i, p) for i, p in enumerate(paths)]
+    log = res.stderr.decode("utf-8", "replace") if isinstance(res.stderr, bytes) else (res.stderr or "")
+    times = [float(x) for x in re.findall(r"pts_time:\s*(-?[0-9.]+)", log)]
+    return [(start + t, p) for t, p in zip(times, paths)] if len(times) == len(paths) else None
 
 
 def _extract_frames_ffmpeg(video_path, timestamps, face_timestamps=None):
-    """Frames at 1 fps across the timestamps' span, keyed by time. When
-    ``face_timestamps`` is given, frames near those times also carry a
-    full-size ``face_gray`` for detection."""
-    import subprocess
+    """The nearest decoded frame to each wanted time, keyed by the frame's
+    time (close times can share one). Frames picked for ``face_timestamps``
+    also carry a full-size ``face_gray``."""
+    import shutil
     import tempfile
     frames = {}
-    face_ts = sorted(set(face_timestamps or []))
+    face_ts = set(face_timestamps or [])
+    wanted = sorted(set(timestamps) | face_ts)
+    if not wanted:
+        return frames
     width = FACE_WIDTH if face_ts else ANALYSIS_WIDTH
+    start, end = max(0.0, wanted[0] - 0.5), wanted[-1] + 0.5
     tmpdir = tempfile.mkdtemp(prefix="vc_frames_")
     try:
-        ts_list = sorted(set(timestamps))
-        if not ts_list:
+        decoded = _decode_frames(video_path, start, end, width, True, tmpdir)
+        if decoded:
+            times = [t for t, _ in decoded]
+            far = sum(1 for t in wanted if abs(times[_nearest_index(times, t)] - t) > KEYFRAME_MAX_OFFSET)
+            if far > KEYFRAME_MAX_FAR * len(wanted):
+                decoded = None
+        if not decoded:
+            decoded = _decode_frames(video_path, start, end, width, False, tmpdir)
+        if not decoded:
             return frames
-        start = max(0, ts_list[0] - 0.5)
-        end = ts_list[-1] + 0.5
-        out_pattern = os.path.join(tmpdir, "f_%06d.jpg")
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
-            "-i", video_path,
-            "-vf", f"fps=1,scale={width}:-2",
-            "-q:v", "5",
-            out_pattern
-        ]
-        result = subprocess.run(cmd, capture_output=True, timeout=120)
-        if result.returncode == 0:
-            import cv2
-            import glob as _glob
-            extracted = sorted(_glob.glob(os.path.join(tmpdir, "f_*.jpg")))
-            for img_path in extracted:
-                img = cv2.imread(img_path)
-                if img is not None:
-                    frame_num = int(os.path.basename(img_path).replace("f_", "").replace(".jpg", ""))
-                    t = start + (frame_num - 1)
-                    frames[t] = _frame_entry(img, _near_any(t, face_ts))
-                try:
-                    os.remove(img_path)
-                except Exception:
-                    pass
-        else:
-            for t in ts_list:
-                out_path = os.path.join(tmpdir, f"s_{int(t * 1000)}.jpg")
-                cmd2 = [
-                    "ffmpeg", "-y", "-ss", f"{t:.3f}", "-i", video_path,
-                    "-vframes", "1", "-q:v", "5", "-vf", f"scale={width}:-2",
-                    out_path
-                ]
-                r = subprocess.run(cmd2, capture_output=True, timeout=15)
-                if r.returncode == 0 and os.path.exists(out_path):
-                    import cv2
-                    img = cv2.imread(out_path)
-                    if img is not None:
-                        frames[t] = _frame_entry(img, _near_any(t, face_ts))
-                    try:
-                        os.remove(out_path)
-                    except Exception:
-                        pass
+        import cv2
+        times = [t for t, _ in decoded]
+        keep_face = {}
+        for t in wanted:
+            i = _nearest_index(times, t)
+            keep_face[i] = keep_face.get(i, False) or t in face_ts
+        for i, face in keep_face.items():
+            img = cv2.imread(decoded[i][1])
+            if img is not None:
+                frames[times[i]] = _frame_entry(img, face)
     except Exception:
         pass
     finally:
-        try:
-            import shutil
-            shutil.rmtree(tmpdir, ignore_errors=True)
-        except Exception:
-            pass
+        shutil.rmtree(tmpdir, ignore_errors=True)
     return frames
 
 
@@ -229,9 +257,6 @@ def _batch_analyze_video_mediapipe(video_path, segments):
                 unique_ts.add(round(t, 1))
 
         unique_ts = sorted(unique_ts)
-        if len(unique_ts) > 60:
-            step = len(unique_ts) / 60
-            unique_ts = [unique_ts[int(i * step)] for i in range(60)]
 
         face_ts = [t for info in all_times for t in info["face_times"]]
         frame_data = _extract_frames_ffmpeg(video_path, unique_ts, face_ts)
@@ -254,10 +279,8 @@ def _batch_analyze_video_mediapipe(video_path, segments):
             idx = info["idx"]
 
             faces_found = 0
-            for t in info["face_times"]:
-                fd = _nearest(t)
-                if fd is None:
-                    continue
+            face_frames = _distinct(_nearest(t) for t in info["face_times"])
+            for fd in face_frames:
                 try:
                     rgb = cv2.cvtColor(fd.get("face_gray", fd["gray"]), cv2.COLOR_GRAY2RGB)
                     detections = face_detector.process(rgb)
@@ -266,9 +289,9 @@ def _batch_analyze_video_mediapipe(video_path, segments):
                 except Exception:
                     pass
 
-            face_score = 0.7 if faces_found >= FACE_MIN_HITS else 0.0
+            face_score = 0.7 if face_frames and faces_found >= _face_need(len(face_frames)) else 0.0
 
-            scene_frames = [fd for t in info["scene_times"] if (fd := _nearest(t)) is not None]
+            scene_frames = _distinct(_nearest(t) for t in info["scene_times"])
 
             if len(scene_frames) >= 2:
                 diffs = []
@@ -355,9 +378,6 @@ def _batch_analyze_video_haar(video_path, segments):
                 unique_ts.add(round(t, 1))
 
         unique_ts = sorted(unique_ts)
-        if len(unique_ts) > 60:
-            step = len(unique_ts) / 60
-            unique_ts = [unique_ts[int(i * step)] for i in range(60)]
 
         face_ts = [t for info in all_times for t in info["face_times"]]
         frame_data = _extract_frames_ffmpeg(video_path, unique_ts, face_ts)
@@ -381,10 +401,8 @@ def _batch_analyze_video_haar(video_path, segments):
 
             faces_found = 0
             smiles_found = 0
-            for t in info["face_times"]:
-                fd = _nearest(t)
-                if fd is None:
-                    continue
+            face_frames = _distinct(_nearest(t) for t in info["face_times"])
+            for fd in face_frames:
                 gray = fd.get("face_gray", fd["gray"])
                 try:
                     faces = face_cascade.detectMultiScale(gray, **HAAR_PARAMS)
@@ -399,12 +417,12 @@ def _batch_analyze_video_haar(video_path, segments):
                 except Exception:
                     pass
 
-            if faces_found >= FACE_MIN_HITS:
+            if face_frames and faces_found >= _face_need(len(face_frames)):
                 face_score = 1.0 if smiles_found >= 1 else 0.7
             else:
                 face_score = 0.0
 
-            scene_frames = [fd for t in info["scene_times"] if (fd := _nearest(t)) is not None]
+            scene_frames = _distinct(_nearest(t) for t in info["scene_times"])
 
             if len(scene_frames) >= 2:
                 diffs = []

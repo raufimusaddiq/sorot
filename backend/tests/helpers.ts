@@ -4,10 +4,10 @@ import { dirname, join } from "node:path";
 import { createApp, type App } from "../src/app";
 import { loadConfig, type AppConfig } from "../src/config";
 import { openDatabase } from "../src/db";
-import type { ExecFn, ProcResult, ScriptRunner } from "../src/runner";
+import type { ExecFn, ProcResult, ScriptOptions, ScriptRunner } from "../src/runner";
 import type { Json } from "../src/types";
 
-export type ScriptHandler = (args: string[], signal?: AbortSignal) => Json | Promise<Json>;
+export type ScriptHandler = (args: string[], signal?: AbortSignal, opts?: ScriptOptions) => Json | Promise<Json>;
 
 export interface TestEnv {
   app: App;
@@ -106,7 +106,7 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
   };
   return {
     // 30 s apart → segmenting turns each line into one FAKE_SEGMENTS clip
-    "transcribe.py": () => ({ videoId: "x", language: "id",
+    "transcribe.py": (args) => ({ videoId: "x", language: argAfter(args, "--language"), model: argAfter(args, "--model"),
       segments: FAKE_SEGMENTS.map((s) => ({ index: s.index, start: s.startTime, end: s.endTime, text: s.text })) }),
     "media_features.py": () => ({ videoId: "x", segments: FAKE_MEDIA }),
     "predict_supervised.py": () => ({ predictions: { 0: 0.99, 1: null, 2: 0.1 } }),
@@ -153,7 +153,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
     calls.push({ script, args, timeoutMinutes: opts?.timeoutMinutes });
     const h = scripts[script];
     if (!h) throw new Error(`no fake for ${script}`);
-    return h(args, opts?.signal);
+    return h(args, opts?.signal, opts);
   };
   const exec: ExecFn = async (cmd, args, opts) => {
     execCalls.push({ cmd, args });

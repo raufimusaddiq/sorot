@@ -19,6 +19,16 @@ def cpu_threads(device):
     return n if n > 0 else (os.cpu_count() or 4)
 
 
+def beam_size():
+    """WHISPER_BEAM_SIZE, else faster-whisper's 5. 1 (greedy) is faster on a
+    CPU and somewhat less accurate: worth an A/B on your own videos."""
+    try:
+        n = int(os.environ.get("WHISPER_BEAM_SIZE", "") or 0)
+    except ValueError:
+        n = 0
+    return n if n > 0 else 5
+
+
 def main():
     # Env overrides let the user A/B models without touching Java code. CLI args
     # still win when explicitly passed.
@@ -54,10 +64,19 @@ def main():
             language=args.language,
             word_timestamps=True,
             vad_filter=True,
+            beam_size=beam_size(),
         )
 
+        # Segments arrive as Whisper decodes, so their end times give progress
+        # ("PROGRESS 37" on stderr; the backend shows "Transcribing 37%").
+        duration = getattr(info, "duration", 0) or 0
+        reported = 0
         segments = []
         for i, seg in enumerate(segments_gen):
+            pct = min(99, int(seg.end / duration * 100)) if duration > 0 else 0
+            if pct > reported:
+                reported = pct
+                print(f"PROGRESS {pct}", file=sys.stderr, flush=True)
             # Per-word timing drives karaoke captions and silence trimming
             # (captions.py). Older transcripts lack "words" and fall back to
             # an even split of the segment text.

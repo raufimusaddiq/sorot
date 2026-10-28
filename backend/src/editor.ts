@@ -41,6 +41,9 @@ export function parseCaptionWords(raw: unknown): CaptionWord[] {
 
 export class ClipEditor {
   private busy = new Set<string>();
+  /** Renders in flight and the ones waiting for a slot (maxParallelRenders, as in the pipeline). */
+  private rendering = 0;
+  private waiting: Array<() => void> = [];
 
   constructor(
     private readonly config: AppConfig,
@@ -85,6 +88,18 @@ export class ClipEditor {
       .sort((a, b) => a.localeCompare(b));
   }
 
+  /** Wait for a render slot: several Render clicks must not all encode at once
+   *  on a CPU. Resolves to the slot's release. */
+  private async renderSlot(): Promise<() => void> {
+    if (this.rendering < Math.max(1, this.config.maxParallelRenders)) this.rendering++;
+    else await new Promise<void>((r) => this.waiting.push(r));   // the slot is handed over, count unchanged
+    return () => {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.rendering--;
+    };
+  }
+
   async rerender(clipId: string, body: Json): Promise<Clip> {
     const clip = this.clip(clipId);
     const video = this.store.getVideo(clip.videoId);
@@ -117,6 +132,7 @@ export class ClipEditor {
       captionWords: words ? JSON.stringify(words) : null,
       renderStatus: "RENDERING", exportStatus: "RENDERING", updatedAt: now(),
     });
+    const release = await this.renderSlot();
     try {
       const edits = `${this.config.dataDir}/edits`;
       mkdirSync(edits, { recursive: true });
@@ -161,6 +177,7 @@ export class ClipEditor {
       });
       throw new HttpError(500, `Re-render failed: ${(e as Error).message}`);
     } finally {
+      release();
       this.busy.delete(clipId);
     }
   }
