@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 import os
+import re
 
 
 def cpu_threads(device):
@@ -27,6 +28,98 @@ def beam_size():
     except ValueError:
         n = 0
     return n if n > 0 else 5
+
+
+SAMPLE_RATE = 16000                   # faster_whisper.decode_audio's rate
+TERMINAL = re.compile(r"[.!?…。？！][\"')\]]*$")
+# Whisper conditions each 30 s window on the text before it, so once it writes
+# a stretch without punctuation it can stay that way to the end of the file
+# (seen from the first line of a 69 min video; no setting prevents it: see
+# docs/journal/session-2026-10-28.md). Checked per DRIFT_BUCKET_SEC: a bucket
+# with at least DRIFT_MIN_LINES lines of which under DRIFT_RATIO end a sentence.
+DRIFT_BUCKET_SEC = 600
+DRIFT_MIN_LINES = 20
+DRIFT_RATIO = 0.5
+# Languages Whisper doesn't punctuate: no drift check.
+UNPUNCTUATED = {"th", "lo", "km", "my"}
+# Shown to Whisper before every window of the re-run so it starts punctuated.
+PUNCTUATED_PROMPT = {"id": "Halo, apa kabar? Baik, terima kasih. Jadi gini ceritanya, oke."}
+
+
+def punctuated(segments):
+    """Share of lines that end a sentence."""
+    return sum(1 for s in segments if TERMINAL.search(s["text"])) / len(segments) if segments else 1.0
+
+
+def drift_start(segments, language):
+    """Start (s) of the first bucket that lost its punctuation, else None."""
+    if language in UNPUNCTUATED or not segments:
+        return None
+    buckets = {}
+    for s in segments:
+        buckets.setdefault(int(s["start"] // DRIFT_BUCKET_SEC), []).append(s)
+    for b in sorted(buckets):
+        if len(buckets[b]) >= DRIFT_MIN_LINES and punctuated(buckets[b]) < DRIFT_RATIO:
+            return b * DRIFT_BUCKET_SEC
+    return None
+
+
+def decode(model, audio, language, offset=0.0, on_progress=None, **options):
+    """Whisper segments as transcript dicts, shifted by `offset` s."""
+    segments_gen, info = model.transcribe(
+        audio,
+        language=language,
+        word_timestamps=True,
+        vad_filter=True,
+        beam_size=beam_size(),
+        **options,
+    )
+    segments = []
+    for seg in segments_gen:
+        if on_progress:
+            on_progress(seg.end, info)
+        # Per-word timing drives karaoke captions and silence trimming
+        # (captions.py). Older transcripts lack "words" and fall back to
+        # an even split of the segment text.
+        words = [
+            {
+                "text": w.word.strip(),
+                "start": round(w.start + offset, 3),
+                "end": round(w.end + offset, 3),
+                "prob": round(w.probability, 3),
+            }
+            for w in (getattr(seg, "words", None) or [])
+            if w.word.strip()
+        ]
+        segments.append({
+            "start": round(seg.start + offset, 2),
+            "end": round(seg.end + offset, 2),
+            "text": seg.text.strip(),
+            "confidence": round(seg.avg_logprob, 2) if seg.avg_logprob else None,
+            "words": words,
+        })
+    return segments, info
+
+
+def repair_drift(model, audio_path, language, segments):
+    """Re-run Whisper from the first bucket that lost its punctuation, starting
+    fresh with a punctuated prompt; keep the re-run only if it is better."""
+    t0 = drift_start(segments, language)
+    if t0 is None:
+        return segments
+    before = [s for s in segments if s["start"] < t0]
+    after = [s for s in segments if s["start"] >= t0]
+    # Resume where the last kept line ends, so no words are heard twice.
+    cut = before[-1]["end"] if before else t0
+    from faster_whisper import decode_audio
+    audio = decode_audio(audio_path, sampling_rate=SAMPLE_RATE)
+    prompt = PUNCTUATED_PROMPT.get(language)
+    redo, _ = decode(model, audio[int(cut * SAMPLE_RATE):], language, offset=cut,
+                     **({"hotwords": prompt} if prompt else {}))
+    better = punctuated(redo) > punctuated(after)
+    print(f"Punctuation lost from {t0:.0f} s ({punctuated(after):.0%}); re-run: {punctuated(redo):.0%}, "
+          f"{'kept' if better else 'discarded'}", file=sys.stderr, flush=True)
+    return before + redo if better else segments
 
 
 def main():
@@ -59,45 +152,21 @@ def main():
         model = WhisperModel(args.model, device=args.device, compute_type=compute_type,
                              cpu_threads=cpu_threads(args.device))
 
-        segments_gen, info = model.transcribe(
-            args.audio,
-            language=args.language,
-            word_timestamps=True,
-            vad_filter=True,
-            beam_size=beam_size(),
-        )
-
         # Segments arrive as Whisper decodes, so their end times give progress
         # ("PROGRESS 37" on stderr; the backend shows "Transcribing 37%").
-        duration = getattr(info, "duration", 0) or 0
         reported = 0
-        segments = []
-        for i, seg in enumerate(segments_gen):
-            pct = min(99, int(seg.end / duration * 100)) if duration > 0 else 0
+
+        def progress(end, info):
+            nonlocal reported
+            duration = getattr(info, "duration", 0) or 0
+            pct = min(99, int(end / duration * 100)) if duration > 0 else 0
             if pct > reported:
                 reported = pct
                 print(f"PROGRESS {pct}", file=sys.stderr, flush=True)
-            # Per-word timing drives karaoke captions and silence trimming
-            # (captions.py). Older transcripts lack "words" and fall back to
-            # an even split of the segment text.
-            words = [
-                {
-                    "text": w.word.strip(),
-                    "start": round(w.start, 3),
-                    "end": round(w.end, 3),
-                    "prob": round(w.probability, 3),
-                }
-                for w in (getattr(seg, "words", None) or [])
-                if w.word.strip()
-            ]
-            segments.append({
-                "index": i,
-                "start": round(seg.start, 2),
-                "end": round(seg.end, 2),
-                "text": seg.text.strip(),
-                "confidence": round(seg.avg_logprob, 2) if seg.avg_logprob else None,
-                "words": words,
-            })
+
+        segments, info = decode(model, args.audio, args.language, on_progress=progress)
+        segments = repair_drift(model, args.audio, args.language, segments)
+        segments = [{"index": i, **s} for i, s in enumerate(segments)]
 
         result = {
             "videoId": os.path.splitext(os.path.basename(args.audio))[0],
