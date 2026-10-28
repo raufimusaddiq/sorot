@@ -55,6 +55,11 @@ export function makeConnections(over: { [K in keyof Connections]?: Partial<Conne
   };
 }
 
+/** A Tebar account; `profile` = [id, name] of its workspace (none = a single workspace). */
+export function makeAccount(id: string, platform: string, name: string, profile?: [string, string], extra: Partial<SocialAccount> = {}): SocialAccount {
+  return { id, platform, name, profileId: profile?.[0] ?? null, profileName: profile?.[1] ?? null, supported: true, ...extra };
+}
+
 export function makePost(id: string, clipId: string, extra: Partial<SocialPost> = {}): SocialPost {
   return { id, clipId, provider: 'tebar', providerPostId: `p-${id}`, status: 'PUBLISHING', scheduledAt: null,
     targets: JSON.stringify([{ platform: 'tiktok', status: 'pending', permalink: null, errorCode: null }]),
@@ -257,6 +262,12 @@ export function installFakeApi(state: FakeState) {
     if (method === 'POST' && (m = path.match(/^\/api\/social\/posts\/([^/]+)\/refresh$/))) {
       const post = Object.values(state.posts).flat().find((p) => p.id === m![1])!;
       return ok({ post: { ...post, status: 'PUBLISHED', targets: JSON.stringify([{ platform: 'tiktok', status: 'published', permalink: 'https://tiktok.com/@x/video/1', errorCode: null }]) } });
+    }
+    if (method === 'POST' && (m = path.match(/^\/api\/social\/posts\/([^/]+)\/(retry|cancel)$/))) {
+      const post = Object.values(state.posts).flat().find((p) => p.id === m![1])!;
+      if (m[2] === 'cancel' && post.status !== 'SCHEDULED') return { status: 'error', error: 'Only a scheduled post can be cancelled' };
+      Object.assign(post, m[2] === 'cancel' ? { status: 'CANCELLED' } : { status: 'PUBLISHING', errorMessage: null });
+      return ok({ post });
     }
     if (method === 'POST' && path === '/api/discover/queue/drain') {
       state.candidates = state.candidates.map(c => (c.status === 'QUEUED' ? { ...c, status: 'IMPORTED' } : c));
