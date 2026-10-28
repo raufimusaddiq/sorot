@@ -4,8 +4,13 @@
 > metrics → a time-normalised viral score, and after 5+ results a linear
 > re-weighting of all 13 features (Pearson + EMA, `backend/src/learning.ts`,
 > written to `data/weights.json`). The LightGBM model (`train_scorer.py`) only
-> switches on with 200+ labelled clips. File names below (`feedback.py`,
-> `learn_weights.py`, `score.py`) are the original Python plan; see
+> switches on with 200+ labelled clips. Metrics are typed in
+> (`POST /api/clips/{id}/feedback`) or, with Tebar connected, pulled by its
+> metrics sync (`backend/src/publisher.ts`: every `TEBAR_SYNC_HOURS`, default 6,
+> or `POST /api/social/sync`), which sums a clip's published posts into its
+> `clip_feedback` row the same way; training runs on `POST /api/feedback/train`.
+> File names below (`feedback.py`, `learn_weights.py`, `score.py`) are the
+> original Python plan; see
 > [ai-audit.md](ai-audit.md) and [api-spec.md → Feedback](api-spec.md#feedback--self-learning).
 
 ## Problem

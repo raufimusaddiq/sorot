@@ -64,11 +64,11 @@ export interface Clip {
   updatedAt?: string | null;
   /** Why the clip scored as it did (LLM reason, or the strongest rule signals). */
   reason?: string | null;
-  /** "llm+rules" or "rules". */
+  /** "jev+rules", "llm+rules" or "rules". */
   scoredBy?: string | null;
-  /** Who found the moment: "rules" (pause-based windows) or "llm" (director). */
+  /** Who found the moment: "rules" (pause-based windows), or the director: "jev" or "llm". */
   source?: string | null;
-  /** The LLM's hook line (absolute source seconds), replayed first with hook-first. */
+  /** Hook line to replay first with hook-first (absolute source seconds; Jev's, the LLM's or the rules'); null = none. */
   hookStart?: number | null;
   hookEnd?: number | null;
   /** Quality gate: PASS | REVIEW | FAIL (null = not gated), and its JSON GateResult. */

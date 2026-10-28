@@ -303,7 +303,7 @@ def find_hook(words, duration, scorer=None):
 
 def seg_hook(seg):
     """The hook the backend chose for this clip (absolute ``hookStart`` /
-    ``hookEnd`` on the segment: the LLM's line or the rules') as a
+    ``hookEnd`` on the segment: Jev's, the LLM's or the rules' line) as a
     clip-relative range to replay.
 
     False when the backend decided there is none (null), or sent one that

@@ -161,8 +161,9 @@ New section in the UI:
   fit) and re-clipped titles are filtered before scoring.
 - Search/channel default to the last 90 days; the default candidates view hides
   rows of unknown or older age.
-- Source channels: `channel_crawler.py` seeds channels from anchor queries and
-  profiles them; clip farms and short-form channels are stored as `REJECTED`.
+- Source channels: `channels.ts` (port of the old `channel_crawler.py`) seeds
+  channels from anchor queries and profiles them; clip farms and short-form
+  channels are stored as `REJECTED`.
   Endpoints: `/api/discover/channels*` in [api-spec.md](api-spec.md#source-channels).
 - Not built yet: trust-score updates from clip feedback and polling channels on
   their `pollCadenceHours`.

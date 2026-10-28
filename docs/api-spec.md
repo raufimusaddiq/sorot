@@ -185,7 +185,7 @@ Choices and server defaults for the import form and clip editor:
 | `hookFirst` | Replay the clip's strongest line (a question/hook, 1.2–6 s, after the first 3 s) before it starts |
 | `youtubeCaptions` / `allowAutoCaptions` | Use the video's uploaded (and optionally auto-generated) YouTube captions instead of Whisper when present |
 | `bgm` / `bgmVolume` | Music file from `data/music`, looped and ducked under speech; volume 0–1 |
-| `direction` | Job level, ≤ 500 chars: free-text steer for the LLM director (brief, moment picks, review, post copy). Ignored without an LLM |
+| `direction` | Job level, ≤ 500 chars: free-text steer for the picks and copy — Jev asks `fits_direction` when screening and scoring; the LLM uses it for the brief, picks, review and post copy. Ignored when neither is connected |
 
 ### `GET /api/music`
 `{ "tracks": ["lofi.mp3", ...] }` — audio files in `data/music`
@@ -278,14 +278,14 @@ Downloads the export as `application/octet-stream` with
 
 | Field | Meaning |
 |---|---|
-| `source` | `rules` (pause-based window) or `llm` (picked by the LLM director) |
-| `hookStart` / `hookEnd` | Hook line in source seconds (LLM's, or the rules'); `null` = none. Replayed first with `hookFirst` |
+| `source` | `rules` (pause-based window), `jev` (sentence window Jev picked) or `llm` (picked by the LLM director) |
+| `hookStart` / `hookEnd` | Hook line in source seconds (Jev's, the LLM's, or the rules'); `null` = none — with Jev first, also Jev's decision that the clip's opening needs no replay. Replayed first with `hookFirst` |
 | `gateVerdict` | `PASS`, `REVIEW` (content risk: a person decides), `FAIL` (held back: tier `SKIP`, ranked last), or `null` (not gated: not in a render tier) |
 | `gate` | JSON: `{verdict, by: "jev"\|"rules", model, reasons[], answers{question: probability, payoff: 0-2}, quality, titleReplaced?}` |
 | `reason` | Why it scored as it did; `Held back: …` when the gate failed it |
 
 The segments file (`data/segments/{videoId}.json`) also records `director`
-(brief, picks, errors), `gatedBy` (`jev` / `rules` / `mixed`) and `gateError`.
+(Jev: windows, judged, picks, tokens; LLM: brief, picks; and errors), `gatedBy` (`jev` / `rules` / `mixed`) and `gateError`.
 
 ---
 
@@ -300,14 +300,14 @@ the env value). API keys are never returned: `apiKey` is `••••` + last 4
 { "llm":   { "active": true, "enabled": true, "baseUrl": "http://…/v1", "model": "qwen2.5:7b",
              "apiKey": "", "apiKeySet": false, "director": true, "saved": ["baseUrl", "model"] },
   "jev":   { "active": false, "enabled": true, "url": "https://api.typesafe.ai/v1/systemone",
-             "model": "jev-1.14.0", "apiKey": "", "apiKeySet": false, "saved": [] },
+             "model": "jev-1.14.0", "apiKey": "", "apiKeySet": false, "director": true, "saved": [] },
   "tebar": { "active": false, "enabled": true, "baseUrl": "https://api.tebar.app/v1",
              "apiKey": "", "apiKeySet": false, "saved": [] } }
 ```
 
 ### `PUT /api/settings/{llm|jev|tebar}`
 Body: any of the connection's fields (`enabled`, `baseUrl`/`url`, `model`,
-`apiKey`, and `director` for llm). Returns the full view. 400 for an unknown
+`apiKey`, and `director` for llm and jev). Returns the full view. 400 for an unknown
 field, a non-http(s) URL, a key with spaces, a non-boolean switch; 404 for an
 unknown connection.
 

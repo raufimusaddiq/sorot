@@ -47,7 +47,7 @@ Connections (saved in the app; they win over .env)
   connect                       LLM, Jev and Tebar: active?, URL, model, key (masked)
   connect llm --base-url URL --model M [--key -] [--director on|off]
   connect jev [--model jev-1.14.0] [--base-url URL] [--key -] [--director on|off]
-  connect tebar [--key -]       --key - reads the key from stdin (not shell history)
+  connect tebar [--key -] [--base-url URL]   --key - reads the key from stdin (not shell history)
   connect <llm|jev|tebar> --on | --off | --reset    --reset = back to .env
   connect test <llm|jev|tebar>  make one small real call
 

@@ -2,7 +2,7 @@
 
 > **Superseded (2026-10-28).** Publishing is built on [Tebar](https://docs.tebar.app/api),
 > which posts to TikTok (and Instagram, YouTube, Threads…) with one API key and
-> returns metrics — see [creative-loop.md](../creative-loop.md) §3. This page is
+> returns metrics — see [creative-loop.md](../creative-loop.md) §4. This page is
 > the original plan for a direct TikTok Content Posting API integration, kept
 > for reference.
 

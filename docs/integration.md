@@ -175,9 +175,10 @@ curl -s -X POST $API/feedback/train      # retrain weights once you have 5+ resu
 
 Finished clips are written to `data/exports/<videoId>/clip_<rank>_subtitled.mp4`
 (the burned-in caption file `clip_<rank>.ass` sits next to it). Ranks follow the
-score, so `clip_1` is the best. A sync tool or upload script can read that
-folder directly; use the API (`GET /api/videos/{id}/clips`) for tiers, scores
-and titles, and to see which files are finished (`exportStatus`).
+score (clips the quality gate held back rank last), so `clip_1` is the best. A
+sync tool or upload script can read that folder directly; use the API
+(`GET /api/videos/{id}/clips`) for tiers, scores and titles, and to see which
+files are finished (`exportStatus`).
 
 Don't write into `data/` other than `data/input/` (files to import) and
 `data/music/` (background tracks) — the rest is managed by the app.

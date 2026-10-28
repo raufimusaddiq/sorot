@@ -43,7 +43,7 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `options` | Caption styles, framing modes, music tracks and server defaults. |
 | `connect` | LLM, Jev and Tebar connections: active?, URL, model, key (masked), which fields are saved in the app. |
 | `connect llm --base-url URL --model M [--key -] [--director on\|off]` | Save the LLM connection (`--key -` reads the key from stdin, out of shell history). |
-| `connect jev [--model jev-1.14.0] [--base-url URL] [--key -]`, `connect tebar [--key -]` | Save the Jev / Tebar connection. |
+| `connect jev [--model jev-1.14.0] [--base-url URL] [--key -] [--director on\|off]`, `connect tebar [--base-url URL] [--key -]` | Save the Jev / Tebar connection (`--director off`: Jev only gates). |
 | `connect <llm\|jev\|tebar> --on \| --off \| --reset` | Switch it on/off, or go back to the server's env values. |
 | `connect test <llm\|jev\|tebar>` | One small real call; exit 1 if it fails. |
 | `discover auto ["<goal>"]` | ✨ Auto-discover: prints each tool call as it happens, then the picks with their reasons (`--max 10`, `--no-wait` to return at once, `--json`). Uses the LLM when configured, otherwise the algorithm. |
@@ -66,7 +66,7 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `--hook` | replay the strongest line at the start |
 | `--yt-captions` / `--auto-captions` | use the video's YouTube captions (auto-generated too) |
 | `--music FILE [--music-volume 0.12]` | background music from `data/music` |
-| `--direction "TEXT"` | steer the LLM director: "only the funny parts", "for TikTok, 30-45 s" (≤ 500 chars) |
+| `--direction "TEXT"` | steer the clip picks, scores and post copy (Jev, or the LLM director and review): "only the funny parts", "for TikTok, 30-45 s" (≤ 500 chars) |
 
 Unset options use the server defaults (`sorot options`). `rerender` takes the same flags.
 
