@@ -98,3 +98,18 @@ fallback everywhere, and "Bun first, Python second". Design + sources:
   faces / motion), not the LLM.
 - Fix from that run: one retry for transient LLM failures (network, 429/5xx,
   gateway error in a 200; not timeouts, not 4xx). `/verify` OPEN: 72/72 focused, llm/clipReview/director 100%; backend 290/290.
+- **Run 2** (same video + direction, retry + 2 review batches in flight):
+  389 s total, SCORE 123 s (was 435 s), all 11 candidates reviewed — but every
+  clip SKIP (0.27-0.29), nothing rendered: the restated `task` line said only
+  `"score"`, and the model answered 1-10 (read as 0.01-0.10; reasons still
+  said "paling sesuai arahan"). Same windows: 0.98 → 0.10, 0.81 → 0.08. Fixed:
+  the task line carries "0 to 100" (test pins it); live batch afterwards:
+  0.96 / 1.00 for the price critique, 0.08-0.25 for unboxing. `/verify` OPEN
+  (45/45 focused, clipReview 100%). LLM output scale can drift run to run;
+  Jev's answers are bounded probabilities.
+- **What Jev is good at** (same transcript, `jev-1.14.0`): 5 identical
+  requests vary ≤ 0.04; ranks the 6 LLM-reviewed candidates in the LLM's order
+  in 1.4 s (vs ~435 s); judging all 232 code-enumerated windows took 3.8 s
+  (~$0.011) and found the LLM director's moments plus two stronger price-shock
+  openings; titles chosen as quotes; hook lines need one Noul per line + an ad
+  check (a single Choice picked a sponsor line). It can't write text.

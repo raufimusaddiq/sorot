@@ -37,6 +37,7 @@ describe("reviewClips", () => {
       const sent = JSON.parse(messages[1]!.content);
       expect(Object.keys(sent).at(-1)).toBe("task");     // restated after the data
       expect(sent.task).toBe(REVIEW_TASK);
+      expect(REVIEW_TASK).toContain("0 to 100");          // the scale, not only the field name
       const excerpts = sent.excerpts;
       expect(excerpts[1]).toEqual({ id: 1, start: "1:00", seconds: 40, text: "Ternyata ini rahasia besar" });
       return "```json\n" + JSON.stringify({ clips: [

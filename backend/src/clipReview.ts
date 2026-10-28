@@ -70,7 +70,9 @@ function hashtags(tags: unknown, limit: number): string[] {
 }
 
 /** Restated after the data: a model can lose a task stated only in the system prompt. */
-export const REVIEW_TASK = 'Rate every excerpt. Answer with JSON only: {"clips": [{"id", "score", "reason", "title", "description", "hashtags"}]}.';
+// It must carry the scale: with only "score" here a model answered 1-10 (read as 0.01-0.10) in one run, 0-100 in the next.
+export const REVIEW_TASK = 'Rate every excerpt with a score from 0 to 100 (100 = best clip). Answer with JSON only: '
+  + '{"clips": [{"id": <id>, "score": <0-100>, "reason": "", "title": "", "description": "", "hashtags": []}]}.';
 
 export interface ReviewContext {
   title?: string | null;
