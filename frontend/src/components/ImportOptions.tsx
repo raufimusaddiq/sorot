@@ -1,6 +1,6 @@
 'use client';
 
-// Collapsible per-import settings: a free-text direction for the LLM, caption
+// Collapsible per-import settings: a free-text direction for the clip picks, caption
 // style, framing, editing passes, YouTube captions, background music and an
 // optional time range.
 
@@ -91,11 +91,11 @@ export function ImportOptions({ value, onChange, choices, disabled }: {
       {open && (
         <div className="mt-3 grid grid-cols-1 gap-4 bg-surface-2 border-3 border-line rounded-md p-4">
           <div>
-            <span className={label}>Direction for the LLM (optional)</span>
-            <textarea aria-label="Direction for the LLM" rows={2} maxLength={MAX_DIRECTION} value={o.direction ?? ''}
+            <span className={label}>Direction (optional)</span>
+            <textarea aria-label="Direction" rows={2} maxLength={MAX_DIRECTION} value={o.direction ?? ''}
               placeholder="e.g. only the funny parts · Pak Budi's money advice · for TikTok, 30-45 s"
               onChange={(e) => set({ direction: e.target.value })} className={`${field} resize-y`} />
-            <p className="text-xs text-subtle mt-1">With an LLM connected (Settings) it picks the moments, hook and copy to fit this.</p>
+            <p className="text-xs text-subtle mt-1">With Jev or an LLM connected (Settings), the moments and post copy are picked to fit this.</p>
           </div>
           <div>
             <span className={label}>Caption style</span>

@@ -39,7 +39,7 @@ describe('ImportOptions', () => {
     fireEvent.change(screen.getByLabelText('Music volume'), { target: { value: '0.3' } });
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '1:00' } });
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2:30' } });
-    fireEvent.change(screen.getByLabelText('Direction for the LLM'), { target: { value: 'cuma yang lucu' } });
+    fireEvent.change(screen.getByLabelText('Direction'), { target: { value: 'cuma yang lucu' } });
 
     expect(last).toEqual({
       options: { style: 'hormozi', reframe: 'blur', silenceTrim: true, hookFirst: true, youtubeCaptions: true,

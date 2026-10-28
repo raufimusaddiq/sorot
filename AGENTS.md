@@ -1,171 +1,65 @@
 # AGENTS.md
 
-## What
-YouTube/local video → 9:16 short-form clips with auto-subtitles (product name: Sorot). Indonesian language. Local-only.
+**Sorot**: YouTube/local video → 9:16 short clips with auto-subtitles. Indonesian. Local-only, personal-use simple.
 
-## Stack
-Bun workspace monorepo: Bun/TypeScript backend + Python 3 CLI + Next.js 14 (static export) + SQLite + Docker
+**Stack**: Bun workspace — `backend/` Bun/TS (API, orchestration, scoring, discovery, LLM/Jev/Tebar; serves the UI) · `cli/` `sorot` (Bun) · `ai-pipeline/` Python 3, media/ML only · `frontend/` Next.js 14 static export · SQLite · Docker. Specs in `docs/` (design of the creative loop: `docs/creative-loop.md`; API: `docs/api-spec.md`); history in `docs/journal/`.
 
-## Layout
-`backend/` Bun/TS API, orchestration, scoring, discovery, LLM (also serves the UI) · `ai-pipeline/` Python media/ML only · `frontend/` Next.js static export · `cli/` `sorot` client · `data/` media · `docs/` specs
-
-## Build Order (strict)
-1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
+**Build order (strict)**: 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
 
 ## Commands
-### Start/Stop (user runs these)
 ```
-.\scripts\install.ps1 [-Mode native]   # Windows install: Docker (pulls ghcr image) or native (Bun+venv+winget)
-.\scripts\start.ps1          # start app on :8080 (pulls ghcr.io/raufimusaddiq/sorot first time; native if .env.native)
-.\scripts\start.ps1 -Update  # pull newest image
-.\scripts\start.ps1 -Build   # build image from source
-.\scripts\start.ps1 -Dev     # + hot-reload UI on :3000
-.\scripts\stop.ps1           # stop all services
+.\scripts\install.ps1 [-Mode native] · .\scripts\start.ps1 [-Update|-Build|-Dev] · .\scripts\stop.ps1   # Windows (user runs these)
+scripts/install.sh [--mode native] [--uninstall [--purge]]                                              # Linux
+sorot import <url|file> [--direction ".."] | clips | download | connect llm|jev|tebar | up | down | logs -f | doctor
+.\scripts\verify-env.ps1 · .\scripts\e2e-test.ps1
+docker compose --env-file .env.docker build --no-cache backend | up -d | --profile dev up -d | logs -f backend
+bun install                                           # one lockfile (repo root)
+cd backend;  bun test --coverage; bun run typecheck   # 95% line/func gate
+cd frontend; bun run test;  bun run build             # jest; static UI → frontend/out (bun run start serves it on :8080)
+cd cli;      bun test --coverage; bun run build       # → cli/dist/sorot
+cd ai-pipeline; .venv/bin/python -m pytest tests --cov=.   # Windows: .venv\Scripts\python.exe
 ```
+Slash commands: `/research` `/plan` `/execute` `/review` `/verify` `/test`.
 
-### Linux install / CLI
-```
-scripts/install.sh                 # Docker install (or --mode native: systemd); --uninstall [--purge]
-sorot import <url|file> | clips <video> | download --video <video> | up | down | logs -f | doctor
-cd cli; bun test --coverage        # CLI tests (95% gate); bun run build → cli/dist/sorot
-```
+## Gate
+100% pass, ≥ 95% coverage, zero type errors; `/test` → test-runner subagent, verdict OPEN or BLOCKED.
+Tests stay compact (the owner dislikes test bloat): one test per behaviour, tables (`test.each` / `it.each` / `parametrize`), shared fakes (`backend/tests/helpers.ts`: `fakeJev`, `clipAnswer`, `jevReply`, `unknownFields`; `frontend/test/fakeApi.ts`), no assertion that re-proves another.
 
-### Verify
-```
-.\scripts\verify-env.ps1     # check all dependencies
-```
+## Rules
+**Boundaries**
+- Python = media/ML only (Whisper, `media_features.py`, render/subtitle/variation, captions/reframe, LightGBM); segmenting, scoring, hooks, analytics, learning, discovery, LLM/Jev/Tebar are Bun. No new Python for non-media logic. Scripts print a JSON envelope `{"success":bool,"data":{}}`, exit 0/non-zero.
+- Python ports keep golden fixtures (`backend/tests/fixtures/*.json`, made by the Python originals); `pyCompat.ts` reproduces Python rounding/splitting.
+- Backend runs Python via `runner.ts`: per-script timeouts (`timeoutFor` scales transcribe/media_features with length), cancel kills the whole process tree (POSIX group / `taskkill /T`). Tests inject fakes through `createApp(config, deps)` (`exec`, `runScript`, `fetch`).
+- Prefer executable source over plan docs. Memory = pointers only; details go to the journal.
 
-### E2E Testing
-```
-.\scripts\e2e-test.ps1       # run full E2E suite
-```
+**Jev, LLM, Tebar** (design + measurements: `docs/creative-loop.md`)
+- All optional; secrets (`LLM_API_KEY`, `JEV_API_KEY`, `TEBAR_API_KEY`) only in gitignored `.env.llm`. Also set in UI Settings / `sorot connect` → SQLite `setting` table, overrides env, read per call (no restart), keys always masked. CLI flag is `--base-url` (`--url` is the global server option).
+- **Jev first** (`jevDirector.ts`, `JEV_DIRECTOR`, default on with Jev; wins over the LLM director/review): SEGMENT judges one window per sentence start (15-60 s) and adds the best 40 non-FAIL (`source: "jev"`); SCORE asks the full gate questions per candidate — `finalScore` = 0.5 Jev + 0.5 rules, verdict from the same answers; render-tier clips (≤ `MAX_RENDER_CLIPS`) get Jev's hook line and a title quoted from the clip. A teaser must beat the clip's own opening (opening ≥ 0.7 → none; else best non-ad line ≥ 0.7, or ≥ 0.5 when opening ≤ 0.3); Jev's "none" is final, the rules' hook only fills clips Jev had no line for. Jev failures → rules per clip.
+- Jev has no system prompt: build every state with `jevState()` (`clipGate.ts`; `context` = task, viewer, ASR text, the fields sent). Questions: one judgment each, name the state field, no counting/timing, risks as separate Nouls (`clipGate.test.ts` + `unknownFields` enforce; `bun run jev-eval` measures). Thresholds 0.7/0.3 uncalibrated for Indonesian. Answers move ~0.04 between runs, so borderline clips flip — accepted: trust Jev, no re-asks/averaging.
+- Gate (`clipGate.ts`, best ≤ 40 render-tier clips, pinned `jev-1.14.0`; `ruleAnswers()` when Jev is off/failing): verdict in code (`verdictFrom`); FAIL → SKIP, ranked last, loses overlaps; REVIEW = content risk, never auto-FAIL.
+- LLM: any OpenAI-compatible endpoint; every path falls back to rules on `LlmError`. Used for post copy, auto-discover, and as director when Jev is off (`director.ts`, `LLM_DIRECTOR`: brief + own moments `source: "llm"`, field `hook_line` = line id). Every request ends with a `task` field restating job + format (a reasoning model ignored the system prompt); the review's task states "0 to 100". `LLM_MAX_TOKENS` includes reasoning; an empty answer cut by the budget or a gateway `{"error"}` in HTTP 200 is an `LlmError`; one retry on transient errors; review batches 2 at a time.
+- Job option `direction` (≤ 500 chars) reaches screening (`fits_direction`), brief, picks, review and post copy. Overlaps > 50% of the shorter clip keep the better score.
+- Publishing (`publisher.ts`, `tebar.ts`): draft (copy per platform, Jev copy check, platform limits) → user choices (TikTok privacy, YouTube title + made-for-kids never auto-filled) → upload + `POST /v1/posts` with `Idempotency-Key`; `social_post` row + exact body saved first, so retry can't double-post. Metrics sync (`TEBAR_SYNC_HOURS`) → `clip_feedback` → training. Polling only.
+- Auto-discover web search defaults to Bing HTML (`WEB_SEARCH`); DuckDuckGo is blocked by Indonesian ISPs. Learned weights → `data/weights.json` (wins over `ai-pipeline/weights.json`).
 
-### Docker
-```
-docker compose --env-file .env.docker build --no-cache backend   # API + static UI + pipeline
-docker compose --env-file .env.docker up -d
-docker compose --env-file .env.docker --profile dev up -d         # + dev UI on :3000
-docker compose --env-file .env.docker --profile dev down
-docker compose --env-file .env.docker logs -f backend
-```
+**Pipeline & media**
+- Hooks are decided in Bun (`hooks.ts`, golden port of `find_hook`); segments carry `hookStart`/`hookEnd` (absolute s, null = no replay); render.py/subtitle.py run `find_hook` only for files without the keys.
+- `clipsForVideo` orders by `rank_pos` (not `rank`: SQL reserved); render.py indexes render-tier segments in file order, so render tiers come first in `scoredSegments`.
+- One encode per clip: render.py `--export-dir` burns captions + music with the 9:16 render; SUBTITLE/subtitle.py only re-burn clips rendered without captions, with the same silence flags. Render/export folders are per video (`data/renders/{videoId}/`).
+- 9:16 framing crops in source pixels before scaling (`reframe.py`). `opencv-python-headless` stays `<5` (Haar `CascadeClassifier`).
+- `media_features.py` samples at keyframes (`-skip_frame nokey`; 1 fps decode only for sparse-keyframe files). YouTube range imports are a stream copy (no `--force-keyframes-at-cuts`, except with YouTube captions on).
+- TRANSCRIBE reuses `data/transcripts/{videoId}.json` when model/language match; scripts report `PROGRESS <n>` on stderr. Whisper `large-v3-turbo` in Docker, per-word timestamps kept.
+- CPU vs GPU keys off `WHISPER_DEVICE`: CPU renders the best `MAX_RENDER_CLIPS` (10; rest on request) and 1 pipeline; GPU renders all PRIMARY/BACKUP, 2 pipelines. CPU env: `X264_PRESET` (veryfast), `WHISPER_THREADS`, `WHISPER_BEAM_SIZE` (5), `VARIATIONS` (off). Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE`.
+- Editing options layer config ← job options ← clip options (`options.ts`).
 
-### Backend / Frontend (Bun workspace, run from repo root)
-```
-bun install                          # one lockfile for backend + frontend
-cd backend; bun test --coverage      # backend tests (95% line/func threshold)
-cd backend; bun run typecheck        # tsc --noEmit
-cd frontend; bun run test            # jest
-bun run build                        # static UI → frontend/out
-bun run start                        # backend on :8080, serves frontend/out
-```
+**API, UI, DB**
+- API JSON keys = camelCase of SQLite columns (`store.ts`); the frontend depends on them. Schema auto-creates/migrates in `db.ts` (Java-era DB compatible); UUIDs as TEXT.
+- UI is same-origin in prod (backend serves `frontend/out`); CORS allows `localhost:3000` only for `next dev`. `frontend` stays static-exportable: no API routes, rewrites, server actions, `next/image` optimization.
 
-### Python Tests
-```
-cd ai-pipeline
-.venv\Scripts\python.exe -m pytest tests\test_pipeline.py -v --cov=. --cov-report=term-missing
-```
+**Docker, release, scripts**
+- Always `--env-file .env.docker`. `docker-compose.yml` is CPU-only; GPU settings live in the gitignored `docker-compose.override.yml` (written by `install.sh` / `install.ps1` / `start.ps1`). Linux machine settings: override file or `/etc/sorot/`, never tracked files.
+- Image `ghcr.io/raufimusaddiq/sorot` is built by `release-image.yml` only on a published release or manual run (CPU `:latest`, GPU `:latest-cuda`; `v1.2.3` → `1.2.3`, `1.2`, `latest`); `ci.yml` tests and smoke-tests an unpushed CPU image on image-affecting changes. `SOROT_VERSION` picks the tag.
+- PowerShell: ASCII only (PS 5.1); `install.ps1` never `exit`s (runs under `irm | iex`); `$ErrorActionPreference = "Continue"`; `-UseBasicParsing` on every `Invoke-WebRequest`; capture docker output in a variable and check `$LASTEXITCODE`. `scripts/install.sh` stays shellcheck-clean.
 
-### Slash Commands
-/research · /plan · /execute · /review · /verify · /test
-
-## Key Rules
-- Python scripts: JSON stdout envelope `{"success":bool,"data":{}}`, exit 0/non-zero
-- When code exists, prefer executable source over plan docs
-- Keep it personal-use simple
-- **KEEP MEMORY LEAN**: details → journal, memory = pointers only
-- Python is only for media/ML (Whisper, `media_features.py`, render/subtitle/variation, captions/reframe, LightGBM); segmenting, scoring rules, analytics, feedback learning, discovery and the LLM live in Bun. Don't add new Python for non-media logic
-- Ports from Python keep golden fixtures (`backend/tests/fixtures/*.json`, generated from the Python originals); `pyCompat.ts` reproduces Python rounding/splitting
-- LLM is optional: any OpenAI-compatible endpoint via `LLM_BASE_URL` + `LLM_MODEL`; every LLM path must fall back to the rules on `LlmError`. Secrets (`LLM_API_KEY`, `JEV_API_KEY`, `TEBAR_API_KEY`) go in gitignored `.env.llm`, never `.env.docker`
-- LLM / Jev / Tebar connections are also editable in the UI (Settings) and `sorot connect`: saved in the SQLite `setting` table, they override the env (`settings.ts`); Llm/Jev/Tebar read the shared config per call, so no restart. Keys are never returned (masked). CLI flag is `--base-url` (`--url` is the global server option)
-- LLM director (`director.ts`, `LLM_DIRECTOR`, default on with an LLM): SEGMENT adds a video brief (`video.brief`) and the LLM's own moments (line ids → validated 10-60 s, `source: "llm"`) next to the rule windows; SCORE drops overlaps (> 50% of the shorter) keeping the better score. Job option `direction` (≤ 500 chars) reaches brief, picks, review and post copy
-- Jev first (`jevDirector.ts`, `JEV_DIRECTOR`, default on with Jev; wins over the LLM director and review): SEGMENT judges one window per sentence start (`sentenceWindows`, 15-60 s) with the quality questions (+ `fits_direction` with a direction) and adds the best 40 non-FAIL as `source: "jev"`; SCORE asks the full gate questions per candidate — `finalScore` = 0.5 Jev + 0.5 rules, verdict from the same answers; render-tier clips (up to `MAX_RENDER_CLIPS`) get Jev's hook line (one Noul per line + an ad Noul; a teaser only beats the clip's own opening: opening ≥ 0.7 → none, else best ≥ 0.7, or ≥ 0.5 when the opening ≤ 0.3; Jev's "none" is not overwritten by the rules' hook) and a title quoted from the clip. Jev failures → rules per clip. Jev has no system prompt: every request's state is built with `jevState()` (`clipGate.ts`), whose `context` (task, viewer, ASR text, the fields sent) is the briefing — measured: it raised the fixture's separation on every question. The LLM stays for text: post copy and auto-discover. Answers move ~0.04 between runs, so clips near a 0.7 threshold can flip: accepted by the owner — trust Jev's answer, don't add re-asks or averaging
-- Every LLM request restates its task + answer format as the last field of the user JSON (`task`): over a long transcript a reasoning model (Kimi K3) ignored the system prompt and summarised instead. Output budget is `LLM_MAX_TOKENS` (reasoning tokens count); an empty answer cut by the budget, or a gateway `{"error"}` in an HTTP 200, is an `LlmError`. Director JSON field is `hook_line` (a line id) — `hook` was read as "write a hook". Review batches run 2 at a time
-- Quality gate (`clipGate.ts`) runs in SCORE before render on the best ≤ 40 render-tier clips: Jev (`jev.ts`, TypeSafe `/v1/systemone`, pinned `jev-1.14.0`) or, when off/failing, `ruleAnswers()` on the same questions. Verdict is decided in code (`verdictFrom`): FAIL → tier SKIP, ranked last; REVIEW = content risk, never auto-FAIL. Questions follow TypeSafe's design rules — one judgment each, name the state field, no counting; `tests/clipGate.test.ts` enforces it; `bun run jev-eval` measures them on labelled excerpts. Thresholds (0.7/0.3) are uncalibrated for Indonesian
-- `clipsForVideo` orders by `rank_pos` (gate-held clips rank last); render.py indexes render-tier segments in file order, so render tiers must come first in `scoredSegments`
-- Hooks are decided in Bun (`hooks.ts`, golden port of `captions.find_hook`; LLM hook line for director picks): segments carry `hookStart`/`hookEnd` (absolute s; null = no replay). render.py/subtitle.py only run `find_hook` themselves for segment files without the keys
-- Publishing (`publisher.ts`, `tebar.ts`): draft (LLM copy per platform, Jev copy check, Tebar's platform limits) → user choices (TikTok privacy, YouTube title + made-for-kids are never auto-filled) → upload + `POST /v1/posts` with `Idempotency-Key`; the `social_post` row and exact body are saved first so retry can't double-post. Metrics sync (`TEBAR_SYNC_HOURS`) → `clip_feedback` → training. Polling only (Tebar webhooks need a public URL)
-- Web search for auto-discover defaults to Bing HTML (`WEB_SEARCH`): DuckDuckGo is blocked by Indonesian ISPs
-- Learned feature weights are written to `data/weights.json` (wins over shipped `ai-pipeline/weights.json`)
-- Backend shells out to Python via `backend/src/runner.ts` (per-script timeouts — transcribe/media_features scale with video length via `timeoutFor` — and abort-on-cancel that kills the whole process tree: own process group on POSIX, `taskkill /T` on Windows, so ffmpeg children die too); tests inject fakes via `createApp(config, deps)` (`exec`, `runScript`, `fetch`)
-- UI is same-origin in prod (backend serves `frontend/out`); CORS in `backend/src/app.ts` allows `localhost:3000` only for `next dev`
-- `frontend` must stay static-exportable: no API routes, rewrites, server actions or `next/image` optimization
-- API JSON keys = camelCase of SQLite columns (`backend/src/store.ts`); the frontend depends on them
-- `docker-compose.yml` uses `.env.docker` — always pass `--env-file .env.docker`
-- Image `ghcr.io/raufimusaddiq/sorot` is built + pushed by `.github/workflows/release-image.yml` (GitHub release published, or manual run — never on push/PR; `ci.yml` tests, and on image-affecting changes builds the CPU image unpushed + smoke-tests it) in two variants of `backend/Dockerfile` (`BASE_IMAGE` arg): CPU `:latest` (ubuntu:24.04) and GPU `:latest-cuda` (nvidia/cuda); release `v1.2.3` → `1.2.3`, `1.2`, `latest` (+`-cuda`). `SOROT_VERSION` in `.env.docker` picks the tag
-- `docker-compose.yml` is CPU-only; GPU settings (cuda image, GPU reservation, `WHISPER_DEVICE=cuda`) live in the machine's gitignored `docker-compose.override.yml`, written by `install.sh` / `install.ps1` / `start.ps1` (`scripts/compose-override.ps1`)
-- PowerShell scripts must stay ASCII-only (PS 5.1 reads BOM-less files as ANSI) and `install.ps1` must not `exit` (it runs under `irm | iex`)
-- PowerShell scripts: `$ErrorActionPreference = "Continue"` (NOT "Stop" — docker stderr crashes it)
-- Use `-UseBasicParsing` on all `Invoke-WebRequest` calls in PowerShell
-- Capture docker output to variable, check `$LASTEXITCODE` after, not via pipe
-- `clip.rank_pos` not `rank` (SQL reserved word)
-- Whisper model: `large-v3-turbo` in Docker (`WHISPER_MODEL`); transcripts keep per-word timestamps (`segment.words`)
-- `opencv-python-headless` must stay `<5` — OpenCV 5 dropped the Haar `CascadeClassifier` used by face scoring and `reframe.py`
-- Render/export folders are per video (`data/renders/{videoId}/`): clip files are named by rank, so a shared folder overwrote other videos' clips
-- Editing options layer config defaults ← job options (import) ← clip options (editor); see `backend/src/options.ts`
-- Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README). render.py `--export-dir` burns captions + music in the same encode as the 9:16 render (one encode per clip — never add a second full re-encode); the SUBTITLE stage/subtitle.py only re-burns clips rendered without captions and must get the same silence flags
-- CPU tuning env: `X264_PRESET` (default `veryfast`), `WHISPER_THREADS` (default all cores; faster-whisper alone uses 4), `WHISPER_BEAM_SIZE` (default 5), `VARIATIONS` (default off — the VARIATION stage's output isn't shown anywhere and it can't fail a job)
-- CPU vs GPU defaults key off `WHISPER_DEVICE` (`config.ts`): CPU renders only the best `MAX_RENDER_CLIPS` (10) — the rest stay PENDING and render on request (studio **Render** = rerender with an empty body) — and runs `MAX_CONCURRENT_PIPELINES` 1; GPU renders all PRIMARY/BACKUP, 2 pipelines
-- TRANSCRIBE reuses `data/transcripts/{videoId}.json` when its `model`/`language` match the config (retries don't re-run Whisper). Scripts report progress as `PROGRESS <n>` lines on stderr (runner `onProgress`; `transcribe.py` → stage text "Transcribing n%")
-- YouTube range imports are a stream copy (`--download-sections` without `--force-keyframes-at-cuts`, which re-encoded the section at ffmpeg's slow default: 46 s per minute of 1080p on 4 cores); only with YouTube captions on is the cut forced exact, since caption times are offset by the section start
-- `media_features.py` samples each time at its nearest **keyframe** (`-skip_frame nokey`; falls back to a 1 fps decode only for sparse-keyframe files): decoding every frame of an hour of 1080p took 264 s on 4 cores and overran its limit
-- 9:16 framing crops in source pixels before scaling (`reframe.py`), never scale the whole frame up first
-- Python venv at `ai-pipeline/.venv`
-- `scripts/install.sh` must stay shellcheck-clean; Linux machine settings go in the gitignored `docker-compose.override.yml` (Docker) or `/etc/sorot/` (native), never in tracked files
-- Schema auto-creates + migrates in `backend/src/db.ts` (compatible with the old Java-era DB file)
-- SQLite TEXT for UUIDs
-
-## Gate Policy
-Tests stay compact (the owner dislikes test bloat): one test per behaviour, tables (`test.each` / `it.each` / `parametrize`) for input→output lists, shared fakes (`backend/tests/helpers.ts`: `fakeJev`, `clipAnswer`, `jevReply`, `unknownFields`; `frontend/test/fakeApi.ts`), no assertion that re-proves another.
-100% pass + ≥95% coverage + zero type errors. `/test` delegates to test-runner (zen/minimax-m2.5). Binary: OPEN or BLOCKED.
-
-## Workflow
-1. User imports YouTube URL → backend downloads → runs 9-stage pipeline
-2. User sees progress in real-time (polling `/api/jobs/{id}`)
-3. Completed clips shown grouped by source video
-4. User can preview, download, export individual clips
-5. All state persists in SQLite — refresh does not lose data
-6. Frontend loads history on mount from `GET /api/jobs` and `GET /api/videos`
-
-## API Endpoints
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | /api/health | Health check |
-| POST | /api/import | Import video (url or localPath) |
-| POST | /api/process | Start pipeline for videoId |
-| GET | /api/jobs | List all jobs |
-| GET | /api/jobs/{id} | Job detail + stage statuses |
-| POST | /api/jobs/{id}/retry | Retry failed job |
-| GET | /api/videos | List all videos |
-| GET | /api/videos/{id} | Video detail |
-| DELETE | /api/videos/{id} | Delete video |
-| GET | /api/videos/{id}/clips | List clips for video |
-| GET | /api/clips/{id} | Clip detail + score breakdown |
-| POST | /api/clips/export | Export clips by IDs |
-| GET | /api/clips/{id}/captions | Caption words for the editor |
-| POST | /api/clips/{id}/rerender | Re-render one clip (timing, options, caption fixes) |
-| GET | /api/options | Editing choices + defaults |
-| GET | /api/music | Tracks in data/music |
-| GET | /api/clips/{id}/preview | Stream rendered clip |
-| GET | /api/clips/{id}/export | Download exported clip |
-| POST | /api/discover/auto | ✨ Auto-discover run (LLM agent or algorithm), background |
-| GET | /api/discover/auto[/{id}] | Auto-discover progress / picks |
-| GET | /api/discover/candidates | Ranked candidates with `why` reasons |
-| GET | /api/settings | LLM / Jev / Tebar connections (keys masked) |
-| PUT | /api/settings/{llm\|jev\|tebar} | Save fields (null = back to env) |
-| POST | /api/settings/{kind}/test | One small real call |
-| GET | /api/social/accounts | Tebar accounts (`enabled: false` when not connected) |
-| POST | /api/clips/{id}/publish/draft | Copy per account + checks (sends nothing) |
-| POST | /api/clips/{id}/publish | Upload + post/schedule via Tebar |
-| GET | /api/clips/{id}/posts | The clip's social posts |
-| POST | /api/social/posts/{id}/refresh \| retry | Status / idempotent re-send |
-| POST | /api/social/sync | Pull status + metrics into feedback |
-
-## Git Strategy
-- **Repo**: `raufimusaddiq/sorot` (public monorepo, MIT license; was viral-clipper)
-- **Branch**: `master` stable. Feature: `feat/short-description`
-- **Commit**: Conventional — `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
-- **Merge**: `--no-ff` always. Never rebase shared branches.
-- **NEVER** commit/push unless user asks. **ALWAYS** test first. **NEVER** commit secrets.
-- Git skill installed (`mastering-git-cli`) — use it for all git operations.
-
-## See journal for: architecture, stack, docker, scoring, decisions, session history
+## Git
+Repo `raufimusaddiq/sorot` (public, MIT). `master` stable; features on `feat/short-description`; Conventional commits; merge `--no-ff`, never rebase shared branches. **Never** commit/push unless asked, **always** test first, **never** commit secrets. Use the `mastering-git-cli` skill.

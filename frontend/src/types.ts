@@ -135,7 +135,7 @@ export type PipelineOptions = {
   allowAutoCaptions?: boolean;
   bgm?: string;
   bgmVolume?: number;
-  /** Free-text direction for the LLM ("only the funny parts"). */
+  /** Free-text direction for the clip picks and copy ("only the funny parts"). */
   direction?: string;
 };
 

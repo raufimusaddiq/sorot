@@ -21,7 +21,7 @@ Make clips
       --hook                    replay the best line at the start
       --yt-captions             use the video's YouTube captions (--auto-captions: auto ones too)
       --music FILE [--music-volume 0.12]   background music from data/music
-      --direction "TEXT"        steer the LLM: "only the funny parts", "for TikTok, under 40 s"
+      --direction "TEXT"        steer the picks (Jev or LLM): "only the funny parts", "for TikTok, under 40 s"
       --no-wait                 return right after starting the job
   watch <job>                   follow a job until it finishes
   jobs | job <job>              list jobs / show one job's stages
