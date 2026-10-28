@@ -6,6 +6,19 @@ import json
 import sys
 import os
 
+
+def cpu_threads(device):
+    """Threads for CPU inference: WHISPER_THREADS, else every core.
+    faster-whisper's own default is 4, which left most of a bigger CPU idle."""
+    if device != "cpu":
+        return 0                      # unused on the GPU; 0 = library default
+    try:
+        n = int(os.environ.get("WHISPER_THREADS", "") or 0)
+    except ValueError:
+        n = 0
+    return n if n > 0 else (os.cpu_count() or 4)
+
+
 def main():
     # Env overrides let the user A/B models without touching Java code. CLI args
     # still win when explicitly passed.
@@ -33,7 +46,8 @@ def main():
             compute_type = args.compute_type
         else:
             compute_type = "float16" if args.device == "cuda" else "int8"
-        model = WhisperModel(args.model, device=args.device, compute_type=compute_type)
+        model = WhisperModel(args.model, device=args.device, compute_type=compute_type,
+                             cpu_threads=cpu_threads(args.device))
 
         segments_gen, info = model.transcribe(
             args.audio,

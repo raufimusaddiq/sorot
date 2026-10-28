@@ -30,11 +30,9 @@ VARIATION_PRESETS = {
         "label": "Zoom Top (Face Focus)",
         "vf_extra": "zoompan=z='min(pzoom+{step},1.3)':x='iw/2-(iw/zoom/2)':y=0:d=1:s=1080x1920:fps=30",
     },
-    "dynamic_crop": {
-        "label": "Dynamic Crop",
-        "vf_extra": "crop=ih*9/16:ih,scale=1080:1920",
-    },
 }
+# (A "dynamic_crop" preset re-cropped the already 9:16 frame to itself: the
+# same picture as the normal centre-cropped clip, for one more encode.)
 
 
 def get_video_duration(video_path, ffmpeg_path=None):
@@ -80,7 +78,8 @@ def generate_variation(video_path, start, end, output_path, preset_name, ffmpeg_
     if use_nvenc:
         cmd.extend(["-preset", "p4", "-rc", "vbr", "-cq", "23"])
     else:
-        cmd.extend(["-preset", "fast", "-crf", "23"])
+        from captions import x264_preset
+        cmd.extend(["-preset", x264_preset(), "-crf", "23"])
 
     cmd.extend(["-c:a", "aac", "-y", output_path])
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -97,7 +96,7 @@ def main():
     parser.add_argument("--video", required=True, help="Path to source video")
     parser.add_argument("--output-dir", required=True, help="Directory for variation clips")
     parser.add_argument("--max-primary", type=int, default=3, help="Max PRIMARY clips to vary")
-    parser.add_argument("--presets", default="zoom_center,zoom_top,dynamic_crop", help="Variation presets")
+    parser.add_argument("--presets", default="zoom_center,zoom_top", help="Variation presets")
     args = parser.parse_args()
 
     try:

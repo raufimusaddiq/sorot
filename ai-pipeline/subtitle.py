@@ -18,13 +18,9 @@ import subprocess
 import sys
 import tempfile
 
-from captions import (
-    DEFAULT_PRESET, PRESETS, build_ass, ffmpeg_filter_path, map_words, plan_timeline, words_for_clip,
+from captions import (  # noqa: F401  (clip_words, DUCK: re-exported for callers and tests)
+    DEFAULT_PRESET, DUCK, PRESETS, build_ass, clip_words, ffmpeg_filter_path, music_graph, x264_preset,
 )
-
-# Background music: looped under the clip and ducked whenever the voice is
-# present (sidechain compression keyed on the speech), then mixed in.
-DUCK = "sidechaincompress=threshold=0.03:ratio=8:attack=20:release=400"
 
 
 _NVENC_CACHE = None
@@ -76,28 +72,12 @@ def _detect_nvenc(ffmpeg_path):
     return _probe_nvenc(ffmpeg_path)
 
 
-def clip_words(transcript_segments, seg, silence_trim=False, silence_gap=0.6, hook_first=False):
-    """Clip words on the output timeline: render.py plans the same timeline
-    (silence trim, hook replay) from the same inputs, so they line up."""
-    words = words_for_clip(transcript_segments, seg["startTime"], seg["endTime"])
-    if silence_trim or hook_first:
-        duration = seg["endTime"] - seg["startTime"]
-        words = map_words(words, plan_timeline(words, duration, silence_trim, silence_gap, hook_first))
-    return words
-
-
 def _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc, bgm=None, bgm_volume=0.12):
     vf = f"ass={ffmpeg_filter_path(ass_path)},format=yuv420p" if ass_path else "format=yuv420p"
     cmd = [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-i", render_path]
     if bgm:
         cmd.extend(["-stream_loop", "-1", "-i", bgm])
-        graph = (
-            f"[0:v]{vf}[vout];"
-            "[0:a]asplit=2[voice][sc];"
-            f"[1:a]volume={bgm_volume:.3f}[bg];"
-            f"[bg][sc]{DUCK}[duck];"
-            "[voice][duck]amix=inputs=2:duration=first:normalize=0[aout]"
-        )
+        graph = ";".join([f"[0:v]{vf}[vout]", *music_graph("[0:a]", bgm_volume)])
         cmd.extend(["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]"])
     else:
         cmd.extend(["-vf", vf])
@@ -108,7 +88,7 @@ def _build_burn_cmd(ffmpeg_path, render_path, ass_path, output_path, use_nvenc, 
             "-rc", "vbr", "-cq", "23", "-b:v", "0",
         ])
     else:
-        cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
+        cmd.extend(["-c:v", "libx264", "-preset", x264_preset(), "-crf", "23"])
     cmd.extend(["-c:a", "aac" if bgm else "copy", "-y", output_path])
     return cmd
 

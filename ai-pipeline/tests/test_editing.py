@@ -107,7 +107,7 @@ class TestRenderHookFirst:
         tr.write_text(json.dumps({"segments": [{"start": 0, "end": 10, "text": "x", "words": TALK}]}))
         seen = {}
 
-        def fake_render(video, start, end, out, timeline=None, reframe=None):
+        def fake_render(video, start, end, out, timeline=None, reframe=None, burn=None):
             seen["timeline"] = timeline
             open(out, "wb").write(b"x")
         monkeypatch.setattr(render, "render_clip", fake_render)

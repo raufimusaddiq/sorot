@@ -151,7 +151,7 @@ class TestKeepIntervals:
 class TestStageWiring:
     def test_render_cmd_adds_select_filters_only_when_trimming(self):
         plain = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False)
-        assert "-af" not in plain and plain[plain.index("-vf") + 1].startswith("scale=")
+        assert "-af" not in plain and plain[plain.index("-vf") + 1].startswith("crop=")
         trimmed = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, timeline=[(0.5, 1.5)])
         assert trimmed[trimmed.index("-vf") + 1].startswith("select='between(t,0.500,1.500)',setpts=")
         assert trimmed[trimmed.index("-af") + 1] == "aselect='between(t,0.500,1.500)',asetpts=N/SR/TB"
@@ -164,7 +164,7 @@ class TestStageWiring:
             {"text": "a", "start": 11, "end": 12}, {"text": "b", "start": 17, "end": 18}]}]}))
         seen = {}
 
-        def fake_render(video, start, end, out, timeline=None, reframe=None):
+        def fake_render(video, start, end, out, timeline=None, reframe=None, burn=None):
             seen["keep"] = timeline
             open(out, "wb").write(b"x")
         monkeypatch.setattr(render, "render_clip", fake_render)
@@ -238,6 +238,19 @@ class TestTranscribeWords:
         seg = json.loads(capsys.readouterr().out)["data"]["segments"][0]
         assert seg["words"] == [{"text": "halo", "start": 0.01, "end": 0.412, "prob": 0.987}]
 
+    def test_cpu_threads(self, monkeypatch):
+        import transcribe
+        monkeypatch.delenv("WHISPER_THREADS", raising=False)
+        monkeypatch.setattr(transcribe.os, "cpu_count", lambda: 12)
+        assert transcribe.cpu_threads("cpu") == 12          # every core, not faster-whisper's 4
+        assert transcribe.cpu_threads("cuda") == 0          # library default on the GPU
+        monkeypatch.setenv("WHISPER_THREADS", "6")
+        assert transcribe.cpu_threads("cpu") == 6
+        monkeypatch.setenv("WHISPER_THREADS", "lots")
+        assert transcribe.cpu_threads("cpu") == 12
+        monkeypatch.setattr(transcribe.os, "cpu_count", lambda: None)
+        assert transcribe.cpu_threads("cpu") == 4
+
 
 # --- real ffmpeg -------------------------------------------------------------------
 
@@ -266,6 +279,58 @@ class TestRealFfmpeg:
         out = str(tmp_path / "trim.mp4")
         render.render_clip(av_source, 1, 9, out, timeline=[(0.5, 2.0), (4.0, 5.5)])   # 3 s of 8 s kept
         assert ffprobe_duration(out) == pytest.approx(3.0, abs=0.25)
+
+    def test_burn_cmd_is_one_graph_with_preset(self, monkeypatch):
+        monkeypatch.delenv("X264_PRESET", raising=False)
+        cmd = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, burn=("c.ass", "song.mp3", 0.2))
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        assert "-vf" not in cmd and "ass='c.ass'" in graph and "sidechaincompress" in graph
+        assert cmd.index("-stream_loop") > cmd.index("-i")                    # music is input 1
+        assert cmd[-cmd[::-1].index("-map")] == "[aout]"
+        assert cmd[cmd.index("-preset") + 1] == "veryfast"
+        monkeypatch.setenv("X264_PRESET", "medium")
+        plain = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, burn=(None, None, 0.12))
+        assert plain[plain.index("-preset") + 1] == "medium"
+        assert plain[plain.index("-filter_complex") + 1].endswith("[v]format=yuv420p[vout]")   # no captions
+        assert plain[-plain[::-1].index("-map")] == "0:a?" and "-stream_loop" not in plain
+
+    def _one_pass(self, av_source, tmp_path, monkeypatch, capsys, *flags):
+        """render.py main with --export-dir: framing + captions (+ music) in one encode."""
+        monkeypatch.setattr(render, "_probe_nvenc", lambda p: False)
+        transcript, segments = tmp_path / "t.json", tmp_path / "s.json"
+        talk = [w("halo", 1.6, 2.0), w("semua", 2.1, 2.6), w("ini", 5.2, 5.6), w("rahasia", 5.7, 6.4)]
+        transcript.write_text(json.dumps({"segments": [{"start": 1.6, "end": 6.4, "words": talk}]}), encoding="utf-8")
+        segments.write_text(json.dumps({"videoId": "v", "scoredSegments": [
+            {"index": 0, "rank": 1, "tier": "PRIMARY", "startTime": 1.0, "endTime": 9.0}]}), encoding="utf-8")
+        export = tmp_path / "export dir"
+        monkeypatch.setattr(sys, "argv", ["render.py", "--segments", str(segments), "--video", av_source,
+                                          "--output-dir", str(tmp_path / "renders"), "--export-dir", str(export),
+                                          "--transcript", str(transcript), "--style", "hormozi", *flags])
+        render.main()
+        clip = json.loads(capsys.readouterr().out)["data"]["clips"][0]
+        assert clip["status"] == "COMPLETED" and clip["captioned"] is True and clip["wordCount"] == 4
+        assert clip["path"] == str(export / "clip_1_subtitled.mp4")
+        assert os.path.exists(export / "clip_1.ass") and not os.path.exists(tmp_path / "renders" / "clip_1.mp4")
+        streams = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
+                                  "-of", "json", clip["path"]], capture_output=True, text=True, check=True).stdout
+        kinds = {s["codec_type"]: s for s in json.loads(streams)["streams"]}
+        assert (kinds["video"]["width"], kinds["video"]["height"]) == (1080, 1920) and "audio" in kinds
+        return clip
+
+    def test_one_pass_silence_trim_and_music(self, av_source, tmp_path, monkeypatch, capsys):
+        bgm = tmp_path / "song.m4a"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=220:duration=2",
+                        "-c:a", "aac", str(bgm)], check=True, capture_output=True)
+        clip = self._one_pass(av_source, tmp_path, monkeypatch, capsys, "--reframe", "center",
+                              "--silence-trim", "--bgm", str(bgm), "--bgm-volume", "0.2")
+        # Speech spans + padding kept; the 2 s song loops under all of it.
+        assert ffprobe_duration(clip["path"]) == pytest.approx(clip["trimmedDuration"], abs=0.25)
+        assert clip["trimmedDuration"] < 8
+
+    def test_one_pass_hook_first_and_blur(self, av_source, tmp_path, monkeypatch, capsys):
+        clip = self._one_pass(av_source, tmp_path, monkeypatch, capsys, "--reframe", "blur", "--hook-first")
+        assert clip["hookFirst"] is True and clip["reframe"] == "blur"
+        assert ffprobe_duration(clip["path"]) == pytest.approx(clip["trimmedDuration"], abs=0.25)
 
     def test_ass_burn_with_libass(self, av_source, tmp_path, monkeypatch):
         monkeypatch.setattr(subtitle, "_probe_nvenc", lambda p: False)

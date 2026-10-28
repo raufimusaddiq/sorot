@@ -2,11 +2,11 @@
 // spawn / drain / timeout / kill paths run for real (replaces the mock-only
 // PythonRunnerTest.java).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../src/config";
-import { createPythonRunner, parseEnvelope, spawnCapture } from "../src/runner";
+import { createPythonRunner, killTree, parseEnvelope, spawnCapture, timeoutFor } from "../src/runner";
 
 let dir: string;
 const scripts: Record<string, string> = {
@@ -28,6 +28,20 @@ beforeAll(() => {
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const runner = () => createPythonRunner({ ...loadConfig({}), pythonPath: process.execPath, pipelineDir: dir });
+
+/** A killed orphan can linger as a zombie (state Z) where init doesn't reap; that's stopped too. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    return readFileSync(`/proc/${pid}/stat`, "utf8").split(" ")[2] !== "Z";
+  } catch {
+    return true;   // no /proc (macOS, Windows): it answered signal 0, so it runs
+  }
+}
 
 describe("createPythonRunner", () => {
   test("returns the data envelope and sets PYTHONIOENCODING", async () => {
@@ -84,10 +98,40 @@ describe("spawnCapture", () => {
     expect(res.exitCode).not.toBe(0);
   });
 
+  test("a kill also stops the processes the script started", async () => {
+    // The script's own child (standing in for ffmpeg) prints its pid, then hangs.
+    writeFileSync(join(dir, "parent.js"),
+      `const c = Bun.spawn({ cmd: [process.execPath, ${JSON.stringify(join(dir, "hang.js"))}] }); console.log(c.pid); setInterval(() => {}, 1000)`);
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 300);
+    const res = await spawnCapture(process.execPath, [join(dir, "parent.js")], { signal: ctrl.signal });
+    expect(res.aborted).toBeTrue();
+    const child = Number(res.stdout.trim());
+    expect(child).toBeGreaterThan(0);
+    await Bun.sleep(100);
+    expect(running(child)).toBeFalse();   // stopped, not orphaned
+  });
+
+  test("killTree uses taskkill on Windows", () => {
+    const calls: string[][] = [];
+    killTree(1234, true, (cmd) => calls.push(cmd));
+    expect(calls).toEqual([["taskkill", "/PID", "1234", "/T", "/F"]]);
+  });
+
   test("captures stdout with a tail limit", async () => {
     const res = await spawnCapture(process.execPath, [join(dir, "noisy.js")], { stdoutTail: 10 });
     expect(res.exitCode).toBe(0);
     expect(res.stdout).toStartWith("…[truncated]…");
+  });
+});
+
+describe("timeoutFor", () => {
+  test("fixed limit, longer for long media", () => {
+    expect(timeoutFor("transcribe.py", 0, 1.5)).toBe(20);            // unknown length → fixed limit
+    expect(timeoutFor("transcribe.py", 10 * 60, 1.5)).toBe(20);      // short video → fixed limit
+    expect(timeoutFor("transcribe.py", 60 * 60, 1.5)).toBe(90);      // 1 h on CPU
+    expect(timeoutFor("media_features.py", 60 * 60, 0.3)).toBe(18);
+    expect(timeoutFor("unknown.py", 0, 1)).toBe(15);                 // default limit
   });
 });
 

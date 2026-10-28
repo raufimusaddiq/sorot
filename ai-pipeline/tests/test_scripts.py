@@ -11,6 +11,7 @@ import types
 
 import pytest
 
+import captions
 import render
 import subtitle
 import transcribe
@@ -37,8 +38,9 @@ def proc(returncode=0, stdout="", stderr=""):
 class FakeWhisper:
     created = []
 
-    def __init__(self, model, device, compute_type):
+    def __init__(self, model, device, compute_type, cpu_threads=0):
         FakeWhisper.created.append((model, device, compute_type))
+        FakeWhisper.threads = cpu_threads
 
     def transcribe(self, audio, language, word_timestamps, vad_filter):
         assert word_timestamps and vad_filter
@@ -61,6 +63,7 @@ class TestTranscribe:
                              "--output", str(out), "--device", "cpu")
         assert code == 0
         assert FakeWhisper.created == [("large-v3-turbo", "cpu", "int8")]
+        assert FakeWhisper.threads == transcribe.cpu_threads("cpu") > 0   # every core, not the library's 4
         data = env["data"]
         assert data["videoId"] == "vid" and data["language"] == "id"
         assert data["segments"][0] == {"index": 0, "start": 0.0, "end": 1.23, "text": "halo", "confidence": -0.12,
@@ -151,7 +154,7 @@ class TestRender:
     def test_main_reports_per_clip_outcomes(self, monkeypatch, capsys, tmp_path):
         out_dir = tmp_path / "renders"
 
-        def fake_render(video, start, end, output_path, timeline=None, reframe=None):
+        def fake_render(video, start, end, output_path, timeline=None, reframe=None, burn=None):
             if start == 0:
                 open(output_path, "wb").write(b"mp4")
             elif start == 10:
@@ -168,7 +171,7 @@ class TestRender:
     def test_main_clip_index_and_exception_cleanup(self, monkeypatch, capsys, tmp_path):
         out_dir = tmp_path / "renders"
 
-        def fake_render(video, start, end, output_path, timeline=None, reframe=None):
+        def fake_render(video, start, end, output_path, timeline=None, reframe=None, burn=None):
             open(output_path, "wb").close()
             raise RuntimeError("nvenc died")
         monkeypatch.setattr(render, "render_clip", fake_render)
@@ -191,7 +194,7 @@ class TestRender:
 
 class TestSubtitle:
     def test_word_timeline_skips_empty_and_out_of_range(self):
-        words = subtitle.words_for_clip(
+        words = captions.words_for_clip(
             [{"start": 0, "end": 2, "text": "  "}, {"start": 50, "end": 60, "text": "jauh"},
              {"start": 10, "end": 12, "text": "halo dunia"}], 10, 20)
         assert [w["text"] for w in words] == ["halo", "dunia"]

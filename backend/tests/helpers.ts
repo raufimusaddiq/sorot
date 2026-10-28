@@ -13,7 +13,7 @@ export interface TestEnv {
   app: App;
   config: AppConfig;
   dir: string;
-  calls: Array<{ script: string; args: string[] }>;
+  calls: Array<{ script: string; args: string[]; timeoutMinutes?: number }>;
   execCalls: Array<{ cmd: string; args: string[] }>;
   scripts: Record<string, ScriptHandler>;
   execHandler: { fn: (cmd: string, args: string[], signal?: AbortSignal) => Promise<ProcResult> | ProcResult };
@@ -112,6 +112,10 @@ export function defaultScripts(dataDir: string): Record<string, ScriptHandler> {
     "predict_supervised.py": () => ({ predictions: { 0: 0.99, 1: null, 2: 0.1 } }),
     "render.py": (args) => {
       const rank = Number(argAfter(args, "--clip-index")) + 1;
+      if (args.includes("--export-dir")) {   // one pass: framing + captions → the export file
+        return { clips: [{ rank, status: "COMPLETED", captioned: true,
+          path: clipFile(argAfter(args, "--export-dir"), rank, "_subtitled") }] };
+      }
       return { clips: [{ rank, status: "COMPLETED", path: clipFile(argAfter(args, "--output-dir"), rank, "") }] };
     },
     "subtitle.py": (args) => {
@@ -146,7 +150,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   const fetchHandler: TestEnv["fetchHandler"] = { fn: (url) => { throw new Error(`no network in tests: ${url}`); } };
 
   const runScript: ScriptRunner = async (script, args, opts) => {
-    calls.push({ script, args });
+    calls.push({ script, args, timeoutMinutes: opts?.timeoutMinutes });
     const h = scripts[script];
     if (!h) throw new Error(`no fake for ${script}`);
     return h(args, opts?.signal);

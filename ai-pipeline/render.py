@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Render 9:16 vertical clips from scored segments using ffmpeg.
 
+With ``--export-dir`` the karaoke captions and background music go into the
+same encode, writing the finished clip: one decode + encode per clip instead
+of a render and a second full re-encode just to burn captions (subtitle.py,
+which still re-burns clips rendered the old way). On a CPU that halved the
+time per clip, and one generation of compression loss beats two.
+
 GPU path: h264_nvenc with a runtime probe-encode (not just a string sniff of
 ``-encoders``) so a non-functional NVENC (driver mismatch, busy session, etc.)
 falls back to libx264 for the affected clip instead of failing the whole stage.
@@ -14,7 +20,8 @@ import sys
 import tempfile
 
 from captions import (
-    concat_graph, is_monotonic, plan_timeline, select_expr, timeline_duration, words_for_clip,
+    DEFAULT_PRESET, PRESETS, build_ass, clip_words, concat_graph, ffmpeg_filter_path, is_monotonic, music_graph,
+    plan_timeline, select_expr, timeline_duration, words_for_clip, x264_preset,
 )
 import reframe as reframe_mod
 
@@ -74,7 +81,8 @@ def _detect_nvenc(ffmpeg_path):
     return _probe_nvenc(ffmpeg_path)
 
 
-def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, timeline=None, reframe=None):
+def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, timeline=None, reframe=None,
+                      burn=None):
     # Seek before -i so ffmpeg jumps to the nearest keyframe instead of
     # decoding the whole upstream video — this is the single biggest win on
     # long YouTube sources.
@@ -82,12 +90,16 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
     # 10-bit / yuv444p sources that NVENC H.264 rejects.
     # ``reframe`` is (kind, filter) from reframe.video_filter: a simple scale/
     # crop chain ("vf") or a filter_complex reading [in] → [v] ("complex").
+    # ``burn`` = (ass_path or None, bgm or None, bgm_volume): captions and
+    # music in this same pass (see _burn_args).
     kind, frame_filter = reframe or ("vf", reframe_mod.CENTER_VF)
     cmd = [
         ffmpeg_path, "-hide_banner", "-loglevel", "error",
         "-ss", str(start), "-to", str(end),
         "-i", video_path,
     ]
+    if burn is not None:
+        return _encoder_args(cmd + _burn_args(timeline, kind, frame_filter, *burn), output_path, use_nvenc)
     if timeline and not is_monotonic(timeline):
         # Hook-first: ranges jump back, so cut each range and concatenate.
         graph = concat_graph(timeline, "[cv]", "[ca]")
@@ -113,6 +125,29 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
     return _encoder_args(cmd, output_path, use_nvenc)
 
 
+def _burn_args(timeline, kind, frame_filter, ass_path, bgm, bgm_volume):
+    """One filter graph: timeline cut, 9:16 framing, captions, music."""
+    parts = []
+    if timeline and not is_monotonic(timeline):
+        parts.append(concat_graph(timeline, "[cv]", "[ca]"))      # hook first: cut + concatenate
+        video, audio = "[cv]", "[ca]"
+    elif timeline:
+        expr = select_expr(timeline)                              # silence trim
+        parts += [f"[0:v]select='{expr}',setpts=N/FRAME_RATE/TB[sv]", f"[0:a]aselect='{expr}',asetpts=N/SR/TB[sa]"]
+        video, audio = "[sv]", "[sa]"
+    else:
+        video, audio = "[0:v]", "0:a?"
+    parts.append(f"{video}null[in];{frame_filter}" if kind == "complex" else f"{video}{frame_filter}[v]")
+    captions = f"ass={ffmpeg_filter_path(ass_path)}," if ass_path else ""
+    parts.append(f"[v]{captions}format=yuv420p[vout]")
+    args = []
+    if bgm:
+        args += ["-stream_loop", "-1", "-i", bgm]                 # input 1, looped under the clip
+        parts += music_graph(audio if audio.startswith("[") else "[0:a]", bgm_volume)
+        audio = "[aout]"
+    return args + ["-filter_complex", ";".join(parts), "-map", "[vout]", "-map", audio]
+
+
 def _encoder_args(cmd, output_path, use_nvenc):
     if use_nvenc:
         cmd.extend([
@@ -122,18 +157,18 @@ def _encoder_args(cmd, output_path, use_nvenc):
             "-spatial-aq", "1",
         ])
     else:
-        cmd.extend(["-c:v", "libx264", "-preset", "fast", "-crf", "23"])
+        cmd.extend(["-c:v", "libx264", "-preset", x264_preset(), "-crf", "23"])
     cmd.extend(["-c:a", "aac", "-y", output_path])
     return cmd
 
 
-def render_clip(video_path, start, end, output_path, ffmpeg_path=None, timeline=None, reframe=None):
+def render_clip(video_path, start, end, output_path, ffmpeg_path=None, timeline=None, reframe=None, burn=None):
     if ffmpeg_path is None:
         ffmpeg_path = find_ffmpeg()
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     use_nvenc = _probe_nvenc(ffmpeg_path)
-    cmd = _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, timeline, reframe)
+    cmd = _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nvenc, timeline, reframe, burn)
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     # Per-clip NVENC failure → retry once on libx264 so a driver hiccup or an
@@ -146,6 +181,7 @@ def render_clip(video_path, start, end, output_path, ffmpeg_path=None, timeline=
         )
         cmd = _build_render_cmd(
             ffmpeg_path, video_path, start, end, output_path, use_nvenc=False, timeline=timeline, reframe=reframe,
+            burn=burn,
         )
         result = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -188,6 +224,12 @@ def main():
                         help="Replay the clip's strongest line before it starts (needs --transcript)")
     parser.add_argument("--reframe", default=os.environ.get("REFRAME_MODE", reframe_mod.DEFAULT_MODE),
                         choices=reframe_mod.MODES, help="9:16 framing: follow faces, centre crop, or blurred fill")
+    parser.add_argument("--export-dir", default="",
+                        help="Burn captions (and music) in this pass; the finished clip and its .ass go here")
+    parser.add_argument("--style", default=os.environ.get("SUBTITLE_STYLE", DEFAULT_PRESET),
+                        help=f"Caption preset with --export-dir: {', '.join(PRESETS)}")
+    parser.add_argument("--bgm", default="", help="Background music with --export-dir (looped, ducked)")
+    parser.add_argument("--bgm-volume", type=float, default=0.12, help="Music level before ducking (0-1)")
     args = parser.parse_args()
 
     try:
@@ -205,18 +247,31 @@ def main():
                 to_render = []
 
         transcript_segments = []
-        if args.silence_trim or args.hook_first:
-            if not args.transcript:
-                raise ValueError("--silence-trim/--hook-first require --transcript")
+        if (args.silence_trim or args.hook_first) and not args.transcript:
+            raise ValueError("--silence-trim/--hook-first require --transcript")
+        if args.transcript and (args.silence_trim or args.hook_first or args.export_dir):
             with open(args.transcript, "r", encoding="utf-8") as f:
                 transcript_segments = json.load(f).get("segments", [])
+        if args.bgm and not os.path.exists(args.bgm):
+            raise ValueError(f"background music not found: {args.bgm}")
 
         os.makedirs(args.output_dir, exist_ok=True)
+        if args.export_dir:
+            os.makedirs(args.export_dir, exist_ok=True)
         rendered = []
 
         for seg in to_render:
             clip_id = seg.get("rank", seg.get("index", 0))
             output_path = os.path.join(args.output_dir, f"clip_{clip_id}.mp4")
+            burn, words, ass_path = None, [], None
+            if args.export_dir:
+                output_path = os.path.join(args.export_dir, f"clip_{clip_id}_subtitled.mp4")
+                words = clip_words(transcript_segments, seg, args.silence_trim, args.silence_gap, args.hook_first)
+                if words:
+                    ass_path = os.path.join(args.export_dir, f"clip_{clip_id}.ass")
+                    with open(ass_path, "w", encoding="utf-8") as f:
+                        f.write(build_ass(words, args.style))
+                burn = (ass_path, args.bgm or None, args.bgm_volume)
             timeline = None
             if args.silence_trim or args.hook_first:
                 # subtitle.py plans the same timeline from the same inputs, so
@@ -234,6 +289,7 @@ def main():
                     output_path,
                     timeline=timeline,
                     reframe=framing,
+                    burn=burn,
                 )
                 if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
                     rendered.append({
@@ -255,6 +311,7 @@ def main():
                     "reframe": "blur" if framing[0] == "complex"
                     else ("face" if framing[1] != reframe_mod.CENTER_VF else "center"),
                     "cropSegments": crop_segments,
+                    **({"captioned": True, "assPath": ass_path, "wordCount": len(words)} if burn else {}),
                 })
             except Exception as e:
                 if os.path.exists(output_path) and os.path.getsize(output_path) == 0:

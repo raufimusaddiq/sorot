@@ -57,15 +57,18 @@ class TestPlanTrack:
 
 
 class TestExpressions:
-    def test_scaled_width(self):
-        assert reframe.scaled_width(1920, 1080) == 3414          # 16:9 → even width
-        assert reframe.scaled_width(1080, 1920) == 1080          # already 9:16
-        assert reframe.scaled_width(720, 1600) == 1080           # narrower than 9:16
+    def test_crop_width(self):
+        assert reframe.crop_width(1920, 1080) == 608             # 607.5 → nearest even, in source pixels
+        assert reframe.crop_width(1280, 720) == 406              # 405 → 406
+        assert reframe.crop_width(607, 1080) is None             # not wider than 9:16 (607.5)
+        assert reframe.crop_width(609, 1080) == 608              # never wider than the (even) frame
+        assert reframe.crop_width(1080, 1920) is None            # already 9:16
+        assert reframe.crop_width(720, 1600) is None             # narrower than 9:16
 
     def test_crop_expression_is_piecewise_and_clamped(self):
-        assert reframe.crop_x_expr([(0.0, 0.5)], 3414) == "1167"
-        expr = reframe.crop_x_expr([(0.0, 0.0), (2.0, 0.5), (4.5, 1.0)], 3414)
-        assert expr == "if(lt(t,2.000),0,if(lt(t,4.500),1167,2334))"
+        assert reframe.crop_x_expr([(0.0, 0.5)], 1920, 606) == "657"
+        expr = reframe.crop_x_expr([(0.0, 0.0), (2.0, 0.5), (4.5, 1.0)], 1920, 606)
+        assert expr == "if(lt(t,2.000),0,if(lt(t,4.500),657,1314))"
 
     def test_remap_track_onto_trimmed_timeline(self):
         keep = [(1.0, 3.0), (6.0, 8.0)]
@@ -78,7 +81,7 @@ class TestExpressions:
         kind, graph = reframe.video_filter("blur")
         assert kind == "complex" and graph.startswith("[in]split=2") and graph.endswith("[v]")
         kind, vf = reframe.video_filter("face", (1920, 1080), [(0.0, 0.25)])
-        assert vf == "scale=3414:1920,crop=1080:1920:x='314':y=0,format=yuv420p"
+        assert vf == "crop=608:1080:x='176':y=0,scale=1080:1920,format=yuv420p"   # crop first, then scale
         assert reframe.video_filter("face", (1080, 1920), [(0.0, 0.25)]) == ("vf", reframe.CENTER_VF)
         assert reframe.video_filter("face", None, None) == ("vf", reframe.CENTER_VF)
 

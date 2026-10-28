@@ -133,15 +133,14 @@ describe("range import and per-job options", () => {
     });
     expect(JSON.parse(env.app.store.getJob(jobId)!.options!)).toMatchObject({ style: "storyteller", hookFirst: true });
     const render = env.calls.find((c) => c.script === "render.py")!.args;
-    const sub = env.calls.find((c) => c.script === "subtitle.py")!.args;
     expect(argAfter(render, "--reframe")).toBe("blur");
     expect(render).toContain("--hook-first");
-    expect(argAfter(sub, "--style")).toBe("storyteller");
-    expect(argAfter(sub, "--bgm")).toBe(`${env.config.dataDir}/music/lofi.mp3`);
-    expect(argAfter(sub, "--bgm-volume")).toBe("0.3");
+    expect(argAfter(render, "--style")).toBe("storyteller");
+    expect(argAfter(render, "--bgm")).toBe(`${env.config.dataDir}/music/lofi.mp3`);
+    expect(argAfter(render, "--bgm-volume")).toBe("0.3");
     // per-video output folders (shared folders let videos overwrite each other's clips)
     expect(argAfter(render, "--output-dir")).toBe(`${env.config.dataDir}/renders/${videoId}/`);
-    expect(argAfter(sub, "--output-dir")).toBe(`${env.config.dataDir}/exports/${videoId}/`);
+    expect(argAfter(render, "--export-dir")).toBe(`${env.config.dataDir}/exports/${videoId}/`);
 
     const bad = await env.json("POST", "/api/process", { videoId, options: { reframe: "zoom" } });
     expect(bad.status).toBe(400);
@@ -275,16 +274,17 @@ describe("clip editor", () => {
       { text: "Mongol", start: 32.5, end: 33 }]);
 
     const render = env.calls.find((c) => c.script === "render.py")!.args;
-    const sub = env.calls.find((c) => c.script === "subtitle.py")!.args;
+    expect(env.calls.some((c) => c.script === "subtitle.py")).toBeFalse();    // captions in the same pass
     const segs = JSON.parse(readFileSync(argAfter(render, "--segments"), "utf-8"));
     expect(segs.scoredSegments).toEqual([{ index: 0, rank: clip.rankPos, tier: clip.tier, startTime: 30, endTime: 42 }]);
     expect(argAfter(render, "--tiers")).toBe(clip.tier);
     expect(argAfter(render, "--output-dir")).toBe(`${env.config.dataDir}/renders/${videoId}/`);
     expect(render).toContain("--silence-trim");
-    expect(argAfter(sub, "--style")).toBe("hormozi");
-    const edited = JSON.parse(readFileSync(argAfter(sub, "--transcript"), "utf-8"));
+    expect(argAfter(render, "--style")).toBe("hormozi");
+    expect(argAfter(render, "--export-dir")).toBe(`${env.config.dataDir}/exports/${videoId}/`);
+    const edited = JSON.parse(readFileSync(argAfter(render, "--transcript"), "utf-8"));
     expect(edited.segments[0]).toMatchObject({ start: 31, end: 33, text: "Halo Mongol" });
-    expect(argAfter(render, "--transcript")).toBe(argAfter(sub, "--transcript"));
+    expect(r.body.data.clip.exportPath).toBe(r.body.data.clip.renderPath);
   });
 
   test("re-render keeps saved settings unless replaced; null clears the caption edit", async () => {
@@ -292,7 +292,7 @@ describe("clip editor", () => {
     env.app.store.updateClip(clip.id, { options: JSON.stringify({ reframe: "center" }), captionWords: JSON.stringify([{ text: "x", start: 1, end: 2 }]) });
     const r = await env.json("POST", `/api/clips/${clip.id}/rerender`, {});
     expect(JSON.parse(r.body.data.clip.options)).toEqual({ reframe: "center" });
-    expect(argAfter(env.calls.at(-2)!.args, "--reframe")).toBe("center");
+    expect(argAfter(env.calls.at(-1)!.args, "--reframe")).toBe("center");
     const cleared = await env.json("POST", `/api/clips/${clip.id}/rerender`, { captionWords: null, options: {} });
     expect(cleared.body.data.clip).toMatchObject({ captionWords: null, options: null });
     expect(argAfter(env.calls.at(-1)!.args, "--transcript")).toBe(`${env.config.dataDir}/transcripts/${videoId}.json`);
@@ -337,7 +337,7 @@ describe("clip editor", () => {
     expect((await post({})).body.error).toBe("Video not found");
   });
 
-  test("render and subtitle failures mark the clip FAILED", async () => {
+  test("render failures mark the clip FAILED", async () => {
     const { clip } = await readyClip();
     env.scripts["render.py"] = () => ({ clips: [{ status: "FAILED", error: "nvenc died" }] });
     const r = await env.json("POST", `/api/clips/${clip.id}/rerender`, {});
@@ -347,11 +347,10 @@ describe("clip editor", () => {
     env.scripts["render.py"] = () => ({ clips: [] });
     expect((await env.json("POST", `/api/clips/${clip.id}/rerender`, {})).body.error).toBe("Re-render failed: render produced no clip");
 
-    env.scripts["render.py"] = () => ({ clips: [{ status: "COMPLETED", path: "/r/clip_1.mp4" }] });
-    env.scripts["subtitle.py"] = () => ({});
-    const s = await env.json("POST", `/api/clips/${clip.id}/rerender`, {});
-    expect(s.body.error).toBe("Re-render failed: subtitle produced no clip");
-    expect(env.app.store.getClip(clip.id)).toMatchObject({ renderStatus: "COMPLETED", exportStatus: "FAILED" });
+    env.scripts["render.py"] = () => ({ clips: [{ status: "COMPLETED", captioned: true, path: "/e/clip_1_subtitled.mp4" }] });
+    expect((await env.json("POST", `/api/clips/${clip.id}/rerender`, {})).status).toBe(200);
+    expect(env.app.store.getClip(clip.id)).toMatchObject({ renderStatus: "COMPLETED", exportStatus: "COMPLETED",
+      renderPath: "/e/clip_1_subtitled.mp4", exportPath: "/e/clip_1_subtitled.mp4" });
   });
 
   test("music listing", async () => {

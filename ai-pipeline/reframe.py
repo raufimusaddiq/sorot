@@ -28,7 +28,13 @@ MODES = ("face", "center", "blur")
 CUT_SCENE_SCORE = 0.3
 DEFAULT_MODE = "face"
 
-CENTER_VF = f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,crop={OUT_W}:{OUT_H},format=yuv420p"
+# Crop the 9:16 window out of the source first, then scale only that. Scaling
+# the whole frame first (16:9 → 3414x1920) and cropping after did the same
+# picture with ~3x the pixels through the scaler. Sizes are rounded to the
+# nearest even number (yuv420p): 1080 tall → 608 wide, within 0.1% of 9:16
+# (rounding down to 606 stretched the picture 0.25%).
+CENTER_CROP = "crop='min(2*trunc(iw/2),2*round(ih*9/32))':'min(2*trunc(ih/2),2*round(iw*8/9))'"
+CENTER_VF = f"{CENTER_CROP},scale={OUT_W}:{OUT_H},format=yuv420p"
 MAX_TRACK_SEGMENTS = 40
 
 
@@ -50,12 +56,12 @@ def probe_size(video_path, ffprobe="ffprobe"):
         return None
 
 
-def scaled_width(src_w, src_h):
-    """Width after scaling to cover 1080x1920 (render's scale step)."""
-    if src_w * OUT_H > OUT_W * src_h:           # wider than 9:16
-        w = round(src_w * OUT_H / src_h)
-        return w + (w % 2)
-    return OUT_W
+def crop_width(src_w, src_h):
+    """Width of the 9:16 window in source pixels (even), or None when the
+    source isn't wider than 9:16 (nothing to move sideways)."""
+    if src_w * OUT_H <= OUT_W * src_h:
+        return None
+    return min(2 * int(src_h * OUT_W / OUT_H / 2 + 0.5), src_w - src_w % 2)   # nearest even, as CENTER_CROP
 
 
 def sample_frames(video_path, start, end, fps=2.0, width=640, ffmpeg="ffmpeg", cuts=None):
@@ -200,12 +206,12 @@ def downsample_track(track, limit=MAX_TRACK_SEGMENTS):
 
 # --- ffmpeg filters ------------------------------------------------------------
 
-def crop_x_expr(track, scaled_w):
-    """Per-frame crop x (pixels) for a centre track, clamped to the frame."""
-    max_x = scaled_w - OUT_W
+def crop_x_expr(track, src_w, crop_w):
+    """Per-frame crop x (source pixels) for a centre track, clamped to the frame."""
+    max_x = src_w - crop_w
 
     def px(c):
-        return int(min(max(round(c * scaled_w - OUT_W / 2), 0), max_x))
+        return int(min(max(round(c * src_w - crop_w / 2), 0), max_x))
 
     expr = str(px(track[-1][1]))
     for i in range(len(track) - 2, -1, -1):
@@ -243,19 +249,20 @@ def video_filter(mode, size=None, track=None):
     ``"complex"`` for a filter_complex reading ``[in]`` and writing ``[v]``.
     """
     if mode == "blur":
+        # The backdrop is blurred at quarter size and scaled up: a 20 px box
+        # blur over the full 1080x1920 cost far more for the same soft look.
         return "complex", (
             "[in]split=2[bg][fg];"
-            f"[bg]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,crop={OUT_W}:{OUT_H},"
-            "boxblur=20:2[bgb];"
+            f"[bg]{CENTER_CROP},scale={OUT_W // 4}:{OUT_H // 4},boxblur=5:2,scale={OUT_W}:{OUT_H}[bgb];"
             f"[fg]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=decrease[fgs];"
             "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]"
         )
     if mode == "face" and size and track:
-        sw = scaled_width(*size)
-        if sw > OUT_W:
+        cw = crop_width(*size)
+        if cw:
             return "vf", (
-                f"scale={sw}:{OUT_H},"
-                f"crop={OUT_W}:{OUT_H}:x='{crop_x_expr(track, sw)}':y=0,format=yuv420p"
+                f"crop={cw}:{size[1]}:x='{crop_x_expr(track, size[0], cw)}':y=0,"
+                f"scale={OUT_W}:{OUT_H},format=yuv420p"
             )
     return "vf", CENTER_VF
 

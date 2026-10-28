@@ -136,8 +136,15 @@ export function renderFlags(o: ResolvedOptions): string[] {
   return ["--reframe", o.reframe, ...timelineFlags(o)];
 }
 
+function musicFlags(o: ResolvedOptions, config: AppConfig): string[] {
+  return o.bgm ? ["--bgm", `${musicDir(config)}/${o.bgm}`, "--bgm-volume", String(o.bgmVolume)] : [];
+}
+
+/** render.py burning captions + music in its own pass (`--export-dir`). */
+export function captionFlags(o: ResolvedOptions, config: AppConfig): string[] {
+  return ["--style", o.style, ...musicFlags(o, config)];
+}
+
 export function subtitleFlags(o: ResolvedOptions, config: AppConfig): string[] {
-  const out = ["--style", o.style, ...timelineFlags(o)];
-  if (o.bgm) out.push("--bgm", `${musicDir(config)}/${o.bgm}`, "--bgm-volume", String(o.bgmVolume));
-  return out;
+  return ["--style", o.style, ...timelineFlags(o), ...musicFlags(o, config)];
 }
