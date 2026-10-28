@@ -46,6 +46,11 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `connect jev [--model jev-1.14.0] [--base-url URL] [--key -] [--director on\|off]`, `connect tebar [--base-url URL] [--key -]` | Save the Jev / Tebar connection (`--director off`: Jev only gates). |
 | `connect <llm\|jev\|tebar> --on \| --off \| --reset` | Switch it on/off, or go back to the server's env values. |
 | `connect test <llm\|jev\|tebar>` | One small real call; exit 1 if it fails. |
+| `connect setup` | Guided, on a terminal: Jev, then the LLM, then Tebar — asks (keys hidden), saves, tests, lists your Tebar accounts. |
+| `accounts` | Your Tebar accounts, grouped by workspace; the ones Sorot can't post a video to are marked. |
+| `publish <clip>` | On a terminal: pick accounts by number, see the drafted copy and warnings, answer what TikTok / YouTube need (who can see it, made for kids), confirm. In scripts, every choice is a flag: `--to id\|name,…`, `--text "…"`, `--title "…"`, `--privacy LEVEL` or `--draft` (TikTok), `--made-for-kids yes\|no`, `--at ISO-with-zone`, `--confirm-review`, `--override`, `--yes`. It never picks privacy or made-for-kids for you. |
+| `posts <clip>`, `posts refresh\|retry\|cancel <post>` | A clip's posts with status and links / re-read, retry the failed accounts, cancel a scheduled post. |
+| `sync` | Pull posted clips' numbers into learning; exit 1 if any post couldn't be read. |
 | `discover auto ["<goal>"]` | ✨ Auto-discover: prints each tool call as it happens, then the picks with their reasons (`--max 10`, `--no-wait` to return at once, `--json`). Uses the LLM when configured, otherwise the algorithm. |
 | `discover auto-status [<run>]` | Progress or result of the last (or given) auto-discover run; exit 1 if it failed. |
 | `discover search "<q>"`, `trending`, `channel <url>` | Find source videos (`--max`, `--min-length`, `--max-length` in seconds, `--region`). |
@@ -53,7 +58,7 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `channels [--status S]`, `channels reseed`, `refresh <id>`, `set <id> <STATUS>` | Source-channel crawler (see api-spec "Source channels"). |
 | `up`, `down`, `restart` | Start/stop the app: `docker compose` in Docker installs, `systemctl` (via sudo) in native ones. `up` waits until the API answers. |
 | `logs [-f]` | Last 200 log lines (`-f` follows). |
-| `health`, `doctor` | Is the API up / check config, GPU, Docker or service, ffmpeg and the API, with a fix for each problem. |
+| `health`, `doctor` | Is the API up / check config, GPU, Docker or service, ffmpeg and the API, with a fix for each problem; also shows which of Jev, the LLM and Tebar are connected (optional, never a problem). |
 
 ### Import options
 

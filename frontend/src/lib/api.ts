@@ -204,7 +204,9 @@ export class ApiClient {
   }
 
   async publish(clipId: string, body: {
-    targets: Array<{ accountId: string; content: string; title?: string; madeForKids?: boolean; privacyLevel?: string }>;
+    targets: Array<{
+      accountId: string; content: string; title?: string; madeForKids?: boolean; privacyLevel?: string; postMode?: 'direct' | 'draft';
+    }>;
     scheduledAt?: string; confirmReview?: boolean; override?: boolean;
   }) {
     return this.request<{ post: SocialPost }>(`/api/clips/${clipId}/publish`, { method: 'POST', body: JSON.stringify(body) });
@@ -216,6 +218,16 @@ export class ApiClient {
 
   async refreshPost(postId: string) {
     return this.request<{ post: SocialPost }>(`/api/social/posts/${postId}/refresh`, { method: 'POST' });
+  }
+
+  /** Re-send a post that never reached Tebar; on FAILED/PARTIAL posts Tebar redoes only the failed accounts. */
+  async retryPost(postId: string) {
+    return this.request<{ post: SocialPost }>(`/api/social/posts/${postId}/retry`, { method: 'POST' });
+  }
+
+  /** Cancel a SCHEDULED post. */
+  async cancelPost(postId: string) {
+    return this.request<{ post: SocialPost }>(`/api/social/posts/${postId}/cancel`, { method: 'POST' });
   }
 
   async syncSocial() {

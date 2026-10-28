@@ -103,6 +103,14 @@ async function doctor(d: Deps): Promise<number> {
     line(true, `API ${d.config.url}`);
   } catch (e) {
     line(false, `API ${d.config.url}`, `${(e as Error).message}`);
+    return 1;
+  }
+  // Optional services: shown, never counted as a problem.
+  const s = await d.api.get("/api/settings").catch(() => null);
+  for (const [kind, name, does] of [["jev", "Jev", "picks and checks clips"], ["llm", "LLM", "writes copy, auto-discover"],
+    ["tebar", "Tebar", "publishing"]] as const) {
+    const c = s?.[kind];
+    if (c) d.out(`${c.active ? "✓" : "·"} ${name} (${does}): ${c.active ? `connected${c.model ? `, ${c.model}` : ""}` : "not connected — sorot connect setup"}`);
   }
   return bad ? 1 : 0;
 }

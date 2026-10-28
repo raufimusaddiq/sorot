@@ -94,6 +94,8 @@ export interface SocialPost {
   createdAt: string;
   updatedAt: string;
   lastSyncedAt: string | null;
+  /** The Tebar workspace (profile) it was posted in; null = the default one. */
+  profileId?: string | null;
 }
 
 export interface ClipScore {

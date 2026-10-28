@@ -3,6 +3,7 @@ import { Api, type Json } from "./api";
 import { has, num, str, UsageError, type Args } from "./args";
 import type { CliConfig } from "./config";
 import { clock, seconds, short, table, truncate, when } from "./format";
+import { setupCmd } from "./social";
 
 export interface Deps {
   api: Api;
@@ -16,6 +17,10 @@ export interface Deps {
   capture: (cmd: string[]) => Promise<{ code: number; stdout: string }>;
   /** All of stdin, trimmed (`--key -` reads an API key from it, out of the shell history). */
   readStdin: () => Promise<string>;
+  /** stdin and stdout are a terminal, so the CLI may ask instead of failing on a missing flag. */
+  isTTY: boolean;
+  /** Ask one question on the terminal; `secret` hides what is typed (API keys). */
+  ask: (question: string, secret?: boolean) => Promise<string>;
   fs: {
     exists: (path: string) => boolean;
     mkdir: (path: string) => void;
@@ -31,13 +36,13 @@ export interface Deps {
 const TERMINAL = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 const MARK: Record<string, string> = { COMPLETED: "✓", FAILED: "✗", IN_PROGRESS: "▶", PENDING: "·" };
 
-function need(a: Args, index: number, what: string): string {
+export function need(a: Args, index: number, what: string): string {
   const v = a.positionals[index];
   if (!v) throw new UsageError(`Missing ${what}`);
   return v;
 }
 
-function json(d: Deps, a: Args, data: unknown): boolean {
+export function json(d: Deps, a: Args, data: unknown): boolean {
   if (!has(a, "json")) return false;
   d.out(JSON.stringify(data, null, 2));
   return true;
@@ -363,7 +368,7 @@ function showConnections(d: Deps, a: Args, s: Json): number {
   const jev = s.jev as Json;
   d.out(`\nJev picks moments, hooks and titles: ${jev.director ? "on" : "off"} (wins over the LLM director when Jev is active)`);
   d.out(`LLM director (brief + own clip picks): ${llm.director ? "on" : "off"}`);
-  d.out("Change: sorot connect llm --base-url URL --model M [--key -]   ·   test: sorot connect test llm");
+  d.out("Guided: sorot connect setup   ·   change one: sorot connect llm --base-url URL --model M [--key -]   ·   test: sorot connect test llm");
   return 0;
 }
 
@@ -375,6 +380,7 @@ function showConnections(d: Deps, a: Args, s: Json): number {
 async function connectCmd(d: Deps, a: Args): Promise<number> {
   const sub = a.positionals[1];
   if (!sub || sub === "show") return showConnections(d, a, await d.api.get("/api/settings"));
+  if (sub === "setup") return setupCmd(d);
   if (sub === "test") {
     const kind = need(a, 2, "connection (llm, jev or tebar)");
     const r = await d.api.post(`/api/settings/${kind}/test`);

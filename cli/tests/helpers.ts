@@ -21,6 +21,10 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
     captures: {} as Record<string, { code: number; stdout: string }>,
     isRoot: false,
     stdin: "",
+    /** A terminal: questions are answered from `answers` in order and logged in `asked` (secret ones marked). */
+    tty: false,
+    answers: [] as string[],
+    asked: [] as string[],
   };
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -49,6 +53,11 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
     },
     capture: async (cmd: string[]) => state.captures[cmd[0] as string] ?? { code: 127, stdout: "" },
     readStdin: async () => state.stdin.trim(),
+    get isTTY() { return state.tty; },
+    ask: async (q: string, secret?: boolean) => {
+      state.asked.push(`${secret ? "[secret] " : ""}${q}`);
+      return state.answers.shift() ?? "";
+    },
     fs: {
       exists: (p: string) => existing.has(p.replaceAll("\\", "/")),
       mkdir: () => {},

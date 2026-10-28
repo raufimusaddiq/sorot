@@ -77,6 +77,8 @@ describe('ApiClient', () => {
     ['publish', () => api.publish('c', { targets: [] }), 'POST', '/api/clips/c/publish', { targets: [] }],
     ['clipPosts', () => api.clipPosts('c'), 'GET', '/api/clips/c/posts', undefined],
     ['refreshPost', () => api.refreshPost('p'), 'POST', '/api/social/posts/p/refresh', undefined],
+    ['retryPost', () => api.retryPost('p'), 'POST', '/api/social/posts/p/retry', undefined],
+    ['cancelPost', () => api.cancelPost('p'), 'POST', '/api/social/posts/p/cancel', undefined],
     ['syncSocial', () => api.syncSocial(), 'POST', '/api/social/sync', undefined],
   ] as const)('%s → %s %s', async (_name, call, method, path, body) => {
     await call();

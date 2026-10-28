@@ -305,13 +305,24 @@ Discord and Pinterest through one REST API (`https://api.tebar.app/v1`,
 `{"error": {"code", "message"}}`). Source: [API](https://docs.tebar.app/api),
 [posts](https://docs.tebar.app/api/posts), [media](https://docs.tebar.app/api/media),
 [stats](https://docs.tebar.app/api/komentar-statistik), [limits](https://docs.tebar.app/batasan),
-[TikTok](https://docs.tebar.app/tiktok), [YouTube](https://docs.tebar.app/youtube).
+[TikTok](https://docs.tebar.app/tiktok), [YouTube](https://docs.tebar.app/youtube),
+[profiles](https://docs.tebar.app/api/profile), [errors](https://docs.tebar.app/api/error)
+(re-read 2026-10-28).
 API access needs a paid plan (Starter, Basic or Pro; the free plan answers
 `403 plan_required`, new accounts get a 14-day Pro trial —
 [plans](https://docs.tebar.app/paket)).
 
-### Flow (`backend/src/publisher.ts`, `tebar.ts`)
+### Flow (`backend/src/publisher.ts`, `tebar.ts`; studio Publish panel or `sorot publish`)
 
+0. **Pick accounts.** A Tebar key can see several workspaces (Tebar
+   "profiles"), each with its own accounts, and a post and its media must stay
+   in one (`400 mixed_profiles` / `media_profile_mismatch` otherwise). Tebar's
+   docs show no profile field on an account, so Sorot lists `GET /profiles`
+   and then each profile's accounts with the documented `Tebar-Profile`
+   header; uploads and the post carry the same header. A key locked to one
+   profile (`403 owner_key_required`) or a single workspace sees one list.
+   The pickers group by workspace and only allow one at a time; accounts that
+   can't take a single video (Pinterest) are shown but not selectable.
 1. **Draft** `POST /api/clips/{id}/publish/draft {accountIds}` — nothing sent:
    LLM copy per platform (template without it), Jev copy check, platform limits
    from Tebar's limits page (TikTok 2 200 chars / 10 min, Instagram 2 200 + 30
@@ -319,16 +330,25 @@ API access needs a paid plan (Starter, Basic or Pro; the free plan answers
    X 280…), file ≤ 300 MB, the clip's gate verdict. TikTok's privacy options
    come from `GET /accounts/{id}/tiktok/creator-info`.
 2. **You decide** what Sorot never decides for you: final text, TikTok
-   "who can see it" (Tebar: required for non-business accounts, never
-   auto-filled), YouTube title and **made for kids** (asked every upload),
-   schedule time.
+   "who can see it" (required for a direct post from a non-business account;
+   a business account's videos are always public; a **draft** goes to the
+   TikTok app's inbox to finish there, no privacy needed), YouTube title and
+   **made for kids** (asked every upload), schedule time. The CLI asks these
+   on a terminal and needs flags in a script; it never picks for you.
 3. **Publish** `POST /api/clips/{id}/publish` — upload the finished clip
    (`POST /media/upload` raw under 95 MB, else `/media/uploads` parts), then
-   `POST /posts` with an `Idempotency-Key`. The row (`social_post`) and the
-   exact request body are saved *before* sending, so **Retry** re-sends the same
-   key + body: Tebar returns the existing post instead of posting twice.
+   `POST /posts` with an `Idempotency-Key`. A missing TikTok privacy choice is
+   caught *before* the upload. The row (`social_post`) and the exact request
+   body are saved *before* sending, so **Retry** of a post that never reached
+   Tebar re-sends the same key + body: Tebar returns the existing post instead
+   of posting twice. Once it is on Tebar, **Retry** calls `POST /posts/{id}/retry`,
+   which redoes only the failed accounts; **Cancel** (`DELETE /posts/{id}`)
+   stops a scheduled post.
 4. **Status** `GET /posts/{id}` → per-account `published` + permalink / `failed`
-   + `error_code` (PUBLISHED, PARTIAL, FAILED, SCHEDULED).
+   + `error_code` (PUBLISHED, PARTIAL, FAILED, SCHEDULED, CANCELLED). Error
+   codes a user can fix get a plain hint (`account_expired` → reconnect it,
+   `insufficient_scope` → the key is read-only, `plan_required`,
+   `publishing_limit_reached`).
 5. **Metrics → learning** every `TEBAR_SYNC_HOURS` (6) or *Sync*: status, then
    `GET /posts/{id}/insights` for published posts, summed per clip →
    `clip_feedback` → the existing feedback training re-weights the scorer.
@@ -350,6 +370,10 @@ doesn't have.
   Platforms report 24-48 h late, so fresh clips' scores are understated.
 - Quotas: TikTok 15 posts/day, YouTube 10 videos/day per Tebar account.
   Published posts can't be edited or deleted through Tebar.
+  `GET /accounts/{id}/publishing-limit` (remaining quota) exists but its
+  response isn't documented, so the pickers don't show it yet.
+- Workspaces are built from the docs only (no key here): the per-profile
+  listing relies on the documented `Tebar-Profile` header, not on a field.
 
 ---
 

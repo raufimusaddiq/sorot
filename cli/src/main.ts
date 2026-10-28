@@ -4,7 +4,9 @@ import { Api, ApiError } from "./api";
 import { parseArgs, UsageError } from "./args";
 import { COMMANDS, type Deps } from "./commands";
 import { loadConfig } from "./config";
+import { ask } from "./prompt";
 import { SERVICE_COMMANDS } from "./service";
+import { SOCIAL_COMMANDS } from "./social";
 
 export const VERSION = "1.0.0";
 
@@ -45,11 +47,21 @@ Discovery
 
 Connections (saved in the app; they win over .env)
   connect                       LLM, Jev and Tebar: active?, URL, model, key (masked)
+  connect setup                 guided: Jev, then the LLM, then Tebar — asks, saves, tests
   connect llm --base-url URL --model M [--key -] [--director on|off]
   connect jev [--model jev-1.14.0] [--base-url URL] [--key -] [--director on|off]
   connect tebar [--key -] [--base-url URL]   --key - reads the key from stdin (not shell history)
   connect <llm|jev|tebar> --on | --off | --reset    --reset = back to .env
   connect test <llm|jev|tebar>  make one small real call
+
+Publishing (Tebar)
+  accounts                      your Tebar accounts, by workspace
+  publish <clip> [--to id|name,…]   on a terminal it asks which accounts and anything
+        [--text "…"] [--title "…"]  TikTok / YouTube need you to choose; in scripts:
+        [--privacy LEVEL | --draft] [--made-for-kids yes|no] [--at 2026-11-01T19:00:00+07:00]
+        [--confirm-review] [--override] [--yes]
+  posts <clip> | posts refresh|retry|cancel <post>
+  sync                          pull posted clips' numbers into learning
 
 App
   up | down | restart           start / stop the app (Docker or systemd)
@@ -73,7 +85,7 @@ export async function main(argv: string[], deps: Omit<Deps, "api"> & { fetchFn?:
     }
     const url = typeof args.flags.url === "string" ? args.flags.url.replace(/\/+$/, "") : deps.config.url;
     const d: Deps = { ...deps, config: { ...deps.config, url }, api: new Api(url, deps.fetchFn) };
-    const handler = COMMANDS[cmd] ?? SERVICE_COMMANDS[cmd];
+    const handler = COMMANDS[cmd] ?? SOCIAL_COMMANDS[cmd] ?? SERVICE_COMMANDS[cmd];
     if (!handler) throw new UsageError(`Unknown command: ${cmd}`);
     return await handler(d, args);
   } catch (e) {
@@ -105,6 +117,8 @@ export function realDeps(): Omit<Deps, "api"> {
     sleep: (ms) => Bun.sleep(ms),
     run: async (cmd, opts) => Bun.spawn(cmd, { cwd: opts?.cwd || undefined, stdio: ["inherit", "inherit", "inherit"] }).exited,
     readStdin: async () => (await Bun.stdin.text()).trim(),
+    isTTY: !!process.stdin.isTTY && !!process.stdout.isTTY,
+    ask: ask.bind(null, process.stdin, process.stdout),
     capture: async (cmd) => {
       try {
         const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore" });

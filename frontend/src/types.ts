@@ -92,7 +92,16 @@ export type ConnectionKind = keyof Connections;
 
 export type ConnectionTest = { ok: boolean; ms: number; model?: string; detail?: string; error?: string };
 
-export type SocialAccount = { id: string; platform: string; name: string };
+/** A Tebar account; profileId/profileName name its workspace (null with a single workspace). */
+export type SocialAccount = {
+  id: string;
+  platform: string;
+  name: string;
+  profileId: string | null;
+  profileName: string | null;
+  /** Sorot can post a single video on this platform. */
+  supported: boolean;
+};
 
 export type DraftTarget = {
   accountId: string;
@@ -123,6 +132,8 @@ export type SocialPost = {
   targets: string | null;
   errorMessage: string | null;
   createdAt: string;
+  /** The Tebar workspace it was posted in; null = the default one. */
+  profileId?: string | null;
 };
 
 export type PipelineOptions = {

@@ -180,3 +180,25 @@ fallback everywhere, and "Bun first, Python second". Design + sources:
 - Owner decision on borderline flips: "it's okay, we just need to trust
   Jev" — no re-asks or averaging; documented in creative-loop §1 Limits and
   AGENTS.md.
+
+## Seamless CLI, Tebar account picker, API re-check (same day, after PR #19 merged)
+- Re-read Tebar's docs (llms.txt index, api, posts, media, profile,
+  connect-link, error, webhook, tiktok, youtube). New since the first build or
+  missed: workspaces (`/profiles`, `Tebar-Profile` header; a post can't mix
+  profiles), `POST /posts/{id}/retry` (failed accounts only), `DELETE` cancel,
+  TikTok business accounts (`video_public_only`: privacy not needed) and
+  drafts (no privacy), 422 (not 502) for permanent platform rejections,
+  `publishing-limit` (shape undocumented — not used), pagination `next_cursor`.
+  The account object's fields are undocumented, so accounts are grouped by
+  listing each profile with the header. No Tebar key here: all of it is
+  tested against a fake built from the docs.
+- Backend: picker data (`profileId`, `profileName`, `supported`), one
+  workspace per post with the header on upload/create/re-send
+  (`social_post.profile_id`), TikTok privacy checked before the upload,
+  Tebar retry/cancel, hints for fixable error codes.
+- CLI: `accounts`, `publish` (TTY picker + questions, flags in scripts,
+  never auto-fills privacy / made-for-kids), `posts` (+ refresh/retry/cancel),
+  `sync`, `connect setup` (guided, hidden keys, tests each), `doctor` shows
+  connections. Hidden key entry: node:readline with the echo muted.
+- My slip: ran `git stash` / `pop` while the UI agent was editing the same
+  tree; both completed cleanly, but don't do that with a parallel agent.

@@ -125,7 +125,7 @@ A clip sent to social accounts through Tebar (`backend/src/publisher.ts`).
 | `clip_id` | TEXT | NOT NULL | |
 | `provider` | TEXT | NOT NULL | `tebar` |
 | `provider_post_id` | TEXT | | Tebar's post id (null until Tebar accepted it) |
-| `status` | TEXT | NOT NULL | `PUBLISHING`, `SCHEDULED`, `PUBLISHED`, `PARTIAL`, `FAILED` |
+| `status` | TEXT | NOT NULL | `PUBLISHING`, `SCHEDULED`, `PUBLISHED`, `PARTIAL`, `FAILED`, `CANCELLED` (a scheduled post cancelled on Tebar) |
 | `scheduled_at` | TEXT | | ISO 8601 |
 | `idempotency_key` | TEXT | NOT NULL | Sent as `Idempotency-Key`; a retry re-sends it |
 | `request` | TEXT | | JSON body sent to Tebar, saved before sending |
@@ -133,6 +133,7 @@ A clip sent to social accounts through Tebar (`backend/src/publisher.ts`).
 | `error_message` | TEXT | | |
 | `created_at` / `updated_at` | TEXT | NOT NULL | ISO 8601 |
 | `last_synced_at` | TEXT | | Last status read from Tebar |
+| `profile_id` | TEXT | | Tebar workspace (profile) the post was made in, sent again as `Tebar-Profile` on a re-send; null = the default workspace |
 
 ### `setting`
 

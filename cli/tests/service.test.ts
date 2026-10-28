@@ -63,19 +63,22 @@ test("health", async () => {
 
 describe("doctor", () => {
   test("docker install with a GPU, all good", async () => {
-    const h = harness(healthy);
+    const h = harness({ ...healthy, "GET /api/settings": { jev: { active: true, model: "jev-1.14.0" }, llm: { active: false }, tebar: { active: true } } });
     h.existing.add("/opt/vc");
     h.state.captures = {
       "nvidia-smi": { code: 0, stdout: "NVIDIA GeForce RTX 4060, 617.42\n" },
       docker: { code: 0, stdout: "2.27.0\n" },
     };
-    expect(await h.run("doctor")).toBe(0);
+    expect(await h.run("doctor")).toBe(0);   // a missing optional connection is not a problem
     expect(h.out).toEqual([
       "✓ install: docker (/etc/sorot/cli.conf)",
       "✓ app dir: /opt/vc",
       "✓ GPU: NVIDIA GeForce RTX 4060, 617.42",
       "✓ docker compose 2.27.0",
       "✓ API http://app:8080",
+      "✓ Jev (picks and checks clips): connected, jev-1.14.0",
+      "· LLM (writes copy, auto-discover): not connected — sorot connect setup",
+      "✓ Tebar (publishing): connected",
     ]);
   });
 
