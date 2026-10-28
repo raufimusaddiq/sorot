@@ -223,6 +223,12 @@ export function qualityOf(a: Record<string, number>): number {
   return weight ? pyRound(present.reduce((s, [w, v]) => s + w * v, 0) / weight, 3) : 0;
 }
 
+/** Clip order: clips the gate held back (FAIL) after the rest, then the best score first. */
+export function heldLast(a: { gate?: { verdict: string } | null; finalScore: number }, b: { gate?: { verdict: string } | null; finalScore: number }): number {
+  const held = (s: typeof a) => (s.gate?.verdict === "FAIL" ? 1 : 0);
+  return held(a) - held(b) || b.finalScore - a.finalScore;
+}
+
 export function verdictFrom(a: Record<string, number>, payoffConfidence: number | null = null): { verdict: Verdict; reasons: string[] } {
   const fails: string[] = [];
   if ((a.mostly_filler ?? 0) >= YES) fails.push("mostly greetings, promos or small talk");

@@ -113,3 +113,34 @@ fallback everywhere, and "Bun first, Python second". Design + sources:
   (~$0.011) and found the LLM director's moments plus two stronger price-shock
   openings; titles chosen as quotes; hook lines need one Noul per line + an ad
   check (a single Choice picked a sponsor line). It can't write text.
+- **Jev first** (`jevDirector.ts`, `JEV_DIRECTOR`, default on with Jev) after
+  the user's call that Jev should decide and the LLM only write (post copy,
+  auto-discover). Code proposes one window per sentence start; Jev screens
+  them (quality + `fits_direction`), scores every candidate with the full gate
+  questions (score and verdict from the same answers), and picks hook lines
+  (Noul per line + ad Noul) and quote titles for render-tier clips. Settings /
+  `sorot connect jev --director` toggle; "Jev pick" badge in the studio.
+- **Runs 3-4, Jev first** (same video, transcript, direction, CPU,
+  MAX_RENDER_CLIPS=3): SEGMENT 4 s + SCORE 6 s both times (LLM runs: 104 + 435 s,
+  265 + 123 s). 206 windows → 24 Jev picks in run 4 (run 3's stats weren't kept), 241 902
+  input tokens for run 4's screening (≈ $0.01 at the listed price), no Jev errors. Top picks were the
+  price-shock openings (`fits_direction` 0.93-0.95); run 3 rendered one clip
+  (27.4-60.4 s, hook "Kedengeran absurd nggak?", title quoted from the clip,
+  1080x1920, 34.5 s). Run 4 rendered none: that window wasn't a candidate and
+  its neighbour failed the gate at `needs_prior_context` 0.72 (run 3: 0.67) →
+  best 0.64 < BACKUP 0.65. Another window went 0.67 → 0.70 (PASS → FAIL).
+  Near a 0.7 threshold, run-to-run moves of a few hundredths change verdicts.
+- Fixes from those runs: SCORE keeps SEGMENT's `director` stats in the segment
+  file (windows, judged, picks, tokens, pickError were overwritten); in Jev
+  first a FAIL clip no longer wins an overlap against a passing one
+  (`heldLast` before `dropOverlaps`).
+- Open: tiers on a real video (the synthetic one has no faces/motion, so the
+  rule half is low); Jev's top score ~0.86 vs the LLM's 0.96-1.0 means fewer
+  BACKUP clips with the same rule half; borderline re-asks not built.
+- `/verify` (Segment + Score, Jev first) OPEN: 89/89 focused tests
+  (jevDirector, clipGate, pipeline, director, clipReview — all 100% lines;
+  orchestrator 94.95% in the focused run because other stages aren't
+  exercised there, 99.39% in the full suite). Full backend 304/304 (99.62%),
+  tsc clean; CLI 38/38; UI 133/133 + static build. Live: runs 3-4 above
+  (COMPLETED; the Jev-down fallback is covered by "Jev-first falls back to
+  the rules when Jev is down"). No Python changed.

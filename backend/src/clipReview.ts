@@ -11,6 +11,7 @@
 import { LlmError, parseJson, type Llm } from "./llm";
 import { mapPool } from "./pool";
 import { pyRound } from "./pyCompat";
+import type { GateResult } from "./clipGate";
 import type { VideoBrief } from "./director";
 import type { ScoredSegment } from "./scoring";
 import type { Json } from "./types";
@@ -48,7 +49,11 @@ const FEATURE_LABELS: Record<string, string> = {
   topicFit: "on your niche", historyScore: "like your past hits", motion: "movement", onsetDensity: "lively audio",
 };
 
-export type ReviewedSegment = ScoredSegment & { scoredBy: "llm+rules" | "rules"; reason: string; llmScore?: number; ruleScore?: number };
+export type ReviewedSegment = ScoredSegment & {
+  scoredBy: "llm+rules" | "jev+rules" | "rules"; reason: string; llmScore?: number; ruleScore?: number;
+  /** Set when Jev scored it (jevDirector.ts), and the gate's result (clipGate.ts). */
+  jevScore?: number; gate?: GateResult;
+};
 
 /** Plain-language reason from the strongest rule signals. */
 export function rulesReason(scores: Record<string, number>): string {

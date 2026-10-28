@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { gateClips } from "./clipGate";
-import { reviewClips } from "./clipReview";
+import { GATE_MAX, gateClips, heldLast } from "./clipGate";
+import { reviewClips, rulesReason, type ReviewedSegment } from "./clipReview";
 import type { AppConfig } from "./config";
 import { dropOverlaps, mineMoments, videoBrief, type Line, type VideoBrief } from "./director";
 import { ruleHook, type TranscriptSeg } from "./hooks";
-import { Jev } from "./jev";
+import { Jev, JevError } from "./jev";
+import { hookAndTitle, judgeClips, quoteTitle, screenMoments, sentenceWindows } from "./jevDirector";
 import { Llm, LlmError } from "./llm";
 import { captionFlags, decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
 import { timeoutFor, type ExecFn, type ScriptRunner } from "./runner";
@@ -296,9 +297,18 @@ export class PipelineOrchestrator {
     }));
     const segments: Json[] = findSegments(lines).map((s) => ({ ...s, source: "rules" }));
     const director: Json = {};
-    if (this.llm.enabled && this.config.llmDirector && lines.length) {
-      const stage = this.store.getStage(jobId, "SEGMENT");
-      const progress = (text: string) => { if (stage) this.store.updateStage(stage.id, { outputPath: text }); };
+    const stage = this.store.getStage(jobId, "SEGMENT");
+    const progress = (text: string) => { if (stage) this.store.updateStage(stage.id, { outputPath: text }); };
+    if (this.jevFirst && lines.length) {
+      // Code proposes a window at every sentence start; Jev judges them all.
+      const windows = sentenceWindows(lines);
+      const screened = await screenMoments(this.jev, windows, opts.direction,
+        (done, total) => { if (done % 10 === 0 || done === total) progress(`Jev reading moments ${done}/${total}`); });
+      for (const p of screened.picks) segments.push({ ...p, index: segments.length });
+      Object.assign(director, { by: "jev", model: this.jev.model, windows: windows.length, judged: screened.judged,
+        picks: screened.picks.length, tokens: screened.tokens }, screened.error ? { pickError: screened.error } : {});
+      if (screened.error) console.warn(`Jev screening partly failed for ${video.id}: ${screened.error}`);
+    } else if (this.llm.enabled && this.config.llmDirector && lines.length) {
       const ctx = { title: video.title, direction: opts.direction };
       let brief: VideoBrief | null = null;
       progress("LLM reading the video");
@@ -358,33 +368,85 @@ export class PipelineOrchestrator {
     let scored = scoreSegments(segments, media, ctx);
     const supervised = await this.supervisedPredictions(video.id, scored, signal);
     if (supervised) scored = scoreSegments(segments, media, { ...ctx, supervised });
-    const review = await reviewClips(scored, this.llm, determineTier, { title: video.title, brief, direction: opts.direction });
-    if (review.error) console.warn(`LLM review skipped for some clips of ${video.id}: ${review.error}`);
-    // The LLM's picks and the rule windows can cover the same moment: keep the better-scored one.
-    const kept = dropOverlaps(review.segments.sort((a, b) => b.finalScore - a.finalScore));
     const stage = this.store.getStage(jobId, "SCORE");
-    if (stage) this.store.updateStage(stage.id, { outputPath: this.jev.enabled ? "Jev checking clips" : "Checking clips" });
-    const gate = await gateClips(kept, this.jev, RENDER_TIERS);
-    if (gate.error) console.warn(`Jev gate fell back to rules for some clips of ${video.id}: ${gate.error}`);
+    const progress = (text: string) => { if (stage) this.store.updateStage(stage.id, { outputPath: text }); };
+    let kept: ReviewedSegment[];
+    let review: { error: string | null } = { error: null };
+    let gate: { by: string | null; error: string | null };
+    if (this.jevFirst) {
+      // Jev scores every candidate (50/50 with the rules) and its answers are the gate verdict too; no LLM.
+      const all: ReviewedSegment[] = scored.map((s) => ({ ...s, scoredBy: "rules", reason: rulesReason(s.scores) }));
+      const judged = await judgeClips(this.jev, all, opts.direction, determineTier,
+        (done, total) => { if (done % 10 === 0 || done === total) progress(`Jev judging clips ${done}/${total}`); });
+      kept = dropOverlaps(all.sort(heldLast));   // verdicts are known here, so a FAIL never displaces a passing neighbour
+      const by = new Set(kept.filter((s) => s.gate).map((s) => s.gate!.by));
+      gate = { by: by.size > 1 ? "mixed" : (by.values().next().value ?? null), error: judged.error };
+      if (judged.error) console.warn(`Jev fell back to rules for some clips of ${video.id}: ${judged.error}`);
+    } else {
+      const reviewed = await reviewClips(scored, this.llm, determineTier, { title: video.title, brief, direction: opts.direction });
+      review = reviewed;
+      if (reviewed.error) console.warn(`LLM review skipped for some clips of ${video.id}: ${reviewed.error}`);
+      // The LLM's picks and the rule windows can cover the same moment: keep the better-scored one.
+      kept = dropOverlaps(reviewed.segments.sort((a, b) => b.finalScore - a.finalScore));
+      progress(this.jev.enabled ? "Jev checking clips" : "Checking clips");
+      gate = await gateClips(kept, this.jev, RENDER_TIERS);
+      if (gate.error) console.warn(`Jev gate fell back to rules for some clips of ${video.id}: ${gate.error}`);
+    }
     // Clips the gate held back rank after the rest (render tiers stay first: render.py indexes them in order).
-    const held = (s: Json) => (obj(s.gate).verdict === "FAIL" ? 1 : 0);
-    const ranked = kept.sort((a, b) => held(a) - held(b) || b.finalScore - a.finalScore).map((s, i) => ({ ...s, rank: i + 1 }));
-    // Every clip's hook is decided here (render.py only replays it): the LLM's line, else the rules' (null = none).
+    const ranked = kept.sort(heldLast).map((s, i) => ({ ...s, rank: i + 1 }));
     const words = (ctx.transcript ?? []) as TranscriptSeg[];
+    if (this.jevFirst) await this.jevHooksAndTitles(ranked, words, progress);
+    // Every clip's hook is decided here (render.py only replays it): Jev's or the LLM's line, else the rules' (null = none).
     for (const s of ranked) {
       if (typeof (s as Json).hookStart !== "number") Object.assign(s, ruleHook(words, s.startTime, s.endTime) ?? { hookStart: null, hookEnd: null });
     }
     const result: Json = {
       videoId: video.id,
       scoredSegments: ranked,
-      scoredBy: ranked.some((s) => s.scoredBy !== "rules") ? "llm+rules" : "rules",
+      scoredBy: ranked.some((s) => s.scoredBy === "jev+rules") ? "jev+rules"
+        : ranked.some((s) => s.scoredBy !== "rules") ? "llm+rules" : "rules",
       ...(review.error ? { llmError: review.error } : {}),
+      ...(segmentsFile.director ? { director: segmentsFile.director } : {}),   // SEGMENT's stats (windows, tokens, errors)
       ...(gate.by ? { gatedBy: gate.by } : {}),
       ...(gate.error ? { gateError: gate.error } : {}),
     };
     await Bun.write(segmentsPath, JSON.stringify(result));
     this.saveClipsFromScoredSegments(video.id, result);
     return segmentsPath;
+  }
+
+  /** Jev makes the creative decisions when it is connected and JEV_DIRECTOR is on. */
+  private get jevFirst(): boolean {
+    return this.jev.enabled && this.config.jevDirector;
+  }
+
+  /**
+   * Hook line and quote title from Jev for the clips that will render first
+   * (the CPU cap, else every render-tier clip up to the gate's limit). A clip
+   * Jev can't answer keeps the rules' hook and title.
+   */
+  private async jevHooksAndTitles(ranked: Array<{ startTime: number; endTime: number; text: string; tier: string; title: string }>,
+    words: TranscriptSeg[], progress: (text: string) => void) {
+    const cap = this.config.maxRenderClips > 0 ? this.config.maxRenderClips : GATE_MAX;
+    const targets = ranked.filter((s) => RENDER_TIERS.includes(s.tier)).slice(0, cap);
+    let done = 0;
+    let failures = 0;
+    await mapPool(targets, 4, async (s) => {
+      if (failures >= 3) return;
+      const lines: Line[] = words.filter((w) => Number(w.start) >= s.startTime - 0.05 && Number(w.end) <= s.endTime + 0.05)
+        .map((w) => ({ start: Number(w.start), end: Number(w.end), text: String(w.text ?? ""),
+          ...(Array.isArray(w.words) ? { words: w.words as Line["words"] } : {}) }));
+      try {
+        const r = await hookAndTitle(this.jev, lines, s.startTime, s.text);
+        failures = 0;
+        Object.assign(s, r.hook ? { hookStart: r.hook[0], hookEnd: r.hook[1] } : { hookStart: null, hookEnd: null });
+        if (r.title) s.title = quoteTitle(r.title, s.text, s.tier);
+      } catch (e) {
+        if (!(e instanceof JevError)) throw e;
+        failures++;
+      }
+      progress(`Jev picking hooks and titles ${++done}/${targets.length}`);
+    });
   }
 
   /** Predictions of the optional trained model (ai-pipeline/model.lgb), by segment index. */

@@ -21,7 +21,10 @@ export const CONNECTIONS: Record<string, Record<string, Field>> = {
     enabled: ["llmEnabled", "bool"], baseUrl: ["llmBaseUrl", "url"], model: ["llmModel", "text"],
     apiKey: ["llmApiKey", "secret"], director: ["llmDirector", "bool"],
   },
-  jev: { enabled: ["jevEnabled", "bool"], url: ["jevUrl", "url"], model: ["jevModel", "text"], apiKey: ["jevApiKey", "secret"] },
+  jev: {
+    enabled: ["jevEnabled", "bool"], url: ["jevUrl", "url"], model: ["jevModel", "text"], apiKey: ["jevApiKey", "secret"],
+    director: ["jevDirector", "bool"],
+  },
   tebar: { enabled: ["tebarEnabled", "bool"], baseUrl: ["tebarBaseUrl", "url"], apiKey: ["tebarApiKey", "secret"] },
 };
 

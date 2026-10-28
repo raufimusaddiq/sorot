@@ -25,7 +25,7 @@ const CARDS: Record<ConnectionKind, { title: string; bar: string; about: string;
   },
   jev: {
     title: 'Jev quality gate', bar: 'bg-aqua',
-    about: 'TypeSafe’s decision model answers fixed yes/no questions about each clip (hook, needs context, ending, filler, payoff, content risks) and checks the LLM’s titles and post copy.',
+    about: 'TypeSafe’s decision model answers fixed yes/no questions about each clip (hook, needs context, ending, filler, payoff, content risks) and checks the LLM’s titles and post copy. As director it also finds the moments, hook lines and quote titles in place of the LLM.',
     fallback: 'Off: the same questions are answered by text rules.',
     fields: [
       { key: 'url', label: 'Endpoint', placeholder: 'https://api.typesafe.ai/v1/systemone' },
@@ -38,6 +38,11 @@ const CARDS: Record<ConnectionKind, { title: string; bar: string; about: string;
     fallback: 'Off: download clips and post them yourself.',
     fields: [{ key: 'baseUrl', label: 'API base URL', placeholder: 'https://api.tebar.app/v1' }],
   },
+};
+
+const DIRECTOR = {
+  llm: 'Director: read the whole video, pick moments and hooks (more LLM calls)',
+  jev: 'Director: judge every moment, pick hooks and quote titles (wins over the LLM director)',
 };
 
 const label = 'font-pixel text-xs text-fg block mb-1';
@@ -95,9 +100,9 @@ function ConnectionCard({ kind, view, api, onSaved }: {
         <Toggle checked={view.enabled} onChange={(v) => save({ enabled: v })}>
           <span>Use {card.title}</span>
         </Toggle>
-        {kind === 'llm' && (
+        {kind !== 'tebar' && (
           <Toggle checked={!!view.director} onChange={(v) => save({ director: v })}>
-            <span>Director: read the whole video, pick moments and hooks (more LLM calls)</span>
+            <span>{DIRECTOR[kind]}</span>
           </Toggle>
         )}
         {card.fields.map((f) => (

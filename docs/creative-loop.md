@@ -1,26 +1,100 @@
-# The creative loop: LLM director → Jev gate → Tebar → learning
+# The creative loop: Jev director → gate → Tebar → learning
 
-> Design + what is built (2026-10-28). Three asks: (1) let the LLM drive the
-> creative work instead of only re-rating rule output, (2) put Jev in as a
-> quality gate that asks the *right* questions, (3) publish through
+> Design + what is built (2026-10-28). Three asks: (1) stop under-using the
+> model in the creative work (it only re-rated rule output), (2) put Jev in as
+> a quality gate that asks the *right* questions, (3) publish through
 > [Tebar](https://tebar.app). Together they close a loop Sorot didn't have:
 > the clips you post now feed their real results back into scoring.
+>
+> The first build made the LLM the director (§2). Live tests the same day
+> showed Jev doing the *judging* parts of that job far faster, cheaper and
+> more steadily, so with Jev connected **Jev directs** (§1) and the LLM is kept
+> for what only it can do: write.
 
 ```
- transcript ──► 🎬 DIRECTOR (LLM) ─────► ⚖️ SCORE ───► 🚦 GATE (Jev) ──► render ──► 🚀 PUBLISH (Tebar)
-   brief · own moments · hook       rules + LLM review   PASS/REVIEW/FAIL            draft → you → post
-        ▲   (rules always kept as candidates)                 │ rules if no Jev               │
-        │                                                     ▼                               ▼
-        └────────────── weights.json ◄── feedback training ◄── clip_feedback ◄── metrics sync (6 h)
+ transcript ──► 🎬 FIND (code windows ─► Jev) ──► ⚖️ SCORE + 🚦 GATE (Jev) ──► hook + title (Jev) ──► render ──► 🚀 PUBLISH (Tebar)
+                  (or the LLM director)            rules 50% + Jev 50%           line Noul · quote          LLM copy → you → post
+        ▲         (rules always kept as candidates)   PASS/REVIEW/FAIL                                              │
+        │                                                                                                           ▼
+        └──────────────────────── weights.json ◄── feedback training ◄── clip_feedback ◄── metrics sync (6 h) ◄─────┘
 ```
 
-Every arrow has a deterministic fallback: no LLM → rule segments, rule hook,
-template copy; no Jev → the same gate questions answered by text rules; no
-Tebar → download and post by hand (results can still be typed in).
+Every arrow has a deterministic fallback: no Jev → the LLM director if one is
+configured, and the same gate questions answered by text rules; no LLM →
+rule segments, rule hook, template copy; no Tebar → download and post by hand
+(results can still be typed in).
 
 ---
 
-## 1. LLM-led creative process ("director")
+## 1. Jev first (default when Jev is connected)
+
+### Why
+
+Measured on the same 10 minutes of a real Indonesian phone-review transcript,
+with the direction "fokus ke kritik soal harga dan spesifikasi, bukan
+unboxing" (CPU, synthetic 320x180 video, transcript pre-placed; details in the
+[journal](journal/session-2026-10-28-creative-loop.md)):
+
+| | LLM director + review (reasoning model via an OpenAI-compatible gateway) | Jev first (`jev-1.14.0`) |
+|---|---|---|
+| SEGMENT + SCORE | 539 s (run 1), 388 s (run 2) | 10 s (two runs) |
+| Calls | brief + 3 parts + review batches, 30-150 s each; one "upstream unavailable" | 206 windows + 22-23 candidates + hook/title for the render-tier clips, 6 in flight |
+| Cost | not measured (gateway price unknown) | 242k input tokens for the 206 windows ≈ $0.01 at TypeSafe's listed $0.042 / M (prices change) |
+| Followed the direction | yes (price critique 0.96-1.0, unboxing 0.08-0.25) | yes (`fits_direction` 0.93-0.95 on the price-shock openings) |
+| Failure seen | answered 1-10 instead of 0-100 once → every clip SKIP | none; but see *Limits* |
+
+Jev can't write, and it can't search the web. It *can* answer a fixed
+question about a piece of text in tens of milliseconds (37 ms server time on
+the request we timed), with probabilities
+that move little between identical requests (≤ 0.04 in our test) — and
+deciding which moment is a clip, which line hooks, and which sentence is the
+title are all questions of that shape once code proposes the options.
+
+### What Jev decides (`backend/src/jevDirector.ts`)
+
+| Step | Code proposes | Jev answers | Code keeps |
+|---|---|---|---|
+| **Find** (SEGMENT) | one window per line that starts a sentence (previous line ends with `. ! ? …` or a ≥ 0.6 s pause), grown to 25 s then to the next sentence end; 15-60 s | the five quality questions (§3) + `fits_direction` when there is a direction | non-FAIL windows, best first, no overlaps > 50 %; top 40 as `source: "jev"` next to the rule windows |
+| **Score + gate** (SCORE) | every candidate (best 200 by rule score + every Jev pick) | the full gate questions (quality + risks) + `fits_direction` | `finalScore` = 0.5 × Jev (quality composite, 50/50 with the fit) + 0.5 × rules; the verdict from the *same* answers (`verdictFrom`); a reason built from them ("Jev: strong opening, complete ending, clear payoff, fits your direction") |
+| **Hook** | each line ≥ 3 s after the clip start | per line: the gate's hook question and "is this an ad / sponsor read?" (one Noul each — a single Choice picked a sponsor line) | best non-ad line if ≥ 0.7, cut to one sentence (`hookSpan`); else the rules' hook |
+| **Title** | the clip's sentences of 15-110 chars | a Choice: "best post title for `excerpt`: true to it and most likely to make people watch" | the quote (≤ 80 chars) + 2 rule hashtags. A quote can't over-claim, so no title check is needed |
+
+Hooks and titles are asked only for the clips that will render
+(`MAX_RENDER_CLIPS` on CPU). A Jev failure keeps the rules' answers for that
+clip; after 3 failures in a row the rest of the video uses the rules.
+`JEV_DIRECTOR=false` (or the Settings / `sorot connect jev --director false`
+toggle) makes Jev a gate only, and the LLM director (§2) runs if configured.
+
+### Where the LLM is still needed
+
+- **Post copy** per platform at publish time (Jev then checks it).
+- **✨ Auto-discover**: the agent that decides what to search for and which
+  channels/videos are worth importing — open-ended search is LLM work.
+- **Director without Jev** (§2), and the brief, which Jev-first doesn't make.
+
+### Limits (measured, not fixed)
+
+- **Borderline clips flip between runs.** Run 3's best clip (27.4-60.4 s,
+  final 0.69, rendered) passed with `needs_prior_context` 0.67. In run 4 it
+  wasn't a candidate (it failed screening or lost the overlap to its
+  neighbour; screening answers aren't stored), and the window one line
+  earlier (25.6-51.2 s) passed screening, then failed the gate at 0.72 — so
+  run 4's best was 0.64, just under BACKUP, and nothing rendered. A third window went 0.67 → 0.70
+  (PASS → FAIL). Answers move little, but a hard threshold turns a small move
+  into a different verdict near the line. Possible fix, not built: re-ask
+  answers within ±0.05 of a threshold and average. (Since run 4, a FAIL clip
+  can no longer win an overlap against a passing one in SCORE.)
+- **Tiers come out lower than with the LLM.** Jev's score (quality + direction
+  fit) topped out at ~0.86 here, where the LLM gave 0.96-1.0, so with the same rule half
+  fewer clips reach BACKUP (0.65). On this synthetic video (no faces, no
+  motion) the rule half is low anyway; check tiers on a real video before
+  changing thresholds.
+- English is Jev's best language (TypeSafe's model page); these are
+  Indonesian clips, and the 0.7 / 0.3 thresholds are uncalibrated for them.
+
+---
+
+## 2. The LLM director (when Jev is off or `JEV_DIRECTOR=false`)
 
 ### What was under-used
 
@@ -58,7 +132,7 @@ local models, and every LLM output is checked in code before it is used.
 
 ---
 
-## 2. Jev as the quality gate
+## 3. Jev as the quality gate
 
 ### Why Jev here
 
@@ -174,7 +248,7 @@ rewrite a question whose separation stays small.
 
 ---
 
-## 3. Tebar connector (publish + metrics back)
+## 4. Tebar connector (publish + metrics back)
 
 Tebar posts to Instagram, Threads, TikTok, YouTube, LinkedIn, X, Telegram,
 Discord and Pinterest through one REST API (`https://api.tebar.app/v1`,
@@ -230,18 +304,18 @@ doesn't have.
 
 ---
 
-## 4. Connections from the UI and CLI
+## 5. Connections from the UI and CLI
 
-LLM, Jev and Tebar (URL, model, key, on/off, director) are set in **Settings**
+LLM, Jev and Tebar (URL, model, key, on/off; a director toggle for the LLM and Jev) are set in **Settings**
 (studio dock) or `sorot connect`, saved in SQLite (`setting` table) and win
 over the env; *Use .env* / `--reset` clears them. Changes apply without a
 restart. Keys are never returned — only "set" and the last four characters;
 `sorot connect … --key -` reads the key from stdin (not shell history).
 `sorot connect test llm|jev|tebar` makes one small real call.
 
-## 5. Bun first
+## 6. Bun first
 
-All of this is Bun: director, gate, Jev and Tebar clients, settings,
+All of this is Bun: both directors, gate, Jev and Tebar clients, settings,
 publisher, and now **hook selection** (`hooks.ts`, a golden-tested port of
 `captions.py find_hook`). Python changed by ~20 lines: render.py / subtitle.py
 read `hookStart`/`hookEnd` from the segment (null = no replay) and fall back to
@@ -249,9 +323,11 @@ their own `find_hook` only for segment files written before this change.
 Python stays media-only: Whisper, ffmpeg render/burn, OpenCV, audio features,
 LightGBM.
 
-## 6. Next
+## 7. Next
 
 - Run `jev-eval` with a key and real labelled clips; calibrate per question.
+- Jev-first on a real video (faces, motion): compare tiers and picks with the
+  LLM director, then decide on the BACKUP line and borderline re-asks (§1).
 - Try Jev on an English gloss of the excerpt (LLM translation) vs Indonesian
   and keep whichever separates better.
 - Use `clip.gate.answers` as extra features in feedback training (TypeSafe's

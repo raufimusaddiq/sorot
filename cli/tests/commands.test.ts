@@ -350,6 +350,7 @@ describe("connect", () => {
     expect(h.text()).toMatch(/jev\s+no\s+https:\/\/api\.typesafe\.ai\/v1\/systemone\s+jev-1\.14\.0\s+-\s+-/);
     expect(h.text()).toMatch(/tebar\s+off/);
     expect(h.text()).toContain("LLM director (brief + own clip picks): on");
+    expect(h.text()).toContain("Jev picks moments, hooks and titles: off");
     const j = harness({ "GET /api/settings": view() });
     await j.run("connect", "show", "--json");
     expect(JSON.parse(j.out[0]!).jev.model).toBe("jev-1.14.0");
@@ -368,7 +369,7 @@ describe("connect", () => {
     await h.run("connect", "tebar", "--reset");
     expect(h.requests[2]!.body).toEqual({ enabled: null, baseUrl: null, apiKey: null });
     await h.run("connect", "jev", "--reset");
-    expect(Object.keys(h.requests[3]!.body)).toEqual(["enabled", "url", "model", "apiKey"]);
+    expect(Object.keys(h.requests[3]!.body)).toEqual(["enabled", "url", "model", "apiKey", "director"]);
     await h.run("connect", "llm", "--reset");
     expect(Object.keys(h.requests[4]!.body)).toContain("director");
   });
@@ -379,7 +380,7 @@ describe("connect", () => {
     expect(await h.run("connect", "llm")).toBe(2);
     expect(h.err.at(-1)).toContain("Nothing to change");
     expect(await h.run("connect", "llm", "--on", "--off")).toBe(2);
-    expect(await h.run("connect", "jev", "--director", "on")).toBe(2);
+    expect(await h.run("connect", "tebar", "--director", "on")).toBe(2);
     expect(await h.run("connect", "llm", "--director", "maybe")).toBe(2);
     expect(await h.run("connect", "test")).toBe(2);
   });

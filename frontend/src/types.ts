@@ -54,9 +54,9 @@ export type Clip = {
   updatedAt?: string | null;
   /** Why it scored as it did (LLM reason, or the strongest rule signals). */
   reason?: string | null;
-  /** "llm+rules" or "rules". */
+  /** "jev+rules", "llm+rules" or "rules". */
   scoredBy?: string | null;
-  /** Who found the moment: "rules" or "llm" (the director). */
+  /** Who found the moment: "rules", or the director: "jev" or "llm". */
   source?: string | null;
   /** Quality gate: PASS | REVIEW | FAIL (null = not gated) and its JSON result. */
   gateVerdict?: string | null;

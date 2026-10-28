@@ -16,8 +16,8 @@
 |---|---|
 | 🎙️ **Hears every word** | faster-whisper `large-v3-turbo` with word timestamps — or the video's own YouTube captions |
 | 🧠 **Finds the gold** | 13 weighted signals (hooks, keywords, energy, faces, motion…) rank every moment **PRIMARY / BACKUP / SKIP** |
-| 🤖 **Optional LLM director** | Ollama, Groq, OpenRouter or OpenAI reads the whole video, picks its own moments and hooks, follows your direction ("only the funny parts"), writes copy per platform — off by default |
-| 🚦 **Quality gate** | [Jev](https://docs.typesafe.ai) answers fixed yes/no questions per clip (hook, needs context, ending, filler, payoff, risks) — without it the same questions are answered by rules |
+| 🤖 **Optional LLM** | Ollama, Groq, OpenRouter or OpenAI writes copy per platform and runs auto-discover; without Jev it also directs — reads the whole video, picks its own moments and hooks, follows your direction ("only the funny parts") — off by default |
+| 🚦 **Jev picks and gates** | [Jev](https://docs.typesafe.ai) answers fixed yes/no questions about every candidate moment (hook, needs context, ending, filler, payoff, risks, fits your direction), then picks the hook line and a title quoted from the clip — in seconds. Without it the LLM director (if any) or the rules decide |
 | 🚀 **Publish via Tebar** | Post to TikTok, Instagram, YouTube, Threads… through [Tebar](https://tebar.app) and pull views/likes back into learning |
 | 🎯 **Speaker in frame** | Face tracking moves the crop with whoever's talking, cutting on scene changes |
 | 💬 **Captions that pop** | Karaoke ASS captions in 4 looks: `default`, `hormozi`, `storyteller`, `cinematic` |
@@ -213,8 +213,8 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      1. 📥 Import        yt-dlp (or a time range)
                      2. 🔊 Audio         ffmpeg
                      3. 🎙️ Transcribe    faster-whisper, word timestamps
-                     4. ✂️ Segment       gap-based candidates (+ LLM director: brief, own moments, hook)
-                     5. 🧠 Score         13 signals + optional LLM review, copy → quality gate (Jev or rules)
+                     4. ✂️ Segment       gap-based candidates + Jev-judged sentence windows (or the LLM director)
+                     5. 🧠 Score         13 signals + Jev (or LLM review), quality gate, hook + title
                      6. 📱 Render 9:16   crop, silence trim, hook, captions + music — one encode
                      7. 💬 Captions      (re-burns only clips rendered the old way)
                      8. 🔁 Variations    zoom / crop presets
@@ -245,12 +245,13 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
 ➕ sharp questions, clashes, lists, emotion, conversational tone · ➖ slow openings, silence, generic, no face
 🏆 **PRIMARY** ≥ 0.80 · 🥈 **BACKUP** ≥ 0.65 · 💤 **SKIP** < 0.65
 
-With an LLM, the score is 50% formula + 50% LLM judgement, and the LLM writes the copy; if it's unreachable, the formula decides. Each clip records who scored it and why.
+With Jev (or else an LLM), the score is 50% formula + 50% its judgement; if it's unreachable, the formula decides. Each clip records who scored it and why.
 
 ### 🎬 LLM director, 🚦 quality gate, 🚀 publishing
 
-- 🎬 **Director** (with an LLM): a brief of the whole video, then the LLM's own clip picks from the full transcript (start, end, hook line) next to the rule windows; overlaps keep the better one. Give a **direction** at import to steer it.
+- 🎬 **Director** — **Jev first**: code proposes a window at every sentence start, Jev judges them all and keeps the best 40 next to the rule windows, scores every candidate, and picks the hook line and a quoted title for the clips that render. On 10 min of a real transcript, segmenting + scoring took ~10 s with Jev (about $0.01 at TypeSafe's listed price) vs 6.5-9 min with a reasoning LLM as director. Without Jev (or `JEV_DIRECTOR=false`), the **LLM director** reads the video, writes a brief and picks moments + hooks. Either way, overlaps keep the better clip; give a **direction** at import to steer it.
 - 🚦 **Gate** before render: PASS / REVIEW (content risk — you decide) / FAIL (held back, renderable on request). Jev when connected, text rules otherwise. Measure the questions with `bun run jev-eval`.
+- 🤖 **The LLM** is for writing: post copy per platform, and the ✨ auto-discover agent that searches for new videos.
 - 🚀 **Publish** (Tebar): LLM copy per platform → you edit and choose (TikTok privacy, YouTube "made for kids") → post or schedule → metrics sync every 6 h into learning.
 
 👉 [docs/creative-loop.md](docs/creative-loop.md) — the design, the questions and their sources.
@@ -306,6 +307,7 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 | `LLM_TIMEOUT` / `LLM_MAX_TOKENS` | `120` / `4000` | Seconds and output tokens per call. Reasoning models (Kimi, DeepSeek-R1…) think before they answer: give them `300` s and room in the budget |
 | `JEV_API_KEY` | empty (off) | Jev quality gate ([TypeSafe](https://docs.typesafe.ai)) — in `.env.llm`. Off = the rules answer the gate's questions |
 | `JEV_MODEL` / `JEV_URL` | `jev-1.14.0` / TypeSafe's `/v1/systemone` | Pinned model; OpenRouter works too (`https://openrouter.ai/api/alpha/decisions` + its model id) |
+| `JEV_DIRECTOR` | `true` | With Jev: it finds the moments, scores them, picks hooks and quote titles (the LLM director and review are skipped). `false` = Jev only gates |
 | `TEBAR_API_KEY` | empty (off) | Publishing via [Tebar](https://docs.tebar.app/api) (paid plan) — in `.env.llm` |
 | `TEBAR_SYNC_HOURS` | `6` | Pull posted clips' metrics into learning every N hours (`0` = only on request) |
 | `WEB_SEARCH` | `bing` | `bing` (no key), a SearXNG URL, or `off` |
@@ -372,7 +374,7 @@ To ship: merge to `master` → *Draft a new release* tagged `v1.2.3`. 🔓 If an
 | 🏗️ [architecture.md](docs/architecture.md) | How the pieces fit |
 | 🏅 [scoring-spec.md](docs/scoring-spec.md) | Scoring in depth |
 | 🔬 [ai-audit.md](docs/ai-audit.md) | Model vs rule vs LLM |
-| 🎬 [creative-loop.md](docs/creative-loop.md) | LLM director, Jev quality gate, Tebar publishing |
+| 🎬 [creative-loop.md](docs/creative-loop.md) | Jev director, LLM director, Jev quality gate, Tebar publishing |
 | 🐍 [python-pipeline.md](docs/python-pipeline.md) | Each pipeline script's inputs and outputs |
 
 ---

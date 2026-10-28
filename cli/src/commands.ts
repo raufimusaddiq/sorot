@@ -360,8 +360,9 @@ function showConnections(d: Deps, a: Args, s: Json): number {
       (c.saved as string[]).join(",") || "-"];
   })));
   const llm = s.llm as Json;
-  d.out(`
-LLM director (brief + own clip picks): ${llm.director ? "on" : "off"}`);
+  const jev = s.jev as Json;
+  d.out(`\nJev picks moments, hooks and titles: ${jev.director ? "on" : "off"} (wins over the LLM director when Jev is active)`);
+  d.out(`LLM director (brief + own clip picks): ${llm.director ? "on" : "off"}`);
   d.out("Change: sorot connect llm --base-url URL --model M [--key -]   ·   test: sorot connect test llm");
   return 0;
 }
@@ -386,7 +387,7 @@ async function connectCmd(d: Deps, a: Args): Promise<number> {
   const patch: Json = {};
   if (has(a, "reset")) {
     const fields = sub === "llm" ? ["enabled", "baseUrl", "model", "apiKey", "director"]
-      : sub === "jev" ? ["enabled", "url", "model", "apiKey"] : ["enabled", "baseUrl", "apiKey"];
+      : sub === "jev" ? ["enabled", "url", "model", "apiKey", "director"] : ["enabled", "baseUrl", "apiKey"];
     for (const f of fields) patch[f] = null;
   }
   // Not --url: that one is the global "which sorot server" option.
@@ -399,7 +400,7 @@ async function connectCmd(d: Deps, a: Args): Promise<number> {
   if (has(a, "off")) patch.enabled = false;
   const director = str(a, "director");
   if (director !== undefined) {
-    if (sub !== "llm" || !["on", "off"].includes(director)) throw new UsageError("--director takes on or off (llm only)");
+    if (sub === "tebar" || !["on", "off"].includes(director)) throw new UsageError("--director takes on or off (llm or jev)");
     patch.director = director === "on";
   }
   if (!Object.keys(patch).length) throw new UsageError("Nothing to change: give --base-url, --model, --key, --on/--off or --reset");

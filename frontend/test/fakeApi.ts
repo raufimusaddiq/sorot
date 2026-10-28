@@ -49,7 +49,7 @@ export interface FakeState {
 export function makeConnections(over: Partial<Connections> = {}): Connections {
   return {
     llm: { active: false, enabled: true, saved: [], baseUrl: '', model: '', apiKey: '', apiKeySet: false, director: true },
-    jev: { active: false, enabled: true, saved: [], url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', apiKey: '', apiKeySet: false },
+    jev: { active: false, enabled: true, saved: [], url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', apiKey: '', apiKeySet: false, director: true },
     tebar: { active: false, enabled: true, saved: [], baseUrl: 'https://api.tebar.app/v1', apiKey: '', apiKeySet: false },
     ...over,
   };

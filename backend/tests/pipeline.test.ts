@@ -379,6 +379,7 @@ describe("full pipeline", () => {
     expect(env.app.store.clipsForVideo(plain.videoId).map((c) => c.gateVerdict)).toEqual(["PASS", "PASS", null]);
 
     env.config.jevApiKey = "k";
+    env.config.jevDirector = false;   // Jev only gates here (Jev-first has its own test)
     const asked: string[] = [];
     env.fetchHandler.fn = async (url, init) => {
       expect(url).toBe("https://api.typesafe.ai/v1/systemone");
@@ -402,6 +403,55 @@ describe("full pipeline", () => {
     expect(JSON.parse(clips[2]!.gate!)).toMatchObject({ by: "jev", model: "jev-1.14.0", verdict: "FAIL" });
     expect(env.calls.filter((c) => c.script === "render.py")).toHaveLength(1);
     expect(clips[0]!.renderStatus).toBe("COMPLETED");
+  });
+
+  test("Jev-first: Jev finds, scores, gates and titles the clips; the LLM is not called", async () => {
+    env.config.jevApiKey = "k";
+    env.config.llmBaseUrl = "http://llm/v1";
+    env.config.llmModel = "qwen";
+    env.app.llm.chat = async () => { throw new Error("the LLM must not be called when Jev decides"); };
+    const kinds: string[] = [];
+    env.fetchHandler.fn = async (url, init) => {
+      expect(url).toBe("https://api.typesafe.ai/v1/systemone");
+      const { state, questions } = JSON.parse(String(init!.body));
+      const ids = Object.keys(questions);
+      kinds.push(ids.includes("title") ? "title" : ids.includes("risk_sara") ? "judge" : "screen");
+      const filler = String(state.excerpt ?? "").startsWith("Hari ini");
+      const answers = Object.fromEntries(ids.map((id) => [id,
+        id === "title" ? { type: "choice", choice: "S0", confidence: 0.8, probabilities: { S0: 0.9 } }
+          : id === "payoff" ? { type: "score", score: filler ? 0.3 : 1.8, confidence: 0.8 }
+            : { type: "noul", noul: id === "hook_opening" || id === "ends_complete" ? 0.9 : id === "mostly_filler" && filler ? 0.9
+              : id === "fits_direction" ? 0.9 : 0.05 }]));
+      return new Response(JSON.stringify({ model: "jev-1.14.0", answers, usage: { input_tokens: 10, output_tokens: 1 } }));
+    };
+    const { videoId, jobId } = await runWith({ direction: "rahasia sukses" });
+    expect((await detail(jobId)).job.status).toBe("COMPLETED");
+    expect(kinds.filter((k) => k === "screen")).toHaveLength(3);    // one window per sentence start
+    expect(kinds.filter((k) => k === "judge").length).toBeGreaterThanOrEqual(3);
+    expect(kinds).toContain("title");
+    const file = await Bun.file(`${env.config.dataDir}/segments/${videoId}.json`).json();
+    expect(file).toMatchObject({ scoredBy: "jev+rules", gatedBy: "jev",
+      director: { by: "jev", model: "jev-1.14.0", windows: 3, judged: 3, tokens: 30 } });
+    const clips = env.app.store.clipsForVideo(videoId);
+    expect(clips[0]).toMatchObject({ scoredBy: "jev+rules", gateVerdict: "PASS" });
+    expect(clips[0]!.reason).toStartWith("Jev: strong opening");
+    expect(clips[0]!.title).toStartWith("Kenapa rahasia ini penting banget?");   // a quote from the clip
+    expect(clips.at(-1)).toMatchObject({ tier: "SKIP", gateVerdict: "FAIL" });   // the small-talk window
+    expect(env.app.store.getVideo(videoId)!.brief).toBeNull();                   // no LLM brief
+    const stage = (await detail(jobId)).stages.find((x: any) => x.stage === "SEGMENT");
+    expect(stage.status).toBe("COMPLETED");
+  });
+
+  test("Jev-first falls back to the rules when Jev is down", async () => {
+    env.config.jevApiKey = "k";
+    env.fetchHandler.fn = () => new Response("down", { status: 503 });
+    const { videoId, jobId } = await runWith({});
+    expect((await detail(jobId)).job.status).toBe("COMPLETED");
+    const file = await Bun.file(`${env.config.dataDir}/segments/${videoId}.json`).json();
+    expect(file).toMatchObject({ scoredBy: "rules", gatedBy: "rules" });
+    expect(file.gateError).toStartWith("Jev HTTP 503");
+    expect(file.director.pickError).toStartWith("Jev HTTP 503");
+    expect(env.app.store.clipsForVideo(videoId).map((c) => c.tier)).toEqual(["PRIMARY", "BACKUP", "SKIP"]);
   });
 
   test("score with no scoredSegments yields no clips; re-score replaces clips", async () => {

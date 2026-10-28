@@ -37,6 +37,8 @@ const TIER_STICKERS: Record<string, string> = {
 // Home's state and refresh handlers; their extraction is a separate PR.
 
 const GATE_STYLES: Record<string, string> = { PASS: 'bg-mint', REVIEW: 'bg-sun', FAIL: 'bg-hot text-white' };
+/** Badge for a moment the director found (clip.source); rule windows get none. */
+const PICKS: Record<string, { label: string; bg: string }> = { jev: { label: 'Jev', bg: 'bg-aqua' }, llm: { label: 'LLM', bg: 'bg-lilac' } };
 
 /** Parsed clip.gate, or null. */
 function gateOf(clip: Clip): GateResult | null {
@@ -60,6 +62,7 @@ function ClipCard({
   onPublish?: () => void;
 }) {
   const gate = gateOf(clip);
+  const pick = PICKS[clip.source ?? ''];
   const [showScore, setShowScore] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
@@ -107,7 +110,7 @@ function ClipCard({
         {clip.title && (
           <p className="text-sm font-bold text-fg mb-1 line-clamp-2">{clip.title}</p>
         )}
-        {(clip.gateVerdict || clip.source === 'llm') && (
+        {(clip.gateVerdict || pick) && (
           <div className="flex flex-wrap gap-1.5 mb-1">
             {clip.gateVerdict && (
               <span className={`font-pixel text-[11px] px-1.5 border-2 border-line rounded ${GATE_STYLES[clip.gateVerdict] ?? 'bg-surface-3'}`}
@@ -115,8 +118,9 @@ function ClipCard({
                 Gate {clip.gateVerdict}{gate?.by === 'rules' ? ' · rules' : ''}
               </span>
             )}
-            {clip.source === 'llm' && (
-              <span className="font-pixel text-[11px] px-1.5 border-2 border-line rounded bg-lilac" title="Moment picked by the LLM director">LLM pick</span>
+            {pick && (
+              <span className={`font-pixel text-[11px] px-1.5 border-2 border-line rounded ${pick.bg}`}
+                title={`Moment picked by the ${pick.label} director`}>{pick.label} pick</span>
             )}
           </div>
         )}

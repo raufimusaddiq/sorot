@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  fromDecision, gateClips, gateQuestions, gateState, GATE_MAX, openingAndClosing, plainTitle, QUALITY_QUESTIONS,
+  fromDecision, gateClips, gateQuestions, gateState, GATE_MAX, heldLast, openingAndClosing, plainTitle, QUALITY_QUESTIONS,
   qualityOf, RISK_QUESTIONS, ruleAnswers, ruleGate, TITLE_QUESTION, verdictFrom, type Gateable,
 } from "../src/clipGate";
 import { Jev, JevError, type Question } from "../src/jev";
@@ -99,6 +99,16 @@ describe("verdict (decided in code)", () => {
     expect(verdictFrom({ ...good, mostly_filler: 0.9, risk_sara: 0.9 }).verdict).toBe("FAIL");
     expect(verdictFrom({ ...good, hook_opening: 0.2 }).reasons).toEqual(["weak opening"]);
     expect(verdictFrom({ ...good, ends_complete: 0.1 }).reasons).toEqual(["ending is cut off"]);
+  });
+
+  test("heldLast: FAIL clips after the rest whatever their score, then the best score first", () => {
+    const clips = [
+      { id: "fail", finalScore: 0.9, gate: { verdict: "FAIL" } },
+      { id: "low", finalScore: 0.4 },
+      { id: "review", finalScore: 0.6, gate: { verdict: "REVIEW" } },
+      { id: "pass", finalScore: 0.7, gate: { verdict: "PASS" } },
+    ];
+    expect(clips.sort(heldLast).map((c) => c.id)).toEqual(["pass", "review", "low", "fail"]);
   });
 
   test("quality averages what is present", () => {

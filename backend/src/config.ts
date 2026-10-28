@@ -64,6 +64,9 @@ export interface AppConfig {
   jevModel: string;
   jevApiKey: string;
   jevTimeoutSec: number;
+  /** With Jev: it finds the moments, scores them, picks hook lines and quote titles (jevDirector.ts);
+   *  the LLM director and review are skipped. false = Jev only gates. */
+  jevDirector: boolean;
   /** Tebar (tebar.app) REST API for publishing clips and reading their metrics; off without TEBAR_API_KEY. */
   tebarBaseUrl: string;
   tebarApiKey: string;
@@ -140,6 +143,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     jevModel: (env.JEV_MODEL ?? "").trim() || "jev-1.14.0",
     jevApiKey: (env.JEV_API_KEY ?? "").trim(),
     jevTimeoutSec: int(env.JEV_TIMEOUT, 30),
+    jevDirector: !/^(0|false|no|off)$/i.test((env.JEV_DIRECTOR ?? "").trim()),
     tebarBaseUrl: (env.TEBAR_BASE_URL ?? "").trim() || "https://api.tebar.app/v1",
     tebarApiKey: (env.TEBAR_API_KEY ?? "").trim(),
     tebarSyncHours: Math.max(0, int(env.TEBAR_SYNC_HOURS, 6)),

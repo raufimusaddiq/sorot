@@ -862,7 +862,7 @@ describe('editing suite', () => {
 });
 
 describe('LLM, gate and publishing on clip cards; the Settings app', () => {
-  it('shows the gate verdict, an LLM pick and the reason; Publish only with Tebar connected', async () => {
+  it('shows the gate verdict, an LLM or Jev pick and the reason; Publish only with Tebar connected', async () => {
     seedCompleted();
     state.clips.v1 = [
       makeClip('c1', 'v1', 'PRIMARY', 1, { source: 'llm', reason: 'LLM pick: setup and payoff', gateVerdict: 'PASS',
@@ -870,6 +870,8 @@ describe('LLM, gate and publishing on clip cards; the Settings app', () => {
       makeClip('c2', 'v1', 'BACKUP', 2, { gateVerdict: 'FAIL', reason: 'Held back: needs earlier context to make sense.',
         gate: JSON.stringify({ verdict: 'FAIL', by: 'rules', model: null, reasons: ['needs earlier context to make sense'], answers: {}, quality: 0.3 }) }),
       makeClip('c3', 'v1', 'BACKUP', 3, { gateVerdict: 'REVIEW', gate: '{broken' }),
+      makeClip('c4', 'v1', 'BACKUP', 4, { source: 'jev', reason: 'Jev: strong opening, clear payoff' }),
+      makeClip('c5', 'v1', 'BACKUP', 5, { source: 'rules' }),
     ];
     await renderLoaded();
     const c1 = card('c1');
@@ -878,6 +880,8 @@ describe('LLM, gate and publishing on clip cards; the Settings app', () => {
     expect(within(c1).getByText('LLM pick: setup and payoff')).toBeInTheDocument();
     expect(within(card('c2')).getByText('Gate FAIL · rules')).toHaveAttribute('title', 'Rules: needs earlier context to make sense');
     expect(within(card('c3')).getByText('Gate REVIEW')).toHaveAttribute('title', 'Rules');
+    expect(within(card('c4')).getByText('Jev pick')).toHaveAttribute('title', 'Moment picked by the Jev director');
+    expect(within(card('c5')).queryByText(/ pick$/)).not.toBeInTheDocument();
     expect(within(c1).queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
   });
 

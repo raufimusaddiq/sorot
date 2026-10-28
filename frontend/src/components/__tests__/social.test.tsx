@@ -25,8 +25,9 @@ describe('ConnectionsPanel', () => {
     const llm = await screen.findByRole('region', { name: 'LLM' });
     expect(within(llm).getByText('off')).toBeInTheDocument();
     expect(within(llm).getByText(/the rules find, score and title the clips/)).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Jev quality gate' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Tebar publishing' })).toBeInTheDocument();
+    const jev = screen.getByRole('region', { name: 'Jev quality gate' });
+    const tebar = screen.getByRole('region', { name: 'Tebar publishing' });
+    expect(within(tebar).queryByLabelText(/Director/)).not.toBeInTheDocument();
 
     const save = within(llm).getByRole('button', { name: 'Save' });
     expect(save).toBeDisabled();
@@ -45,6 +46,11 @@ describe('ConnectionsPanel', () => {
     expect(sent('PUT', '/api/settings/llm')[1]).toEqual({ director: false });
     fireEvent.click(within(llm).getByRole('button', { name: 'Use .env' }));
     await waitFor(() => expect(sent('PUT', '/api/settings/llm')[2]).toMatchObject({ baseUrl: null, model: null, apiKey: null, director: null }));
+
+    expect(within(jev).getByLabelText(/wins over the LLM director/)).toBeChecked();
+    fireEvent.click(within(jev).getByLabelText(/Director/));
+    await waitFor(() => expect(within(jev).getByLabelText(/Director/)).not.toBeChecked());
+    expect(sent('PUT', '/api/settings/jev')[0]).toEqual({ director: false });
   });
 
   it('tests a connection and shows the result; errors are shown', async () => {
