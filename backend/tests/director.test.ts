@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  BRIEF_CHARS, dropOverlaps, hookSpan, mineMoments, mineWindows, momentFrom, overlapShare, transcriptSample, videoBrief,
+  BRIEF_CHARS, BRIEF_TASK, dropOverlaps, MINE_TASK, hookSpan, mineMoments, mineWindows, momentFrom, overlapShare, transcriptSample, videoBrief,
   type Line,
 } from "../src/director";
 import { Llm, LlmError, type ChatMessage } from "../src/llm";
@@ -48,7 +48,9 @@ describe("brief", () => {
     await expect(videoBrief(fakeLlm(() => "sorry").llm, lines(2), {})).rejects.toBeInstanceOf(LlmError);
     const noDirection = fakeLlm(() => JSON.stringify({ summary: "s" }));
     expect(await videoBrief(noDirection.llm, lines(2), {})).toEqual({ summary: "s", topics: [], people: [], audience: "", angle: "" });
-    expect(JSON.parse(noDirection.seen[0]![1]!.content)).toEqual({ title: "", transcript: expect.any(String) });
+    const sent = JSON.parse(noDirection.seen[0]![1]!.content);
+    expect(sent).toEqual({ title: "", transcript: expect.any(String), task: BRIEF_TASK });
+    expect(Object.keys(sent).at(-1)).toBe("task");   // the task comes last, after the long transcript
   });
 });
 
@@ -76,6 +78,8 @@ describe("moments", () => {
 
   test("a moment is validated against the transcript", () => {
     const ls = lines(30);   // 5 s each
+    expect(momentFrom(ls, { start: 2, end: 6, hook: "Teks hook", why: "x" }, 0, 29)).not.toHaveProperty("hookStart");   // text, not an id
+    expect(momentFrom(ls, { start: 2, end: 6, hook_line: "4", why: "x" }, 0, 29)).toMatchObject({ hookStart: 20 });
     expect(momentFrom(ls, { start: 2, end: 6, hook: 4, why: "  bagus " }, 0, 29)).toEqual({
       startTime: 10, endTime: 34.8, duration: 24.8, text: ls.slice(2, 7).map((l) => l.text).join(" "),
       source: "llm", why: "bagus", hookStart: 20, hookEnd: 24.8,
@@ -116,7 +120,11 @@ describe("moments", () => {
     expect(out.moments.map((m) => m.why)).toEqual(["part 1/3", "part 2/3", "part 3/3"]);
     expect(out.moments.map((m) => m.startTime)).toEqual([...out.moments.map((m) => m.startTime)].sort((x, y) => x - y));
     expect(progress.at(-1)).toBe("3/3");
-    expect(JSON.parse(seen[0]![1]!.content)).toMatchObject({ video: "T", direction: "lucu", brief: { summary: "S", people: ["Budi"] } });
+    const sent = JSON.parse(seen[0]![1]!.content);
+    expect(sent).toMatchObject({ video: "T", direction: "lucu", brief: { summary: "S", people: ["Budi"] }, task: MINE_TASK });
+    expect(Object.keys(sent).at(-1)).toBe("task");
+    expect(MINE_TASK).toContain("at most 4");
+    expect(MINE_TASK).toContain('"hook_line": <line id>');
   });
 
   test("a failed part is skipped; two failures in a row stop the rest; bare lists are accepted", async () => {

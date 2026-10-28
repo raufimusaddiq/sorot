@@ -167,8 +167,9 @@ export class Publisher {
           platforms, transcript: (clip.textContent ?? "").slice(0, 2000), title: clip.title ?? "", description: clip.description ?? "",
           ...(brief ? { brief: { summary: brief.summary, people: brief.people, audience: brief.audience } } : {}),
           ...(direction ? { direction } : {}),
+          task: 'Write the post for each platform. Answer with JSON only: {"posts": {"<platform>": {"text", "title"}}}.',
         }) },
-      ], { temperature: 0.5, maxTokens: 1500 });
+      ], { temperature: 0.5 });
       const posts = ((parseJson(msg.content) as Json | null)?.posts ?? null) as Record<string, Json> | null;
       if (!posts || typeof posts !== "object") return null;
       const out: Record<string, { text: string; title?: string }> = {};

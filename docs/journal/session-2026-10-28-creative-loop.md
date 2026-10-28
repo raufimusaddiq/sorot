@@ -59,3 +59,27 @@ fallback everywhere, and "Bun first, Python second". Design + sources:
   option names in the docs.
 - Director quality on a real LLM (only fakes in tests); full pipeline with
   Whisper (no model download here).
+
+## Live tests (same day, keys provided: Jev + an OpenAI-compatible Kimi K3 gateway)
+- **Jev** (`jev-1.14.0`, `bun run jev-eval`, 16 synthetic cases, ~22k input
+  tokens): every labelled yes/no on the right side of 0.7/0.3, separation
+  0.74-0.95 (rules 0.20-0.60, risks only "unsure"); verdicts 11/12. The two
+  misses were label errors (payoff rubric; an unnamed group = needs context),
+  fixed after seeing the answers → 12/12 (circular), rules 9/12.
+- **LLM `kimi-k3-1-pro`** is a reasoning model, and the first live run broke
+  three things the fakes didn't: (1) `max_tokens` covers its thinking — 20
+  tokens gave `content: null`; budgets are now `LLM_MAX_TOKENS` (4000) and an
+  empty answer cut by the budget is an LlmError; (2) over a 5-min transcript it
+  ignored the system prompt (summarised, or asked "what should I do with
+  this?") → 0 picks; every request now ends with a `task` field restating the
+  job + format → 18 picks on the 28-min transcript; (3) it read `"hook"` as
+  "write a hook" (text) → field renamed `hook_line` (id). Also: a gateway error
+  inside HTTP 200 (`all_providers_failed`) now reads "LLM error: …".
+- Latency: 30-150 s per call → `LLM_TIMEOUT=300` for this model; review
+  batches now run 2 at a time.
+- `/verify` (Segment + Score) OPEN: 60/60 focused tests, llm/director/
+  clipReview 100%; full backend 289/289. Live SEGMENT on 10 min of the real
+  transcript with direction "fokus ke kritik soal harga dan spesifikasi, bukan
+  unboxing": brief + 5 LLM picks (all price/spec/brand critique, each with a
+  hook line) next to 11 rule windows; without a direction the picks included
+  unboxing moments.

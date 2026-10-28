@@ -49,6 +49,8 @@ export interface AppConfig {
   llmModel: string;
   llmApiKey: string;
   llmTimeoutSec: number;
+  /** Output budget per LLM call. Reasoning models (e.g. Kimi, DeepSeek-R1) spend it thinking before they answer. */
+  llmMaxTokens: number;
   /** Web search for the discovery agent: "bing" (key-free HTML), a SearXNG URL, or "off". */
   webSearch: string;
   /** On/off switches for the three connections (UI / CLI settings); each still needs its URL, model or key. */
@@ -127,6 +129,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmModel: (env.LLM_MODEL ?? "").trim(),
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),
     llmTimeoutSec: int(env.LLM_TIMEOUT, 120),
+    llmMaxTokens: Math.max(256, int(env.LLM_MAX_TOKENS, 4000)),
     webSearch: (env.WEB_SEARCH ?? "").trim() || "bing",
     llmEnabled: true,
     jevEnabled: true,

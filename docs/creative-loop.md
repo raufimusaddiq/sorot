@@ -153,11 +153,24 @@ runs Jev **and** the rules over labelled excerpts and prints, per question, how
 many answers land on the right side of 0.7 / 0.3, how many are unsure, and the
 separation between the yes- and no-labelled means. The shipped fixture
 (`backend/tests/fixtures/jev-gate-eval.json`, 16 cases) is **synthetic** —
-written to exercise each question, not real data. On it the rules get 10/12
-verdicts right, which says little about real clips. **Jev has not been run on
-it yet** (no key in this environment). Next: label 50+ of your own clips, run
-the eval, then move thresholds — or rewrite a question whose separation stays
-small.
+written to exercise each question, not real data.
+
+First live run (2026-10-28, `jev-1.14.0`, 16 cases, ~22k input tokens):
+
+| | Jev | rules |
+|---|---|---|
+| Yes/no answers on the right side of 0.7 / 0.3 | all labelled cases | hook 2/4, filler 6/7, risks 0/4 (all "unsure") |
+| Separation (yes-mean − no-mean) | 0.74 – 0.95 | 0.20 – 0.60 (0.30 for needs-context after the fix) |
+| Verdicts | 11/12, then 12/12 after two label fixes | 10/12, then 9/12 after the fixes |
+
+The two misses were my labels, not the questions — and I fixed them *after*
+seeing Jev's answers, so 12/12 is partly circular: the payoff rubric itself
+calls a concrete savings rule "useful information" (level 2, I had written 1),
+and the SARA example refers to "suku itu / mereka" without naming them, which
+is exactly `needs_prior_context` (FAIL beats REVIEW). On a synthetic set this
+says the questions read as intended; it is not evidence about real clips.
+Next: label 50+ of your own clips, run the eval, then move thresholds — or
+rewrite a question whose separation stays small.
 
 ---
 

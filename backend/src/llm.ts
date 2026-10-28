@@ -63,7 +63,8 @@ export function parseJson(text: string | null | undefined): unknown {
 
 export class Llm {
   constructor(
-    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmEnabled?: boolean },
+    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec">
+      & { llmEnabled?: boolean; llmMaxTokens?: number },
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
@@ -79,7 +80,8 @@ export class Llm {
     if (!this.enabled) throw new LlmError("No LLM configured (set LLM_BASE_URL and LLM_MODEL)");
     const base = this.config.llmBaseUrl.replace(/\/+$/, "");
     const body: Json = {
-      model: this.config.llmModel, messages, temperature: opts.temperature ?? 0.4, max_tokens: opts.maxTokens ?? 4000,
+      model: this.config.llmModel, messages, temperature: opts.temperature ?? 0.4,
+      max_tokens: opts.maxTokens ?? this.config.llmMaxTokens ?? 4000,
     };
     if (opts.tools?.length) Object.assign(body, { tools: opts.tools, tool_choice: "auto" });
     const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -100,8 +102,16 @@ export class Llm {
     } catch {
       throw new LlmError(`LLM answered with invalid JSON: ${text.slice(0, 120)}`);
     }
-    const msg = (data.choices as Array<{ message?: ChatMessage }> | undefined)?.[0]?.message;
+    const choice = (data.choices as Array<{ message?: ChatMessage; finish_reason?: string }> | undefined)?.[0];
+    const msg = choice?.message;
+    // Some gateways report a failure as {"error": …} with HTTP 200.
+    const err = data.error as { message?: string; code?: string } | undefined;
+    if (!msg && err) throw new LlmError(`LLM error: ${err.message ?? err.code ?? JSON.stringify(err).slice(0, 200)}`);
     if (!msg) throw new LlmError(`Unexpected LLM response: ${text.slice(0, 300)}`);
+    // A reasoning model can spend the whole budget thinking and answer nothing.
+    if (!msg.content && !msg.tool_calls?.length && choice?.finish_reason === "length") {
+      throw new LlmError(`LLM used all ${String(body.max_tokens)} max_tokens before answering (raise LLM_MAX_TOKENS for reasoning models)`);
+    }
     return { ...msg, content: msg.content ?? "" };
   }
 

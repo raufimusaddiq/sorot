@@ -105,13 +105,22 @@ export function transcriptSample(lines: Line[], budget = BRIEF_CHARS): string {
   return out.join("\n…\n");
 }
 
+// Each request ends with its task restated: over a long transcript a model can
+// lose a task stated only in the system prompt (a reasoning model summarised
+// the lines, or asked what to do with them, instead of picking moments).
+export const BRIEF_TASK = 'Write the brief for this video. Answer with JSON only: {"summary", "topics", "people", "audience", "angle"}.';
+export const MINE_TASK = `Pick at most ${MINE_PER_WINDOW} clip moments from these lines (line ids only). `
+  + 'Answer with JSON only: {"moments": [{"start": <line id>, "end": <line id>, "hook_line": <line id>, "why": "<sentence>"}]}'
+  + ' — ids are the numbers in [brackets]; an empty list if none.';
+
 export async function videoBrief(llm: Llm, lines: Line[], ctx: DirectorContext): Promise<VideoBrief> {
   const msg = await llm.chat([
     { role: "system", content: BRIEF_SYSTEM },
     { role: "user", content: JSON.stringify({
       title: ctx.title ?? "", ...(ctx.direction ? { direction: ctx.direction } : {}), transcript: transcriptSample(lines),
+      task: BRIEF_TASK,
     }) },
-  ], { temperature: 0.3, maxTokens: 800 });
+  ], { temperature: 0.3 });
   const d = parseJson(msg.content) as Json | null;
   const summary = text(d?.summary, 600);
   if (!summary) throw new LlmError("LLM brief had no summary");
@@ -130,12 +139,13 @@ Pick the moments in this part that work as stand-alone clips. A good clip:
 - ends on the line that completes the payoff: the answer, punchline, conclusion or outcome of the story
 - needs no earlier context to follow
 - lasts 15-60 seconds
-For each moment also give the hook line: the one line inside it most likely to stop someone scrolling (it may be replayed at the start).
+For each moment also give hook_line: the id of the one line inside it most likely to stop someone scrolling (it may be replayed
+at the start). It is a line id from the brackets, not new text.
 Skip greetings, sponsor reads, housekeeping and filler. If nothing in this part is worth a clip, return an empty list.
 When the creator gives a direction, pick the moments that fit it.
 
 Answer with JSON only:
-{"moments": [{"start": <first line id>, "end": <last line id>, "hook": <line id>, "why": "<one short English sentence>"}]}
+{"moments": [{"start": <first line id>, "end": <last line id>, "hook_line": <line id>, "why": "<one short English sentence>"}]}
 At most ${MINE_PER_WINDOW} moments, best first. Use only line ids shown in this part.`;
 
 /** [first, last] line indices of overlapping transcript parts, ~MINE_WINDOW_SEC each. */
@@ -190,7 +200,8 @@ export function momentFrom(lines: Line[], raw: unknown, lo: number, hi: number):
     text: lines.slice(start, end + 1).map((l) => l.text.trim()).join(" "),
     source: "llm", why: text(r.why, 300),
   };
-  const hook = Number(r.hook);
+  // "hook" was the field's first name; a model read it as "write a hook" (text), hence hook_line.
+  const hook = Number(r.hook_line ?? r.hook);
   if (Number.isInteger(hook) && hook >= start && hook <= end) {
     const [a, b] = hookSpan(lines[hook]!);
     if (a >= startTime && b <= endTime) Object.assign(moment, { hookStart: pyRound(a, 3), hookEnd: pyRound(b, 3) });
@@ -220,9 +231,9 @@ async function minePart(llm: Llm, lines: Line[], [lo, hi]: [number, number], par
       video: ctx.title ?? "",
       ...(ctx.brief ? { brief: { summary: ctx.brief.summary, people: ctx.brief.people } } : {}),
       ...(ctx.direction ? { direction: ctx.direction } : {}),
-      part, lines: numbered,
+      part, lines: numbered, task: MINE_TASK,
     }) },
-  ], { temperature: 0.4, maxTokens: 1200 });
+  ], { temperature: 0.4 });
   const data = parseJson(msg.content);
   const moments = Array.isArray(data) ? data : (data as Json | null)?.moments;
   if (!Array.isArray(moments)) throw new LlmError("LLM reply had no moments list");

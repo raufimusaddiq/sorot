@@ -55,6 +55,14 @@ describe("chat", () => {
     await expect(new Llm(CFG, server(new Response("bad key", { status: 401 })).fetchFn).chat([])).rejects.toThrow("LLM HTTP 401: bad key");
     await expect(new Llm(CFG, server(new Response("<html>")).fetchFn).chat([])).rejects.toThrow("invalid JSON");
     await expect(new Llm(CFG, server(Response.json({ error: "x" })).fetchFn).chat([])).rejects.toBeInstanceOf(LlmError);
+    // A gateway's failure inside an HTTP 200, and a reasoning model that spent the whole budget thinking.
+    await expect(new Llm(CFG, server(Response.json({ error: { code: "all_providers_failed", message: "upstream unavailable" } })).fetchFn).chat([]))
+      .rejects.toThrow("LLM error: upstream unavailable");
+    await expect(new Llm(CFG, server(Response.json({ error: { type: "x" } })).fetchFn).chat([])).rejects.toThrow('LLM error: {"type":"x"}');
+    const thinking = server(Response.json({ choices: [{ finish_reason: "length", message: { role: "assistant", content: null, reasoning_content: "hmm" } }] }));
+    await expect(new Llm({ ...CFG, llmMaxTokens: 300 }, thinking.fetchFn).chat([])).rejects.toThrow("used all 300 max_tokens before answering");
+    const cut = server(Response.json({ choices: [{ finish_reason: "length", message: { role: "assistant", content: "partial" } }] }));
+    expect((await new Llm(CFG, cut.fetchFn).chat([])).content).toBe("partial");   // some text: let the caller judge it
   });
 
   test("parseJson tolerates prose and fences", () => {

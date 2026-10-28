@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { REVIEW_BATCH, reviewClips, rulesReason } from "../src/clipReview";
+import { REVIEW_BATCH, REVIEW_CONCURRENCY, REVIEW_TASK, reviewClips, rulesReason } from "../src/clipReview";
 import { Llm, LlmError, type ChatMessage } from "../src/llm";
 import { determineTier, type ScoredSegment } from "../src/scoring";
 
@@ -34,7 +34,10 @@ describe("reviewClips", () => {
 
   test("blends scores and writes copy", async () => {
     const llm = fakeLlm((messages) => {
-      const excerpts = JSON.parse(messages[1]!.content).excerpts;
+      const sent = JSON.parse(messages[1]!.content);
+      expect(Object.keys(sent).at(-1)).toBe("task");     // restated after the data
+      expect(sent.task).toBe(REVIEW_TASK);
+      const excerpts = sent.excerpts;
       expect(excerpts[1]).toEqual({ id: 1, start: "1:00", seconds: 40, text: "Ternyata ini rahasia besar" });
       return "```json\n" + JSON.stringify({ clips: [
         { id: 0, score: 96, reason: "Opens on a shocking claim.", title: "Rahasia yang bikin kaget",
@@ -63,6 +66,24 @@ describe("reviewClips", () => {
     const out = (await reviewClips([seg(0, 0.9)], list, determineTier)).segments[0]!;
     expect(out).toMatchObject({ finalScore: 0.95, title: "rule title", description: "rule desc" });
     expect(out.reason.startsWith("Rule score")).toBeTrue();
+  });
+
+  test("batches run two at a time and every batch is answered", async () => {
+    const llm = new Llm(ON);
+    let inFlight = 0;
+    let peak = 0;
+    llm.chat = async (messages) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await Bun.sleep(5);
+      inFlight--;
+      const ids = JSON.parse(messages[1]!.content).excerpts.map((e: { id: number }) => e.id);
+      return { role: "assistant", content: JSON.stringify({ clips: ids.map((id: number) => ({ id, score: 80 })) }) };
+    };
+    const segs = Array.from({ length: REVIEW_BATCH * 4 + 1 }, (_, i) => seg(i, 0.5));
+    const { segments } = await reviewClips(segs, llm, determineTier);
+    expect(peak).toBe(REVIEW_CONCURRENCY);
+    expect(segments.every((s) => s.scoredBy === "llm+rules")).toBeTrue();
   });
 
   test("unexpected errors are not swallowed", async () => {

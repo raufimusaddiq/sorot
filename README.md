@@ -303,6 +303,7 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 | `LLM_BASE_URL` / `LLM_MODEL` | empty (off) | OpenAI-compatible endpoint, e.g. Ollama `http://host.docker.internal:11434/v1` + `qwen2.5:7b` |
 | `LLM_API_KEY` | empty | Hosted LLMs — in `.env.llm` (gitignored), never `.env.docker` |
 | `LLM_DIRECTOR` | `true` | With an LLM: brief + own moment picks + hook. `false` = review and copy only |
+| `LLM_TIMEOUT` / `LLM_MAX_TOKENS` | `120` / `4000` | Seconds and output tokens per call. Reasoning models (Kimi, DeepSeek-R1…) think before they answer: give them `300` s and room in the budget |
 | `JEV_API_KEY` | empty (off) | Jev quality gate ([TypeSafe](https://docs.typesafe.ai)) — in `.env.llm`. Off = the rules answer the gate's questions |
 | `JEV_MODEL` / `JEV_URL` | `jev-1.14.0` / TypeSafe's `/v1/systemone` | Pinned model; OpenRouter works too (`https://openrouter.ai/api/alpha/decisions` + its model id) |
 | `TEBAR_API_KEY` | empty (off) | Publishing via [Tebar](https://docs.tebar.app/api) (paid plan) — in `.env.llm` |

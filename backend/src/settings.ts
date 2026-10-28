@@ -109,7 +109,7 @@ export class ConnectionSettings {
     try {
       if (conn === "llm") {
         if (!this.clients.llm.enabled) return done({ ok: false, error: "Not configured: set a base URL and a model" });
-        const msg = await this.clients.llm.chat([{ role: "user", content: "Reply with the single word OK." }], { temperature: 0, maxTokens: 10 });
+        const msg = await this.clients.llm.chat([{ role: "user", content: "Reply with the single word OK." }], { temperature: 0 });
         return done({ ok: true, model: this.clients.llm.model, detail: msg.content.trim().slice(0, 60) });
       }
       if (conn === "jev") {

@@ -9,6 +9,7 @@
 // `reason`, so the UI can show where a score came from.
 
 import { LlmError, parseJson, type Llm } from "./llm";
+import { mapPool } from "./pool";
 import { pyRound } from "./pyCompat";
 import type { VideoBrief } from "./director";
 import type { ScoredSegment } from "./scoring";
@@ -16,6 +17,8 @@ import type { Json } from "./types";
 
 export const REVIEW_BATCH = 6;  // small batches fit the default 4k context of local models
 export const LLM_WEIGHT = 0.5;
+/** Batches in flight: a reasoning model takes ~1 min per batch; a local server just queues the second. */
+export const REVIEW_CONCURRENCY = 2;
 const MAX_TEXT = 1200;
 
 export const REVIEW_SYSTEM = `You are a short-form video editor. You judge transcript excerpts of long
@@ -66,6 +69,9 @@ function hashtags(tags: unknown, limit: number): string[] {
   return out.slice(0, limit);
 }
 
+/** Restated after the data: a model can lose a task stated only in the system prompt. */
+export const REVIEW_TASK = 'Rate every excerpt. Answer with JSON only: {"clips": [{"id", "score", "reason", "title", "description", "hashtags"}]}.';
+
 export interface ReviewContext {
   title?: string | null;
   brief?: VideoBrief | null;
@@ -81,7 +87,9 @@ async function ask(llm: Llm, batch: ScoredSegment[], offset: number, ctx: Review
     : ctx.title ? { title: ctx.title } : null;
   const msg = await llm.chat([
     { role: "system", content: REVIEW_SYSTEM },
-    { role: "user", content: JSON.stringify({ ...(video ? { video } : {}), ...(ctx.direction ? { direction: ctx.direction } : {}), excerpts }) },
+    { role: "user", content: JSON.stringify({
+      ...(video ? { video } : {}), ...(ctx.direction ? { direction: ctx.direction } : {}), excerpts, task: REVIEW_TASK,
+    }) },
   ], { temperature: 0.3 });
   const data = parseJson(msg.content);
   const clips = Array.isArray(data) ? data : (data as Json | null)?.clips;
@@ -102,7 +110,8 @@ export async function reviewClips(
   }));
   if (!llm.enabled) return { segments: out, error: null };
   let error: string | null = null;
-  for (let offset = 0; offset < out.length; offset += REVIEW_BATCH) {
+  const offsets = Array.from({ length: Math.ceil(out.length / REVIEW_BATCH) }, (_, i) => i * REVIEW_BATCH);
+  await mapPool(offsets, REVIEW_CONCURRENCY, async (offset) => {
     const batch = out.slice(offset, offset + REVIEW_BATCH);
     let answers: Map<number, Json>;
     try {
@@ -110,7 +119,7 @@ export async function reviewClips(
     } catch (e) {
       if (!(e instanceof LlmError)) throw e;
       error ??= e.message;
-      continue;
+      return;
     }
     batch.forEach((s, i) => {
       const a = answers.get(offset + i);
@@ -128,6 +137,6 @@ export async function reviewClips(
       const desc = String(a.description ?? "").trim();
       if (desc) s.description = [desc.slice(0, 400), hashtags(a.hashtags, 7).join(" ")].filter(Boolean).join("\n");
     });
-  }
+  });
   return { segments: out, error };
 }
