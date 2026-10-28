@@ -87,6 +87,59 @@ class TestTranscribe:
         run_main(transcribe, monkeypatch, capsys, "--audio", "a.wav", "--compute-type", "int8_float16")
         assert [c[2] for c in FakeWhisper.created] == ["float16", "int8_float16"]
 
+    def test_drift_start(self):
+        line = lambda t, text: {"start": t, "text": text}
+        good = [line(i, "Oke.") for i in range(25)]
+        bad = [line(600 + i, "oke") for i in range(25)]
+        assert transcribe.drift_start(good + bad, "id") == 600
+        assert transcribe.drift_start(bad, "id") == 600
+        assert transcribe.drift_start(good, "id") is None
+        assert transcribe.drift_start(good + bad[:5], "id") is None     # too few lines to judge
+        assert transcribe.drift_start(good + bad, "th") is None         # Thai has no sentence punctuation
+        assert transcribe.drift_start([], "id") is None
+        assert transcribe.punctuated([]) == 1.0
+
+    def test_lost_punctuation_is_re_run_from_there(self, monkeypatch, capsys):
+        calls = []
+
+        class DriftWhisper(FakeWhisper):
+            def transcribe(self, audio, language, word_timestamps, vad_filter, beam_size, **options):
+                calls.append((audio if isinstance(audio, str) else len(audio), options))
+                if len(calls) == 1:   # punctuated for 10 min, then not
+                    texts = [(i * 20.0, "Oke.") for i in range(30)] + [(600 + i * 20.0, "oke deh") for i in range(30)]
+                else:                 # the re-run, from 600 s: times relative to the cut
+                    texts = [(i * 20.0, "Oke deh.") for i in range(30)]
+                word = types.SimpleNamespace(word=" oke", start=1.0, end=1.5, probability=0.9)
+                segs = [types.SimpleNamespace(start=t, end=t + 5, text=x, avg_logprob=-0.1, words=[word]) for t, x in texts]
+                return iter(segs), types.SimpleNamespace(language=language, duration=1200.0)
+
+        decoded = [0.0] * 1200                     # one stand-in sample per second
+        monkeypatch.setattr(transcribe, "SAMPLE_RATE", 1)
+        monkeypatch.setitem(sys.modules, "faster_whisper",
+                            types.SimpleNamespace(WhisperModel=DriftWhisper, decode_audio=lambda path, sampling_rate: decoded))
+        code, env = run_main(transcribe, monkeypatch, capsys, "--audio", "a.wav", "--device", "cpu")
+        segs = env["data"]["segments"]
+        assert code == 0 and len(calls) == 2
+        # Resumes where the last kept line (580-585 s) ends.
+        assert calls[1] == (len(decoded) - 585, {"hotwords": transcribe.PUNCTUATED_PROMPT["id"]})
+        assert [s["index"] for s in segs] == list(range(60))
+        assert segs[30]["start"] == 585.0 and segs[30]["text"] == "Oke deh."
+        assert segs[30]["words"][0]["start"] == 586.0
+        assert "Punctuation lost from 600 s (0%); re-run: 100%, kept" in run_main.err
+
+    def test_a_worse_re_run_is_discarded(self, monkeypatch, capsys):
+        class StuckWhisper(FakeWhisper):
+            def transcribe(self, audio, language, word_timestamps, vad_filter, beam_size, **options):
+                segs = [types.SimpleNamespace(start=i * 20.0, end=i * 20.0 + 5, text="oke", avg_logprob=None)
+                        for i in range(30)]
+                return iter(segs), types.SimpleNamespace(language=language, duration=600.0)
+
+        monkeypatch.setitem(sys.modules, "faster_whisper",
+                            types.SimpleNamespace(WhisperModel=StuckWhisper, decode_audio=lambda path, sampling_rate: [0] * 10))
+        code, env = run_main(transcribe, monkeypatch, capsys, "--audio", "a.wav", "--language", "en")
+        assert code == 0 and len(env["data"]["segments"]) == 30
+        assert "re-run: 0%, discarded" in run_main.err
+
     def test_model_failure(self, monkeypatch, capsys):
         def boom(*a, **k):
             raise RuntimeError("CUDA OOM")

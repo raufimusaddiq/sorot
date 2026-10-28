@@ -121,6 +121,17 @@ Progress: as segments arrive it prints `PROGRESS <n>` lines (segment end ÷
 audio length, at most 99) on **stderr**; the backend runner turns them into the
 TRANSCRIBE stage's `"Transcribing n%"` and drops them from logs.
 
+Lost punctuation: Whisper conditions each window on the text before it, so a
+stretch written without punctuation can last to the end of the file (once from
+the very first line of a 69 min video). After the pass, the transcript is
+checked in 10-minute buckets; from the first bucket with ≥ 20 lines of which
+under half end a sentence, Whisper runs again on the rest of the audio (from
+the end of the last kept line, starting fresh, with a punctuated Indonesian
+`hotwords` prompt for `id`) and the re-run replaces that part only if it is
+better punctuated. Thai, Lao, Khmer and Burmese are not checked. No Whisper
+setting prevented the drift on its own (`condition_on_previous_text=False`
+lost 3-5 % of words and many sentence breaks on every video).
+
 ---
 
 ### `media_features.py`
