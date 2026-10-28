@@ -36,11 +36,13 @@ const TIER_STICKERS: Record<string, string> = {
 
 function ClipCard({
   clip, score, previewing, onPreview, onExport, onEdit, api,
-  selectable, selected, onSelect,
+  selectable, selected, onSelect, onRender, rendering,
 }: {
   clip: Clip; score?: ClipScore; previewing: boolean;
   onPreview: () => void; onExport: () => void; onEdit: () => void; api: ApiClient;
   selectable?: boolean; selected?: boolean; onSelect?: () => void;
+  /** Render a clip the pipeline left for later (on a CPU only the best are rendered); absent while its video is processing. */
+  onRender?: () => void; rendering?: boolean;
 }) {
   const [showScore, setShowScore] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
@@ -98,6 +100,12 @@ function ClipCard({
           <p className="text-xs text-fg/80 line-clamp-3 mb-4 bg-surface-2 border-2 border-line rounded p-2">{clip.textContent}</p>
         )}
         <div className="flex gap-2 flex-wrap">
+          {!clip.renderPath && onRender && (
+            <button onClick={onRender} disabled={rendering || clip.renderStatus === 'RENDERING'} className="btn btn-primary flex-1"
+              title="Render this clip with its captions">
+              {rendering || clip.renderStatus === 'RENDERING' ? 'Rendering...' : clip.renderStatus === 'FAILED' ? 'Retry render' : 'Render'}
+            </button>
+          )}
           {clip.renderPath && (
             <button onClick={onPreview} className={`btn flex-1 ${previewing ? 'bg-accent text-white' : 'bg-aqua'}`}>
               {previewing ? 'Playing...' : 'Preview'}
@@ -583,6 +591,7 @@ export default function Studio() {
   const [editingClip, setEditingClip] = useState<Clip | null>(null);
   /** Clip id → version (updatedAt) after a re-render, to bust cached media. */
   const [versions, setVersions] = useState<Record<string, string>>({});
+  const [renderingClips, setRenderingClips] = useState<Set<string>>(new Set());
   const [globalError, setGlobalError] = useState<{ msg: string; ctx: string } | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -805,6 +814,22 @@ export default function Studio() {
   const getFilter = (videoId: string): string => filterTiers[videoId] || 'ALL';
   const setFilter = (videoId: string, tier: string) => setFilterTiers(prev => ({ ...prev, [videoId]: tier }));
 
+  /** Render a clip the pipeline left for later: a re-render with no changes. */
+  const handleRender = async (clip: Clip) => {
+    setRenderingClips((prev) => new Set(prev).add(clip.id));
+    try {
+      const { clip: saved } = await api.rerenderClip(clip.id, {});
+      setVersions((v) => ({ ...v, [saved.id]: saved.updatedAt ?? String(Date.now()) }));
+    } catch (e) {
+      reportError(e, 'renderClip');
+    } finally {
+      // Either way the server's status wins (a dropped request may still be rendering).
+      const clips = await fetchClipsForVideo(clip.videoId);
+      setVideoGroups((prev) => prev.map((g) => (g.video.id === clip.videoId ? { ...g, clips } : g)));
+      setRenderingClips((prev) => { const next = new Set(prev); next.delete(clip.id); return next; });
+    }
+  };
+
   const handleExportSelected = async (videoId: string) => {
     if (selectedClips.size === 0) return;
     setExporting(true);
@@ -894,6 +919,7 @@ export default function Studio() {
               const filterTier = getFilter(group.video.id);
               const filteredClips = filterTier === 'ALL' ? group.clips : group.clips.filter(c => c.tier === filterTier);
               const hasRendered = group.clips.some(c => c.renderStatus === 'COMPLETED');
+              const processing = group.job?.status === 'RUNNING' || group.job?.status === 'QUEUED';
               const tierCounts = {
                 PRIMARY: group.clips.filter(c => c.tier === 'PRIMARY').length,
                 BACKUP: group.clips.filter(c => c.tier === 'BACKUP').length,
@@ -1020,6 +1046,8 @@ export default function Studio() {
                                     }).catch(() => {});
                                   }}
                                   onEdit={() => setEditingClip(clip)}
+                                  onRender={processing ? undefined : () => handleRender(clip)}
+                                  rendering={renderingClips.has(clip.id)}
                                   api={api} />
                               ))}
                             </div>

@@ -169,7 +169,9 @@ Put it on `PATH`, then `SOROT_URL=http://gpu-box:8080 sorot health`. 📖 [docs/
 
 Everything runs on the **CPU** — installers switch automatically (`--cpu` / `-Cpu` to force). Only **NVIDIA** GPUs accelerate (CUDA + NVENC).
 
-⏱️ 12-core CPU: a 1-hour video transcribed in ~30 min (`large-v3-turbo`) or ~15 min (`small`), plus ~25 min to render 45 clips. RTX 4060: a 54-min video took ~22 min end to end. Both were measured before the CPU speed-ups (one-pass render with captions, `veryfast`, Whisper on every core) — in a 4-core benchmark a 30 s clip went from 168 s to 46 s, so expect much less now.
+🧠 On a CPU, Sorot renders only the **10 best clips** per video — the rest are listed with scores and titles, one **Render** click away (`MAX_RENDER_CLIPS`). It also runs one video at a time, shows how far Whisper has got (**Transcribing 37%**), and a retry reuses the transcript instead of running Whisper again. Importing a time range copies that section instead of re-encoding it. A GPU renders every PRIMARY/BACKUP clip.
+
+⏱️ 12-core CPU: a 1-hour video transcribed in ~30 min (`large-v3-turbo`) or ~15 min (`small`), plus ~25 min to render 45 clips. RTX 4060: a 54-min video took ~22 min end to end. Both were measured before the CPU speed-ups (one-pass render with captions, `veryfast`, Whisper on every core) — in a 4-core benchmark a 30 s clip went from 168 s to 46 s, so expect much less now. On 4 cores, a 40 s clip with face framing and captions renders in ~22 s; scoring an hour of video takes ~35 s. 🐢 Whisper is the slow part: try `WHISPER_BEAM_SIZE=1` or `WHISPER_MODEL=small`, or `YOUTUBE_CAPTIONS=true` to skip it when a video has uploaded captions.
 
 ---
 
@@ -178,7 +180,7 @@ Everything runs on the **CPU** — installers switch automatically (`--cpu` / `-
 1. 🌐 Open **http://localhost:8080/studio**
 2. 🔗 Paste a YouTube URL or pick a file → **Import & Process** (⚙️ **Options**: caption style, framing, silence trim, hook first, music, or just **13:25 → 25:00**)
 3. ⏳ Watch the 9 stages tick by
-4. 🏆 Filter **PRIMARY / BACKUP / SKIP**, preview
+4. 🏆 Filter **PRIMARY / BACKUP / SKIP**, preview (on a CPU, **Render** the clips past the top 10)
 5. 📋 Copy the title + description, download the `.mp4`
 6. ✏️ **Edit** timing or a word → re-render that clip
 7. 📊 Post, then log the results (**FB**); after 5+, **Retrain** in Learning
@@ -284,6 +286,9 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 | `BGM_FILE` / `BGM_VOLUME` | none / `0.12` | Default music from `data/music` |
 | `X264_PRESET` | `veryfast` | CPU encoder preset (`fast`: slightly better quality, ~2x slower) |
 | `WHISPER_THREADS` | all cores | CPU threads for Whisper |
+| `WHISPER_BEAM_SIZE` | `5` | `1` = faster on CPU, a little less accurate — try it on your videos |
+| `MAX_RENDER_CLIPS` | `10` on CPU, all on GPU | Best clips rendered per video; the rest render on request. `0` = all |
+| `MAX_CONCURRENT_PIPELINES` | `1` on CPU, `2` on GPU | Videos processed at once (more wait in a queue) |
 | `VARIATIONS` | `false` | Also make zoom-preset copies of the top clips (not shown in the app yet) |
 | `LLM_BASE_URL` / `LLM_MODEL` | empty (off) | OpenAI-compatible endpoint, e.g. Ollama `http://host.docker.internal:11434/v1` + `qwen2.5:7b` |
 | `LLM_API_KEY` | empty | Hosted LLMs — in `.env.llm` (gitignored), never `.env.docker` |

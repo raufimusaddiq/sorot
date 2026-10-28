@@ -25,7 +25,10 @@ def _load_audio_cache(audio_path):
             wf.setpos(0)
             raw = wf.readframes(total_frames)
             dtype = {1: np.int8, 2: np.int16, 4: np.int32}.get(sampwidth, np.int16)
-            samples = np.frombuffer(raw, dtype=dtype).astype(np.float64)
+            # float32 (~230 MB per hour of 16 kHz audio, half of float64); squares
+            # are summed in float64 below, and the raw bytes go right away.
+            samples = np.frombuffer(raw, dtype=dtype).astype(np.float32)
+            del raw
             if n_channels > 1:
                 samples = samples[::n_channels]
 
@@ -43,9 +46,9 @@ def _load_audio_cache(audio_path):
                         f"falling back to NumPy.",
                         file=sys.stderr,
                     )
-                    total_rms = float(np.sqrt(np.mean(samples ** 2)))
+                    total_rms = float(np.sqrt(np.mean(np.square(samples), dtype=np.float64)))
             else:
-                total_rms = float(np.sqrt(np.mean(samples ** 2)))
+                total_rms = float(np.sqrt(np.mean(np.square(samples), dtype=np.float64)))
 
             return {"samples": samples, "framerate": framerate, "total_rms": total_rms, "gpu": use_gpu}
     except Exception:
@@ -80,7 +83,7 @@ def _extract_audio_rms_ratio(audio_path, start_time, end_time, audio_cache=None)
             except Exception:
                 pass
 
-        seg_rms = float(np.sqrt(np.mean(seg ** 2)))
+        seg_rms = float(np.sqrt(np.mean(np.square(seg), dtype=np.float64)))
         return seg_rms / total_rms
     except Exception:
         return None

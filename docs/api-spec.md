@@ -64,7 +64,8 @@ still creates a `LOCAL` row (legacy behavior); its pipeline fails at IMPORT.
 
 `startTime`/`endTime` (optional, both or neither, at least 10 s apart) limit
 processing to that part of the source: YouTube downloads only that window
-(`yt-dlp --download-sections`), a local file is cut once. Accepted formats:
+(`yt-dlp --download-sections`, stream-copied — cut exactly, i.e. re-encoded,
+only with YouTube captions on), a local file is cut once. Accepted formats:
 `85`, `85s`, `1:25`, `01:02:03`, `13m25s`. 400 on a bad or one-sided range.
 
 ```json
@@ -146,9 +147,11 @@ All jobs, newest first: `{ "jobs": [Job] }`.
   }
 }
 ```
-`stages` are in pipeline order. For `RENDER` and `SUBTITLE`, `outputPath` holds
+`stages` are in pipeline order. While `TRANSCRIBE` runs Whisper, `outputPath`
+holds `"Transcribing 37%"` (then the transcript path). For `RENDER` and `SUBTITLE`, `outputPath` holds
 progress text such as `"Rendering 3/8 clips"`, then `"7 rendered, 1 failed"` or
-`"8 burned, 0 failed"`. A failed job's `errorMessage` reads
+`"8 burned, 0 failed"` — with `", 35 more render on request"` when
+`MAX_RENDER_CLIPS` held some back. A failed job's `errorMessage` reads
 `Stage {STAGE} failed: {reason}`. 404 `Job not found`.
 
 ### `POST /api/jobs/{jobId}/retry`
@@ -191,9 +194,11 @@ Choices and server defaults for the import form and clip editor:
 
 ## Clips
 
-Tiers: `PRIMARY` (≥ 0.80), `BACKUP` (≥ 0.65), `SKIP` (< 0.65). Only PRIMARY
-and BACKUP clips are rendered and subtitled. Render/export status values are
-`PENDING`, `COMPLETED` or `FAILED`.
+Tiers: `PRIMARY` (≥ 0.80), `BACKUP` (≥ 0.65), `SKIP` (< 0.65). The pipeline
+renders (with captions) PRIMARY and BACKUP clips — all of them on a GPU, the
+best `MAX_RENDER_CLIPS` (default 10) on a CPU. The others stay `PENDING`;
+`POST /api/clips/{id}/rerender` with `{}` renders any clip. Render/export
+status values are `PENDING`, `RENDERING`, `COMPLETED` or `FAILED`.
 
 ### `GET /api/videos/{videoId}/clips`
 `{ "clips": [Clip] }`, sorted by `score` descending (ties broken by `rankPos`).
@@ -228,7 +233,8 @@ Caption words for the clip editor, in absolute source seconds:
 404 unknown clip; 409 `Transcript not available yet`.
 
 ### `POST /api/clips/{clipId}/rerender`
-Re-renders one clip (render + captions) with new settings. All keys optional:
+Re-renders one clip (render + captions) with new settings, or renders a clip
+the pipeline left `PENDING` (`{}`, the studio's **Render** button). All keys optional:
 ```json
 { "startTime": 29.5, "endTime": "0:57",
   "options": { "style": "hormozi", "silenceTrim": true },

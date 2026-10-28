@@ -85,9 +85,9 @@ export class PipelineOrchestrator {
       this.ensureDataDirs();
 
       const stages: Array<[Stage, () => Promise<string | null>]> = [
-        ["IMPORT", () => this.stageImport(video, signal)],
+        ["IMPORT", () => this.stageImport(video, opts, signal)],
         ["AUDIO_EXTRACT", () => this.stageAudioExtract(video, signal)],
-        ["TRANSCRIBE", () => this.stageTranscribe(video, opts, signal)],
+        ["TRANSCRIBE", () => this.stageTranscribe(jobId, video, opts, signal)],
         ["SEGMENT", () => this.stageSegment(video)],
         ["SCORE", () => this.stageScore(video, signal)],
         ["RENDER", () => this.stageRender(jobId, video, opts, signal)],
@@ -163,7 +163,7 @@ export class PipelineOrchestrator {
     return a != null && b != null ? [a, b] : null;
   }
 
-  private async stageImport(video: Video, signal: AbortSignal): Promise<string> {
+  private async stageImport(video: Video, opts: ResolvedOptions, signal: AbortSignal): Promise<string> {
     const section = this.sectionArgs(video);
     if (video.sourceType !== "YOUTUBE") {
       if (!fileNonEmpty(video.filePath)) throw new Error(`Local file not found: ${video.filePath}`);
@@ -193,9 +193,13 @@ export class PipelineOrchestrator {
     // A retry after a completed download skips straight to the cached file.
     if (!fileNonEmpty(outputPath)) {
       try {
-        // A range import downloads only that window, not the whole video.
+        // A range import downloads only that window, not the whole video, as a
+        // stream copy: 1.3 s for a 60 s section where forcing keyframes at the
+        // cuts re-encoded it in 46 s (4 cores), and ffmpeg reads the copy on
+        // the same timeline. YouTube captions are timed on the original video,
+        // so with them on the cut stays exact (re-encoded).
         const sectionFlags = section
-          ? ["--download-sections", `*${section[0]}-${section[1]}`, "--force-keyframes-at-cuts"]
+          ? ["--download-sections", `*${section[0]}-${section[1]}`, ...(opts.youtubeCaptions ? ["--force-keyframes-at-cuts"] : [])]
           : [];
         await this.run(this.config.ytdlpPath, [
           "-f", YTDLP_FORMAT, "--merge-output-format", "mp4", "--no-warnings", ...sectionFlags,
@@ -230,7 +234,7 @@ export class PipelineOrchestrator {
     return audioPath;
   }
 
-  private async stageTranscribe(video: Video, opts: ResolvedOptions, signal: AbortSignal) {
+  private async stageTranscribe(jobId: string, video: Video, opts: ResolvedOptions, signal: AbortSignal) {
     const outputPath = this.path("transcripts", `${video.id}.json`);
     if (opts.youtubeCaptions && video.sourceType === "YOUTUBE" && video.sourceUrl) {
       // Uploaded captions spell names right; fall back to Whisper when the
@@ -251,17 +255,34 @@ export class PipelineOrchestrator {
         console.warn(`YouTube captions failed, using Whisper: ${(e as Error).message}`);
       }
     }
-    // CPU Whisper runs at roughly real time or slower; the GPU far faster.
-    const perMediaMinute = this.config.whisperDevice === "cpu" ? 1.5 : 0.5;
+    // A retry reuses this video's transcript: on a CPU, Whisper takes about as
+    // long as the video, and the audio it heard hasn't changed.
+    if (this.reusableTranscript(outputPath)) return outputPath;
+    // CPU Whisper runs from ~0.5x real time (12 cores) to slower than real
+    // time (4 cores or fewer); this guards against a hang, so it's generous.
+    const perMediaMinute = this.config.whisperDevice === "cpu" ? 4 : 0.5;
+    // An hour of CPU transcription with no sign of life looks hung: show "Transcribing 37%".
+    const stage = this.store.getStage(jobId, "TRANSCRIBE");
+    const onProgress = (p: number) => { if (stage) this.store.updateStage(stage.id, { outputPath: `Transcribing ${p}%` }); };
     const result = await this.runScript("transcribe.py", [
       "--audio", this.path("audio", `${video.id}.wav`),
       "--output", outputPath,
       "--language", this.config.whisperLanguage,
       "--model", this.config.whisperModel,
       "--device", this.config.whisperDevice,
-    ], { signal, timeoutMinutes: timeoutFor("transcribe.py", this.audioSeconds(video), perMediaMinute) });
+    ], { signal, timeoutMinutes: timeoutFor("transcribe.py", this.audioSeconds(video), perMediaMinute), onProgress });
     await Bun.write(outputPath, JSON.stringify(result));
     return outputPath;
+  }
+
+  /** A saved Whisper transcript made with the configured model and language. */
+  private reusableTranscript(path: string): boolean {
+    try {
+      const t = readJson(path);
+      return t.model === this.config.whisperModel && t.language === this.config.whisperLanguage && Array.isArray(t.segments);
+    } catch {
+      return false;
+    }
   }
 
   private async stageSegment(video: Video) {
@@ -396,14 +417,14 @@ export class PipelineOrchestrator {
   /**
    * Fan out one script call per clip (2 in flight). Each call is an
    * independent ffmpeg job on its own file. Progress goes in the stage's
-   * output_path, which the UI shows. `only` narrows the clips; returns
-   * whether any ran.
+   * output_path, which the UI shows. `only` narrows the clips and `note`
+   * ends the final progress text; returns whether any ran.
    */
   private async fanOut(
     jobId: string, stageName: Stage, video: Video, signal: AbortSignal,
     verb: string, done: string, script: string, argsFor: (idx: number) => string[],
     apply: (result: Json) => void, field: "renderStatus" | "exportStatus",
-    only: (idx: number) => boolean = () => true,
+    only: (idx: number) => boolean, note = "",
   ) {
     const indices = (await this.renderableIndices(this.path("segments", `${video.id}.json`))).filter(only);
     const stage = this.store.getStage(jobId, stageName);
@@ -425,7 +446,7 @@ export class PipelineOrchestrator {
       }
       progress(`${verb} ${ok + failed}/${indices.length} clips`);
     });
-    progress(`${ok} ${done}, ${failed} failed`);
+    progress(`${ok} ${done}, ${failed} failed${note}`);
     return indices.length > 0;
   }
 
@@ -453,6 +474,12 @@ export class PipelineOrchestrator {
     mkdirSync(renderDir, { recursive: true });
     const exportDir = this.exportDir(video.id);
     mkdirSync(exportDir, { recursive: true });
+    // Only the best maxRenderClips (a CPU's default 10; a GPU renders all): the
+    // rest keep their scores and copy and render on request.
+    const renderable = await this.renderableIndices(segmentsPath);
+    const limit = this.config.maxRenderClips;
+    const top = new Set(limit > 0 ? renderable.slice(0, limit) : renderable);
+    const later = renderable.length - top.size;
     // Framing, captions and music in one encode per clip (see render.py).
     await this.fanOut(jobId, "RENDER", video, signal, "Rendering", "rendered", "render.py",
       (idx) => [
@@ -462,7 +489,8 @@ export class PipelineOrchestrator {
         ...renderFlags(opts),
         "--export-dir", exportDir, ...captionFlags(opts, this.config),
       ],
-      (r) => this.applyClipResults(video.id, r, "render"), "renderStatus");
+      (r) => this.applyClipResults(video.id, r, "render"), "renderStatus",
+      (idx) => top.has(idx), later ? `, ${later} more render on request` : "");
     return null; // progress text already written to output_path
   }
 

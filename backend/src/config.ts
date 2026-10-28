@@ -32,10 +32,14 @@ export interface AppConfig {
   bgmVolume: number;
   /** Static Next.js export (frontend/out) served at "/"; "" disables it. */
   staticDir: string;
-  /** GPU is the shared resource: one pipeline on GPU, one on CPU stages. */
+  /** GPU: 2 (one pipeline on GPU stages, one on CPU stages). CPU: 1 — every
+   *  heavy stage already uses all cores, and two Whisper runs double the RAM. */
   maxConcurrentPipelines: number;
   queueCapacity: number;
   maxParallelRenders: number;
+  /** Best-scoring clips the pipeline renders (0 = all PRIMARY/BACKUP). GPU: all;
+   *  CPU: 10. The rest are listed and render on request (POST /api/clips/{id}/rerender). */
+  maxRenderClips: number;
   orphanSweepMs: number;
   orphanSweepInitialMs: number;
   /** Topic-fit keywords for the clip scorer (NICHE_KEYWORDS, comma-separated). */
@@ -68,6 +72,7 @@ export function defaultDbPath(dataDir: string, exists: (p: string) => boolean = 
 
 export function loadConfig(env: Env = process.env): AppConfig {
   const dataDir = env.DATA_DIR || "data";
+  const cpu = (env.WHISPER_DEVICE || "cuda") === "cpu";
   return {
     port: int(env.SERVER_PORT, 8080),
     pythonPath: env.PYTHON_PATH || "python3",
@@ -95,9 +100,10 @@ export function loadConfig(env: Env = process.env): AppConfig {
       : 0.12,
     silenceGapSec: Number.parseFloat(env.SILENCE_GAP_SEC ?? "") > 0 ? Number.parseFloat(env.SILENCE_GAP_SEC as string) : 0.6,
     staticDir: env.STATIC_DIR ?? "../frontend/out",
-    maxConcurrentPipelines: int(env.MAX_CONCURRENT_PIPELINES, 2),
+    maxConcurrentPipelines: int(env.MAX_CONCURRENT_PIPELINES, cpu ? 1 : 2),
     queueCapacity: int(env.PIPELINE_QUEUE_CAPACITY, 50),
     maxParallelRenders: int(env.MAX_PARALLEL_RENDERS, 2),
+    maxRenderClips: Math.max(0, int(env.MAX_RENDER_CLIPS, cpu ? 10 : 0)),
     orphanSweepMs: int(env.ORPHAN_SWEEP_MS, 300_000),
     orphanSweepInitialMs: int(env.ORPHAN_SWEEP_INITIAL_MS, 300_000),
     nicheKeywords: (env.NICHE_KEYWORDS ?? "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean),

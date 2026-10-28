@@ -87,12 +87,15 @@ See [linux-install.md](linux-install.md).
 2. Frontend → POST /api/import { url }
 3. Backend creates Job (status=QUEUED), saves to SQLite
 4. Backend starts worker:
-   a. yt-dlp downloads video → data/raw/{videoId}.mp4
+   a. yt-dlp downloads video → data/raw/{videoId}.mp4 (a time range: only that section, stream-copied)
    b. ffmpeg extracts audio → data/audio/{videoId}.wav
-   c. Python transcribe.py → data/transcripts/{videoId}.json (or the video's YouTube captions)
+   c. Python transcribe.py → data/transcripts/{videoId}.json (or the video's YouTube captions;
+      a retry reuses a transcript made with the same model and language)
    d. Bun segments the transcript → data/segments/{videoId}.json
    e. Python media_features.py measures each segment; Bun scores it (+ optional LLM review)
    f. Python render.py crops, renders and burns captions + music in one encode per top clip
+      (every PRIMARY/BACKUP clip on a GPU, the best MAX_RENDER_CLIPS = 10 on a CPU; the rest
+      render on request)
       → data/exports/{videoId}/clip_{rank}_subtitled.mp4 (+ clip_{rank}.ass)
    g. SUBTITLE: subtitle.py re-burns only clips rendered without captions (old jobs, retried)
    h. variations, then the analytics report (Bun)
@@ -133,7 +136,7 @@ Each stage reads from `data/` subfolder and writes output to the next subfolder.
 |-------|-------|---------|--------|
 | 1. Import | URL or file path | yt-dlp / file copy | `data/raw/{videoId}.mp4` |
 | 2. Audio | raw video | ffmpeg extract | `data/audio/{videoId}.wav` |
-| 3. Transcribe | audio WAV | faster-whisper (CUDA) | `data/transcripts/{videoId}.json` |
+| 3. Transcribe | audio WAV | faster-whisper (CUDA or CPU) | `data/transcripts/{videoId}.json` |
 | 4. Segment | transcript JSON | Python segment logic | `data/segments/{videoId}.json` |
 | 5. Score | segments JSON | Python scoring | updates segments JSON |
 | 6. Render | raw video + segments + transcript | ffmpeg, one encode: face-tracking crop / centre / blur, silence trim, ASS karaoke captions, music | `data/exports/{videoId}/clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` |

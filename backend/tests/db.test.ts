@@ -100,9 +100,17 @@ describe("loadConfig", () => {
     expect(c).toMatchObject({
       port: 8080, pythonPath: "python3", pipelineDir: "ai-pipeline", ffmpegPath: "ffmpeg", ytdlpPath: "yt-dlp",
       dataDir: "data", dbPath: "data/sorot.db", whisperModel: "medium", whisperDevice: "cuda",
-      whisperLanguage: "id", maxConcurrentPipelines: 2, queueCapacity: 50, staticDir: "../frontend/out",
+      whisperLanguage: "id", maxConcurrentPipelines: 2, maxRenderClips: 0, queueCapacity: 50, staticDir: "../frontend/out",
       subtitleStyle: "default", silenceTrim: false, silenceGapSec: 0.6, reframeMode: "face",
     });
+  });
+
+  test("a CPU runs one pipeline at a time and renders the best 10 clips; both can be set", () => {
+    expect(loadConfig({ WHISPER_DEVICE: "cpu" })).toMatchObject({ maxConcurrentPipelines: 1, maxRenderClips: 10 });
+    expect(loadConfig({ WHISPER_DEVICE: "cpu", MAX_CONCURRENT_PIPELINES: "2", MAX_RENDER_CLIPS: "0" }))
+      .toMatchObject({ maxConcurrentPipelines: 2, maxRenderClips: 0 });
+    expect(loadConfig({ MAX_RENDER_CLIPS: "5" }).maxRenderClips).toBe(5);
+    expect(loadConfig({ MAX_RENDER_CLIPS: "-3" }).maxRenderClips).toBe(0);
   });
 
   test("caption and silence-trim settings", () => {

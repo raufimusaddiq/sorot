@@ -17,6 +17,8 @@ export interface SpawnOptions {
   stdoutTail?: number;
   /** Keep only the last N chars of stderr — a rogue tqdm stream can't OOM us. */
   stderrTail?: number;
+  /** Called with each stderr line as it arrives. */
+  onStderrLine?: (line: string) => void;
 }
 
 /** Runs an external command (ffmpeg, yt-dlp). Injectable for tests. */
@@ -25,12 +27,16 @@ export type ExecFn = (cmd: string, args: string[], opts?: SpawnOptions) => Promi
 export interface ScriptOptions {
   signal?: AbortSignal;
   timeoutMinutes?: number;
+  /** Percent done, from the script's "PROGRESS n" stderr lines. */
+  onProgress?: (percent: number) => void;
 }
 
 /** Runs an ai-pipeline script and returns its `data` envelope field. */
 export type ScriptRunner = (script: string, args: string[], opts?: ScriptOptions) => Promise<Json>;
 
 const STDERR_TAIL = 64 * 1024;
+const PROGRESS_LINE = /^PROGRESS (\d{1,3})\s*$/;
+const PROGRESS_LINES = /^PROGRESS \d{1,3}[ \t\r]*(\n|$)/gm;
 // Grace period for pipe drains after the child exits. A killed Python parent
 // can leave an ffmpeg grandchild holding the pipes open.
 const DRAIN_GRACE_MS = 5_000;
@@ -56,18 +62,27 @@ export function timeoutFor(script: string, seconds: number, perMediaMinute: numb
   return Math.max(base, Math.ceil((seconds / 60) * perMediaMinute));
 }
 
-async function drain(stream: ReadableStream<Uint8Array>, tail?: number): Promise<string> {
+async function drain(stream: ReadableStream<Uint8Array>, tail?: number, onLine?: (line: string) => void): Promise<string> {
   const decoder = new TextDecoder();
   let buf = "";
   let truncated = false;
+  let partial = "";
   for await (const chunk of stream) {
-    buf += decoder.decode(chunk, { stream: true });
+    const text = decoder.decode(chunk, { stream: true });
+    if (onLine) {
+      const lines = (partial + text).split(/\r?\n/);
+      partial = lines.pop() as string;
+      for (const line of lines) onLine(line);
+    }
+    buf += text;
     if (tail !== undefined && buf.length > tail * 2) {
       buf = buf.slice(-tail);
       truncated = true;
     }
   }
-  buf += decoder.decode();
+  const rest = decoder.decode();
+  buf += rest;
+  if (onLine && partial + rest) onLine(partial + rest);
   if (tail !== undefined && buf.length > tail) {
     buf = buf.slice(-tail);
     truncated = true;
@@ -123,7 +138,7 @@ export const spawnCapture: ExecFn = async (cmd, args, opts = {}) => {
   let stderr = "";
   const drains = Promise.all([
     drain(proc.stdout, opts.stdoutTail).then((s) => { stdout = s; }),
-    drain(proc.stderr, opts.stderrTail ?? STDERR_TAIL).then((s) => { stderr = s; }),
+    drain(proc.stderr, opts.stderrTail ?? STDERR_TAIL, opts.onStderrLine).then((s) => { stderr = s; }),
   ]);
   try {
     const exitCode = await proc.exited;
@@ -156,11 +171,18 @@ export function createPythonRunner(config: AppConfig, exec: ExecFn = spawnCaptur
     const scriptPath = `${config.pipelineDir}/${script}`;
     console.info(`Running Python script: ${config.pythonPath} ${scriptPath} ${args.join(" ")}`);
 
-    const res = await exec(config.pythonPath, [scriptPath, ...args], {
+    const onProgress = opts.onProgress;
+    const raw = await exec(config.pythonPath, [scriptPath, ...args], {
       signal: opts.signal,
       timeoutMs: minutes * 60_000,
       env: { PYTHONIOENCODING: "utf-8" },
+      ...(onProgress ? { onStderrLine: (line: string) => {
+        const m = PROGRESS_LINE.exec(line);
+        if (m) onProgress(Number(m[1]));
+      } } : {}),
     });
+    // Progress lines aren't worth logging or quoting in errors.
+    const res = { ...raw, stderr: raw.stderr.replace(PROGRESS_LINES, "") };
 
     if (res.stderr.trim()) console.info(`Python stderr [${script}]: ${res.stderr.trim()}`);
     if (res.aborted) throw new Error("Job cancelled by user");

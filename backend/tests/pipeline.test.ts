@@ -30,7 +30,7 @@ describe("full pipeline", () => {
       return res;
     };
     await importAndRun();
-    expect(env.calls.find((c) => c.script === "transcribe.py")!.timeoutMinutes).toBe(90);
+    expect(env.calls.find((c) => c.script === "transcribe.py")!.timeoutMinutes).toBe(240);
     expect(env.calls.find((c) => c.script === "media_features.py")!.timeoutMinutes).toBe(18);
   });
 
@@ -88,6 +88,51 @@ describe("full pipeline", () => {
     expect(argAfter(render, "--style")).toBe("default");
     expect(render).not.toContain("--silence-trim");
     expect(render).not.toContain("--bgm");
+  });
+
+  test("a render limit (a CPU's default) renders the best clips; the rest render on request", async () => {
+    env.config.maxRenderClips = 1;
+    const { videoId, jobId } = await importAndRun();
+    const render = (await detail(jobId)).stages.find((s: any) => s.stage === "RENDER");
+    expect(render.outputPath).toBe("1 rendered, 0 failed, 1 more render on request");
+    expect(env.calls.filter((c) => c.script === "render.py")).toHaveLength(1);
+    let clips = (await env.json("GET", `/api/videos/${videoId}/clips`)).body.data.clips;
+    expect(clips.map((c: any) => [c.tier, c.renderStatus])).toEqual([["PRIMARY", "COMPLETED"], ["BACKUP", "PENDING"], ["SKIP", "PENDING"]]);
+
+    // The Render button: a re-render with no changes
+    const r = await env.json("POST", `/api/clips/${clips[1].id}/rerender`, {});
+    expect(r.status).toBe(200);
+    clips = (await env.json("GET", `/api/videos/${videoId}/clips`)).body.data.clips;
+    expect(clips[1]).toMatchObject({ renderStatus: "COMPLETED", exportStatus: "COMPLETED", startTime: 30, endTime: 55 });
+  });
+
+  test("TRANSCRIBE shows Whisper's progress while it runs", async () => {
+    const seen: Array<string | null | undefined> = [];
+    const orig = env.scripts["transcribe.py"]!;
+    env.scripts["transcribe.py"] = (args, signal, opts) => {
+      opts?.onProgress?.(37);
+      const job = env.app.store.listJobs()[0]!;
+      seen.push(env.app.store.getStage(job.id, "TRANSCRIBE")?.outputPath);
+      return orig(args, signal, opts);
+    };
+    const { videoId, jobId } = await importAndRun();
+    expect(seen).toEqual(["Transcribing 37%"]);
+    const t = (await detail(jobId)).stages.find((s: any) => s.stage === "TRANSCRIBE");
+    expect(t.outputPath).toBe(`${env.config.dataDir}/transcripts/${videoId}.json`);
+  });
+
+  test("a retry reuses the transcript; a different model transcribes again", async () => {
+    const { videoId } = await importAndRun();
+    const again = async () => {
+      expect((await env.json("POST", "/api/process", { videoId })).status).toBe(200);
+      await env.app.jobs.whenIdle();
+      return env.calls.filter((c) => c.script === "transcribe.py").length;
+    };
+    expect(await again()).toBe(1);
+    env.config.whisperModel = "large-v3-turbo";
+    expect(await again()).toBe(2);
+    writeFileSync(`${env.config.dataDir}/transcripts/${videoId}.json`, "{broken");
+    expect(await again()).toBe(3);
   });
 
   test("clips rendered without captions (before a retry) are still burned by SUBTITLE", async () => {
@@ -387,6 +432,7 @@ describe("cancel / retry / queue", () => {
     expect(d.job).toMatchObject({ status: "COMPLETED", errorMessage: null });
     // no leftovers from the failed run (SCORE kept "cuda OOM" before)
     for (const s of d.stages) expect(s).toMatchObject({ status: "COMPLETED", errorMessage: null });
+    expect(env.calls.filter((c) => c.script === "transcribe.py")).toHaveLength(1);   // transcript reused
   });
 
   test("resetStages clears a run's stage results", async () => {
