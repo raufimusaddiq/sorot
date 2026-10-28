@@ -2,7 +2,7 @@
 // pipeline, YouTube captions before Whisper, per-video output folders, and
 // the clip editor (captions + one-clip re-render).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { HttpError } from "../src/http";
 import {
@@ -110,6 +110,37 @@ describe("range import and per-job options", () => {
 
     await processed({ url: "https://youtu.be/zyxwvutsrqp", startTime: 30, endTime: 90 }, { youtubeCaptions: true });
     expect(download().args).toContain("--force-keyframes-at-cuts");
+  });
+
+  test("a long YouTube range downloads whole and is cut here; a short one or an unknown length keeps the window", async () => {
+    let printed = "600\nJudul Video Test\n";
+    env.execHandler.fn = (cmd, args) => (cmd === "yt-dlp" && args[0] === "--print" ? procOk(printed) : defaultExec(cmd, args));
+    const ytDownload = () => env.execCalls.filter((c) => c.cmd === "yt-dlp" && c.args.includes("-f")).at(-1)!;
+    const cut = () => env.execCalls.filter((c) => c.cmd === "ffmpeg" && c.args.includes("-ss")).at(-1)!;
+
+    const { videoId, jobId } = await processed({ url: "https://youtu.be/abcdefghijk", startTime: 100, endTime: 200 });
+    const whole = `${env.config.dataDir}/raw/${videoId}.whole.mp4`;
+    expect(ytDownload().args).not.toContain("--download-sections");
+    expect(argAfter(ytDownload().args, "-o")).toBe(whole);
+    expect(cut().args.slice(0, 6)).toEqual(["-ss", "100", "-to", "200", "-i", whole]);
+    expect(argAfter(cut().args, "-c")).toBe("copy");
+    expect(cut().args.at(-1)).toBe(`${env.config.dataDir}/raw/${videoId}.mp4`);
+    expect(existsSync(whole)).toBeFalse();
+    expect(env.app.store.getVideo(videoId)!.title).toBe("Judul Video Test");
+    expect(env.app.store.getJob(jobId)!.status).toBe("COMPLETED");
+
+    await processed({ url: "https://youtu.be/zyxwvutsrqp", startTime: 100, endTime: 200 }, { youtubeCaptions: true });
+    expect(argAfter(cut().args, "-c:v")).toBe("libx264");   // exact cut for caption timing
+
+    for (printed of ["3600\nJudul\n", "NA\nJudul\n"]) {
+      await processed({ url: "https://youtu.be/abcdefghijk", startTime: 100, endTime: 200 });
+      expect(argAfter(ytDownload().args, "--download-sections")).toBe("*100-200");
+    }
+
+    printed = "600\nJudul\n";
+    env.execHandler.fn = (cmd, args) => (cmd === "yt-dlp" ? procOk(args[0] === "--print" ? printed : "") : defaultExec(cmd, args));
+    const failed = await processed({ url: "https://youtu.be/abcdefghijk", startTime: 100, endTime: 200 });
+    expect(env.app.store.getJob(failed.jobId)!.errorMessage).toContain(`Downloaded file not found: ${env.config.dataDir}/raw/${failed.videoId}.whole.mp4`);
   });
 
   test("a local range is cut once; an existing cut is reused", async () => {
