@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Line } from "../src/director";
 import {
-  hookAndTitle, JEV_PICKS, jevReason, jevScore, judgeClips, JUDGE_MAX, quoteTitle, screenMoments, sentenceWindows,
-  titleCandidates, type Judgeable, type Window,
+  growPicks, hookAndTitle, JEV_PICKS, jevReason, jevScore, judgeClips, JUDGE_MAX, quoteTitle, screenMoments, sentenceWindows,
+  titleCandidates, windowAt, type Judgeable, type Window,
 } from "../src/jevDirector";
 import { determineTier } from "../src/scoring";
 import { fakeJev, noulA, unknownFields } from "./helpers";
@@ -19,6 +19,11 @@ test("sentence windows start where a sentence starts, grow to 25 s then to a sen
   expect(w[0]!.text).toBe("Kenapa harganya mahal? Karena chipnya biasa dan itu bikin kecewa.");
   expect(sentenceWindows([line(0, 5, "Halo."), line(5, 9, "Oke.")])).toEqual([]);
   expect(sentenceWindows([line(0, 70, "Satu kalimat yang sangat panjang sekali.")])).toEqual([]);
+});
+
+test("without punctuation a pause ends the sentence, so windows don't all run to 60 s", () => {
+  const talk = [0, 10, 20, 30, 40, 50, 60].map((t, k) => line(t, t + (k === 2 ? 9 : 10), `kalimat tanpa titik ${k}`));
+  expect(sentenceWindows(talk).map((x) => [x.startTime, x.endTime])).toEqual([[0, 29], [30, 70]]);   // 1 s pause after 29
 });
 
 test("score (quality, 50/50 with the direction fit), reason, title quotes", () => {
@@ -58,6 +63,41 @@ describe("screenMoments", () => {
     const bug = fakeJev().jev;
     bug.decide = async () => { throw new TypeError("bug"); };
     await expect(screenMoments(bug, many, "")).rejects.toBeInstanceOf(TypeError);
+  });
+});
+
+describe("growPicks", () => {
+  // Ten-second sentences: a run at 0 (good all the way), 100 (weak past 30 s), 200 (ends at 30 s).
+  const run = (at: number, texts: string[]) => texts.map((t, k) => line(at + k * 10, at + k * 10 + 10, t));
+  const lines = [
+    ...run(0, ["Soal harga satu.", "Dua.", "Tiga.", "Empat.", "Lima.", "Enam.", "Tujuh."]),
+    ...run(100, ["Bagus satu.", "Dua.", "Tiga.", "Bagian lemah.", "Lemah lagi."]),
+    ...run(200, ["Pendek satu.", "Dua.", "Tiga."]),
+  ];
+  const pickAt = (i: number, jevScore = 0.9) => ({ ...windowAt(lines, i, 25)!, source: "jev" as const, jevScore });
+
+  test("windowAt grows to the target then to a sentence end, never past 60 s", () => {
+    expect([25, 40, 55].map((t) => windowAt(lines, 0, t)!.endTime)).toEqual([30, 40, 60]);
+    expect(windowAt(lines, 0, 99)!.endTime).toBe(60);
+    expect(windowAt(lines, lines.length - 1, 25)).toBeNull();   // 10 s: too short
+  });
+
+  test("keeps the best-judged cut, longer on a tie; FAIL or no room keeps the pick", async () => {
+    const { jev, requests } = fakeJev();
+    const progress: string[] = [];
+    const picks = [pickAt(0), pickAt(7), pickAt(12), { ...win(500, "Hilang."), source: "jev" as const, jevScore: 0.5 }];
+    const r = await growPicks(jev, picks, lines, "harga", (d, t) => progress.push(`${d}/${t}`));
+    expect(r.picks.map((p) => [p.startTime, p.endTime])).toEqual([[0, 60], [100, 130], [200, 230], [500, 530]]);
+    expect([r.grown, r.tokens, r.error, progress.at(-1)]).toEqual([1, 40, null, "4/4"]);   // 2 cuts each at 0 and 100
+    expect(requests[0]!.questions).toHaveProperty("fits_direction");
+    expect(r.picks[0]!.duration).toBe(60);
+  });
+
+  test("a Jev failure keeps the screened picks", async () => {
+    const down = fakeJev(() => new Error("overloaded"));
+    const r = await growPicks(down.jev, [pickAt(0)], lines, "");
+    expect(r).toMatchObject({ grown: 0, error: expect.stringMatching(/^Jev HTTP 500/) });
+    expect(r.picks.map((p) => p.endTime)).toEqual([30]);
   });
 });
 
