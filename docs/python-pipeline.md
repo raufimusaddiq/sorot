@@ -155,6 +155,16 @@ linear weights; otherwise reports `insufficient_data` / `below_margin`.
 ### `render.py`
 
 Cuts each PRIMARY/BACKUP clip to 1080x1920 (h264_nvenc, libx264 fallback).
+With `--export-dir` (what the pipeline and the clip editor use) the karaoke
+captions and background music go into the **same encode**, writing the
+finished `clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` there: one decode +
+encode per clip. Burning captions in a second pass cost a whole extra
+encode — on a 4-core CPU a 30 s clip took 168 s that way, 90 s in one pass
+(46 s with `veryfast`), and one generation of compression loss beats two.
+
+The libx264 preset is `$X264_PRESET`, default `veryfast` (render, subtitle,
+variation). The 9:16 window is cropped out of the source **before** scaling,
+so only those pixels go through the scaler.
 
 | Arg | Required | Default | Description |
 |-----|----------|---------|-------------|
@@ -167,8 +177,12 @@ Cuts each PRIMARY/BACKUP clip to 1080x1920 (h264_nvenc, libx264 fallback).
 | `--silence-trim` | No | off | Cut pauses longer than `--silence-gap` |
 | `--silence-gap` | No | `0.6` | Pause length (s) that gets cut |
 | `--hook-first` | No | off | Replay the clip's strongest line before it (needs `--transcript`) |
+| `--export-dir` | No | none | Burn captions (+ music) in this pass; the finished clip and `.ass` go here |
+| `--style` | No | `$SUBTITLE_STYLE` or `default` | Caption preset (with `--export-dir`) |
+| `--bgm` / `--bgm-volume` | No | none / `0.12` | Music, looped and ducked under speech (with `--export-dir`) |
 
-Each clip in the result has `reframe` (mode actually used — `face` falls back
+With `--export-dir`, each clip also reports `captioned: true`, `assPath` and
+`wordCount`. Each clip in the result has `reframe` (mode actually used — `face` falls back
 to `center` when no faces are found), `cropSegments` (number of crop
 positions in the face track), `trimmedDuration` (output length after silence
 trim / hook replay, or `null`) and `hookFirst`.
@@ -176,8 +190,8 @@ trim / hook replay, or `null`) and `hookFirst`.
 **Timeline** (`captions.plan_timeline`): the output is an ordered list of
 clip-relative source ranges. Silence trim gives in-order ranges (cut with
 `select`/`aselect`); hook-first prepends the hook range, so the list jumps
-back and is cut with `trim`/`atrim` + `concat`. subtitle.py maps caption
-words through the same list, and the face track is re-timed onto it.
+back and is cut with `trim`/`atrim` + `concat`. Caption words are mapped
+through the same list (`captions.clip_words`), and the face track is re-timed onto it.
 
 **Face reframing** (`reframe.py`): frames are sampled at 2 fps, faces found
 with MediaPipe if installed, otherwise OpenCV Haar (the Docker image ships
@@ -196,7 +210,9 @@ ffmpeg `select`/`aselect` in the same encode pass.
 
 ### `subtitle.py`
 
-Burns word-timed karaoke captions onto each rendered clip.
+Burns word-timed karaoke captions onto an already rendered clip. The pipeline
+burns captions during render now; the SUBTITLE stage runs this only for clips
+rendered without them (a job rendered before that change, then retried).
 
 | Arg | Required | Default | Description |
 |-----|----------|---------|-------------|

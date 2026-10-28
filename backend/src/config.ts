@@ -27,6 +27,8 @@ export interface AppConfig {
   allowAutoCaptions: boolean;
   /** Default background music (file name in data/music; "" = none). */
   bgmFile: string;
+  /** Run the VARIATION stage (zoom presets of the top clips). Off: nothing shows them yet, and on a CPU it cost ~9 encodes per video. */
+  variations: boolean;
   bgmVolume: number;
   /** Static Next.js export (frontend/out) served at "/"; "" disables it. */
   staticDir: string;
@@ -87,6 +89,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     youtubeCaptions: bool(env.YOUTUBE_CAPTIONS),
     allowAutoCaptions: bool(env.YOUTUBE_AUTO_CAPTIONS),
     bgmFile: (env.BGM_FILE ?? "").trim(),
+    variations: bool(env.VARIATIONS),
     bgmVolume: Number.parseFloat(env.BGM_VOLUME ?? "") >= 0 && Number.parseFloat(env.BGM_VOLUME ?? "") <= 1
       ? Number.parseFloat(env.BGM_VOLUME as string)
       : 0.12,

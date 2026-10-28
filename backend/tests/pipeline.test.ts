@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LlmError } from "../src/llm";
@@ -20,6 +20,20 @@ async function importAndRun(body: Record<string, unknown> = { url: "https://www.
 const detail = async (jobId: string) => (await env.json("GET", `/api/jobs/${jobId}`)).body.data;
 
 describe("full pipeline", () => {
+  test("time limits grow with the video on CPU", async () => {
+    env.cleanup();
+    env = makeEnv({ whisperDevice: "cpu" });
+    env.execHandler.fn = (cmd, args) => {
+      const res = defaultExec(cmd, args);
+      const out = args.at(-1) as string;
+      if (cmd === "ffmpeg" && out.endsWith(".wav")) truncateSync(out, 44 + 32_000 * 3600);   // 1 h of 16 kHz mono s16
+      return res;
+    };
+    await importAndRun();
+    expect(env.calls.find((c) => c.script === "transcribe.py")!.timeoutMinutes).toBe(90);
+    expect(env.calls.find((c) => c.script === "media_features.py")!.timeoutMinutes).toBe(18);
+  });
+
   test("YouTube import runs all 9 stages and persists clips", async () => {
     const { videoId, jobId } = await importAndRun();
     const d = await detail(jobId);
@@ -28,7 +42,8 @@ describe("full pipeline", () => {
     expect(d.stages.every((s: any) => s.status === "COMPLETED")).toBeTrue();
     const render = d.stages.find((s: any) => s.stage === "RENDER");
     expect(render.outputPath).toBe("2 rendered, 0 failed");
-    expect(d.stages.find((s: any) => s.stage === "SUBTITLE").outputPath).toBe("2 burned, 0 failed");
+    expect(d.stages.find((s: any) => s.stage === "SUBTITLE").outputPath).toBe("Captions burned during render");
+    expect(env.calls.some((c) => c.script === "subtitle.py")).toBeFalse();     // one encode per clip
 
     const video = env.app.store.getVideo(videoId)!;
     expect(video.title).toBe("Judul Video Test");
@@ -63,31 +78,62 @@ describe("full pipeline", () => {
     for (const sub of ["input", "clips", "variations", "logs"]) expect(existsSync(`${env.config.dataDir}/${sub}`)).toBeTrue();
   });
 
-  test("render and subtitle get the caption style, transcript and silence-trim flags", async () => {
+  test("render gets the caption style, export dir, transcript and silence-trim flags", async () => {
     const { videoId } = await importAndRun();
     const transcript = `${env.config.dataDir}/transcripts/${videoId}.json`;
     const render = env.calls.find((c) => c.script === "render.py")!.args;
-    const subtitle = env.calls.find((c) => c.script === "subtitle.py")!.args;
     expect(argAfter(render, "--transcript")).toBe(transcript);
     expect(argAfter(render, "--reframe")).toBe("face");
+    expect(argAfter(render, "--export-dir")).toBe(env.app.orchestrator.exportDir(videoId));
+    expect(argAfter(render, "--style")).toBe("default");
     expect(render).not.toContain("--silence-trim");
-    expect(argAfter(subtitle, "--style")).toBe("default");
-    expect(subtitle).not.toContain("--silence-trim");
-    const variation = env.calls.find((c) => c.script === "variation.py")!.args;
-    expect(argAfter(variation, "--output-dir")).toBe(`${env.config.dataDir}/variations/${videoId}/`);
+    expect(render).not.toContain("--bgm");
   });
 
-  test("silence trim is passed identically to render and subtitle", async () => {
+  test("clips rendered without captions (before a retry) are still burned by SUBTITLE", async () => {
+    env.scripts["render.py"] = (args) => {           // the old render: no captions, no --export-dir handling
+      const rank = Number(argAfter(args, "--clip-index")) + 1;
+      const dir = argAfter(args, "--output-dir");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, `clip_${rank}.mp4`), "mp4");
+      return { clips: [{ rank, status: "COMPLETED", path: join(dir, `clip_${rank}.mp4`) }] };
+    };
+    const { videoId, jobId } = await importAndRun();
+    expect(env.calls.filter((c) => c.script === "subtitle.py")).toHaveLength(2);
+    expect((await detail(jobId)).stages.find((s: any) => s.stage === "SUBTITLE").outputPath).toBe("2 burned, 0 failed");
+    const clips = env.app.store.clipsForVideo(videoId);
+    expect(clips[0]!.exportPath).toEndWith("clip_1_subtitled.mp4");
+  });
+
+  test("variations are off by default; on, a failure doesn't fail the job", async () => {
+    const off = await importAndRun();
+    expect(env.calls.some((c) => c.script === "variation.py")).toBeFalse();
+    const skipped = (await detail(off.jobId)).stages.find((s: any) => s.stage === "VARIATION");
+    expect(skipped).toMatchObject({ status: "COMPLETED", outputPath: "Skipped (VARIATIONS=true turns them on)" });
+
+    env.config.variations = true;
+    const on = await importAndRun({ url: "https://www.youtube.com/watch?v=bcdefghijkl" });
+    const variation = env.calls.find((c) => c.script === "variation.py")!.args;
+    expect(argAfter(variation, "--output-dir")).toBe(`${env.config.dataDir}/variations/${on.videoId}/`);
+
+    env.scripts["variation.py"] = () => { throw new Error("exceeded 10 min wall-clock budget; killed"); };
+    const failed = await importAndRun({ url: "https://www.youtube.com/watch?v=cdefghijklm" });
+    const d = await detail(failed.jobId);
+    expect(d.job.status).toBe("COMPLETED");
+    expect(d.stages.find((s: any) => s.stage === "VARIATION").outputPath).toStartWith("Failed: exceeded 10 min");
+  });
+
+  test("silence trim, style and music reach the one-pass render", async () => {
     env.config.silenceTrim = true;
     env.config.silenceGapSec = 0.8;
     env.config.subtitleStyle = "hormozi";
+    env.config.bgmFile = "lofi.mp3";
     await importAndRun();
-    for (const script of ["render.py", "subtitle.py"]) {
-      const args = env.calls.find((c) => c.script === script)!.args;
-      expect(args).toContain("--silence-trim");
-      expect(argAfter(args, "--silence-gap")).toBe("0.8");
-    }
-    expect(argAfter(env.calls.find((c) => c.script === "subtitle.py")!.args, "--style")).toBe("hormozi");
+    const args = env.calls.find((c) => c.script === "render.py")!.args;
+    expect(args).toContain("--silence-trim");
+    expect(argAfter(args, "--silence-gap")).toBe("0.8");
+    expect(argAfter(args, "--style")).toBe("hormozi");
+    expect(argAfter(args, "--bgm")).toBe(`${env.config.dataDir}/music/lofi.mp3`);
   });
 
   test("download is skipped when the raw file already exists", async () => {

@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } fr
 import { reviewClips } from "./clipReview";
 import type { AppConfig } from "./config";
 import { Llm } from "./llm";
-import { decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
-import type { ExecFn, ScriptRunner } from "./runner";
+import { captionFlags, decodeOptions, renderFlags, resolveOptions, subtitleFlags, type ResolvedOptions } from "./options";
+import { timeoutFor, type ExecFn, type ScriptRunner } from "./runner";
 import { now, type Store } from "./store";
 import { analyticsReport, findSegments, type ScoredSummary } from "./segments";
 import { determineTier, FEATURE_ORDER, loadWeights, scoreSegments, type MediaFeatures, type SegmentIn } from "./scoring";
@@ -148,6 +148,15 @@ export class PipelineOrchestrator {
 
   // ---- stages ----
 
+  /** Media length from the audio stage's 16 kHz mono 16-bit WAV (32 000 bytes/s); 0 before it exists. */
+  private audioSeconds(video: Video): number {
+    try {
+      return Math.max(0, (statSync(this.path("audio", `${video.id}.wav`)).size - 44) / 32_000);
+    } catch {
+      return 0;
+    }
+  }
+
   private sectionArgs(video: Video): [number, number] | null {
     const a = video.sectionStart ?? null;
     const b = video.sectionEnd ?? null;
@@ -242,13 +251,15 @@ export class PipelineOrchestrator {
         console.warn(`YouTube captions failed, using Whisper: ${(e as Error).message}`);
       }
     }
+    // CPU Whisper runs at roughly real time or slower; the GPU far faster.
+    const perMediaMinute = this.config.whisperDevice === "cpu" ? 1.5 : 0.5;
     const result = await this.runScript("transcribe.py", [
       "--audio", this.path("audio", `${video.id}.wav`),
       "--output", outputPath,
       "--language", this.config.whisperLanguage,
       "--model", this.config.whisperModel,
       "--device", this.config.whisperDevice,
-    ], { signal });
+    ], { signal, timeoutMinutes: timeoutFor("transcribe.py", this.audioSeconds(video), perMediaMinute) });
     await Bun.write(outputPath, JSON.stringify(result));
     return outputPath;
   }
@@ -273,7 +284,9 @@ export class PipelineOrchestrator {
     const transcriptPath = this.path("transcripts", `${video.id}.json`);
     const args = ["--segments", segmentsPath, "--video", video.filePath];
     if (existsSync(audioPath)) args.push("--audio", audioPath);
-    const measured = await this.runScript("media_features.py", args, { signal });
+    // Samples frames across the whole video: longer videos need longer.
+    const measured = await this.runScript("media_features.py", args,
+      { signal, timeoutMinutes: timeoutFor("media_features.py", this.audioSeconds(video), 0.3) });
 
     const segments = arr(readJson(segmentsPath).segments) as unknown as SegmentIn[];
     const media = new Map<number, MediaFeatures>(arr(measured.segments).map((m) => [num(m.index), {
@@ -383,14 +396,16 @@ export class PipelineOrchestrator {
   /**
    * Fan out one script call per clip (2 in flight). Each call is an
    * independent ffmpeg job on its own file. Progress goes in the stage's
-   * output_path, which the UI shows.
+   * output_path, which the UI shows. `only` narrows the clips; returns
+   * whether any ran.
    */
   private async fanOut(
     jobId: string, stageName: Stage, video: Video, signal: AbortSignal,
     verb: string, done: string, script: string, argsFor: (idx: number) => string[],
     apply: (result: Json) => void, field: "renderStatus" | "exportStatus",
+    only: (idx: number) => boolean = () => true,
   ) {
-    const indices = await this.renderableIndices(this.path("segments", `${video.id}.json`));
+    const indices = (await this.renderableIndices(this.path("segments", `${video.id}.json`))).filter(only);
     const stage = this.store.getStage(jobId, stageName);
     let ok = 0;
     let failed = 0;
@@ -411,6 +426,7 @@ export class PipelineOrchestrator {
       progress(`${verb} ${ok + failed}/${indices.length} clips`);
     });
     progress(`${ok} ${done}, ${failed} failed`);
+    return indices.length > 0;
   }
 
   /** Map script results back onto clips by rank (1-based position in score order). */
@@ -423,9 +439,11 @@ export class PipelineOrchestrator {
       const status = str(rc.status) as string;
       const path = str(rc.path) as string;
       const done = status === "COMPLETED" && path !== "";
+      const exported = { exportStatus: status, ...(done ? { exportPath: path } : {}) };
       this.store.updateClip(clip.id, kind === "render"
-        ? { renderStatus: status, ...(done ? { renderPath: path } : {}) }
-        : { exportStatus: status, ...(done ? { exportPath: path } : {}) });
+        // A captioned render (captions burned in the same pass) is the export too.
+        ? { renderStatus: status, ...(done ? { renderPath: path } : {}), ...(rc.captioned === true ? exported : {}) }
+        : exported);
     }
   }
 
@@ -433,21 +451,32 @@ export class PipelineOrchestrator {
     const segmentsPath = this.path("segments", `${video.id}.json`);
     const renderDir = this.renderDir(video.id);
     mkdirSync(renderDir, { recursive: true });
+    const exportDir = this.exportDir(video.id);
+    mkdirSync(exportDir, { recursive: true });
+    // Framing, captions and music in one encode per clip (see render.py).
     await this.fanOut(jobId, "RENDER", video, signal, "Rendering", "rendered", "render.py",
       (idx) => [
         "--segments", segmentsPath, "--video", video.filePath, "--output-dir", renderDir,
         "--clip-index", String(idx),
         "--transcript", this.path("transcripts", `${video.id}.json`),
         ...renderFlags(opts),
+        "--export-dir", exportDir, ...captionFlags(opts, this.config),
       ],
       (r) => this.applyClipResults(video.id, r, "render"), "renderStatus");
     return null; // progress text already written to output_path
   }
 
+  /**
+   * Captions are burned during RENDER now. This only re-burns clips rendered
+   * without them: a job rendered before that change and retried after it.
+   */
   private async stageSubtitle(jobId: string, video: Video, opts: ResolvedOptions, signal: AbortSignal) {
     const exportDir = this.exportDir(video.id);
     mkdirSync(exportDir, { recursive: true });
-    await this.fanOut(jobId, "SUBTITLE", video, signal, "Burning", "burned", "subtitle.py",
+    const clips = this.store.clipsForVideo(video.id);
+    const uncaptioned = (idx: number) =>
+      clips[idx]?.renderStatus === "COMPLETED" && clips[idx]?.exportStatus !== "COMPLETED";
+    const ran = await this.fanOut(jobId, "SUBTITLE", video, signal, "Burning", "burned", "subtitle.py",
       (idx) => [
         "--transcript", this.path("transcripts", `${video.id}.json`),
         "--segments", this.path("segments", `${video.id}.json`),
@@ -456,18 +485,26 @@ export class PipelineOrchestrator {
         "--clip-index", String(idx),
         ...subtitleFlags(opts, this.config),
       ],
-      (r) => this.applyClipResults(video.id, r, "export"), "exportStatus");
-    return null;
+      (r) => this.applyClipResults(video.id, r, "export"), "exportStatus", uncaptioned);
+    return ran ? null : "Captions burned during render";
   }
 
   private async stageVariation(video: Video, signal: AbortSignal) {
+    if (!this.config.variations) return "Skipped (VARIATIONS=true turns them on)";
     // Per video: files are named by rank, like renders and exports.
     const variationDir = `${this.config.dataDir}/variations/${video.id}/`;
-    await this.runScript("variation.py", [
-      "--segments", this.path("segments", `${video.id}.json`),
-      "--video", video.filePath,
-      "--output-dir", variationDir,
-    ], { signal });
+    try {
+      await this.runScript("variation.py", [
+        "--segments", this.path("segments", `${video.id}.json`),
+        "--video", video.filePath,
+        "--output-dir", variationDir,
+      ], { signal });
+    } catch (e) {
+      // Optional extras: the clips are already done, so this can't fail the job.
+      if (signal.aborted) throw new CancelledError();
+      console.warn(`Variations failed for ${video.id}: ${(e as Error).message}`);
+      return `Failed: ${(e as Error).message}`;
+    }
     return variationDir;
   }
 

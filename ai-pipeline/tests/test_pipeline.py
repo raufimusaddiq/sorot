@@ -392,10 +392,9 @@ from variation import VARIATION_PRESETS, generate_variation
 
 class TestVariationPresets:
     def test_presets_exist(self):
-        assert len(VARIATION_PRESETS) >= 3
         assert "zoom_center" in VARIATION_PRESETS
         assert "zoom_top" in VARIATION_PRESETS
-        assert "dynamic_crop" in VARIATION_PRESETS
+        assert "dynamic_crop" not in VARIATION_PRESETS     # it was the centre crop again
 
     def test_preset_has_label(self):
         for name, preset in VARIATION_PRESETS.items():

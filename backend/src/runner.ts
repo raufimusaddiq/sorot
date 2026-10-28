@@ -46,6 +46,16 @@ export const SCRIPT_TIMEOUT_MINUTES: Record<string, number> = {
 };
 const DEFAULT_TIMEOUT_MINUTES = 15;
 
+/**
+ * Time limit for a script working on `seconds` of media: its fixed limit, or
+ * `perMediaMinute` minutes per minute of media when that is longer. A fixed
+ * 20 min failed CPU transcription of a 1-hour video, which takes ~30 min.
+ */
+export function timeoutFor(script: string, seconds: number, perMediaMinute: number): number {
+  const base = SCRIPT_TIMEOUT_MINUTES[script] ?? DEFAULT_TIMEOUT_MINUTES;
+  return Math.max(base, Math.ceil((seconds / 60) * perMediaMinute));
+}
+
 async function drain(stream: ReadableStream<Uint8Array>, tail?: number): Promise<string> {
   const decoder = new TextDecoder();
   let buf = "";
@@ -67,6 +77,22 @@ async function drain(stream: ReadableStream<Uint8Array>, tail?: number): Promise
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+const WINDOWS = process.platform === "win32";
+
+/**
+ * Kill a child and everything it started. Killing only the Python script left
+ * its ffmpeg running (and burning CPU) after a cancel or timeout. POSIX
+ * children run in their own process group (spawn `detached`), so the group
+ * kill takes them all; Windows has no groups here, so taskkill walks the tree.
+ */
+export function killTree(
+  pid: number, windows = WINDOWS,
+  run: (cmd: string[]) => unknown = (cmd) => Bun.spawnSync({ cmd, stdout: "ignore", stderr: "ignore" }),
+) {
+  if (windows) run(["taskkill", "/PID", String(pid), "/T", "/F"]);
+  else process.kill(-pid, "SIGKILL");
+}
+
 export const spawnCapture: ExecFn = async (cmd, args, opts = {}) => {
   const proc = Bun.spawn({
     cmd: [cmd, ...args],
@@ -74,11 +100,20 @@ export const spawnCapture: ExecFn = async (cmd, args, opts = {}) => {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
+    // Own process group for killTree. Not on Windows: a detached process has
+    // no console, so every ffmpeg it starts would open a console window.
+    detached: !WINDOWS,
   });
 
   let timedOut = false;
   let aborted = false;
-  const kill = () => { try { proc.kill("SIGKILL"); } catch { /* already gone */ } };
+  const kill = () => {
+    try {
+      killTree(proc.pid);
+    } catch {
+      try { proc.kill("SIGKILL"); } catch { /* already gone */ }
+    }
+  };
   const timer = opts.timeoutMs ? setTimeout(() => { timedOut = true; kill(); }, opts.timeoutMs) : null;
   const onAbort = () => { aborted = true; kill(); };
   if (opts.signal?.aborted) onAbort();

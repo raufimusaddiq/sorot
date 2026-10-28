@@ -169,7 +169,7 @@ Put it on `PATH`, then `SOROT_URL=http://gpu-box:8080 sorot health`. 📖 [docs/
 
 Everything runs on the **CPU** — installers switch automatically (`--cpu` / `-Cpu` to force). Only **NVIDIA** GPUs accelerate (CUDA + NVENC).
 
-⏱️ 12-core CPU: a 1-hour video transcribes in ~30 min (`large-v3-turbo`) or ~15 min (`small`), plus ~25 min to render 45 clips. RTX 4060: a 54-min video took ~22 min end to end (before GPU caption burning — faster now).
+⏱️ 12-core CPU: a 1-hour video transcribed in ~30 min (`large-v3-turbo`) or ~15 min (`small`), plus ~25 min to render 45 clips. RTX 4060: a 54-min video took ~22 min end to end. Both were measured before the CPU speed-ups (one-pass render with captions, `veryfast`, Whisper on every core) — in a 4-core benchmark a 30 s clip went from 168 s to 46 s, so expect much less now.
 
 ---
 
@@ -211,8 +211,8 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      3. 🎙️ Transcribe    faster-whisper, word timestamps
                      4. ✂️ Segment       gap-based candidates
                      5. 🧠 Score         13 signals + optional LLM, title/description
-                     6. 📱 Render 9:16   face-tracking crop, silence trim, hook first
-                     7. 💬 Captions      word-timed ASS via libass
+                     6. 📱 Render 9:16   crop, silence trim, hook, captions + music — one encode
+                     7. 💬 Captions      (re-burns only clips rendered the old way)
                      8. 🔁 Variations    zoom / crop presets
                      9. 📊 Analytics     distribution + recommendations
               Web UI · sorot · scripts ◄── HTTP API (port 8080)
@@ -282,6 +282,9 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 | `HOOK_FIRST` | `false` | Replay the best line first |
 | `YOUTUBE_CAPTIONS` / `YOUTUBE_AUTO_CAPTIONS` | `false` / `false` | Use uploaded (and auto) captions |
 | `BGM_FILE` / `BGM_VOLUME` | none / `0.12` | Default music from `data/music` |
+| `X264_PRESET` | `veryfast` | CPU encoder preset (`fast`: slightly better quality, ~2x slower) |
+| `WHISPER_THREADS` | all cores | CPU threads for Whisper |
+| `VARIATIONS` | `false` | Also make zoom-preset copies of the top clips (not shown in the app yet) |
 | `LLM_BASE_URL` / `LLM_MODEL` | empty (off) | OpenAI-compatible endpoint, e.g. Ollama `http://host.docker.internal:11434/v1` + `qwen2.5:7b` |
 | `LLM_API_KEY` | empty | Hosted LLMs — in `.env.llm` (gitignored), never `.env.docker` |
 | `WEB_SEARCH` | `bing` | `bing` (no key), a SearXNG URL, or `off` |

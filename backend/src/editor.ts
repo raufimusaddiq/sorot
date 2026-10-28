@@ -1,13 +1,13 @@
 // Clip editor: caption words for review, and re-rendering one clip with new
-// timing, options or corrected caption text. Uses the same render.py /
-// subtitle.py as the pipeline, pointed at a one-clip segments file.
+// timing, options or corrected caption text. Uses the same one-pass render.py
+// (framing + captions + music) as the pipeline, on a one-clip segments file.
 
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import type { AppConfig } from "./config";
 import { HttpError } from "./http";
 import {
-  decodeOptions, MUSIC_EXTENSIONS, musicDir, parseOptions, parseTimestamp, renderFlags, resolveOptions,
-  subtitleFlags, type PipelineOptions,
+  captionFlags, decodeOptions, MUSIC_EXTENSIONS, musicDir, parseOptions, parseTimestamp, renderFlags, resolveOptions,
+  type PipelineOptions,
 } from "./options";
 import type { PipelineOrchestrator } from "./orchestrator";
 import type { ScriptRunner } from "./runner";
@@ -144,18 +144,14 @@ export class ClipEditor {
       const rendered = (await this.runScript("render.py", [
         "--segments", segmentsFile, "--video", video.filePath, "--output-dir", renderDir, ...one,
         "--transcript", transcript, ...renderFlags(resolved),
+        "--export-dir", exportDir, ...captionFlags(resolved, this.config),
       ])).clips as Json[] | undefined;
       const r = rendered?.[0];
       if (!r || r.status !== "COMPLETED") throw new Error(String(r?.error ?? "render produced no clip"));
-      this.store.updateClip(clipId, { renderStatus: "COMPLETED", renderPath: String(r.path) });
-
-      const subtitled = (await this.runScript("subtitle.py", [
-        "--transcript", transcript, "--segments", segmentsFile, "--render-dir", renderDir,
-        "--output-dir", exportDir, ...one, ...subtitleFlags(resolved, this.config),
-      ])).clips as Json[] | undefined;
-      const s = subtitled?.[0];
-      if (!s || s.status !== "COMPLETED") throw new Error(String(s?.error ?? "subtitle produced no clip"));
-      this.store.updateClip(clipId, { exportStatus: "COMPLETED", exportPath: String(s.path), updatedAt: now() });
+      const path = String(r.path);
+      this.store.updateClip(clipId, {
+        renderStatus: "COMPLETED", renderPath: path, exportStatus: "COMPLETED", exportPath: path, updatedAt: now(),
+      });
       return this.store.getClip(clipId) as Clip;
     } catch (e) {
       const fresh = this.store.getClip(clipId);

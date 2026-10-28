@@ -92,8 +92,9 @@ See [linux-install.md](linux-install.md).
    c. Python transcribe.py → data/transcripts/{videoId}.json (or the video's YouTube captions)
    d. Bun segments the transcript → data/segments/{videoId}.json
    e. Python media_features.py measures each segment; Bun scores it (+ optional LLM review)
-   f. Python render.py crops + renders each top clip → data/renders/{videoId}/clip_{rank}.mp4
-   g. Python subtitle.py burns captions → data/exports/{videoId}/clip_{rank}_subtitled.mp4
+   f. Python render.py crops, renders and burns captions + music in one encode per top clip
+      → data/exports/{videoId}/clip_{rank}_subtitled.mp4 (+ clip_{rank}.ass)
+   g. SUBTITLE: subtitle.py re-burns only clips rendered without captions (old jobs, retried)
    h. variations, then the analytics report (Bun)
 5. Backend updates Job status=COMPLETED
 6. Frontend polls GET /api/jobs/{id} and shows results
@@ -118,7 +119,7 @@ See [linux-install.md](linux-install.md).
 | 9:16 framing | Face track (Haar/MediaPipe at 2 fps) → hysteresis → per-frame `crop` x-expression; `blur` fill option | Follows the speaker on podcasts and cuts cleanly between shots; centre-crop fallback keeps renders safe (`ai-pipeline/reframe.py`) |
 | OpenCV version | `opencv-python-headless>=4.8,<5` | OpenCV 5 removed the Haar `CascadeClassifier`; unpinned rebuilds silently lost face detection |
 | Output folders | `data/renders/{videoId}/`, `data/exports/{videoId}/` | Clip files are named by rank; the old shared folder let every new video overwrite older videos' clips |
-| Clip editing | One-clip re-render through the same render.py/subtitle.py (`backend/src/editor.ts`) | Caption fixes and timing nudges without re-running the pipeline; edits stored on the clip (`options`, `captionWords`) |
+| Clip editing | One-clip re-render through the same one-pass render.py (`backend/src/editor.ts`) | Caption fixes and timing nudges without re-running the pipeline; edits stored on the clip (`options`, `captionWords`) |
 | Silence trim | ffmpeg `select`/`aselect` from transcript gaps | One pass, no re-transcribe; render and subtitle derive identical keep-intervals (`ai-pipeline/captions.py`) |
 | Content language | Indonesian | Target audience is Indonesian short-form viewers |
 | CLI | Bun-compiled single binary over the HTTP API | No runtime to install; same API as the UI, so scripts and the UI never disagree |
@@ -135,8 +136,8 @@ Each stage reads from `data/` subfolder and writes output to the next subfolder.
 | 3. Transcribe | audio WAV | faster-whisper (CUDA) | `data/transcripts/{videoId}.json` |
 | 4. Segment | transcript JSON | Python segment logic | `data/segments/{videoId}.json` |
 | 5. Score | segments JSON | Python scoring | updates segments JSON |
-| 6. Render | raw video + segments (+ transcript) | ffmpeg: face-tracking crop / centre / blur, optional silence trim | `data/renders/clip_{rank}.mp4` |
-| 7. Subtitle | render + transcript | ASS karaoke captions (libass) | `data/exports/clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` |
+| 6. Render | raw video + segments + transcript | ffmpeg, one encode: face-tracking crop / centre / blur, silence trim, ASS karaoke captions, music | `data/exports/{videoId}/clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` |
+| 7. Subtitle | old-style renders only | re-burns captions on clips rendered without them | same |
 
 ## Error Handling
 

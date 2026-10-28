@@ -78,7 +78,7 @@ cd ai-pipeline
 - LLM is optional: any OpenAI-compatible endpoint via `LLM_BASE_URL` + `LLM_MODEL`; every LLM path must fall back to the rules on `LlmError`. Secrets (`LLM_API_KEY`) go in gitignored `.env.llm`, never `.env.docker`
 - Web search for auto-discover defaults to Bing HTML (`WEB_SEARCH`): DuckDuckGo is blocked by Indonesian ISPs
 - Learned feature weights are written to `data/weights.json` (wins over shipped `ai-pipeline/weights.json`)
-- Backend shells out to Python via `backend/src/runner.ts` (per-script timeouts, abort-on-cancel); tests inject fakes via `createApp(config, deps)` (`exec`, `runScript`, `fetch`)
+- Backend shells out to Python via `backend/src/runner.ts` (per-script timeouts — transcribe/media_features scale with video length via `timeoutFor` — and abort-on-cancel that kills the whole process tree: own process group on POSIX, `taskkill /T` on Windows, so ffmpeg children die too); tests inject fakes via `createApp(config, deps)` (`exec`, `runScript`, `fetch`)
 - UI is same-origin in prod (backend serves `frontend/out`); CORS in `backend/src/app.ts` allows `localhost:3000` only for `next dev`
 - `frontend` must stay static-exportable: no API routes, rewrites, server actions or `next/image` optimization
 - API JSON keys = camelCase of SQLite columns (`backend/src/store.ts`); the frontend depends on them
@@ -94,7 +94,9 @@ cd ai-pipeline
 - `opencv-python-headless` must stay `<5` — OpenCV 5 dropped the Haar `CascadeClassifier` used by face scoring and `reframe.py`
 - Render/export folders are per video (`data/renders/{videoId}/`): clip files are named by rank, so a shared folder overwrote other videos' clips
 - Editing options layer config defaults ← job options (import) ← clip options (editor); see `backend/src/options.ts`
-- Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README); render.py and subtitle.py must get the same silence flags
+- Captions/framing env: `SUBTITLE_STYLE`, `SILENCE_TRIM`, `SILENCE_GAP_SEC`, `REFRAME_MODE` (see README). render.py `--export-dir` burns captions + music in the same encode as the 9:16 render (one encode per clip — never add a second full re-encode); the SUBTITLE stage/subtitle.py only re-burns clips rendered without captions and must get the same silence flags
+- CPU tuning env: `X264_PRESET` (default `veryfast`), `WHISPER_THREADS` (default all cores; faster-whisper alone uses 4), `VARIATIONS` (default off — the VARIATION stage's output isn't shown anywhere and it can't fail a job)
+- 9:16 framing crops in source pixels before scaling (`reframe.py`), never scale the whole frame up first
 - Python venv at `ai-pipeline/.venv`
 - `scripts/install.sh` must stay shellcheck-clean; Linux machine settings go in the gitignored `docker-compose.override.yml` (Docker) or `/etc/sorot/` (native), never in tracked files
 - Schema auto-creates + migrates in `backend/src/db.ts` (compatible with the old Java-era DB file)
