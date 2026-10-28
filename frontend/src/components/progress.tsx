@@ -11,14 +11,15 @@ import {
   tierLabel,
 } from '@/lib/ui-utils';
 
-const LIVE_STAGES = ['TRANSCRIBE', 'RENDER', 'SUBTITLE'];
+const LIVE_STAGES = ['TRANSCRIBE', 'SEGMENT', 'SCORE', 'RENDER', 'SUBTITLE'];
 
 export function ProgressBar({ stages }: { stages: StageStatus[] }) {
   const total = STAGE_ORDER.length;
   const completed = stages.filter(s => s.status === 'COMPLETED').length;
   const current = stages.find(s => s.status === 'RUNNING' || s.status === 'IN_PROGRESS');
   const pct = Math.round((completed / total) * 100);
-  // Stages that report as they go: "Transcribing 37%", "Rendering 3/8 clips".
+  // Stages that report as they go: "Transcribing 37%", "LLM picking moments 3/14",
+  // "Jev checking clips", "Rendering 3/8 clips".
   const live = current && LIVE_STAGES.includes(current.stage) ? current.outputPath : null;
 
   return (

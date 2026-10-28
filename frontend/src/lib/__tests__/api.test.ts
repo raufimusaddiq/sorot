@@ -69,6 +69,15 @@ describe('ApiClient', () => {
       'POST', '/api/clips/c/feedback', { views: 1, likes: 2, comments: 3, shares: 4, saves: 5, postedAt: 't' }],
     ['trainWeights', () => api.trainWeights(), 'POST', '/api/feedback/train', undefined],
     ['getWeightsStatus', () => api.getWeightsStatus(), 'GET', '/api/feedback/weights', undefined],
+    ['getSettings', () => api.getSettings(), 'GET', '/api/settings', undefined],
+    ['updateSettings', () => api.updateSettings('jev', { apiKey: 'k', url: null }), 'PUT', '/api/settings/jev', { apiKey: 'k', url: null }],
+    ['testConnection', () => api.testConnection('llm'), 'POST', '/api/settings/llm/test', undefined],
+    ['socialAccounts', () => api.socialAccounts(), 'GET', '/api/social/accounts', undefined],
+    ['publishDraft', () => api.publishDraft('c', ['a']), 'POST', '/api/clips/c/publish/draft', { accountIds: ['a'] }],
+    ['publish', () => api.publish('c', { targets: [] }), 'POST', '/api/clips/c/publish', { targets: [] }],
+    ['clipPosts', () => api.clipPosts('c'), 'GET', '/api/clips/c/posts', undefined],
+    ['refreshPost', () => api.refreshPost('p'), 'POST', '/api/social/posts/p/refresh', undefined],
+    ['syncSocial', () => api.syncSocial(), 'POST', '/api/social/sync', undefined],
   ] as const)('%s → %s %s', async (_name, call, method, path, body) => {
     await call();
     expect(sent[0]).toMatchObject({ method, url: `http://localhost:0${path}`, body });

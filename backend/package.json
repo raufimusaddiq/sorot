@@ -8,7 +8,8 @@
     "start": "bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
     "test": "bun test --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "jev-eval": "bun run scripts/jev-eval.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

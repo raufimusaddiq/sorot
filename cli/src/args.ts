@@ -7,6 +7,7 @@ export interface Args {
 // Options that never take a value, so `--wait foo` keeps `foo` positional.
 const BOOLEAN = new Set([
   "json", "help", "no-wait", "trim", "hook", "yt-captions", "auto-captions", "yes", "follow", "version",
+  "on", "off", "reset",
 ]);
 const SHORT: Record<string, string> = { o: "out", f: "follow", h: "help", y: "yes", j: "json" };
 

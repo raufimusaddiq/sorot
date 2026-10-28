@@ -33,6 +33,7 @@ export class Api {
 
   get(path: string) { return this.request("GET", path); }
   post(path: string, body: unknown = {}) { return this.request("POST", path, body); }
+  put(path: string, body: unknown = {}) { return this.request("PUT", path, body); }
   delete(path: string) { return this.request("DELETE", path); }
 
   /** Raw response for file downloads; throws the envelope's error on failure. */

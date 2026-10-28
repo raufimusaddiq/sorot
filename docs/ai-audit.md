@@ -1,7 +1,7 @@
 # What is actually "AI" in Sorot
 
 An honest inventory, so nobody (including us) mistakes a rule for a model.
-Checked against the code on 2026-10-27.
+Checked against the code on 2026-10-28.
 
 ## Summary
 
@@ -19,6 +19,8 @@ Checked against the code on 2026-10-27.
 | Supervised model | **LightGBM**, but only after **200+** labelled clips *and* only if it beats the linear weights in 5-fold CV. Until then no `model.lgb` exists and it never runs | `ai-pipeline/train_scorer.py`, `predict_supervised.py` |
 | Discovery ranking | **Hand-set formula**: 40% best caption moments, 15% strong-moment rate, 10% speech density, 20% view velocity, 15% length fit | `backend/src/captionAnalysis.ts` |
 | LLM (optional) | **Large language model** you plug in (Ollama, Groq, OpenRouter, OpenAI…). Off unless `LLM_BASE_URL` + `LLM_MODEL` are set | `backend/src/llm.ts` |
+| Quality gate | **Decision model** (Jev, TypeSafe) answering fixed yes/no questions with probabilities when `JEV_API_KEY` is set; otherwise **rules** (regexes, word lists) answer the same questions. The verdict is code. Thresholds not yet calibrated on Indonesian clips | `backend/src/clipGate.ts`, `jev.ts` |
+| Hook line | LLM's pick (director) or **rules** (strongest question/hook sentence, Bun port of `captions.find_hook`) | `backend/src/hooks.ts`, `director.ts` |
 
 So, out of the box: one neural model (Whisper), one classic detector (Haar),
 and everything else is rules and signal processing. That is a deliberate
@@ -37,6 +39,24 @@ but it should be described as *heuristic scoring*, not "AI that predicts viralit
   actually returned can be picked, and every pick carries the LLM's reason.
   Without an LLM, or when it fails, the algorithm path runs instead (random
   anchor queries → caption analysis → best predicted scores, ≤ 2 per channel).
+
+- **Director** (`director.ts`, on by default with an LLM): one call for a video
+  brief, one per ~5-minute transcript part to pick moments (line ids, hook line,
+  why). Code validates every pick (ids, 10-60 s, hook inside), keeps the rule
+  windows as candidates and drops overlaps after scoring. A creator `direction`
+  steers it. See [creative-loop.md](creative-loop.md).
+- **Post copy** per platform at publish time, checked by Jev for claims the
+  clip doesn't make.
+
+## What Jev adds (when configured)
+
+A decision model, not a text generator: per clip it returns probabilities for
+11 fixed questions (hook, needs context, ending, filler, payoff level, five
+content risks, LLM-title over-claim). Code turns them into PASS / REVIEW /
+FAIL. Its documented best language is English; the clips are Indonesian, so
+treat its answers as unvalidated until `bun run jev-eval` has been run on your
+own labelled clips. Without Jev, keyword/regex rules answer the same questions
+(weaker: they can't judge payoff or titles).
 
 ## Known limits
 

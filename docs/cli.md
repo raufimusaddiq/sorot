@@ -36,11 +36,16 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `jobs`, `job <job>` | All jobs / one job's stages with timings and errors. |
 | `retry <job>`, `cancel <job>` | Retry a failed job (then watches it) / cancel a running one. |
 | `videos` | Imported videos. |
-| `clips <video> [--tier PRIMARY,BACKUP]` | Clips with rank, tier, score, source range and file state. |
+| `clips <video> [--tier PRIMARY,BACKUP]` | Clips with rank, tier, score, quality-gate verdict, source range and file state. |
 | `download <clip…>` / `download --video <video> [--tier …] [-o DIR]` | Save finished (subtitled) clips as `<video>_<rank>_<tier>.mp4`; `--video` defaults to PRIMARY and BACKUP. |
 | `rerender <clip> [--start S --end S] [options]` | Re-render one clip with new timing or options (the clip editor's action). |
 | `delete <video> --yes` | Delete a video with its clips and files. |
 | `options` | Caption styles, framing modes, music tracks and server defaults. |
+| `connect` | LLM, Jev and Tebar connections: active?, URL, model, key (masked), which fields are saved in the app. |
+| `connect llm --base-url URL --model M [--key -] [--director on\|off]` | Save the LLM connection (`--key -` reads the key from stdin, out of shell history). |
+| `connect jev [--model jev-1.14.0] [--base-url URL] [--key -] [--director on\|off]`, `connect tebar [--base-url URL] [--key -]` | Save the Jev / Tebar connection (`--director off`: Jev only gates). |
+| `connect <llm\|jev\|tebar> --on \| --off \| --reset` | Switch it on/off, or go back to the server's env values. |
+| `connect test <llm\|jev\|tebar>` | One small real call; exit 1 if it fails. |
 | `discover auto ["<goal>"]` | ✨ Auto-discover: prints each tool call as it happens, then the picks with their reasons (`--max 10`, `--no-wait` to return at once, `--json`). Uses the LLM when configured, otherwise the algorithm. |
 | `discover auto-status [<run>]` | Progress or result of the last (or given) auto-discover run; exit 1 if it failed. |
 | `discover search "<q>"`, `trending`, `channel <url>` | Find source videos (`--max`, `--min-length`, `--max-length` in seconds, `--region`). |
@@ -61,6 +66,7 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `--hook` | replay the strongest line at the start |
 | `--yt-captions` / `--auto-captions` | use the video's YouTube captions (auto-generated too) |
 | `--music FILE [--music-volume 0.12]` | background music from `data/music` |
+| `--direction "TEXT"` | steer the clip picks, scores and post copy (Jev, or the LLM director and review): "only the funny parts", "for TikTok, 30-45 s" (≤ 500 chars) |
 
 Unset options use the server defaults (`sorot options`). `rerender` takes the same flags.
 

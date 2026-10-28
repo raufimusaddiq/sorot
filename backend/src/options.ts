@@ -7,6 +7,8 @@ import { HttpError } from "./http";
 
 export const CAPTION_STYLES = ["default", "hormozi", "storyteller", "cinematic"] as const;
 export const REFRAME_MODES = ["face", "center", "blur"] as const;
+/** Longest creative direction accepted (characters). */
+export const MAX_DIRECTION = 500;
 export const MUSIC_EXTENSIONS = [".mp3", ".m4a", ".aac", ".wav", ".ogg", ".flac"];
 
 export interface PipelineOptions {
@@ -20,6 +22,8 @@ export interface PipelineOptions {
   /** File name inside data/music, or "" for none. */
   bgm?: string;
   bgmVolume?: number;
+  /** Free-text creative direction for the LLM ("only the funny parts", "for TikTok, under 40 s"); job level. */
+  direction?: string;
 }
 
 export type ResolvedOptions = Required<PipelineOptions>;
@@ -64,6 +68,13 @@ const num = (value: unknown, field: string, min: number, max: number): number | 
   return n;
 };
 
+const textOption = (value: unknown, field: string, max: number): string | undefined => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new HttpError(400, `${field} must be text`);
+  if (value.trim().length > max) throw new HttpError(400, `${field} may be at most ${max} characters`);
+  return value.trim();
+};
+
 /** Validate a client-supplied options object; unknown keys are ignored. */
 export function parseOptions(raw: unknown): PipelineOptions {
   if (raw === undefined || raw === null) return {};
@@ -79,6 +90,7 @@ export function parseOptions(raw: unknown): PipelineOptions {
     allowAutoCaptions: flag(o.allowAutoCaptions, "allowAutoCaptions"),
     bgm: o.bgm === undefined || o.bgm === null ? undefined : musicName(o.bgm),
     bgmVolume: num(o.bgmVolume, "bgmVolume", 0, 1),
+    direction: textOption(o.direction, "direction", MAX_DIRECTION),
   };
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)) as PipelineOptions;
 }
@@ -114,6 +126,7 @@ export function defaults(config: AppConfig): ResolvedOptions {
     allowAutoCaptions: config.allowAutoCaptions,
     bgm: config.bgmFile,
     bgmVolume: config.bgmVolume,
+    direction: "",
   };
 }
 

@@ -1,0 +1,182 @@
+# Session 2026-10-28 — creative loop: LLM director, Jev gate, Tebar
+
+Asks: (1) drive the creative work from the LLM instead of under-using it,
+(2) Jev as a quality gate with the *right* questions, (3) Tebar as the social
+connector; mid-session: LLM/Jev configurable from UI + CLI, a deterministic
+fallback everywhere, and "Bun first, Python second". Design + sources:
+[creative-loop.md](../creative-loop.md).
+
+## Found
+- The LLM only re-rated rule windows (batches of 6, 900 chars, no video
+  context): it never chose clip boundaries or hooks, and couldn't be steered.
+- Hooks were picked by a regex-score rule inside Python (render/subtitle).
+- No publishing; learning needed views/likes typed in by hand.
+- The pipeline's in-memory `video` kept `title: null` after IMPORT fetched it,
+  so later stages never saw the title (fixed: brief/review now get it).
+- CLI `--url` is the global server option: a `connect --url` would have sent
+  the request to the LLM host. The connection flag is `--base-url`.
+
+## Changed
+- **Director** (`director.ts`): brief (`video.brief`), LLM moments per ~5-min
+  part (ids validated, 10-60 s, hook ≤ 6 s sentence), review sees brief +
+  direction, overlaps dropped after scoring. `LLM_DIRECTOR` / Settings toggle.
+  Job option `direction` (UI textarea, `--direction`).
+- **Gate** (`clipGate.ts`, `jev.ts`): 11 questions (5 quality, 5 risk Nouls,
+  title check), verdict in code, FAIL → SKIP ranked last, REVIEW = person
+  decides. Rules answer the same questions without Jev. `clip.gate*` columns.
+  `clipsForVideo` now orders by `rank_pos`.
+- **Hooks in Bun** (`hooks.ts`, golden fixture `hooks.json` from the Python):
+  every segment carries `hookStart/hookEnd` (null = none); Python only replays.
+- **Tebar** (`tebar.ts`, `publisher.ts`): draft / publish (idempotent, body
+  saved first) / refresh / retry / sync → `clip_feedback`. `social_post` table.
+- **Settings** (`settings.ts`, `setting` table): UI Settings app, `sorot
+  connect` (`--key -` from stdin), test calls. Keys masked.
+- **Eval** (`gateEval.ts`, `scripts/jev-eval.ts`, synthetic fixture
+  `jev-gate-eval.json`): per-question right/unsure/wrong + separation, Jev vs
+  rules. It exposed rule gaps (endings on "adalah", "dijamin … sembuh",
+  greeting openings); fixed generally → rules 10/12 verdicts on that fixture.
+
+## Verification
+- `/verify` gate OPEN. Backend 288/288 (99.5% lines; touched modules:
+  clipGate, director, hooks, jev, settings, tebar, gateEval, clipReview,
+  options 100%, orchestrator 99.3%, editor 98.6%, publisher 96.6%), tsc
+  clean; CLI 38/38 (99.8% lines); UI 133/133 + static build; Python 219/219
+  (captions 100%, render 99%, subtitle 99%).
+- render.py by hand: success → one `{"success": true}` JSON line on stdout;
+  missing segments file → `{"success": false, "error": …}`, exit 1.
+- Real `render.py` + ffmpeg: Bun-chosen hook 4.0-5.3 s replayed (11.57 s
+  output = 1.55 + 10); `hookStart: null` → no replay (10.0 s) although
+  `find_hook` would have found one.
+- Real backend → real APIs with invalid keys: TypeSafe `/v1/systemone` 401
+  `authentication_error`, Tebar `/v1/me` 401 `invalid_api_key`; both shown as
+  test failures, keys masked in `/api/settings`.
+
+## Not verified
+- Jev on real (or the synthetic) Indonesian clips: no TypeSafe key here.
+  Thresholds 0.7/0.3 are TypeSafe's starting points, not calibrated.
+- Tebar publish/insights with a real key; the insights response shape isn't in
+  Tebar's docs (tolerant parser). TikTok creator-info shape assumed from the
+  option names in the docs.
+- Director quality on a real LLM (only fakes in tests); full pipeline with
+  Whisper (no model download here).
+
+## Live tests (same day, keys provided: Jev + an OpenAI-compatible Kimi K3 gateway)
+- **Jev** (`jev-1.14.0`, `bun run jev-eval`, 16 synthetic cases, ~22k input
+  tokens): every labelled yes/no on the right side of 0.7/0.3, separation
+  0.74-0.95 (rules 0.20-0.60, risks only "unsure"); verdicts 11/12. The two
+  misses were label errors (payoff rubric; an unnamed group = needs context),
+  fixed after seeing the answers → 12/12 (circular), rules 9/12.
+- **LLM `kimi-k3-1-pro`** is a reasoning model, and the first live run broke
+  three things the fakes didn't: (1) `max_tokens` covers its thinking — 20
+  tokens gave `content: null`; budgets are now `LLM_MAX_TOKENS` (4000) and an
+  empty answer cut by the budget is an LlmError; (2) over a 5-min transcript it
+  ignored the system prompt (summarised, or asked "what should I do with
+  this?") → 0 picks; every request now ends with a `task` field restating the
+  job + format → 18 picks on the 28-min transcript; (3) it read `"hook"` as
+  "write a hook" (text) → field renamed `hook_line` (id). Also: a gateway error
+  inside HTTP 200 (`all_providers_failed`) now reads "LLM error: …".
+- Latency: 30-150 s per call → `LLM_TIMEOUT=300` for this model; review
+  batches now run 2 at a time.
+- `/verify` (Segment + Score) OPEN: 60/60 focused tests, llm/director/
+  clipReview 100%; full backend 289/289. Live SEGMENT on 10 min of the real
+  transcript with direction "fokus ke kritik soal harga dan spesifikasi, bukan
+  unboxing": brief + 5 LLM picks (all price/spec/brand critique, each with a
+  hook line) next to 11 rule windows; without a direction the picks included
+  unboxing moments.
+- **Full pipeline, real LLM + Jev + Python** (10 min of the real transcript
+  over a synthetic 320x180 video, transcript pre-placed — no Whisper model
+  here; direction as above; CPU, MAX_RENDER_CLIPS=3, HOOK_FIRST): COMPLETED in
+  570 s — SEGMENT 104 s (brief + 3 parts), SCORE 435 s (media features, LLM
+  review, Jev gate), RENDER 33 s. 16 candidates → 11 after overlaps; review
+  followed the direction (unboxing clips 0.08-0.25, price critique 0.98); one
+  review batch hit "upstream unavailable" → 6 candidates kept rule-only scores.
+  Jev: both render-tier clips PASS; flagged the "Halo guys…" opening as weak
+  (0.26) — the replayed rule hook covers it; replaced one over-claiming LLM
+  title (0.92) with the rule title, which is weak ("Dimensity 8400 ya").
+  Renders 1080x1920: 55.13 s = 51.16 + 3.9 s rule hook; 40.29 s = 37.76 +
+  2.5 s LLM hook. Low tiers (no PRIMARY) come from the synthetic video (no
+  faces / motion), not the LLM.
+- Fix from that run: one retry for transient LLM failures (network, 429/5xx,
+  gateway error in a 200; not timeouts, not 4xx). `/verify` OPEN: 72/72 focused, llm/clipReview/director 100%; backend 290/290.
+- **Run 2** (same video + direction, retry + 2 review batches in flight):
+  389 s total, SCORE 123 s (was 435 s), all 11 candidates reviewed — but every
+  clip SKIP (0.27-0.29), nothing rendered: the restated `task` line said only
+  `"score"`, and the model answered 1-10 (read as 0.01-0.10; reasons still
+  said "paling sesuai arahan"). Same windows: 0.98 → 0.10, 0.81 → 0.08. Fixed:
+  the task line carries "0 to 100" (test pins it); live batch afterwards:
+  0.96 / 1.00 for the price critique, 0.08-0.25 for unboxing. `/verify` OPEN
+  (45/45 focused, clipReview 100%). LLM output scale can drift run to run;
+  Jev's answers are bounded probabilities.
+- **What Jev is good at** (same transcript, `jev-1.14.0`): 5 identical
+  requests vary ≤ 0.04; ranks the 6 LLM-reviewed candidates in the LLM's order
+  in 1.4 s (vs ~435 s); judging all 232 code-enumerated windows took 3.8 s
+  (~$0.011) and found the LLM director's moments plus two stronger price-shock
+  openings; titles chosen as quotes; hook lines need one Noul per line + an ad
+  check (a single Choice picked a sponsor line). It can't write text.
+- **Jev first** (`jevDirector.ts`, `JEV_DIRECTOR`, default on with Jev) after
+  the user's call that Jev should decide and the LLM only write (post copy,
+  auto-discover). Code proposes one window per sentence start; Jev screens
+  them (quality + `fits_direction`), scores every candidate with the full gate
+  questions (score and verdict from the same answers), and picks hook lines
+  (Noul per line + ad Noul) and quote titles for render-tier clips. Settings /
+  `sorot connect jev --director` toggle; "Jev pick" badge in the studio.
+- **Runs 3-4, Jev first** (same video, transcript, direction, CPU,
+  MAX_RENDER_CLIPS=3): SEGMENT 4 s + SCORE 6 s both times (LLM runs: 104 + 435 s,
+  265 + 123 s). 206 windows → 24 Jev picks in run 4 (run 3's stats weren't kept), 241 902
+  input tokens for run 4's screening (≈ $0.01 at the listed price), no Jev errors. Top picks were the
+  price-shock openings (`fits_direction` 0.93-0.95); run 3 rendered one clip
+  (27.4-60.4 s, hook "Kedengeran absurd nggak?", title quoted from the clip,
+  1080x1920, 34.5 s). Run 4 rendered none: that window wasn't a candidate and
+  its neighbour failed the gate at `needs_prior_context` 0.72 (run 3: 0.67) →
+  best 0.64 < BACKUP 0.65. Another window went 0.67 → 0.70 (PASS → FAIL).
+  Near a 0.7 threshold, run-to-run moves of a few hundredths change verdicts.
+- Fixes from those runs: SCORE keeps SEGMENT's `director` stats in the segment
+  file (windows, judged, picks, tokens, pickError were overwritten); in Jev
+  first a FAIL clip no longer wins an overlap against a passing one
+  (`heldLast` before `dropOverlaps`).
+- Open: tiers on a real video (the synthetic one has no faces/motion, so the
+  rule half is low); Jev's top score ~0.86 vs the LLM's 0.96-1.0 means fewer
+  BACKUP clips with the same rule half; borderline re-asks not built.
+- `/verify` (Segment + Score, Jev first) OPEN: 89/89 focused tests
+  (jevDirector, clipGate, pipeline, director, clipReview — all 100% lines;
+  orchestrator 94.95% in the focused run because other stages aren't
+  exercised there, 99.39% in the full suite). Full backend 304/304 (99.62%),
+  tsc clean; CLI 38/38; UI 133/133 + static build. Live: runs 3-4 above
+  (COMPLETED; the Jev-down fallback is covered by "Jev-first falls back to
+  the rules when Jev is down"). No Python changed.
+
+## Jev context + measurement, test compression (same day, later)
+- Owner: Jev needs the RIGHT questions and the RIGHT thing measured ("it
+  depends how the code runs"); keep Jev as primary director; make its
+  "system prompt" good; compress the tests.
+- Jev has no system-prompt field (`/v1/systemone` takes model, state,
+  questions; checked against TypeSafe's OpenAPI). The briefing goes in the
+  state: `jevState()` adds `context` {task, viewer, text, fields} to every
+  request (gate, screening, judging, hooks/titles, publish copy).
+- Audit found: the hook/title request had no context; the title Choice asked
+  two things ("true to it and most likely to make people watch") with options
+  named S0.. and no description; the old note said "podcast, interview, talk
+  show" (the test video is a phone review).
+- Measured, 3 live runs per version on the fixture: separation up on every
+  question (`needs_prior_context` 0.73-0.74 → 0.80-0.83, no overlap), verdicts
+  12/12 throughout; 206 real windows: Jev-score rank correlation 0.976, FAIL
+  windows 120 → 107, +10 % tokens.
+- Hook decision fixed in code: a teaser is compared with the clip's own
+  opening (same question, same request); Jev's "no replay" is no longer
+  overwritten by the rules' hook; `hook: undefined` when Jev had no line to
+  judge (one long transcript line) so the rules still fill those. My first
+  comparison script mapped hook times to the wrong line (off by one) and made
+  a good pick look bad — caught with a per-line probe.
+- Run 5 (live, new code): SEGMENT 3 s, SCORE 7 s, 1 rendered (BACKUP 0.65,
+  33.1-60.4 s, no replay by Jev's decision, title "Kedengeran absurd nggak?" —
+  a quote that leans on the clip; a per-sentence "makes sense alone" Noul is a
+  candidate, not built). Top clip differs from runs 3-4 again: borderline
+  flips remain the main open issue.
+- Tests compressed (branch-added code only): shared Jev fake in
+  `tests/helpers.ts` (`fakeJev`, `clipAnswer`, `jevReply`, and
+  `unknownFields`, which checks every backticked field in a request exists
+  in its state), tables via `test.each`. AGENTS.md now carries the
+  compact-tests rule.
+- Owner decision on borderline flips: "it's okay, we just need to trust
+  Jev" — no re-asks or averaging; documented in creative-loop §1 Limits and
+  AGENTS.md.

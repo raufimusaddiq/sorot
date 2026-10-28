@@ -39,10 +39,11 @@ describe('ImportOptions', () => {
     fireEvent.change(screen.getByLabelText('Music volume'), { target: { value: '0.3' } });
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '1:00' } });
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2:30' } });
+    fireEvent.change(screen.getByLabelText('Direction'), { target: { value: 'cuma yang lucu' } });
 
     expect(last).toEqual({
       options: { style: 'hormozi', reframe: 'blur', silenceTrim: true, hookFirst: true, youtubeCaptions: true,
-        allowAutoCaptions: true, bgm: 'lofi.mp3', bgmVolume: 0.3 },
+        allowAutoCaptions: true, bgm: 'lofi.mp3', bgmVolume: 0.3, direction: 'cuma yang lucu' },
       startTime: '1:00', endTime: '2:30',
     });
     expect(screen.getByText('30%')).toBeInTheDocument();

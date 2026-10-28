@@ -3,10 +3,11 @@
 Python does only what needs Python's media/ML libraries: Whisper
 transcription, measuring audio/visual features, the optional LightGBM model,
 and ffmpeg rendering, captions and variations. Segmenting, clip scoring (text
-rules, weights, tiers, titles), analytics, feedback learning, YouTube
-discovery, captions-as-transcript and the LLM all run in the Bun backend
-(`backend/src/segments.ts`, `scoring.ts`, `textRules.ts`, `learning.ts`,
-`youtube.ts`, `captionAnalysis.ts`, `youtubeCaptions.ts`, `discoveryAgent.ts`).
+rules, weights, tiers, titles), hook lines, analytics, feedback learning,
+YouTube discovery, captions-as-transcript and the LLM / Jev calls all run in
+the Bun backend (`backend/src/segments.ts`, `scoring.ts`, `textRules.ts`,
+`hooks.ts`, `learning.ts`, `youtube.ts`, `captionAnalysis.ts`,
+`youtubeCaptions.ts`, `discoveryAgent.ts`, `jevDirector.ts`, `director.ts`).
 
 ## General Protocol
 
@@ -190,7 +191,7 @@ so only those pixels go through the scaler.
 | `--transcript` | With `--silence-trim` | | Transcript JSON (word timings) |
 | `--silence-trim` | No | off | Cut pauses longer than `--silence-gap` |
 | `--silence-gap` | No | `0.6` | Pause length (s) that gets cut |
-| `--hook-first` | No | off | Replay the clip's strongest line before it (needs `--transcript`) |
+| `--hook-first` | No | off | Replay the segment's hook line (`hookStart`/`hookEnd`) before it (needs `--transcript`) |
 | `--export-dir` | No | none | Burn captions (+ music) in this pass; the finished clip and `.ass` go here |
 | `--style` | No | `$SUBTITLE_STYLE` or `default` | Caption preset (with `--export-dir`) |
 | `--bgm` / `--bgm-volume` | No | none / `0.12` | Music, looped and ducked under speech (with `--export-dir`) |
@@ -206,6 +207,14 @@ clip-relative source ranges. Silence trim gives in-order ranges (cut with
 `select`/`aselect`); hook-first prepends the hook range, so the list jumps
 back and is cut with `trim`/`atrim` + `concat`. Caption words are mapped
 through the same list (`captions.clip_words`), and the face track is re-timed onto it.
+
+**Hook** (`captions.seg_hook`): the backend decides each clip's hook and
+writes it on the segment as `hookStart`/`hookEnd` (absolute seconds; the rules'
+line from `backend/src/hooks.ts`, or Jev's / the LLM director's). render.py and
+subtitle.py only replay it: `null` means no replay, and so does a hook that
+starts in the first 3 s, ends past the clip or isn't 0.5–6.5 s long. Only a
+segments file without the keys (written before Bun chose hooks) falls back to
+`captions.find_hook`.
 
 **Face reframing** (`reframe.py`): frames are sampled at 2 fps, faces found
 with MediaPipe if installed, otherwise OpenCV Haar (the Docker image ships

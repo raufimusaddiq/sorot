@@ -49,8 +49,29 @@ export interface AppConfig {
   llmModel: string;
   llmApiKey: string;
   llmTimeoutSec: number;
+  /** Output budget per LLM call. Reasoning models (e.g. Kimi, DeepSeek-R1) spend it thinking before they answer. */
+  llmMaxTokens: number;
   /** Web search for the discovery agent: "bing" (key-free HTML), a SearXNG URL, or "off". */
   webSearch: string;
+  /** On/off switches for the three connections (UI / CLI settings); each still needs its URL, model or key. */
+  llmEnabled: boolean;
+  jevEnabled: boolean;
+  tebarEnabled: boolean;
+  /** With an LLM: it also writes a video brief and picks its own clip moments (director.ts); false = review only. */
+  llmDirector: boolean;
+  /** Jev decision model (TypeSafe System One) as the clip quality gate; off without JEV_API_KEY. */
+  jevUrl: string;
+  jevModel: string;
+  jevApiKey: string;
+  jevTimeoutSec: number;
+  /** With Jev: it finds the moments, scores them, picks hook lines and quote titles (jevDirector.ts);
+   *  the LLM director and review are skipped. false = Jev only gates. */
+  jevDirector: boolean;
+  /** Tebar (tebar.app) REST API for publishing clips and reading their metrics; off without TEBAR_API_KEY. */
+  tebarBaseUrl: string;
+  tebarApiKey: string;
+  /** Pull posted clips' metrics into feedback every N hours (0 = only on request). */
+  tebarSyncHours: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -111,6 +132,20 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmModel: (env.LLM_MODEL ?? "").trim(),
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),
     llmTimeoutSec: int(env.LLM_TIMEOUT, 120),
+    llmMaxTokens: Math.max(256, int(env.LLM_MAX_TOKENS, 4000)),
     webSearch: (env.WEB_SEARCH ?? "").trim() || "bing",
+    llmEnabled: true,
+    jevEnabled: true,
+    tebarEnabled: true,
+    llmDirector: !/^(0|false|no|off)$/i.test((env.LLM_DIRECTOR ?? "").trim()),
+    jevUrl: (env.JEV_URL ?? "").trim() || "https://api.typesafe.ai/v1/systemone",
+    // A pinned version, not the jev-latest alias: the gate's thresholds were set against it.
+    jevModel: (env.JEV_MODEL ?? "").trim() || "jev-1.14.0",
+    jevApiKey: (env.JEV_API_KEY ?? "").trim(),
+    jevTimeoutSec: int(env.JEV_TIMEOUT, 30),
+    jevDirector: !/^(0|false|no|off)$/i.test((env.JEV_DIRECTOR ?? "").trim()),
+    tebarBaseUrl: (env.TEBAR_BASE_URL ?? "").trim() || "https://api.tebar.app/v1",
+    tebarApiKey: (env.TEBAR_API_KEY ?? "").trim(),
+    tebarSyncHours: Math.max(0, int(env.TEBAR_SYNC_HOURS, 6)),
   };
 }

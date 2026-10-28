@@ -11,7 +11,7 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
 [sorot CLI]  ────────┼─ HTTP ─→  [Bun API :8080]  →  [SQLite (bun:sqlite)]
 [scripts / other apps]┘
                         |
-                  [Worker Thread]
+                  [Pipeline queue]
                         |
            +------------+------------+
            |            |            |
@@ -22,13 +22,20 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
            +------ data/ folder -----+
 ```
 
+Optional HTTP services, called only by the Bun process (each is off until it
+has its URL/model/key): an **LLM** (any OpenAI-compatible endpoint), **Jev**
+(TypeSafe `/v1/systemone`) and **Tebar** (`api.tebar.app/v1`). Without them
+the pipeline falls back to rules and clips are posted by hand. Design:
+[creative-loop.md](creative-loop.md).
+
 ## Component Responsibilities
 
 ### Bun Backend (`backend/`)
 - REST API (`src/app.ts`) + static host for `frontend/out` with SPA fallback
-- Job orchestration (`src/orchestrator.ts`, `src/jobs.ts`): 9 stages, 2 pipelines
-  in flight, FIFO queue (cap 50), cancel = abort signal that kills the child
-  process, orphan sweep on startup + every 5 min
+- Job orchestration (`src/orchestrator.ts`, `src/jobs.ts`): 9 stages, 1 pipeline
+  in flight on a CPU / 2 on a GPU (`MAX_CONCURRENT_PIPELINES`), FIFO queue
+  (cap 50), cancel = abort signal that kills the child process, orphan sweep
+  on startup + every 5 min
 - Calls Python CLI scripts as subprocess with per-script timeouts (`src/runner.ts`)
 - Calls yt-dlp and ffmpeg as subprocess
 - SQLite for all metadata (`src/db.ts` schema + migrations, `src/store.ts` repo)
@@ -36,8 +43,23 @@ async queue), shelling out to Python / ffmpeg / yt-dlp.
 
 ### In the backend (Bun)
 - Segmenting, clip scoring (13 weighted signals, tiers, titles; `scoring.ts`,
-  `textRules.ts`), the optional LLM review (`llm.ts`, `clipReview.ts`),
-  analytics, feedback learning (`learning.ts`)
+  `textRules.ts`), analytics, feedback learning (`learning.ts`)
+- Jev first (`jev.ts`, `jevDirector.ts`; Jev connected and `JEV_DIRECTOR` on):
+  judges a window per sentence start in SEGMENT, scores the candidates 50/50
+  with the rules in SCORE (the same answers give the gate verdict), and picks
+  hook lines and quote titles for the clips that render
+- LLM (`llm.ts`): when Jev isn't directing, the director (`director.ts`: video
+  brief + its own moments, `LLM_DIRECTOR`) and the review blended 50/50 with
+  the rules (`clipReview.ts`); in both cases the post copy and ✨ auto-discover
+- Quality gate (`clipGate.ts`): PASS / REVIEW / FAIL before render, from Jev or
+  the same questions answered by text rules; FAIL → tier SKIP, ranked last
+- Hooks (`hooks.ts`): every clip's `hookStart`/`hookEnd` is decided here;
+  render.py / subtitle.py only replay it
+- Publishing (`publisher.ts`, `tebar.ts`): drafts copy, posts through Tebar,
+  and every `TEBAR_SYNC_HOURS` pulls post metrics into `clip_feedback`
+- Connections (`settings.ts`): LLM / Jev / Tebar URL, model, key and on/off,
+  saved in the `setting` table over the env from the studio's Settings or
+  `sorot connect`; applied without a restart
 - Discovery: yt-dlp feeds (`youtube.ts`), whole-caption scoring
   (`captionAnalysis.ts`), channel crawler (`channels.ts`), auto-discover agent
   with web search (`discoveryAgent.ts`, `webSearch.ts`)
@@ -63,6 +85,7 @@ What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 - Clip list with scores and ranking
 - Video preview player
 - Export/download controls
+- Settings (LLM / Jev / Tebar connections) and a Publish panel per clip
 
 ### CLI (`cli/`)
 - `sorot`: a client of the same HTTP API (import, jobs, clips, download,
@@ -91,8 +114,10 @@ See [linux-install.md](linux-install.md).
    b. ffmpeg extracts audio → data/audio/{videoId}.wav
    c. Python transcribe.py → data/transcripts/{videoId}.json (or the video's YouTube captions;
       a retry reuses a transcript made with the same model and language)
-   d. Bun segments the transcript → data/segments/{videoId}.json
-   e. Python media_features.py measures each segment; Bun scores it (+ optional LLM review)
+   d. Bun segments the transcript → data/segments/{videoId}.json (rule windows, plus Jev's
+      or the LLM director's picks when connected)
+   e. Python media_features.py measures each segment; Bun scores it (50/50 with Jev, or with
+      the LLM review), runs the quality gate and decides each clip's hook line
    f. Python render.py crops, renders and burns captions + music in one encode per top clip
       (every PRIMARY/BACKUP clip on a GPU, the best MAX_RENDER_CLIPS = 10 on a CPU; the rest
       render on request)
@@ -102,6 +127,7 @@ See [linux-install.md](linux-install.md).
 5. Backend updates Job status=COMPLETED
 6. Frontend polls GET /api/jobs/{id} and shows results
 7. User previews clips, picks favorites, exports
+8. Optional: publishes a clip through Tebar; the metrics sync feeds clip_feedback
 ```
 
 ## Tech Decisions
@@ -137,8 +163,8 @@ Each stage reads from `data/` subfolder and writes output to the next subfolder.
 | 1. Import | URL or file path | yt-dlp / file copy | `data/raw/{videoId}.mp4` |
 | 2. Audio | raw video | ffmpeg extract | `data/audio/{videoId}.wav` |
 | 3. Transcribe | audio WAV | faster-whisper (CUDA or CPU) | `data/transcripts/{videoId}.json` |
-| 4. Segment | transcript JSON | Python segment logic | `data/segments/{videoId}.json` |
-| 5. Score | segments JSON | Python scoring | updates segments JSON |
+| 4. Segment | transcript JSON | Bun rule windows (`segments.ts`) + Jev or LLM director picks | `data/segments/{videoId}.json` |
+| 5. Score | segments JSON | `media_features.py`, then Bun: rules (+ Jev or LLM review), quality gate, hooks | updates segments JSON, `clip` rows |
 | 6. Render | raw video + segments + transcript | ffmpeg, one encode: face-tracking crop / centre / blur, silence trim, ASS karaoke captions, music | `data/exports/{videoId}/clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` |
 | 7. Subtitle | old-style renders only | re-burns captions on clips rendered without them | same |
 
@@ -151,6 +177,6 @@ Each stage reads from `data/` subfolder and writes output to the next subfolder.
 
 ## Concurrency
 
-- MVP: one job at a time (sequential pipeline)
-- Job queue is in-memory, FIFO
+- `MAX_CONCURRENT_PIPELINES` jobs at a time (default 1 on a CPU, 2 on a GPU)
+- Job queue is in-memory, FIFO (`PIPELINE_QUEUE_CAPACITY`, default 50)
 - Future: could add parallel clip rendering if needed

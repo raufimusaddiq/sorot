@@ -174,7 +174,7 @@ Choices and server defaults for the import form and clip editor:
   "reframeModes": ["face", "center", "blur"],
   "defaults": { "style": "default", "reframe": "face", "silenceTrim": false, "silenceGapSec": 0.6,
                 "hookFirst": false, "youtubeCaptions": false, "allowAutoCaptions": false,
-                "bgm": "", "bgmVolume": 0.12 } }
+                "bgm": "", "bgmVolume": 0.12, "direction": "" } }
 ```
 
 | Option | Effect |
@@ -185,6 +185,7 @@ Choices and server defaults for the import form and clip editor:
 | `hookFirst` | Replay the clip's strongest line (a question/hook, 1.2–6 s, after the first 3 s) before it starts |
 | `youtubeCaptions` / `allowAutoCaptions` | Use the video's uploaded (and optionally auto-generated) YouTube captions instead of Whisper when present |
 | `bgm` / `bgmVolume` | Music file from `data/music`, looped and ducked under speech; volume 0–1 |
+| `direction` | Job level, ≤ 500 chars: free-text steer for the picks and copy — Jev asks `fits_direction` when screening and scoring; the LLM uses it for the brief, picks, review and post copy. Ignored when neither is connected |
 
 ### `GET /api/music`
 `{ "tracks": ["lofi.mp3", ...] }` — audio files in `data/music`
@@ -272,6 +273,87 @@ success. 404 `Clip not found` / `No rendered file available` /
 Downloads the export as `application/octet-stream` with
 `Content-Disposition: attachment; filename="…"`. Range is supported.
 404 `No exported file available`.
+
+### Clip fields from the director and the quality gate
+
+| Field | Meaning |
+|---|---|
+| `source` | `rules` (pause-based window), `jev` (sentence window Jev picked) or `llm` (picked by the LLM director) |
+| `hookStart` / `hookEnd` | Hook line in source seconds (Jev's, the LLM's, or the rules'); `null` = none — with Jev first, also Jev's decision that the clip's opening needs no replay. Replayed first with `hookFirst` |
+| `gateVerdict` | `PASS`, `REVIEW` (content risk: a person decides), `FAIL` (held back: tier `SKIP`, ranked last), or `null` (not gated: not in a render tier) |
+| `gate` | JSON: `{verdict, by: "jev"\|"rules", model, reasons[], answers{question: probability, payoff: 0-2}, quality, titleReplaced?}` |
+| `reason` | Why it scored as it did; `Held back: …` when the gate failed it |
+
+The segments file (`data/segments/{videoId}.json`) also records `director`
+(Jev: windows, judged, picks, tokens; LLM: brief, picks; and errors), `gatedBy` (`jev` / `rules` / `mixed`) and `gateError`.
+
+---
+
+## Connections (LLM, Jev, Tebar)
+
+Saved in the database; they override the env. `null` clears a field (back to
+the env value). API keys are never returned: `apiKey` is `••••` + last 4,
+`apiKeySet` says whether one is set.
+
+### `GET /api/settings`
+```json
+{ "llm":   { "active": true, "enabled": true, "baseUrl": "http://…/v1", "model": "qwen2.5:7b",
+             "apiKey": "", "apiKeySet": false, "director": true, "saved": ["baseUrl", "model"] },
+  "jev":   { "active": false, "enabled": true, "url": "https://api.typesafe.ai/v1/systemone",
+             "model": "jev-1.14.0", "apiKey": "", "apiKeySet": false, "director": true, "saved": [] },
+  "tebar": { "active": false, "enabled": true, "baseUrl": "https://api.tebar.app/v1",
+             "apiKey": "", "apiKeySet": false, "saved": [] } }
+```
+
+### `PUT /api/settings/{llm|jev|tebar}`
+Body: any of the connection's fields (`enabled`, `baseUrl`/`url`, `model`,
+`apiKey`, and `director` for llm and jev). Returns the full view. 400 for an unknown
+field, a non-http(s) URL, a key with spaces, a non-boolean switch; 404 for an
+unknown connection.
+
+### `POST /api/settings/{kind}/test`
+One small real call: `{ "ok": true, "ms": 412, "model": "qwen2.5:7b", "detail": "OK" }`
+or `{ "ok": false, "ms": 3, "error": "Not configured: …" }`.
+
+---
+
+## Publishing (Tebar)
+
+409 `Tebar is not connected…` when there is no key. Tebar's own errors come
+back as 400 (its 4xx, message kept, e.g. `Tebar 403 plan_required: …`) or 502.
+
+### `GET /api/social/accounts`
+`{ "enabled": true, "accounts": [{ "id": "…", "platform": "tiktok", "name": "budi" }] }`
+(`enabled: false, accounts: []` without Tebar).
+
+### `POST /api/clips/{clipId}/publish/draft`
+Body `{ "accountIds": ["…"] }`. Sends nothing. Per account: `content` (LLM
+copy per platform, or the clip's title + description), `title` (YouTube),
+`copyBy`, `needs` (`tiktokPrivacy`: options to choose from; `madeForKids`),
+`warnings`, `blockers`, `overclaims` (Jev). Also `clip.gateVerdict` /
+`gateReasons` and `copyCheckedBy`.
+
+### `POST /api/clips/{clipId}/publish`
+```json
+{ "targets": [{ "accountId": "…", "content": "…", "privacyLevel": "SELF_ONLY", "postMode": "direct" },
+              { "accountId": "…", "content": "…", "title": "…", "madeForKids": false }],
+  "scheduledAt": "2026-11-01T19:00:00+07:00", "confirmReview": true, "override": false }
+```
+Checks the platform limits, YouTube title + `madeForKids`, a future
+`scheduledAt` with a zone; a `REVIEW` clip needs `confirmReview: true`, a
+`FAIL` clip `override: true` (else 409). Uploads the clip, posts with an
+`Idempotency-Key`, returns `{ "post": SocialPost }` — status `PUBLISHING`,
+`SCHEDULED`, `PUBLISHED`, `PARTIAL` or `FAILED`, `targets` (JSON per account:
+platform, status, permalink, errorCode).
+
+### `GET /api/clips/{clipId}/posts` · `POST /api/social/posts/{id}/refresh` · `POST /api/social/posts/{id}/retry`
+The clip's posts, newest first / re-read status from Tebar / re-send a post
+that never reached Tebar with the same key and body (no double post).
+
+### `POST /api/social/sync`
+Status + metrics of live posts; each clip's metrics (summed over its posts)
+become its feedback row. `{ "posts": 3, "clips": 2, "errors": [] }`. Also runs
+every `TEBAR_SYNC_HOURS`.
 
 ---
 

@@ -301,11 +301,36 @@ def find_hook(words, duration, scorer=None):
     return (round(max(0.0, best[1] - 0.1), 3), round(min(duration, best[2] + 0.15), 3))
 
 
-def plan_timeline(words, duration, silence_trim=False, silence_gap=0.6, hook_first=False, scorer=None):
-    """Ordered source ranges for the output clip."""
+def seg_hook(seg):
+    """The hook the backend chose for this clip (absolute ``hookStart`` /
+    ``hookEnd`` on the segment: Jev's, the LLM's or the rules' line) as a
+    clip-relative range to replay.
+
+    False when the backend decided there is none (null), or sent one that
+    can't be replayed (inside the opening seconds, outside the clip, longer
+    than a hook). None only for segments files without the keys (written
+    before the backend chose hooks): then find_hook picks here.
+    """
+    if "hookStart" not in seg:
+        return None
+    a, b = seg.get("hookStart"), seg.get("hookEnd")
+    if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+        return False
+    start = seg["startTime"]
+    duration = seg["endTime"] - start
+    a, b = a - start, b - start
+    if a < HOOK_SKIP_LEAD_SEC or b > duration + 0.05 or not (0.5 <= b - a <= HOOK_MAX_SEC + 0.5):
+        return False
+    return (round(max(0.0, a - 0.1), 3), round(min(duration, b + 0.15), 3))
+
+
+def plan_timeline(words, duration, silence_trim=False, silence_gap=0.6, hook_first=False, scorer=None, hook=None):
+    """Ordered source ranges for the output clip. ``hook``: a range from
+    seg_hook() to replay, False for no replay, None to let the rules pick."""
     timeline = keep_intervals(words, duration, min_gap=silence_gap) if silence_trim else [(0.0, round(duration, 3))]
     if hook_first:
-        hook = find_hook(words, duration, scorer)
+        if hook is None:
+            hook = find_hook(words, duration, scorer)
         if hook:
             timeline = [hook] + timeline
     return timeline
@@ -339,7 +364,7 @@ def clip_words(transcript_segments, seg, silence_trim=False, silence_gap=0.6, ho
     words = words_for_clip(transcript_segments, seg["startTime"], seg["endTime"])
     if silence_trim or hook_first:
         duration = seg["endTime"] - seg["startTime"]
-        words = map_words(words, plan_timeline(words, duration, silence_trim, silence_gap, hook_first))
+        words = map_words(words, plan_timeline(words, duration, silence_trim, silence_gap, hook_first, hook=seg_hook(seg)))
     return words
 
 

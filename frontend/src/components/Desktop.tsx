@@ -80,4 +80,9 @@ export const ICONS = {
     <svg viewBox="0 0 20 20" shapeRendering="crispEdges"><rect x="3" y="11" width="3" height="6" fill="#14D99A" {...stroke} />
       <rect x="8.5" y="7" width="3" height="10" fill="#FFD21F" {...stroke} /><rect x="14" y="3" width="3" height="14" fill="#FF3D8B" {...stroke} /></svg>
   ),
+  settings: (
+    <svg viewBox="0 0 20 20" shapeRendering="crispEdges"><rect x="3" y="4" width="14" height="3" fill="#B49CFF" {...stroke} />
+      <rect x="3" y="13" width="14" height="3" fill="#B49CFF" {...stroke} /><rect x="11" y="2.5" width="3" height="6" fill="#FBF3EA" {...stroke} />
+      <rect x="5" y="11.5" width="3" height="6" fill="#FBF3EA" {...stroke} /></svg>
+  ),
 };

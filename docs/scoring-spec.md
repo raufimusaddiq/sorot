@@ -7,6 +7,10 @@ Score each candidate segment (10-60s) to rank clips by viral potential. This is 
 Where it runs: Python `media_features.py` measures the audio/visual signals;
 the Bun backend computes the text signals, the weighted sum, boosts,
 penalties, tiers and post copy (`backend/src/scoring.ts`, `textRules.ts`).
+With Jev or an LLM connected, this rule score is blended 50/50 with their
+judgement; a quality gate (Jev, or the same questions answered by text rules)
+runs before render either way (see
+[Blend, quality gate and rank](#blend-quality-gate-and-rank)).
 
 ## Base Formula
 
@@ -32,9 +36,9 @@ final_score =
 ```
 
 All feature values are 0.0 – 1.0. Weights sum to 1.0. The final score is capped at 1.0.
-With an LLM configured, `clipReview.ts` then blends it 50/50 with the LLM's
-0-100 judgement of the excerpt. If `ai-pipeline/model.lgb` exists, its
-prediction replaces the weighted sum for the segments it can score.
+If `ai-pipeline/model.lgb` exists, its prediction replaces the weighted sum
+for the segments it can score. This is the **rule score**; Jev or the LLM
+review may then blend it (below).
 
 The per-feature sections below keep their original design notes; the
 weights above are the current ones.
@@ -179,9 +183,50 @@ After applying formula + boosts - penalties:
 
 | Score Range | Tier | Action |
 |-------------|------|--------|
-| ≥ 0.80 | PRIMARY | Auto-render and highlight in UI |
-| 0.65 – 0.79 | BACKUP | Show in UI, render on demand |
-| < 0.65 | SKIP | Hide by default, accessible via "show all" |
+| ≥ 0.80 | PRIMARY | Rendered with captions (all on a GPU; the best `MAX_RENDER_CLIPS` on a CPU, the rest on request) |
+| 0.65 – 0.79 | BACKUP | Same as PRIMARY |
+| < 0.65 | SKIP | Not rendered; still listed, renderable on request |
+
+The tier is derived again after the blend, and a clip the quality gate fails
+moves to SKIP whatever its score.
+
+## Blend, Quality Gate and Rank
+
+SCORE stage, after the rule score (`backend/src/orchestrator.ts`):
+
+| Mode | When | Final score | `scoredBy` |
+|---|---|---|---|
+| Jev first | Jev connected and `JEV_DIRECTOR` on | `0.5 × Jev + 0.5 × rules` for the best 200 candidates by rule score plus every Jev pick (`jevDirector.ts` `judgeClips`); the rest, and any Jev failure, keep the rule score | `jev+rules` |
+| LLM review | otherwise, with an LLM | `0.5 × LLM + 0.5 × rules`, the LLM's 0-100 answer ÷ 100, in batches of 6 (`clipReview.ts`); a batch it can't answer keeps the rule score | `llm+rules` |
+| Rules | neither | the rule score | `rules` |
+
+Jev's score is the quality composite of its answers (`clipGate.ts`
+`qualityOf`: 0.25 strong opening, 0.25 stands alone, 0.15 complete ending,
+0.10 not filler, 0.25 payoff level ÷ 2, averaged over the answers present),
+or 50/50 with `fits_direction` when the job has a direction (`jevScore`).
+
+**Quality gate** (`clipGate.ts`). The verdict is decided in code from the
+answers (`verdictFrom`):
+
+- **FAIL** if mostly filler ≥ 0.7, needs earlier context ≥ 0.7, a weak
+  opening (≤ 0.3) together with a cut-off ending (≤ 0.3), or payoff ≤ 0.5
+  answered with confidence ≥ 0.5
+- else **REVIEW** if any risk question (accusation, SARA, sexual, dangerous,
+  health/money claim) is ≥ 0.5: a person decides, never an automatic FAIL
+- else **PASS**
+
+With Jev first the verdict comes from the same answers as the score; a
+PRIMARY/BACKUP clip Jev didn't answer gets the rules' verdict. Otherwise the
+best 40 PRIMARY/BACKUP clips are gated after the blend, by Jev when connected,
+else by text rules answering the same questions (`ruleAnswers`, no payoff).
+A FAIL clip goes to tier SKIP with the reason `Held back: …`. The 0.7 / 0.3
+thresholds are TypeSafe's starting points, not calibrated on Indonesian clips.
+Question design: [creative-loop.md](creative-loop.md) §3.
+
+**Overlaps and rank.** Candidates (rule windows, Jev or LLM picks) that
+overlap by more than half of the shorter one keep only the better-scored one
+(with Jev first, a FAIL clip never wins over a passing one). Ranks follow the
+final score, with held-back (FAIL) clips last.
 
 ## Scoring Pipeline
 
@@ -189,15 +234,17 @@ After applying formula + boosts - penalties:
 1. media_features.py measures audio/visual signals per segment (Python)
 2. For each segment (Bun, scoring.ts):
    a. Calculate each feature (0.0 – 1.0)
-   b. Apply weighted formula → base_score
+   b. Apply weighted formula → base_score (an optional LightGBM prediction replaces it)
    c. Check boost conditions → add boosts
    d. Check penalty conditions → subtract penalties
    e. final_score = base_score + boost_total - penalty_total
    f. Determine tier from final_score
-3. Sort segments by final_score descending
-4. Assign rank (1 = best)
-5. Optional LLM review (blend + title/description), optional LightGBM override
-6. Write scoredSegments back to the segments JSON
+3. Jev first: Jev blend + gate verdict, then drop overlaps. Otherwise: optional
+   LLM review (blend + title/description), drop overlaps, then the quality gate
+4. Sort: held-back (FAIL) clips last, then final_score descending; assign rank (1 = best)
+5. Hook line per clip: Jev's (with its quote title) for the clips that render
+   when Jev is first, else the LLM director's line or the rules' (`hooks.ts`)
+6. Write scoredSegments back to the segments JSON and save the clips
 ```
 
 ## Feature Values Reference

@@ -52,18 +52,19 @@ describe("import / watch", () => {
       ...jobRoutes(),
     });
     const code = await h.run("import", "https://youtu.be/x", "--from", "1:00", "--to", "2:30", "--style", "hormozi",
-      "--reframe", "blur", "--trim", "--gap", "0.8", "--hook", "--auto-captions", "--music", "lofi.mp3", "--music-volume", "0.2");
+      "--reframe", "blur", "--trim", "--gap", "0.8", "--hook", "--auto-captions", "--music", "lofi.mp3", "--music-volume", "0.2",
+      "--direction", "cuma yang lucu");
     expect(code).toBe(0);
     expect(h.requests[0]!.body).toEqual({ url: "https://youtu.be/x", startTime: "1:00", endTime: "2:30" });
     expect(h.requests[1]!.body).toEqual({ videoId: "video-1234-abcd", options: {
       style: "hormozi", reframe: "blur", silenceTrim: true, silenceGapSec: 0.8, hookFirst: true,
-      youtubeCaptions: true, allowAutoCaptions: true, bgm: "lofi.mp3", bgmVolume: 0.2,
+      youtubeCaptions: true, allowAutoCaptions: true, bgm: "lofi.mp3", bgmVolume: 0.2, direction: "cuma yang lucu",
     } });
     const text = h.text();
     expect(text).toContain("✓ IMPORT        30s");
     expect(text).toContain("▶ RENDER");
     expect(text).toContain("✓ RENDER        30s");
-    expect(text).toMatch(/1\s+PRIMARY\s+0\.89\s+1:00-1:45\s+45s\s+ready\s+clip-1/);
+    expect(text).toMatch(/1\s+PRIMARY\s+0\.89\s+-\s+1:00-1:45\s+45s\s+ready\s+clip-1/);
     expect(text).toContain("no subs");
     expect(text).toContain("1 ready. Download: sorot download --video video-1234-abcd");
   });
@@ -166,6 +167,7 @@ describe("library", () => {
     const c = harness(routes);
     await c.run("clips", "video-1234-abcd", "--tier", "primary,skip");
     expect(c.text()).toContain("clip-1");
+    expect(c.text()).toMatch(/GATE/);
     expect(c.text()).not.toContain("clip-2");
     expect(c.text()).toContain("1 ready.");
     const j = harness(routes);
@@ -330,5 +332,58 @@ describe("discovery", () => {
     expect(JSON.parse(j.text())).toHaveLength(2);
     await j.run("channels", "refresh", "ch1");
     expect(j.out.at(-1)).toBe("D: ACTIVE");
+  });
+});
+
+describe("connect", () => {
+  const llm = { active: true, enabled: true, baseUrl: "https://api.groq.com/openai/v1", model: "llama", apiKey: "••••1234", apiKeySet: true, director: true, saved: ["model"] };
+  const view = { llm, jev: { active: false, enabled: true, url: "https://api.typesafe.ai/v1/systemone", model: "jev-1.14.0", apiKey: "", apiKeySet: false, saved: [] },
+    tebar: { active: false, enabled: false, baseUrl: "https://api.tebar.app/v1", apiKey: "", apiKeySet: false, saved: ["enabled"] } };
+  const routes = { "GET /api/settings": view, "PUT /api/settings/llm": { ...view, llm: { ...llm, director: false } }, "PUT /api/settings/jev": view,
+    "PUT /api/settings/tebar": view, "POST /api/settings/llm/test": { ok: true, ms: 420, model: "qwen", detail: "OK" },
+    "POST /api/settings/jev/test": { ok: true, ms: 80 }, "POST /api/settings/tebar/test": { ok: false, ms: 120, error: "Tebar 401 invalid_api_key: revoked" } };
+
+  test("shows the three connections with masked keys", async () => {
+    const h = harness(routes);
+    expect(await h.run("connect")).toBe(0);
+    expect(h.text()).toMatch(/llm\s+yes\s+https:\/\/api\.groq\.com\/openai\/v1\s+llama\s+••••1234\s+model/);
+    expect(h.text()).toMatch(/jev\s+no\s+https:\/\/api\.typesafe\.ai\/v1\/systemone\s+jev-1\.14\.0\s+-\s+-/);
+    expect(h.text()).toMatch(/tebar\s+off/);
+    expect(h.text()).toContain("Jev picks moments, hooks and titles: off (wins over the LLM director when Jev is active)\nLLM director (brief + own clip picks): on");
+    await h.run("connect", "show", "--json");
+    expect(JSON.parse(h.out.at(-1)!).jev.model).toBe("jev-1.14.0");
+  });
+
+  test("sets fields, reads a key from stdin, switches on/off, resets", async () => {
+    const h = harness(routes);
+    const put = async (...args: string[]) => { await h.run("connect", ...args); return h.requests.at(-1)!.body; };
+    h.state.stdin = "sk-secret-from-stdin\n";
+    expect(await put("llm", "--base-url", "http://localhost:11434/v1", "--model", "qwen2.5:7b", "--key", "-", "--director", "off", "--on")).toEqual({
+      baseUrl: "http://localhost:11434/v1", model: "qwen2.5:7b", apiKey: "sk-secret-from-stdin", director: false, enabled: true });
+    expect(h.text()).toContain("LLM director (brief + own clip picks): off");
+    expect(await put("jev", "--base-url", "https://openrouter.ai/api/alpha/decisions", "--model", "typesafe/jev-1.14", "--key", "or-key", "--off"))
+      .toEqual({ url: "https://openrouter.ai/api/alpha/decisions", model: "typesafe/jev-1.14", apiKey: "or-key", enabled: false });
+    expect(await put("tebar", "--reset")).toEqual({ enabled: null, baseUrl: null, apiKey: null });
+    expect(await put("jev", "--reset")).toEqual({ enabled: null, url: null, model: null, apiKey: null, director: null });
+    expect(await put("llm", "--reset")).toEqual({ enabled: null, baseUrl: null, model: null, apiKey: null, director: null });
+  });
+
+  test.each([
+    ["llm", 0, "out", "llm: OK in 420 ms (qwen) — OK"], ["jev", 0, "out", "jev: OK in 80 ms"],
+    ["tebar", 1, "err", "tebar: Tebar 401 invalid_api_key: revoked"],
+  ] as const)("connect test %s", async (kind, code, stream, line) => {
+    const h = harness(routes);
+    expect(await h.run("connect", "test", kind)).toBe(code);
+    expect(h[stream]).toEqual([line]);
+    expect(await h.run("connect", "test", kind, "--json")).toBe(code);
+  });
+
+  test.each([
+    ["openai --model x", "Unknown connection: openai"], ["llm", "Nothing to change"], ["llm --on --off", "Give --on or --off, not both"],
+    ["tebar --director on", "--director takes on or off"], ["llm --director maybe", "--director takes on or off"], ["test", "Missing connection"],
+  ])("connect %s is a usage error", async (args, message) => {
+    const h = harness();
+    expect(await h.run("connect", ...args.split(" "))).toBe(2);
+    expect(h.err[0]).toContain(message);
   });
 });

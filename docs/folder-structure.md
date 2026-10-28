@@ -14,12 +14,20 @@ sorot/
 │   │   ├── orchestrator.ts · jobs.ts                 # 9-stage pipeline, queue, orphan sweep
 │   │   ├── services.ts · editor.ts · options.ts      # videos/clips, clip editor, editing options
 │   │   ├── segments.ts · scoring.ts · textRules.ts · ruleConstants.ts · pyCompat.ts   # segmenting, clip scoring
-│   │   ├── llm.ts · clipReview.ts  # optional OpenAI-compatible LLM, clip review
+│   │   ├── llm.ts · clipReview.ts · director.ts  # optional OpenAI-compatible LLM: review, director (brief + own picks)
+│   │   ├── jev.ts · jevDirector.ts # optional Jev client; Jev-first picks, scores, hook lines, quote titles
+│   │   ├── clipGate.ts · gateEval.ts  # quality gate (Jev or rule answers → PASS/REVIEW/FAIL); question eval
+│   │   ├── hooks.ts                # hook line per clip (port of captions.find_hook)
+│   │   ├── tebar.ts · publisher.ts # Tebar client; publish drafts/posts, metrics sync → clip_feedback
+│   │   ├── settings.ts             # LLM / Jev / Tebar connections saved in SQLite over the env
+│   │   ├── pool.ts                 # bounded-concurrency map (LLM / Jev requests)
 │   │   ├── youtube.ts · youtubeCaptions.ts · captionAnalysis.ts  # yt-dlp feeds, captions, whole-video scoring
 │   │   ├── discovery.ts · channels.ts · discoveryAgent.ts · webSearch.ts  # candidates, crawler, auto-discover
 │   │   ├── feedback.ts · learning.ts  # posted-clip metrics, viral score, weight re-fitting
 │   │   └── http.ts                 # Router, JSON envelope, static files
+│   ├── scripts/jev-eval.ts         # `bun run jev-eval`: gate questions vs labelled excerpts (Jev and rules)
 │   ├── tests/                      # bun test (fake scripts, in-memory SQLite, golden fixtures from the Python originals)
+│   │                               #   helpers.ts: makeEnv (createApp with fakes), fakeJev / jevReply (canned Jev answers)
 │   └── Dockerfile                  # single image: API + static UI + pipeline
 │
 ├── ai-pipeline/                     # Python media scripts (Whisper, OpenCV, ffmpeg, LightGBM)
@@ -41,7 +49,7 @@ sorot/
 │
 ├── cli/                             # sorot command-line client (Bun)
 │   ├── src/                         # main.ts (entry + help), commands.ts, service.ts (up/down/logs), api.ts
-│   └── tests/                       # bun test (fake API, processes and files)
+│   └── tests/                       # bun test (fake API, processes, files and stdin: helpers.ts)
 │
 ├── scripts/
 │   ├── install.sh                   # Linux installer: Docker or native (systemd), --uninstall
@@ -56,6 +64,7 @@ sorot/
 │   │   ├── components/              # React components
 │   │   └── lib/                     # API client, helpers
 │   ├── public/assets/               # landing photographs + credits.json
+│   ├── test/fakeApi.ts              # jest: in-memory stand-in for the backend (global.fetch)
 │   └── node_modules/               # (gitignored)
 │
 ├── data/                            # Runtime media storage (gitignored)
@@ -71,16 +80,16 @@ sorot/
 │   └── logs/                        # Processing logs
 │
 ├── docs/                            # Design specifications
-│   ├── architecture.md
-│   ├── api-spec.md
-│   ├── data-model.md
-│   ├── python-pipeline.md
-│   ├── scoring-spec.md
-│   └── folder-structure.md
+│   ├── architecture.md · api-spec.md · data-model.md · folder-structure.md
+│   ├── creative-loop.md             # Jev director, LLM director, quality gate, Tebar
+│   ├── scoring-spec.md · self-learning-scoring.md · discovery-system.md
+│   ├── python-pipeline.md · cli.md · integration.md · linux-install.md · ai-audit.md
+│   ├── connectors/ · optimization/
+│   └── journal/                     # Session history and decisions
 │
-├── AGENTS.md                        # Agent instructions
+├── AGENTS.md                        # Agent instructions (CLAUDE.md imports it)
 ├── README.md                        # Project overview
-├── .env.example                     # Environment template
+├── .env.example · .env.docker       # Environment templates (secrets: .env.llm, gitignored; see .env.llm.example)
 ├── .gitignore
 └── ai_viral_clipper_personal_local_plan.md  # Original plan doc
 ```
