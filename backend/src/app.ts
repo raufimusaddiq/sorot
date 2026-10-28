@@ -27,6 +27,8 @@ export interface AppDeps {
   runScript?: ScriptRunner;
   /** fetch for the LLM and web search (tests inject a fake). */
   fetch?: typeof fetch;
+  /** Wait before retrying a transient LLM / Jev failure (tests: 0). */
+  retryWaitMs?: number;
 }
 
 const strArg = (body: Body, key: string): string => {
@@ -48,8 +50,8 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const runScript = deps.runScript ?? createPythonRunner(config, exec);
 
   const httpFetch = deps.fetch ?? globalThis.fetch;
-  const llm = new Llm(config, httpFetch);
-  const jev = new Jev(config, httpFetch);
+  const llm = new Llm(config, httpFetch, deps.retryWaitMs);
+  const jev = new Jev(config, httpFetch, deps.retryWaitMs);
   const tebar = new Tebar(config, httpFetch);
   // Saved UI / CLI connection settings go over the env before anything uses them.
   const settings = new ConnectionSettings(config, store, { llm, jev, tebar });

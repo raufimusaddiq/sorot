@@ -83,3 +83,18 @@ fallback everywhere, and "Bun first, Python second". Design + sources:
   unboxing": brief + 5 LLM picks (all price/spec/brand critique, each with a
   hook line) next to 11 rule windows; without a direction the picks included
   unboxing moments.
+- **Full pipeline, real LLM + Jev + Python** (10 min of the real transcript
+  over a synthetic 320x180 video, transcript pre-placed — no Whisper model
+  here; direction as above; CPU, MAX_RENDER_CLIPS=3, HOOK_FIRST): COMPLETED in
+  570 s — SEGMENT 104 s (brief + 3 parts), SCORE 435 s (media features, LLM
+  review, Jev gate), RENDER 33 s. 16 candidates → 11 after overlaps; review
+  followed the direction (unboxing clips 0.08-0.25, price critique 0.98); one
+  review batch hit "upstream unavailable" → 6 candidates kept rule-only scores.
+  Jev: both render-tier clips PASS; flagged the "Halo guys…" opening as weak
+  (0.26) — the replayed rule hook covers it; replaced one over-claiming LLM
+  title (0.92) with the rule title, which is weak ("Dimensity 8400 ya").
+  Renders 1080x1920: 55.13 s = 51.16 + 3.9 s rule hook; 40.29 s = 37.76 +
+  2.5 s LLM hook. Low tiers (no PRIMARY) come from the synthetic video (no
+  faces / motion), not the LLM.
+- Fix from that run: one retry for transient LLM failures (network, 429/5xx,
+  gateway error in a 200; not timeouts, not 4xx). `/verify` OPEN: 72/72 focused, llm/clipReview/director 100%; backend 290/290.

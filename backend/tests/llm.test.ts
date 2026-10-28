@@ -50,19 +50,38 @@ describe("chat", () => {
   });
 
   test("failures throw LlmError", async () => {
+    const llm = (...replies: Parameters<typeof server>) => new Llm(CFG, server(...replies).fetchFn, 0);
     await expect(new Llm({ ...CFG, llmModel: "" }).chat([])).rejects.toThrow("No LLM configured");
-    await expect(new Llm(CFG, server(new Error("ECONNREFUSED")).fetchFn).chat([])).rejects.toThrow("LLM unreachable at http://llm:1/v1: ECONNREFUSED");
-    await expect(new Llm(CFG, server(new Response("bad key", { status: 401 })).fetchFn).chat([])).rejects.toThrow("LLM HTTP 401: bad key");
-    await expect(new Llm(CFG, server(new Response("<html>")).fetchFn).chat([])).rejects.toThrow("invalid JSON");
-    await expect(new Llm(CFG, server(Response.json({ error: "x" })).fetchFn).chat([])).rejects.toBeInstanceOf(LlmError);
+    await expect(llm(new Error("ECONNREFUSED"), new Error("ECONNREFUSED")).chat([])).rejects.toThrow("LLM unreachable at http://llm:1/v1: ECONNREFUSED");
+    await expect(llm(new Response("bad key", { status: 401 })).chat([])).rejects.toThrow("LLM HTTP 401: bad key");
+    await expect(llm(new Response("<html>")).chat([])).rejects.toThrow("invalid JSON");
+    await expect(llm(Response.json({ error: "x" }), Response.json({ error: "x" })).chat([])).rejects.toBeInstanceOf(LlmError);
     // A gateway's failure inside an HTTP 200, and a reasoning model that spent the whole budget thinking.
-    await expect(new Llm(CFG, server(Response.json({ error: { code: "all_providers_failed", message: "upstream unavailable" } })).fetchFn).chat([]))
-      .rejects.toThrow("LLM error: upstream unavailable");
-    await expect(new Llm(CFG, server(Response.json({ error: { type: "x" } })).fetchFn).chat([])).rejects.toThrow('LLM error: {"type":"x"}');
+    const gateway = () => Response.json({ error: { code: "all_providers_failed", message: "upstream unavailable" } });
+    await expect(llm(gateway(), gateway()).chat([])).rejects.toThrow("LLM error: upstream unavailable");
+    await expect(llm(Response.json({ error: { type: "x" } }), Response.json({ error: { type: "x" } })).chat([])).rejects.toThrow('LLM error: {"type":"x"}');
     const thinking = server(Response.json({ choices: [{ finish_reason: "length", message: { role: "assistant", content: null, reasoning_content: "hmm" } }] }));
     await expect(new Llm({ ...CFG, llmMaxTokens: 300 }, thinking.fetchFn).chat([])).rejects.toThrow("used all 300 max_tokens before answering");
     const cut = server(Response.json({ choices: [{ finish_reason: "length", message: { role: "assistant", content: "partial" } }] }));
     expect((await new Llm(CFG, cut.fetchFn).chat([])).content).toBe("partial");   // some text: let the caller judge it
+  });
+
+  test("a transient failure is tried once more; others are not", async () => {
+    for (const first of [new Error("ECONNRESET"), new Response("busy", { status: 503 }), new Response("slow", { status: 429 }),
+      Response.json({ error: { code: "all_providers_failed", message: "upstream unavailable" } })]) {
+      const s = server(first, { content: "OK" });
+      expect((await new Llm(CFG, s.fetchFn, 0).chat([])).content).toBe("OK");
+      expect(s.requests).toHaveLength(2);
+    }
+    for (const first of [new Response("bad key", { status: 401 }), new Response("bad", { status: 400 })]) {
+      const s = server(first, { content: "OK" });
+      await expect(new Llm(CFG, s.fetchFn, 0).chat([])).rejects.toBeInstanceOf(LlmError);
+      expect(s.requests).toHaveLength(1);
+    }
+    const timeout = Object.assign(new Error("The operation timed out."), { name: "TimeoutError" });
+    const slow = server(timeout, { content: "OK" });
+    await expect(new Llm(CFG, slow.fetchFn, 0).chat([])).rejects.toThrow("timed out");   // already waited LLM_TIMEOUT
+    expect(slow.requests).toHaveLength(1);
   });
 
   test("parseJson tolerates prose and fences", () => {

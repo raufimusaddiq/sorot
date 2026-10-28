@@ -11,7 +11,14 @@ import type { Json } from "./types";
 
 export const MAX_TOOL_RESULT_CHARS = 6000;
 
-export class LlmError extends Error {}
+export class LlmError extends Error {
+  /** A failure worth one more try: network, 429 / 5xx, or a gateway error inside an HTTP 200. */
+  constructor(message: string, readonly transient = false) {
+    super(message);
+  }
+}
+
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504, 529]);
 
 export interface ToolCall {
   id: string;
@@ -66,6 +73,7 @@ export class Llm {
     private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec">
       & { llmEnabled?: boolean; llmMaxTokens?: number },
     private readonly fetchFn: typeof fetch = fetch,
+    private readonly retryWaitMs = 2000,
   ) {}
 
   get enabled(): boolean {
@@ -76,7 +84,18 @@ export class Llm {
     return this.config.llmModel;
   }
 
+  /** One chat completion; a transient failure (hosted gateways drop requests) is tried once more. */
   async chat(messages: ChatMessage[], opts: { tools?: ToolDef[]; temperature?: number; maxTokens?: number } = {}): Promise<ChatMessage> {
+    try {
+      return await this.chatOnce(messages, opts);
+    } catch (e) {
+      if (!(e instanceof LlmError) || !e.transient) throw e;
+      await Bun.sleep(this.retryWaitMs);
+      return this.chatOnce(messages, opts);
+    }
+  }
+
+  private async chatOnce(messages: ChatMessage[], opts: { tools?: ToolDef[]; temperature?: number; maxTokens?: number }): Promise<ChatMessage> {
     if (!this.enabled) throw new LlmError("No LLM configured (set LLM_BASE_URL and LLM_MODEL)");
     const base = this.config.llmBaseUrl.replace(/\/+$/, "");
     const body: Json = {
@@ -92,10 +111,12 @@ export class Llm {
         method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(this.config.llmTimeoutSec * 1000),
       });
     } catch (e) {
-      throw new LlmError(`LLM unreachable at ${base}: ${(e as Error).message}`);
+      // A timeout already waited LLM_TIMEOUT: not retried, so a stage can't stall twice as long.
+      const timedOut = (e as Error).name === "TimeoutError";
+      throw new LlmError(`LLM unreachable at ${base}: ${(e as Error).message}`, !timedOut);
     }
     const text = await res.text();
-    if (!res.ok) throw new LlmError(`LLM HTTP ${res.status}: ${text.slice(0, 300)}`);
+    if (!res.ok) throw new LlmError(`LLM HTTP ${res.status}: ${text.slice(0, 300)}`, TRANSIENT_STATUSES.has(res.status));
     let data: Json;
     try {
       data = JSON.parse(text) as Json;
@@ -106,7 +127,7 @@ export class Llm {
     const msg = choice?.message;
     // Some gateways report a failure as {"error": …} with HTTP 200.
     const err = data.error as { message?: string; code?: string } | undefined;
-    if (!msg && err) throw new LlmError(`LLM error: ${err.message ?? err.code ?? JSON.stringify(err).slice(0, 200)}`);
+    if (!msg && err) throw new LlmError(`LLM error: ${err.message ?? err.code ?? JSON.stringify(err).slice(0, 200)}`, true);
     if (!msg) throw new LlmError(`Unexpected LLM response: ${text.slice(0, 300)}`);
     // A reasoning model can spend the whole budget thinking and answer nothing.
     if (!msg.content && !msg.tool_calls?.length && choice?.finish_reason === "length") {

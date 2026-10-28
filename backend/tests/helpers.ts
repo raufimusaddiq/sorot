@@ -161,7 +161,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   };
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => fetchHandler.fn(String(input), init)) as typeof fetch;
-  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec, fetch: fetchFn });
+  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec, fetch: fetchFn, retryWaitMs: 0 });
   const req = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.fetch(new Request(`http://localhost${path}`, {
       method,
