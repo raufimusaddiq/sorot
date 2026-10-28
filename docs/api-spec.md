@@ -320,14 +320,27 @@ or `{ "ok": false, "ms": 3, "error": "Not configured: …" }`.
 ## Publishing (Tebar)
 
 409 `Tebar is not connected…` when there is no key. Tebar's own errors come
-back as 400 (its 4xx, message kept, e.g. `Tebar 403 plan_required: …`) or 502.
+back as 400 (its 4xx, message kept, e.g. `Tebar 403 plan_required: …`) or 502;
+for the codes a user can fix, a hint follows (`— reconnect this account at
+tebar.app`, `— this API key can only read: create a read + write key …`).
+
+**Workspaces.** A Tebar key can see several workspaces (Tebar "profiles"),
+each with its own accounts. A post and its media live in one workspace, so
+Sorot lists each workspace's accounts with Tebar's `Tebar-Profile` header and
+sends the same header when it uploads and posts. A key locked to one profile,
+or a single workspace, needs nothing.
 
 ### `GET /api/social/accounts`
-`{ "enabled": true, "accounts": [{ "id": "…", "platform": "tiktok", "name": "budi" }] }`
-(`enabled: false, accounts: []` without Tebar).
+```json
+{ "enabled": true, "accounts": [{ "id": "…", "platform": "tiktok", "name": "budi",
+  "profileId": "…", "profileName": "Budi", "supported": true }] }
+```
+`profileId` / `profileName` are `null` with a single workspace; `supported` is
+false where Sorot can't post a single video (e.g. Pinterest). `enabled: false,
+accounts: []` without Tebar.
 
 ### `POST /api/clips/{clipId}/publish/draft`
-Body `{ "accountIds": ["…"] }`. Sends nothing. Per account: `content` (LLM
+Body `{ "accountIds": ["…"] }` (one workspace; 400 otherwise). Sends nothing. Per account: `content` (LLM
 copy per platform, or the clip's title + description), `title` (YouTube),
 `copyBy`, `needs` (`tiktokPrivacy`: options to choose from; `madeForKids`),
 `warnings`, `blockers`, `overclaims` (Jev). Also `clip.gateVerdict` /
@@ -340,15 +353,22 @@ copy per platform, or the clip's title + description), `title` (YouTube),
   "scheduledAt": "2026-11-01T19:00:00+07:00", "confirmReview": true, "override": false }
 ```
 Checks the platform limits, YouTube title + `madeForKids`, a future
-`scheduledAt` with a zone; a `REVIEW` clip needs `confirmReview: true`, a
-`FAIL` clip `override: true` (else 409). Uploads the clip, posts with an
-`Idempotency-Key`, returns `{ "post": SocialPost }` — status `PUBLISHING`,
-`SCHEDULED`, `PUBLISHED`, `PARTIAL` or `FAILED`, `targets` (JSON per account:
-platform, status, permalink, errorCode).
+`scheduledAt` with a zone, and that all accounts are in one workspace. TikTok:
+`postMode` is `direct` (default) or `draft` (sent to the TikTok app's inbox to
+finish there); a direct post needs `privacyLevel` (one of the draft's
+`needs.tiktokPrivacy`) unless the account is a business account, checked
+before the upload (400). A `REVIEW` clip needs `confirmReview: true`, a `FAIL`
+clip `override: true` (else 409). Uploads the clip, posts with an
+`Idempotency-Key` in the accounts' workspace, returns `{ "post": SocialPost }`
+— status `PUBLISHING`, `SCHEDULED`, `PUBLISHED`, `PARTIAL`, `FAILED` or
+`CANCELLED`, `targets` (JSON per account: platform, status, permalink,
+errorCode), `profileId`.
 
-### `GET /api/clips/{clipId}/posts` · `POST /api/social/posts/{id}/refresh` · `POST /api/social/posts/{id}/retry`
-The clip's posts, newest first / re-read status from Tebar / re-send a post
-that never reached Tebar with the same key and body (no double post).
+### `GET /api/clips/{clipId}/posts` · `POST /api/social/posts/{id}/refresh|retry|cancel`
+The clip's posts, newest first / re-read status from Tebar / retry: a post
+that never reached Tebar is re-sent with the same key and body (no double
+post), a `FAILED`/`PARTIAL` one asks Tebar to redo only the failed accounts /
+cancel a `SCHEDULED` post (409 for any other status).
 
 ### `POST /api/social/sync`
 Status + metrics of live posts; each clip's metrics (summed over its posts)

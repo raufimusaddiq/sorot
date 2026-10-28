@@ -48,7 +48,7 @@ const COLUMNS: Record<Table, string[]> = {
   ],
   social_post: [
     "id", "clip_id", "provider", "provider_post_id", "status", "scheduled_at", "idempotency_key",
-    "request", "targets", "error_message", "created_at", "updated_at", "last_synced_at",
+    "request", "targets", "error_message", "created_at", "updated_at", "last_synced_at", "profile_id",
   ],
 };
 

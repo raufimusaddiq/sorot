@@ -175,7 +175,8 @@ CREATE TABLE IF NOT EXISTS social_post (
     error_message TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    last_synced_at TEXT
+    last_synced_at TEXT,
+    profile_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_job_video ON job(video_id);
@@ -240,6 +241,8 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["clip", "hook_end", "REAL"],
   ["clip", "gate_verdict", "TEXT"],
   ["clip", "gate", "TEXT"],
+  // Tebar workspaces (2026-10-28): the profile a post was made in (null = the default)
+  ["social_post", "profile_id", "TEXT"],
 ];
 
 // Fills a column just added to an old database, where the value can be recovered.

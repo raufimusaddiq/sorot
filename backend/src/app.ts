@@ -159,6 +159,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   router.on("GET", "/api/clips/:id/posts", (c) => ok({ posts: publisher.posts(c.params.id as string) }));
   router.on("POST", "/api/social/posts/:id/refresh", async (c) => ok({ post: await publisher.refresh(c.params.id as string) }));
   router.on("POST", "/api/social/posts/:id/retry", async (c) => ok({ post: await publisher.retry(c.params.id as string) }));
+  router.on("POST", "/api/social/posts/:id/cancel", async (c) => ok({ post: await publisher.cancel(c.params.id as string) }));
   router.on("POST", "/api/social/sync", async () => ok(await publisher.syncMetrics()));
 
   router.on("GET", "/api/clips/:id", (c) => {

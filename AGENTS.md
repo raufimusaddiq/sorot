@@ -10,7 +10,7 @@
 ```
 .\scripts\install.ps1 [-Mode native] · .\scripts\start.ps1 [-Update|-Build|-Dev] · .\scripts\stop.ps1   # Windows (user runs these)
 scripts/install.sh [--mode native] [--uninstall [--purge]]                                              # Linux
-sorot import <url|file> [--direction ".."] | clips | download | connect llm|jev|tebar | up | down | logs -f | doctor
+sorot import <url|file> [--direction ".."] | clips | download | connect [setup|llm|jev|tebar] | accounts | publish <clip> | posts | sync | up | down | logs -f | doctor
 .\scripts\verify-env.ps1 · .\scripts\e2e-test.ps1
 docker compose --env-file .env.docker build --no-cache backend | up -d | --profile dev up -d | logs -f backend
 bun install                                           # one lockfile (repo root)
@@ -39,7 +39,7 @@ Tests stay compact (the owner dislikes test bloat): one test per behaviour, tabl
 - Gate (`clipGate.ts`, best ≤ 40 render-tier clips, pinned `jev-1.14.0`; `ruleAnswers()` when Jev is off/failing): verdict in code (`verdictFrom`); FAIL → SKIP, ranked last, loses overlaps; REVIEW = content risk, never auto-FAIL.
 - LLM: any OpenAI-compatible endpoint; every path falls back to rules on `LlmError`. Used for post copy, auto-discover, and as director when Jev is off (`director.ts`, `LLM_DIRECTOR`: brief + own moments `source: "llm"`, field `hook_line` = line id). Every request ends with a `task` field restating job + format (a reasoning model ignored the system prompt); the review's task states "0 to 100". `LLM_MAX_TOKENS` includes reasoning; an empty answer cut by the budget or a gateway `{"error"}` in HTTP 200 is an `LlmError`; one retry on transient errors; review batches 2 at a time.
 - Job option `direction` (≤ 500 chars) reaches screening (`fits_direction`), brief, picks, review and post copy. Overlaps > 50% of the shorter clip keep the better score.
-- Publishing (`publisher.ts`, `tebar.ts`): draft (copy per platform, Jev copy check, platform limits) → user choices (TikTok privacy, YouTube title + made-for-kids never auto-filled) → upload + `POST /v1/posts` with `Idempotency-Key`; `social_post` row + exact body saved first, so retry can't double-post. Metrics sync (`TEBAR_SYNC_HOURS`) → `clip_feedback` → training. Polling only.
+- Publishing (`publisher.ts`, `tebar.ts`; UI Publish panel and `sorot publish`): draft (copy per platform, Jev copy check, platform limits) → user choices (TikTok privacy or draft mode, YouTube title + made-for-kids — never auto-filled, in the CLI too: flags or questions) → upload + `POST /v1/posts` with `Idempotency-Key`; `social_post` row + exact body saved first, so retry can't double-post. A post stays in one Tebar workspace (profile): accounts are listed per profile with the `Tebar-Profile` header (the account object has no documented profile field), and upload/post send the same header (`social_post.profile_id`). TikTok direct posts need privacy unless `video_public_only`, checked before upload. Retry of a post on Tebar = `POST /posts/{id}/retry` (failed accounts only); cancel = `DELETE`. Metrics sync (`TEBAR_SYNC_HOURS`) → `clip_feedback` → training. Polling only.
 - Auto-discover web search defaults to Bing HTML (`WEB_SEARCH`); DuckDuckGo is blocked by Indonesian ISPs. Learned weights → `data/weights.json` (wins over `ai-pipeline/weights.json`).
 
 **Pipeline & media**

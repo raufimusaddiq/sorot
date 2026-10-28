@@ -32,14 +32,43 @@ test("off without a key or when switched off", async () => {
 
 test("accounts: Bearer key, data list, display names", async () => {
   const t = tebar(() => json({ data: [{ id: "a1", platform: "tiktok", username: "budi" }, { id: "a2", platform: "youtube", name: "Kanal" }, { id: "a3" }, { platform: "x" }] }));
-  expect(await t.accounts()).toEqual([
-    { id: "a1", platform: "tiktok", name: "budi" }, { id: "a2", platform: "youtube", name: "Kanal" }, { id: "a3", platform: "", name: "a3" }]);
+  const one = { profileId: null, profileName: null };
+  expect(await t.accounts()).toEqual([{ id: "a1", platform: "tiktok", name: "budi", ...one }, { id: "a2", platform: "youtube", name: "Kanal", ...one },
+    { id: "a3", platform: "", name: "a3", ...one }]);
   expect(t.calls[0]).toMatchObject({ method: "GET", url: "https://api.tebar.app/v1/accounts", headers: { Authorization: "Bearer tb_live_x" } });
   expect([(await tebar(() => json({ accounts: [{ id: "b" }] })).accounts()).length, await tebar(() => json({})).accounts()]).toEqual([1, []]);
 });
 
+test("workspaces: each profile's accounts are listed with its Tebar-Profile header, following next_cursor", async () => {
+  const t = tebar((c) => c.url.endsWith("/profiles") ? json({ data: [{ id: "p1", name: "Budi" }, { id: "p2", external_id: "klien-42" }] })
+    : c.url.endsWith("/accounts") && c.headers["Tebar-Profile"] === "p1" ? json({ data: [{ id: "a1", platform: "tiktok" }], next_cursor: "c2" })
+      : c.url.endsWith("/accounts?cursor=c2") ? json({ data: [{ id: "a2", platform: "youtube" }], next_cursor: null })
+        : json({ data: [{ id: "b1", platform: "instagram" }] }));
+  expect((await t.accountsByProfile()).map((a) => [a.id, a.profileId, a.profileName])).toEqual([["a1", "p1", "Budi"], ["a2", "p1", "Budi"], ["b1", "p2", "klien-42"]]);
+  for (const status of [403, 404]) {   // a key locked to one profile, or no profiles: one workspace, no header
+    const single = tebar((c) => (c.url.endsWith("/profiles") ? json({ error: { code: "owner_key_required" } }, status) : json({ data: [{ id: "a1" }] })));
+    expect((await single.accountsByProfile())[0]!.profileId).toBeNull();
+    expect(single.calls.at(-1)!.headers["Tebar-Profile"]).toBeUndefined();
+  }
+  await expect(tebar(() => json({}, 500)).profiles()).rejects.toBeInstanceOf(TebarError);
+});
+
+test("retry and cancel; uploads and posts carry the workspace", async () => {
+  const done = { id: "p1", status: "done", targets: [{ account_id: "a1", status: "published" }] };
+  const t = tebar((c) => (c.method === "DELETE" ? new Response(null, { status: 204 }) : c.url.endsWith("/retry") ? json({ ok: true }) : json(done)));
+  expect((await t.retryPost("p1")).targets[0]!.status).toBe("published");   // a reply without the post → read it
+  await t.cancelPost("p1");
+  await t.createPost({ content: "x" }, "k", "p9");
+  await t.uploadVideo(small, "p9");
+  expect(t.calls.map((c) => `${c.method} ${c.url.replace("https://api.tebar.app/v1", "")} ${c.headers["Tebar-Profile"] ?? "-"}`)).toEqual([
+    "POST /posts/p1/retry -", "GET /posts/p1 -", "DELETE /posts/p1 -", "POST /posts p9", "POST /media/upload p9"]);
+  expect((await tebar(() => json({ data: done })).retryPost("p1")).id).toBe("p1");
+});
+
 test.each([
-  [json({ error: { code: "invalid_api_key", message: "Key revoked" } }, 401), { status: 401, code: "invalid_api_key", message: "Tebar 401 invalid_api_key: Key revoked" }],
+  [json({ error: { code: "invalid_api_key", message: "Key revoked" } }, 401),
+    { status: 401, code: "invalid_api_key", message: "Tebar 401 invalid_api_key: Key revoked — the API key is wrong or revoked: create a new one at tebar.app" }],
+  [json({ error: { code: "insufficient_scope", message: "read only" } }, 403), { code: "insufficient_scope", message: expect.stringContaining("create a read + write key") }],
   [new Response("<html>bad gateway</html>", { status: 502 }), { status: 502, code: null, message: expect.stringContaining("bad gateway") }],
   [new Response("{oops", { status: 200 }), { message: expect.stringContaining("invalid JSON") }],
   [new Error("ECONNRESET"), { code: "unreachable" }],

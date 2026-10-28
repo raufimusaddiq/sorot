@@ -6,8 +6,10 @@
 //             the clip's quality-gate verdict. Nothing is sent.
 // 2. publish: the user's final copy + choices (TikTok privacy, YouTube
 //             title / made-for-kids are always theirs to make) → upload the
-//             clip → one Tebar post with an Idempotency-Key. The exact body is
-//             saved first, so a retry re-sends it and can't post twice.
+//             clip → one Tebar post with an Idempotency-Key, inside one
+//             workspace. The exact body is saved first, so a retry re-sends
+//             it and can't post twice; once on Tebar, retry asks Tebar to
+//             redo only the failed accounts; a scheduled post can be cancelled.
 // 3. sync:    status and metrics of posted clips → clip_feedback → the
 //             scorer's weights learn from real results (feedback.ts).
 
@@ -51,6 +53,11 @@ Write in the clip's language (usually Indonesian), say only what the clip says, 
 - linkedin: 2-4 sentences, professional, 0-3 hashtags
 - other platforms: 1-2 sentences and a few hashtags
 Answer with JSON only: {"posts": {"<platform>": {"text": "...", "title": "<youtube only>"}}}`;
+
+/** An account as the picker shows it: `supported` = Sorot can post a single video there. */
+export interface PickerAccount extends TebarAccount {
+  supported: boolean;
+}
 
 export interface DraftTarget {
   accountId: string;
@@ -129,10 +136,11 @@ export class Publisher {
     return path && existsSync(path) ? path : null;
   }
 
-  async accounts(): Promise<TebarAccount[]> {
+  /** Every connected account, grouped by workspace when there are several. */
+  async accounts(): Promise<PickerAccount[]> {
     this.requireTebar();
     try {
-      return await this.tebar.accounts();
+      return (await this.tebar.accountsByProfile()).map((a) => ({ ...a, supported: !!PLATFORMS[a.platform] }));
     } catch (e) {
       throw asHttp(e);
     }
@@ -217,6 +225,7 @@ export class Publisher {
       if (!a) throw new HttpError(400, `Unknown Tebar account: ${id}`);
       return a;
     });
+    oneWorkspace(chosen);
     const platforms = [...new Set(chosen.map((a) => a.platform))];
     const llm = await this.llmCopy(clip, platforms);
     const gate = this.gateOf(clip);
@@ -241,9 +250,8 @@ export class Publisher {
       }
       if (a.platform === "tiktok") {
         try {
-          const info = await this.tebar.tiktokCreatorInfo(a.id);
-          const opts = (info.privacy_level_options ?? (info.data as Json | undefined)?.privacy_level_options) as unknown;
-          if (Array.isArray(opts) && opts.length && info.video_public_only !== true) t.needs.tiktokPrivacy = opts.map(String);
+          const { options, publicOnly } = tiktokPrivacy(await this.tebar.tiktokCreatorInfo(a.id));
+          if (options.length && !publicOnly) t.needs.tiktokPrivacy = options;
         } catch (e) {
           t.warnings.push(`Couldn't read TikTok's privacy options: ${(e as Error).message}`);
         }
@@ -287,7 +295,10 @@ export class Publisher {
     const rawTargets = Array.isArray(body.targets) ? (body.targets as Json[]) : [];
     if (!rawTargets.length) throw new HttpError(400, "targets: pick at least one account");
     const accounts = await this.accounts();
-    const targets = rawTargets.map((t, i) => buildTarget(t, i, accounts, clip));
+    const built = rawTargets.map((t, i) => buildTarget(t, i, accounts, clip));
+    const profileId = oneWorkspace(built.map((b) => b.account));
+    await this.requireTiktokPrivacy(built);
+    const targets = built.map((b) => b.body);
     let scheduledAt: string | null = null;
     if (body.scheduledAt !== undefined && body.scheduledAt !== null && body.scheduledAt !== "") {
       const at = String(body.scheduledAt);
@@ -301,36 +312,82 @@ export class Publisher {
     const post: SocialPost = {
       id: crypto.randomUUID(), clipId, provider: "tebar", providerPostId: null, status: "PUBLISHING", scheduledAt,
       idempotencyKey: crypto.randomUUID(), request: null, targets: null, errorMessage: null,
-      createdAt: now(), updatedAt: now(), lastSyncedAt: null,
+      createdAt: now(), updatedAt: now(), lastSyncedAt: null, profileId,
     };
     this.store.saveSocialPost(post);
     try {
-      const mediaId = await this.tebar.uploadVideo(file);
+      const mediaId = await this.tebar.uploadVideo(file, profileId);
       const request: Json = {
         content: targets[0]!.content, media_ids: [mediaId], targets,
         ...(scheduledAt ? { scheduled_at: scheduledAt } : {}),
       };
       this.store.updateSocialPost(post.id, { request: JSON.stringify(request) });
-      return this.applyPost(post.id, await this.tebar.createPost(request, post.idempotencyKey));
+      return this.applyPost(post.id, await this.tebar.createPost(request, post.idempotencyKey, profileId));
     } catch (e) {
       this.store.updateSocialPost(post.id, { status: "FAILED", errorMessage: (e as Error).message });
       throw asHttp(e);
     }
   }
 
-  /** Re-send a post that never reached Tebar (same key and body: no double post). */
+  /**
+   * TikTok makes the owner pick who sees a direct post (business accounts
+   * excepted: their videos are always public). Checked before the upload, so
+   * a missing choice fails fast; drafts finish in the TikTok app instead.
+   */
+  private async requireTiktokPrivacy(built: Array<{ body: Json; account: TebarAccount }>) {
+    for (const [i, b] of built.entries()) {
+      const o = (b.body.options ?? {}) as Json;
+      if (b.account.platform !== "tiktok" || o.privacy_level || o.post_mode === "draft") continue;
+      let info: Json;
+      try {
+        info = await this.tebar.tiktokCreatorInfo(b.account.id);
+      } catch {
+        continue;   // can't tell here: Tebar decides
+      }
+      const { options, publicOnly } = tiktokPrivacy(info);
+      if (publicOnly) continue;
+      throw new HttpError(400, `targets[${i}]: TikTok asks you to choose who can see it${options.length ? ` (${options.join(", ")})` : ""}, or send it as a draft`);
+    }
+  }
+
+  /**
+   * Never reached Tebar: re-send the saved body with the same key (no double
+   * post). On Tebar with failed accounts: Tebar retries only those. Else refresh.
+   */
   async retry(postId: string): Promise<SocialPost> {
     this.requireTebar();
     const post = this.store.getSocialPost(postId);
     if (!post) throw new HttpError(404, "Post not found");
-    if (post.providerPostId) return this.refresh(postId);
+    if (post.providerPostId) {
+      if (post.status !== "FAILED" && post.status !== "PARTIAL") return this.refresh(postId);
+      try {
+        return this.applyPost(post.id, await this.tebar.retryPost(post.providerPostId));
+      } catch (e) {
+        throw asHttp(e);
+      }
+    }
     if (!post.request) throw new HttpError(409, "This post failed before its upload finished; publish the clip again");
     try {
-      return this.applyPost(post.id, await this.tebar.createPost(JSON.parse(post.request), post.idempotencyKey));
+      return this.applyPost(post.id, await this.tebar.createPost(JSON.parse(post.request), post.idempotencyKey, post.profileId ?? null));
     } catch (e) {
       this.store.updateSocialPost(post.id, { status: "FAILED", errorMessage: (e as Error).message });
       throw asHttp(e);
     }
+  }
+
+  /** Cancel a scheduled post on Tebar. */
+  async cancel(postId: string): Promise<SocialPost> {
+    this.requireTebar();
+    const post = this.store.getSocialPost(postId);
+    if (!post) throw new HttpError(404, "Post not found");
+    if (post.status !== "SCHEDULED" || !post.providerPostId) throw new HttpError(409, "Only a scheduled post can be cancelled");
+    try {
+      await this.tebar.cancelPost(post.providerPostId);
+    } catch (e) {
+      throw asHttp(e);
+    }
+    this.store.updateSocialPost(post.id, { status: "CANCELLED" });
+    return this.store.getSocialPost(post.id) as SocialPost;
   }
 
   private applyPost(id: string, p: TebarPost): SocialPost {
@@ -438,8 +495,22 @@ export function postStatus(p: TebarPost): string {
 const failures = (p: TebarPost) =>
   p.targets.filter((t) => t.status === "failed").map((t) => `${t.platform}: ${t.errorCode ?? "failed"}${t.errorMessage ? ` (${t.errorMessage})` : ""}`).join("; ") || null;
 
+/** TikTok's privacy choices for an account, and whether its videos are always public (business accounts). */
+function tiktokPrivacy(info: Json): { options: string[]; publicOnly: boolean } {
+  const data = (info.data && typeof info.data === "object" ? info.data : info) as Json;
+  const opts = data.privacy_level_options ?? info.privacy_level_options;
+  return { options: Array.isArray(opts) ? opts.map(String) : [], publicOnly: data.video_public_only === true || info.video_public_only === true };
+}
+
+/** A post (and its media) lives in one Tebar workspace; returns that workspace (null = the default). */
+function oneWorkspace(accounts: TebarAccount[]): string | null {
+  const ids = new Set(accounts.map((a) => a.profileId ?? null));
+  if (ids.size > 1) throw new HttpError(400, "Pick accounts from one Tebar workspace: a post goes to one workspace at a time");
+  return accounts[0]?.profileId ?? null;
+}
+
 /** One Tebar target from the user's final choices, checked against the platform's rules. */
-function buildTarget(t: Json, i: number, accounts: TebarAccount[], clip: Clip): Json {
+function buildTarget(t: Json, i: number, accounts: TebarAccount[], clip: Clip): { body: Json; account: TebarAccount } {
   const id = typeof t.accountId === "string" ? t.accountId : "";
   const account = accounts.find((a) => a.id === id);
   if (!account) throw new HttpError(400, `targets[${i}]: unknown Tebar account ${id}`);
@@ -459,5 +530,5 @@ function buildTarget(t: Json, i: number, accounts: TebarAccount[], clip: Clip): 
     if (typeof t.privacyLevel === "string" && t.privacyLevel) options.privacy_level = t.privacyLevel;
     if (t.postMode === "draft" || t.postMode === "direct") options.post_mode = t.postMode;
   }
-  return { account_id: account.id, content, ...(Object.keys(options).length ? { options } : {}) };
+  return { body: { account_id: account.id, content, ...(Object.keys(options).length ? { options } : {}) }, account };
 }

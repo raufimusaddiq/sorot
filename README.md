@@ -199,6 +199,9 @@ sorot download --video <video> -o ~/clips                         # 💾 grab th
 sorot rerender <clip> --start 61 --end 100                        # ✏️ fix one clip's timing
 sorot discover auto "podcast bisnis"                              # ✨ agent finds source videos
 sorot discover search "podcast indonesia"                         # 🔎 or search yourself
+sorot connect setup                                               # 🔌 Jev, LLM, Tebar: asks, saves, tests
+sorot publish <clip>                                              # 🚀 pick accounts, check copy, post
+sorot posts <clip> · sorot sync                                   # 📊 post status · numbers into learning
 sorot up | down | logs -f | doctor                                # 🛠️ run the app
 ```
 
@@ -252,7 +255,7 @@ With Jev (or else an LLM), the score is 50% formula + 50% its judgement; if it's
 - 🎬 **Director** — **Jev first**: code proposes a window at every sentence start, Jev judges them all and keeps the best 40 next to the rule windows, scores every candidate, and picks the hook line and a quoted title for the clips that render. On 10 min of a real transcript, segmenting + scoring took ~10 s with Jev (about $0.01 at TypeSafe's listed price) vs 6.5-9 min with a reasoning LLM as director. Without Jev (or `JEV_DIRECTOR=false`), the **LLM director** reads the video, writes a brief and picks moments + hooks. Either way, overlaps keep the better clip; give a **direction** at import to steer it.
 - 🚦 **Gate** before render: PASS / REVIEW (content risk — you decide) / FAIL (held back, renderable on request). Jev when connected, text rules otherwise. Measure the questions with `bun run jev-eval`.
 - 🤖 **The LLM** is for writing: post copy per platform, and the ✨ auto-discover agent that searches for new videos.
-- 🚀 **Publish** (Tebar): LLM copy per platform → you edit and choose (TikTok privacy, YouTube "made for kids") → post or schedule → metrics sync every 6 h into learning.
+- 🚀 **Publish** (Tebar), in the studio or `sorot publish`: pick accounts (grouped by Tebar workspace) → LLM copy per platform → you edit and choose (TikTok privacy or send as a draft, YouTube "made for kids") → post or schedule → retry failed accounts or cancel a scheduled post → metrics sync every 6 h into learning.
 
 👉 [docs/creative-loop.md](docs/creative-loop.md) — the design, the questions and their sources.
 

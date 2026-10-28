@@ -28,18 +28,33 @@ const ACCOUNTS = [
   { id: "th", platform: "threads", username: "budi.th" },
 ];
 
-/** A fake Tebar API behind env.fetchHandler (LLM / Jev calls go to `other`). */
+/** A fake Tebar API behind env.fetchHandler (LLM / Jev calls go to `other`). Set `workspaces` for several profiles. */
 function fakeTebar(other: (url: string, init?: RequestInit) => Response | Promise<Response> = (url) => { throw new Error(`no network: ${url}`); }) {
   const st = { calls: [] as Array<{ method: string; path: string; body: unknown; headers: Record<string, string> }>,
-    postStatus: "pending", createError: undefined as Response | undefined, insights: { data: { views: 1000, likes: 50, comments: 5, shares: 2, saves: 3 } } as unknown };
+    postStatus: "pending", createError: undefined as Response | undefined, insights: { data: { views: 1000, likes: 50, comments: 5, shares: 2, saves: 3 } } as unknown,
+    workspaces: null as Record<string, string[]> | null, tiktokBusiness: false, fail: null as string | null };
   env.fetchHandler.fn = async (url, init) => {
     if (!url.startsWith("https://api.tebar.app/v1")) return other(url, init);
     const path = url.slice("https://api.tebar.app/v1".length);
     const method = String(init?.method);
-    st.calls.push({ method, path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body, headers: init?.headers as Record<string, string> });
+    const headers = init?.headers as Record<string, string>;
+    st.calls.push({ method, path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body, headers });
+    if (st.fail === `${method} ${path}`) return json({ error: { code: "post_not_removable", message: "too late" } }, 409);
     if (path === "/me") return json({ data: { email: "budi@example.com" } });
-    if (path === "/accounts") return json({ data: ACCOUNTS });
-    if (path === "/accounts/tt/tiktok/creator-info") return json({ privacy_level_options: ["PUBLIC_TO_EVERYONE", "SELF_ONLY"] });
+    if (path === "/profiles") {
+      return st.workspaces ? json({ data: Object.keys(st.workspaces).map((id) => ({ id, name: `WS ${id}` })) })
+        : json({ error: { code: "owner_key_required" } }, 403);
+    }
+    if (path === "/accounts") {
+      const ws = headers["Tebar-Profile"];
+      return json({ data: ws ? ACCOUNTS.filter((a) => st.workspaces![ws]!.includes(a.id)) : ACCOUNTS, next_cursor: null });
+    }
+    if (path === "/accounts/tt/tiktok/creator-info") {
+      return json(st.tiktokBusiness ? { video_public_only: true, privacy_level_options: ["PUBLIC_TO_EVERYONE"] }
+        : { privacy_level_options: ["PUBLIC_TO_EVERYONE", "SELF_ONLY"] });
+    }
+    if (path === "/posts/post-1/retry") return json({ id: "post-1", status: "done", targets: [{ account_id: "tt", platform: "tiktok", status: "published" }] });
+    if (path === "/posts/post-1" && method === "DELETE") return new Response(null, { status: 204 });
     if (path === "/media/upload") return json({ id: "media-1" }, 201);
     if (path === "/posts" && method === "POST") {
       if (st.createError) return st.createError;
@@ -75,7 +90,7 @@ async function ready(other?: Parameters<typeof fakeTebar>[0]) {
   return { st, clip, publish: (body: unknown) => post(`/api/clips/${clip.id}/publish`, body),
     draft: async (accountIds: string[]) => (await post(`/api/clips/${clip.id}/publish/draft`, { accountIds })).body.data };
 }
-const tt = (content = "x") => ({ targets: [{ accountId: "tt", content }] });
+const tt = (content = "x", extra: object = { privacyLevel: "SELF_ONLY" }) => ({ targets: [{ accountId: "tt", content, ...extra }] });
 
 describe("connection settings", () => {
   test("view masks keys; a saved field wins over the env; null goes back to it", async () => {
@@ -221,9 +236,10 @@ describe("publishing through Tebar", () => {
   test("a failed create is kept with its exact body; retry re-sends it with the same key", async () => {
     const { st, clip, publish } = await ready();
     st.createError = json({ error: { code: "account_expired", message: "Reconnect TikTok" } }, 422);
-    expect((await publish(tt("Halo"))).body.error).toBe("Tebar 422 account_expired: Reconnect TikTok");
+    const expired = "Tebar 422 account_expired: Reconnect TikTok — reconnect this account at tebar.app";   // the code's hint is added
+    expect((await publish(tt("Halo"))).body.error).toBe(expired);
     const failed = env.app.store.socialPostsForClip(clip.id)[0]!;
-    expect(failed).toMatchObject({ status: "FAILED", providerPostId: null, errorMessage: "Tebar 422 account_expired: Reconnect TikTok" });
+    expect(failed).toMatchObject({ status: "FAILED", providerPostId: null, errorMessage: expired });
     st.createError = undefined;
     expect((await post(`/api/social/posts/${failed.id}/retry`)).body.data.post).toMatchObject({ status: "PUBLISHING", providerPostId: "post-1" });
     const [first, second] = st.calls.filter((c) => c.path === "/posts");
@@ -315,6 +331,55 @@ describe("publishing through Tebar", () => {
     expect([t.copyBy, t.warnings[0]]).toEqual(["template", expect.stringMatching(/^Couldn't read TikTok's privacy options/)]);
     env.app.store.updateClip(clip.id, { gateVerdict: null, gate: null });
     expect((await draft(["ig"])).targets[0].warnings).toContain("Not checked by the quality gate");
+  });
+
+  test("workspaces: accounts grouped by profile; a post stays in one and carries its header on upload, create and re-send", async () => {
+    const { st, clip, publish } = await ready();
+    st.workspaces = { p1: ["tt", "yt"], p2: ["ig", "th"] };
+    const accounts = (await get("/api/social/accounts")).body.data.accounts;
+    expect(accounts.map((a: any) => [a.id, a.profileName, a.supported])).toEqual([["tt", "WS p1", true], ["yt", "WS p1", true], ["ig", "WS p2", true], ["th", "WS p2", true]]);
+    const mixed = await post(`/api/clips/${clip.id}/publish/draft`, { accountIds: ["tt", "ig"] });
+    expect([mixed.status, mixed.body.error]).toEqual([400, expect.stringContaining("one Tebar workspace")]);
+    st.createError = json({ error: { code: "rate_limited" } }, 429);
+    expect((await publish({ targets: [{ accountId: "ig", content: "Halo" }] })).status).toBe(400);
+    st.createError = undefined;
+    const row = env.app.store.socialPostsForClip(clip.id)[0]!;
+    expect(row.profileId).toBe("p2");
+    await post(`/api/social/posts/${row.id}/retry`);
+    expect(st.calls.filter((c) => c.path === "/media/upload" || c.path === "/posts").map((c) => c.headers["Tebar-Profile"])).toEqual(["p2", "p2", "p2"]);
+  });
+
+  test("TikTok privacy: asked before any upload for a direct post; drafts and business accounts don't need it", async () => {
+    const { st, publish } = await ready();
+    const r = await publish(tt("x", {}));
+    expect([r.status, r.body.error]).toEqual([400, "targets[0]: TikTok asks you to choose who can see it (PUBLIC_TO_EVERYONE, SELF_ONLY), or send it as a draft"]);
+    expect(st.calls.some((c) => c.path === "/media/upload")).toBeFalse();
+    expect((await publish(tt("x", { postMode: "draft" }))).status).toBe(200);
+    st.tiktokBusiness = true;
+    expect((await publish(tt("x", {}))).status).toBe(200);
+    st.fail = "GET /accounts/tt/tiktok/creator-info";   // can't tell here: Tebar decides
+    expect((await publish(tt("x", {}))).status).toBe(200);
+    expect(st.calls.filter((c) => c.path === "/posts").map((c) => (c.body as any).targets[0].options)).toEqual([{ post_mode: "draft" }, undefined, undefined]);
+  });
+
+  test("retry asks Tebar to redo the failed accounts; only a scheduled post can be cancelled", async () => {
+    const { st, clip, publish } = await ready();
+    await publish(tt());
+    const row = env.app.store.socialPostsForClip(clip.id)[0]!;
+    env.app.store.updateSocialPost(row.id, { status: "FAILED" });
+    expect((await post(`/api/social/posts/${row.id}/retry`)).body.data.post.status).toBe("PUBLISHED");
+    expect(st.calls.at(-1)).toMatchObject({ method: "POST", path: "/posts/post-1/retry" });
+    expect((await post(`/api/social/posts/${row.id}/cancel`)).status).toBe(409);
+    env.app.store.updateSocialPost(row.id, { status: "SCHEDULED" });
+    st.fail = "DELETE /posts/post-1";
+    expect((await post(`/api/social/posts/${row.id}/cancel`)).body.error).toContain("post_not_removable");
+    st.fail = null;
+    expect((await post(`/api/social/posts/${row.id}/cancel`)).body.data.post.status).toBe("CANCELLED");
+    expect(st.calls.at(-1)).toMatchObject({ method: "DELETE", path: "/posts/post-1" });
+    env.app.store.updateSocialPost(row.id, { status: "PARTIAL" });
+    st.fail = "POST /posts/post-1/retry";
+    expect((await post(`/api/social/posts/${row.id}/retry`)).status).toBe(400);
+    expect((await post("/api/social/posts/nope/cancel")).status).toBe(404);
   });
 
   test("helpers: copy fitting and post status", () => {
