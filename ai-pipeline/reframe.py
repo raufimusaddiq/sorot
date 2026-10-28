@@ -30,8 +30,10 @@ DEFAULT_MODE = "face"
 
 # Crop the 9:16 window out of the source first, then scale only that. Scaling
 # the whole frame first (16:9 → 3414x1920) and cropping after did the same
-# picture with ~3x the pixels through the scaler. Even sizes for yuv420p.
-CENTER_CROP = "crop='trunc(min(iw,ih*9/16)/2)*2':'trunc(min(ih,iw*16/9)/2)*2'"
+# picture with ~3x the pixels through the scaler. Sizes are rounded to the
+# nearest even number (yuv420p): 1080 tall → 608 wide, within 0.1% of 9:16
+# (rounding down to 606 stretched the picture 0.25%).
+CENTER_CROP = "crop='min(2*trunc(iw/2),2*round(ih*9/32))':'min(2*trunc(ih/2),2*round(iw*8/9))'"
 CENTER_VF = f"{CENTER_CROP},scale={OUT_W}:{OUT_H},format=yuv420p"
 MAX_TRACK_SEGMENTS = 40
 
@@ -59,8 +61,7 @@ def crop_width(src_w, src_h):
     source isn't wider than 9:16 (nothing to move sideways)."""
     if src_w * OUT_H <= OUT_W * src_h:
         return None
-    w = int(src_h * OUT_W / OUT_H)
-    return w - (w % 2)
+    return min(2 * int(src_h * OUT_W / OUT_H / 2 + 0.5), src_w - src_w % 2)   # nearest even, as CENTER_CROP
 
 
 def sample_frames(video_path, start, end, fps=2.0, width=640, ffmpeg="ffmpeg", cuts=None):

@@ -58,8 +58,10 @@ class TestPlanTrack:
 
 class TestExpressions:
     def test_crop_width(self):
-        assert reframe.crop_width(1920, 1080) == 606             # 607.5 → even, in source pixels
-        assert reframe.crop_width(1280, 720) == 404
+        assert reframe.crop_width(1920, 1080) == 608             # 607.5 → nearest even, in source pixels
+        assert reframe.crop_width(1280, 720) == 406              # 405 → 406
+        assert reframe.crop_width(607, 1080) is None             # not wider than 9:16 (607.5)
+        assert reframe.crop_width(609, 1080) == 608              # never wider than the (even) frame
         assert reframe.crop_width(1080, 1920) is None            # already 9:16
         assert reframe.crop_width(720, 1600) is None             # narrower than 9:16
 
@@ -79,7 +81,7 @@ class TestExpressions:
         kind, graph = reframe.video_filter("blur")
         assert kind == "complex" and graph.startswith("[in]split=2") and graph.endswith("[v]")
         kind, vf = reframe.video_filter("face", (1920, 1080), [(0.0, 0.25)])
-        assert vf == "crop=606:1080:x='177':y=0,scale=1080:1920,format=yuv420p"   # crop first, then scale
+        assert vf == "crop=608:1080:x='176':y=0,scale=1080:1920,format=yuv420p"   # crop first, then scale
         assert reframe.video_filter("face", (1080, 1920), [(0.0, 0.25)]) == ("vf", reframe.CENTER_VF)
         assert reframe.video_filter("face", None, None) == ("vf", reframe.CENTER_VF)
 
