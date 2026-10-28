@@ -177,3 +177,6 @@ fallback everywhere, and "Bun first, Python second". Design + sources:
   `unknownFields`, which checks every backticked field in a request exists
   in its state), tables via `test.each`. AGENTS.md now carries the
   compact-tests rule.
+- Owner decision on borderline flips: "it's okay, we just need to trust
+  Jev" — no re-asks or averaging; documented in creative-loop §1 Limits and
+  AGENTS.md.

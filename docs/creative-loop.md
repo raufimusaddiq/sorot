@@ -126,9 +126,11 @@ Infinix termahal yang pernah dijual di Indonesia." (~0.6), in 3 of 3 runs.
   earlier (25.6-51.2 s) passed screening, then failed the gate at 0.72 — so
   run 4's best was 0.64, just under BACKUP, and nothing rendered. A third window went 0.67 → 0.70
   (PASS → FAIL). Answers move little, but a hard threshold turns a small move
-  into a different verdict near the line. Possible fix, not built: re-ask
-  answers within ±0.05 of a threshold and average. (Since run 4, a FAIL clip
-  can no longer win an overlap against a passing one in SCORE.)
+  into a different verdict near the line. **Decision (owner, 2026-10-28):
+  accepted — trust Jev's answer for the run; no re-asking or averaging.** A
+  clip that close to the line is borderline either way, and it stays
+  renderable on request. (Since run 4, a FAIL clip can no longer win an
+  overlap against a passing one in SCORE.)
 - **Tiers come out lower than with the LLM.** Jev's score (quality + direction
   fit) topped out at ~0.86 here, where the LLM gave 0.96-1.0, so with the same rule half
   fewer clips reach BACKUP (0.65). On this synthetic video (no faces, no
@@ -374,7 +376,7 @@ LightGBM.
 
 - Run `jev-eval` with a key and real labelled clips; calibrate per question.
 - Jev-first on a real video (faces, motion): compare tiers and picks with the
-  LLM director, then decide on the BACKUP line and borderline re-asks (§1).
+  LLM director, then decide on the BACKUP line (§1).
 - Try Jev on an English gloss of the excerpt (LLM translation) vs Indonesian
   and keep whichever separates better.
 - Use `clip.gate.answers` as extra features in feedback training (TypeSafe's
