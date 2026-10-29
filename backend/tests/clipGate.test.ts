@@ -5,6 +5,7 @@ import {
 } from "../src/clipGate";
 import { Jev } from "../src/jev";
 import { DIRECTION_QUESTION } from "../src/jevDirector";
+import { determineTier } from "../src/scoring";
 import { clipAnswer, fakeJev, JEV_ON, unknownFields } from "./helpers";
 
 const STRONG = "Kenapa orang kaya nggak pernah nabung di bank? Ternyata mereka taruh uangnya di aset. Itu rahasia yang jarang dibahas.";
@@ -123,7 +124,7 @@ describe("deterministic fallback (rules)", () => {
 
 describe("gateClips", () => {
   const seg = (text: string, finalScore: number, extra: Partial<Gateable> = {}): Gateable =>
-    ({ text, title: "Rule title", tier: finalScore >= 0.8 ? "PRIMARY" : finalScore >= 0.65 ? "BACKUP" : "SKIP", finalScore, scoredBy: "rules", ...extra });
+    ({ text, title: "Rule title", tier: determineTier(finalScore), finalScore, scoredBy: "rules", ...extra });
   const TIERS = ["PRIMARY", "BACKUP"];
 
   test("Jev answers: FAIL → SKIP with the reason, risk → REVIEW, over-claiming LLM title replaced, SKIP tier untouched", async () => {

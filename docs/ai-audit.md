@@ -13,7 +13,7 @@ Checked against the code on 2026-10-29.
 | Scene changes | Signal processing: colour-histogram difference | `features/visual.py` |
 | Audio energy, onsets | Signal processing: RMS ratio, onset counting | `features/audio.py` |
 | Hook, keywords, novelty, clarity, sentiment, pauses, topic fit, history | **Rules**: Indonesian word lists, regexes, counts; keywords use TF-IDF when `data/corpus/*.txt` exists | `backend/src/textRules.ts` |
-| Clip score | **Hand-tuned weighted sum** of the 13 signals above + boosts/penalties → PRIMARY ≥ 0.80, BACKUP ≥ 0.65; blended 50/50 with Jev's or the LLM's judgement when connected | `backend/src/scoring.ts`, `ai-pipeline/weights.json` |
+| Clip score | **Hand-tuned weighted sum** of the 13 signals above + boosts/penalties → PRIMARY ≥ 0.78, BACKUP ≥ 0.63; blended 50/50 with Jev's or the LLM's judgement when connected | `backend/src/scoring.ts`, `ai-pipeline/weights.json` |
 | Titles, descriptions, hashtags | **Templates** (first question or hook line + keyword → hashtag map + CTA) | `backend/src/textRules.ts` |
 | "Learning" from your posts | **Linear re-weighting**: Pearson correlation of each feature with your real viral scores, blended into the weights (EMA, α = 0.3) after 5+ results | `backend/src/learning.ts` |
 | Supervised model | **LightGBM**, but only after **200+** labelled clips *and* only if it beats the linear weights in 5-fold CV. Until then no `model.lgb` exists and it never runs | `ai-pipeline/train_scorer.py`, `predict_supervised.py` |

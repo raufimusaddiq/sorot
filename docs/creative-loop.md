@@ -133,7 +133,7 @@ Infinix termahal yang pernah dijual di Indonesia." (~0.6), in 3 of 3 runs.
   overlap against a passing one in SCORE.)
 - **Tiers come out lower than with the LLM.** Jev's score (quality + direction
   fit) topped out at ~0.86 here, where the LLM gave 0.96-1.0, so with the same rule half
-  fewer clips reach BACKUP (0.65). On this synthetic video (no faces, no
+  fewer clips reach BACKUP. On this synthetic video (no faces, no
   motion) the rule half is low anyway; check tiers on a real video before
   changing thresholds.
 - English is Jev's best language (TypeSafe's model page); these are

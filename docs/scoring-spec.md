@@ -189,9 +189,9 @@ After applying formula + boosts - penalties:
 
 | Score Range | Tier | Action |
 |-------------|------|--------|
-| ≥ 0.80 | PRIMARY | Rendered with captions (all on a GPU; the best `MAX_RENDER_CLIPS` on a CPU, the rest on request) |
-| 0.65 – 0.79 | BACKUP | Same as PRIMARY |
-| < 0.65 | SKIP | Not rendered; still listed, renderable on request |
+| ≥ 0.78 | PRIMARY | Rendered with captions (all on a GPU; the best `MAX_RENDER_CLIPS` on a CPU, the rest on request) |
+| 0.63 – 0.77 | BACKUP | Same as PRIMARY |
+| < 0.63 | SKIP | Not rendered; still listed, renderable on request |
 
 The tier is derived again after the blend, and a clip the quality gate fails
 moves to SKIP whatever its score.

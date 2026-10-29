@@ -246,7 +246,7 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
 | 🥁 Onset Density | 5% | Audio onsets/s (laughs, claps, fast talk) |
 
 ➕ sharp questions, clashes, lists, emotion, conversational tone · ➖ slow openings, silence, generic, no face
-🏆 **PRIMARY** ≥ 0.80 · 🥈 **BACKUP** ≥ 0.65 · 💤 **SKIP** < 0.65
+🏆 **PRIMARY** ≥ 0.78 · 🥈 **BACKUP** ≥ 0.63 · 💤 **SKIP** < 0.63
 
 With Jev (or else an LLM), the score is 50% formula + 50% its judgement; if it's unreachable, the formula decides. Each clip records who scored it and why.
 

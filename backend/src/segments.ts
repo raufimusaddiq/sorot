@@ -100,7 +100,7 @@ export function topFeatures(segs: ScoredSummary[]) {
 export function recommendations(tiers: Record<string, number>, scores: { avg: number }, durations: { avg: number }): string[] {
   const recs: string[] = [];
   if (!tiers.PRIMARY) recs.push("No PRIMARY clips found. Consider longer source video or adjusting scoring weights.");
-  if ((tiers.PRIMARY ?? 0) > 5) recs.push("Many PRIMARY clips found. Consider raising the PRIMARY threshold from 0.80.");
+  if ((tiers.PRIMARY ?? 0) > 5) recs.push("Many PRIMARY clips found. Consider raising the PRIMARY threshold from 0.78.");
   if (scores.avg < 0.5) recs.push("Average score is low. Content may not match viral keywords well.");
   if (durations.avg > 50) recs.push("Clips are long on average. Consider shorter segments for better short-form performance.");
   if (durations.avg < 15) recs.push("Clips are very short. May need more context for viewers.");

@@ -59,7 +59,7 @@ The shipped file looks like this:
   }
 }
 ```
-Tiers are set in code (`determineTier`: PRIMARY ≥ 0.80, BACKUP ≥ 0.65); the file's `thresholds` key isn't read. Feedback also feeds scoring directly: `historyScore` is the mean viral score of the 3 past clips sharing the most words with this one (≥ 3 shared words), or 0.5 without history.
+Tiers are set in code (`determineTier`: PRIMARY ≥ 0.78, BACKUP ≥ 0.63); the file's `thresholds` key isn't read. Feedback also feeds scoring directly: `historyScore` is the mean viral score of the 3 past clips sharing the most words with this one (≥ 3 shared words), or 0.5 without history.
 
 ## Viral Score Calculation (`viralScore`, `learning.ts`)
 

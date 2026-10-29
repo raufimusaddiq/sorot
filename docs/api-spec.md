@@ -203,7 +203,7 @@ Choices and server defaults for the import form and clip editor:
 
 ## Clips
 
-Tiers: `PRIMARY` (≥ 0.80), `BACKUP` (≥ 0.65), `SKIP` (< 0.65). The pipeline
+Tiers: `PRIMARY` (≥ 0.78), `BACKUP` (≥ 0.63), `SKIP` (< 0.63). The pipeline
 renders (with captions) PRIMARY and BACKUP clips — all of them on a GPU, the
 best `MAX_RENDER_CLIPS` (default 10) on a CPU. The others stay `PENDING`;
 `POST /api/clips/{id}/rerender` with `{}` renders any clip. Render/export

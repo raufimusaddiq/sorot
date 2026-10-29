@@ -29,7 +29,7 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
 
 ### Finding and scoring clips
 - 13 weighted signals (hook, keywords, novelty, clarity, energy, sentiment, pauses, faces, scene changes,
-  topic fit, history, motion, audio onsets) rank every moment PRIMARY (≥ 0.80) / BACKUP (≥ 0.65) / SKIP.
+  topic fit, history, motion, audio onsets) rank every moment PRIMARY (≥ 0.78) / BACKUP (≥ 0.63) / SKIP.
   Viral keywords count at word starts, with Indonesian affixes (`rahasianya`, `berbahaya`), so `lu` no
   longer counts inside `selalu` or `dulu`.
 - **Jev first** (optional, [TypeSafe](https://docs.typesafe.ai)): Jev judges a window at every sentence
@@ -104,7 +104,7 @@ Installs made before this release ran a `:latest` built by hand from PR #15 (`sh
 - #23, #24 — Whisper re-run where a transcript lost its punctuation, with a word-count guard and its
   own progress line.
 - #25 — Fixes found by checking the docs against the code:
-  - Keyword matching (above).
+  - Keyword matching (above), with the tier cutoffs recalibrated to 0.78 / 0.63.
   - A trained LightGBM model gets its features in the order it was trained with.
   - `sorot restart` (Docker) applies `.env.docker` changes.
   - The Linux installer keeps the installed mode on a re-run.
@@ -121,10 +121,11 @@ Installs made before this release ran a `:latest` built by hand from PR #15 (`sh
 - Your `data/` folder, database and learned weights are kept. The database schema migrates itself on
   start. The Whisper model stays in the `hf-cache` volume.
 - To stay on this version, set `SOROT_VERSION=1.0.0` in `.env.docker`.
-- Clip scores come out a little lower. The keyword signal used to match nearly every sentence (`lu` inside
-  `selalu`). On the 175 segments of the scoring test videos, the keyword score fell by 0.36 on average, and
-  16 segments moved down a tier (13 BACKUP → SKIP, 3 PRIMARY → BACKUP). With Jev connected, the effect on
-  a clip's score is halved.
+- Clip scores come out a little lower, and the tier cutoffs moved with them: PRIMARY ≥ 0.78 and BACKUP ≥
+  0.63 (were 0.80 / 0.65). The keyword signal used to match nearly every sentence (`lu` inside `selalu`),
+  and fixing it lowered rule scores by 0.024 on average. On the 175 segments of the scoring test videos, the
+  new cutoffs give the same tier mix as before (121 SKIP, 49 BACKUP, 5 PRIMARY); 171 of 175 keep their
+  tier. With Jev connected the score drop is halved, so tiers there come out slightly more generous.
 - New optional settings since the pre-release image. All have defaults, so nothing is required:
   - Connections: `JEV_API_KEY`, `JEV_MODEL`, `JEV_URL`, `JEV_DIRECTOR`, `LLM_DIRECTOR`, `LLM_MAX_TOKENS`,
     `TEBAR_API_KEY`, `TEBAR_SYNC_HOURS`.

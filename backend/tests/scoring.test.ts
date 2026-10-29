@@ -59,7 +59,7 @@ describe("scorer behaviour", () => {
   });
 
   test("tiers and weights.json loading", () => {
-    expect([0.8, 0.79, 0.65, 0.64].map(determineTier)).toEqual(["PRIMARY", "BACKUP", "BACKUP", "SKIP"]);
+    expect([0.78, 0.77, 0.63, 0.62].map(determineTier)).toEqual(["PRIMARY", "BACKUP", "BACKUP", "SKIP"]);
     const dir = mkdtempSync(join(tmpdir(), "w-"));
     expect(loadWeights(dir)).toEqual(DEFAULT_WEIGHTS);
     writeFileSync(join(dir, "weights.json"), JSON.stringify({ weights: { hookStrength: 0.5, extra: 0.1 } }));

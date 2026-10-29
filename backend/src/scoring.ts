@@ -54,8 +54,11 @@ export interface ScoredSegment extends SegmentIn {
 
 const NEUTRAL_MEDIA: MediaFeatures = { rmsRatio: null, onsetDensity: 0.5, facePresence: 0.5, sceneChange: 0.5, motion: 0.5 };
 
+// Were 0.80 / 0.65. Whole-word keyword matching lowered rule scores by 0.024 on
+// average; 0.78 / 0.63 give the golden videos' 175 segments the same tier mix as
+// before (121 SKIP, 49 BACKUP, 5 PRIMARY).
 export function determineTier(score: number): string {
-  return score >= 0.8 ? "PRIMARY" : score >= 0.65 ? "BACKUP" : "SKIP";
+  return score >= 0.78 ? "PRIMARY" : score >= 0.63 ? "BACKUP" : "SKIP";
 }
 
 /**
