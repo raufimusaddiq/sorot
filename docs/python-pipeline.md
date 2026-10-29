@@ -119,7 +119,10 @@ Env: `WHISPER_THREADS` (CPU threads, default every core), `WHISPER_BEAM_SIZE`
 
 Progress: as segments arrive it prints `PROGRESS <n>` lines (segment end ÷
 audio length, at most 99) on **stderr**; the backend runner turns them into the
-TRANSCRIBE stage's `"Transcribing n%"` and drops them from logs.
+TRANSCRIBE stage's `"Transcribing n%"` and drops them from logs. A line may name
+what the script is doing (`PROGRESS <n> <label>` → `"<label> n%"`): the
+punctuation re-run below reports `"Re-transcribing (punctuation lost) n%"` over
+the audio it re-runs.
 
 Lost punctuation: Whisper conditions each window on the text before it, so a
 stretch written without punctuation can last to the end of the file (once from
@@ -128,7 +131,9 @@ checked in 10-minute buckets; from the first bucket with ≥ 20 lines of which
 under half end a sentence, Whisper runs again on the rest of the audio (from
 the end of the last kept line, starting fresh, with a punctuated Indonesian
 `hotwords` prompt for `id`) and the re-run replaces that part only if it is
-better punctuated. Thai, Lao, Khmer and Burmese are not checked. No Whisper
+better punctuated and holds within ±20 % of its words (an empty, speech-dropping
+or looping re-run can punctuate better and still be worse). stderr says why:
+`re-run: <punctuated %>, <new>/<old> words, kept|discarded`. Thai, Lao, Khmer and Burmese are not checked. No Whisper
 setting prevented the drift on its own (`condition_on_previous_text=False`
 lost 3-5 % of words and many sentence breaks on every video).
 

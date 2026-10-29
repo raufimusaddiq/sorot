@@ -24,10 +24,10 @@ const scripts: Record<string, string> = {
     (async () => {
       await w("PROGRESS 10\\nloading model\\nPROG");
       await new Promise((r) => setTimeout(r, 30));
-      await w("RESS 55\\r\\nPROGRESS 99");
+      await w("RESS 55\\r\\nPROGRESS 99 Re-transcribing");
       console.log(JSON.stringify({ success: true, data: { done: true } }));
     })()`,
-  "progressfail.js": `console.error("PROGRESS 5"); console.error("Traceback: boom"); process.exit(3)`,
+  "progressfail.js": `console.error("PROGRESS 5"); console.error("PROGRESS 6 Re-transcribing"); console.error("Traceback: boom"); process.exit(3)`,
 };
 
 beforeAll(() => {
@@ -89,10 +89,10 @@ describe("createPythonRunner", () => {
     expect(p).rejects.toThrow("Job cancelled by user");
   });
 
-  test("PROGRESS lines on stderr reach onProgress as they arrive", async () => {
-    const seen: number[] = [];
-    expect(await runner()("progress.js", [], { onProgress: (p) => seen.push(p) })).toEqual({ done: true });
-    expect(seen).toEqual([10, 55, 99]);
+  test("PROGRESS lines on stderr reach onProgress as they arrive, with an optional label", async () => {
+    const seen: unknown[] = [];
+    expect(await runner()("progress.js", [], { onProgress: (p, label) => seen.push(label ? [p, label] : p) })).toEqual({ done: true });
+    expect(seen).toEqual([10, 55, [99, "Re-transcribing"]]);
     expect(await runner()("progress.js", [])).toEqual({ done: true });   // no callback: ignored
   });
 
