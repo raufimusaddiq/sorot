@@ -83,7 +83,7 @@ function int(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Same env vars and defaults as the old application.yml. Empty = unset. */
+/** Env vars and their defaults. Empty = unset. */
 /** data/sorot.db; an install from before the rename keeps using its data/viralclipper.db. */
 export function defaultDbPath(dataDir: string, exists: (p: string) => boolean = existsSync): string {
   const current = `${dataDir}/sorot.db`;

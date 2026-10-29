@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Transcribe audio using faster-whisper with CUDA support."""
+"""Transcribe audio with faster-whisper, on CUDA or the CPU."""
 
 import argparse
 import json
@@ -148,7 +148,7 @@ def repair_drift(model, audio_path, language, segments):
 
 
 def main():
-    # Env overrides let the user A/B models without touching Java code. CLI args
+    # Env overrides let the user A/B models without touching code. CLI args
     # still win when explicitly passed.
     default_model = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
     default_device = os.environ.get("WHISPER_DEVICE", "cuda")

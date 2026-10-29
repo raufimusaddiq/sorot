@@ -49,7 +49,8 @@ def _load_model():
 def predict(scores):
     """Return a 0-1 predicted score or ``None`` to signal 'fall back to linear'.
 
-    ``scores`` is the dict produced by ``score_segment`` (before the tier cap).
+    ``scores`` is a segment's feature dict, as the backend writes it for
+    predict_supervised.py.
     """
     model = _load_model()
     if model is None:

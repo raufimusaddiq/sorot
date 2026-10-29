@@ -1,7 +1,6 @@
-"""Stage scripts run in-process: transcribe, render, subtitle, variation,
-analytics and score. ffmpeg/ffprobe and faster-whisper are faked so every
-branch (NVENC probe, fallbacks, per-clip failures, CLI envelopes) is hit
-without a GPU."""
+"""Stage scripts run in-process: transcribe, render, subtitle, variation and captions.
+ffmpeg/ffprobe and faster-whisper are faked so every branch (NVENC probe,
+fallbacks, per-clip failures, CLI envelopes) is hit without a GPU."""
 
 import json
 import os

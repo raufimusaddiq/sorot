@@ -1,6 +1,5 @@
-// Row shapes. Field names are the camelCase form of the SQLite column names,
-// which is also exactly what the old Spring/Jackson backend serialized — the
-// frontend (frontend/src/types.ts) depends on these keys.
+// Row shapes. Field names are the camelCase form of the SQLite column names;
+// the frontend (frontend/src/types.ts) depends on these keys.
 
 export interface Video {
   id: string;

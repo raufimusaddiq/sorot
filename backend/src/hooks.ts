@@ -1,7 +1,7 @@
-// The hook line of a clip, decided in Bun: the LLM director's pick when it
-// made one, else the rules' strongest stand-alone line. render.py and
-// subtitle.py only replay what they are given (`hookStart`/`hookEnd` on the
-// segment; null = no replay). Port of ai-pipeline/captions.py words_for_clip
+// The hook line of a clip, decided in Bun: Jev's decision (Jev first) or the
+// LLM director's pick when one was made, else the rules' strongest stand-alone
+// line. render.py and subtitle.py only replay what they are given
+// (`hookStart`/`hookEnd` on the segment; null = no replay). Port of ai-pipeline/captions.py words_for_clip
 // + find_hook (tests/fixtures/hooks.json is generated from the Python).
 
 import { hookStrength } from "./textRules";
