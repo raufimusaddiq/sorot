@@ -5,7 +5,7 @@
 - rmsRatio: segment loudness ÷ whole-video loudness (None without audio)
 - onsetDensity: audio onset peaks per second, mapped to 0-1
 - facePresence: faces in 3 of 5 full-resolution frames (Haar / MediaPipe)
-- sceneChange, motion: frame histogram / pixel differences
+- sceneChange, motion: frame histograms / optical flow (Farneback)
 
     python media_features.py --segments S.json --video V.mp4 [--audio A.wav]
 

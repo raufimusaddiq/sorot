@@ -19,7 +19,7 @@ Create a focused implementation plan for a specific feature or pipeline step.
 - Follow the build order in AGENTS.md strictly — no skipping ahead
 - All Python scripts must follow the contract in `docs/python-pipeline.md`
 - All new REST endpoints must be documented in `docs/api-spec.md`
-- Database changes must be reflected in `docs/data-model.md` and `schema.sql`
+- Database changes must be reflected in `docs/data-model.md` and `backend/src/db.ts`
 - **KEEP MEMORY LEAN**: Write plan details to journal, not memory. Memory = compressed pointers only.
 
 ## Output:

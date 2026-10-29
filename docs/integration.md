@@ -101,8 +101,9 @@ SOROT_URL=http://localhost:8080 sorot import "https://youtu.be/…"
 ```
 
 `sorot up/down/logs` always act on the local install; everything else goes over HTTP.
-Local file imports need the file on the machine running the app — copy it to
-its `data/input/` and pass that path.
+Local file imports need the file on the machine running the app, and `sorot import <file>`
+only reads files on its own machine: copy it to the app's `data/input/` and import it
+through the API with `localPath` (`/app/data/input/<file>` under Docker).
 
 ## 2. The HTTP API
 

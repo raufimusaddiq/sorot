@@ -1,7 +1,8 @@
 // Golden tests for the Bun port of discover.py / channel_crawler.py /
 // youtube_captions.py: real yt-dlp output, a real auto-caption VTT and a real
 // json3 track, run through the Python originals with the clock pinned
-// (fixtures/discovery.json, fixtures/youtube-captions.json).
+// (fixtures/discovery.json, fixtures/youtube-captions.json). The caption
+// `analysis` and `predictions` follow the Bun keyword rule (whole words).
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

@@ -1,4 +1,4 @@
-# Tests on every push and PR, plus a CPU image build + smoke test (not pushed)
+# Tests on pushes to master and every PR, plus a CPU image build + smoke test (not pushed)
 # when the change can affect the image. The published images are built
 # separately, on releases or on demand: see release-image.yml.
 name: CI

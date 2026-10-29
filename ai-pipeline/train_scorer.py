@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """P3.5-C — Train a supervised viral-score model from ``clip_feedback``.
 
-Expects a JSON feedback dump (same shape as what ``learn_weights.py`` eats):
+Expects a JSON feedback dump (the backend writes one to
+``data/feedback/feedback_export.json``):
 a list of records with:
   - ``features``: dict of feature_name -> float (or JSON-encoded string)
   - ``actual_viral_score``: float label in [0, 1]

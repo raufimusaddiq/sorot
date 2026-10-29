@@ -20,8 +20,9 @@ describe("matches the Python on real data", () => {
   test("analytics reports", () => {
     for (const c of fx.analytics) {
       const r = analyticsReport("v", c.segments as ScoredSummary[]);
-      // platform-neutral wording (the Python said "TikTok")
-      const recs = c.report.recommendations.map((x: string) => x.replace("better TikTok performance", "better short-form performance"));
+      // platform-neutral wording (the Python said "TikTok"); PRIMARY is 0.78 since whole-word keywords
+      const recs = c.report.recommendations.map((x: string) => x.replace("better TikTok performance", "better short-form performance")
+        .replace("threshold from 0.80", "threshold from 0.78"));
       expect(r).toEqual({ videoId: "v", totalSegments: c.segments.length, ...c.report, recommendations: recs });
     }
     expect(analyticsReport("v", [{}]).tierDistribution).toEqual({ PRIMARY: 0, BACKUP: 0, SKIP: 1 });

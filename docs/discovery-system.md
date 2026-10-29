@@ -1,169 +1,90 @@
 # YouTube Video Discovery System
 
-> **Status (2026-10-27): original design doc.** Discovery now runs in the Bun
-> backend, not a Python CLI: `youtube.ts` (yt-dlp feeds and filters),
-> `captionAnalysis.ts` (whole-video caption scoring), `channels.ts` (source-channel
-> crawler) and `discoveryAgent.ts` (✨ auto-discover: an LLM agent with web and
-> YouTube tools, or the algorithm without an LLM). Current behaviour and fields:
-> [api-spec.md → Discovery](api-spec.md#discovery). The plan below is kept for history.
+Finds long-form Indonesian videos worth clipping, ranks them and imports the ones
+you pick. All in the Bun backend, with yt-dlp for YouTube (no API key). Endpoints
+and fields: [api-spec.md → Discovery](api-spec.md#discovery).
 
 ## Problem
-Manual YouTube URL input is slow and imprecise. We need an automated discovery system that finds videos with high viral clip potential — specifically Indonesian content that matches our scoring keywords.
+Manual YouTube URL input is slow and imprecise. Discovery finds videos with high clip potential: Indonesian long-form talk (podcasts, talk shows, interviews, stand-up) that matches the scorer's keywords.
 
 ## Architecture
 
 ```
-Discovery Engine (Python CLI)
+Sources (youtube.ts, yt-dlp)            search · trending · channel uploads
+  └─ ✨ auto (discoveryAgent.ts)          LLM agent with web + YouTube tools, or the algorithm
     │
-    ├── Source 1: YouTube Search API (yt-dlp search)
-    ├── Source 2: Trending feeds (yt-dlp trending)
-    ├── Source 3: Channel monitoring (subscription-based)
-    │
-    ├── Relevance Pre-filter
-    │   ├── Duration filter (5-30 min optimal)
-    │   ├── Language filter (Indonesian audio)
-    │   └── Keyword density quick-check
-    │
-    └── Auto-queue → Backend API POST /api/import
+    ├── Filters + relevanceScore         Shorts, re-clipped titles, duration, age → 0-1
+    ├── Stored (discovery.ts)            discovered_video: NEW → QUEUED → IMPORTED / SKIPPED
+    ├── Enrichment (captionAnalysis.ts)  whole-video captions → predictedScore
+    └── Import                           queue + drain → import + job per video
 ```
 
-## Implementation Plan
-
-### Stage 1: yt-dlp Search Discovery (local-only, no API key)
-
-yt-dlp supports YouTube search natively. No API key needed.
+## Sources (`youtube.ts`)
 
 ```bash
-# Search Indonesian viral content
-yt-dlp "ytsearch30:rahasia penting indonesia" --flat-playlist --dump-json
-
-# Trending videos in Indonesia
-yt-dlp "https://www.youtube.com/feed/trending" --flat-playlist --dump-json
-
-# Channel latest videos
-yt-dlp "https://www.youtube.com/@channelName/videos" --flat-playlist --dump-json
+yt-dlp "ytsearch20:<query>" --dump-json --skip-download --match-filters "upload_date >=(today-90days)"
+yt-dlp "https://www.youtube.com/hashtag/viralindonesia" --dump-json --skip-download --playlist-end N --match-filters …
+yt-dlp "https://www.youtube.com/@channelName/videos" --flat-playlist --dump-json --skip-download --playlist-end N
 ```
 
-**New script: `ai-pipeline/discover.py`**
+- **Search** (`POST /api/discover/search`): the last 90 days by default (full metadata, so upload dates are known).
+- **Trending** (`POST /api/discover/trending`): YouTube's hashtag feeds (`viralindonesia`, `viral`, `beritaviral`, `terbaru`, `fyp`) plus three niche searches; ≥ 5 min, last 45 days. `region` is accepted but unused: hashtag feeds aren't regional.
+- **Channel** (`POST /api/discover/channel`): recent uploads, last 90 days; flat listings may lack a date, and those rows are kept.
+
+## Relevance pre-filtering (`parseFeed`, `relevanceScore`)
+
+Every feed drops Shorts (`/shorts/` or ≤ 60 s), re-clipped titles or descriptions (`clip`, `potongan`, `highlight`, `compilation`, `reaction`, `top N`…) and rows outside the duration/age limits, then scores what's left:
 
 ```
-Input:  --mode search|trending|channel
-        --query "indonesian viral keywords"
-        --max-results 20
-        --min-duration 120 --max-duration 1800
-        --lang id
-Output: JSON envelope { success, data: { videos: [...] } }
+relevance = 0.40 × min(title keyword hits / 8.25, 1)        # 55 Indonesian KEYWORDS
+          + 0.25 × durationFit                             # < 5 min 0, < 10 0.15, < 15 0.4, < 30 0.7, 30+ min 1.0
+          + 0.20 if < 30 days old and > 1000 views/h (0.10 if > 100)
+          + 0.15 × min(description keyword hits / 5.5, 1)
 ```
 
-Each discovered video returns:
-```json
-{
-  "videoId": "yt-abc123",
-  "title": "Rahasia Penting Yang Jarang Diketahui...",
-  "url": "https://youtube.com/watch?v=abc123",
-  "duration": 480,
-  "channel": "Channel Name",
-  "viewCount": 150000,
-  "relevanceScore": 0.82
-}
-```
+Each row also gets a `contentType` guess from its title and channel name (PODCAST, TALKSHOW, STANDUP, LIVESTREAM, NEWS, STORYTELLING, REVIEW, GAMING, OTHER).
 
-### Stage 2: Relevance Pre-filtering
+## Caption analysis (`captionAnalysis.ts`)
 
-Before downloading full video, do a quick relevance check:
+After each search, the 10 most relevant new rows (3 at a time) get their YouTube captions (`id`, else `en`, else any; auto-captions allowed) scored as a whole video:
 
-1. **Title keyword match** — count viral keywords in title
-2. **Duration check** — 3-20 min is sweet spot for clips
-3. **View count ratio** — newer videos with high views = trending
-4. **Description scan** — look for niche keywords
+- 45 s windows, each scored by the clip scorer's text rules (0.35 hook + 0.3 keywords + 0.2 novelty + 0.15 sentiment strength); `transcriptScore` = mean of the 5 best; `strongMoments` = windows ≥ 0.55; speech density in words per minute.
+- `predictedScore` = 0.40 transcript + 0.15 strong moments per 10 captioned minutes (2+ saturates) + 0.10 speech fit (60 → 110 wpm) + 0.20 view velocity (log views/hour, < 30 days) + 0.15 duration fit. Without captions only velocity and duration count.
 
-```python
-def quick_relevance_score(video_meta, keywords):
-    score = 0.0
-    title_lower = video_meta["title"].lower()
-    desc_lower = video_meta.get("description", "").lower()
-    
-    # Keyword density in title (weighted 3x)
-    title_hits = sum(1 for kw in keywords if kw in title_lower)
-    score += min(title_hits / max(len(keywords) * 0.3, 1), 1.0) * 0.4
-    
-    # Duration sweet spot (3-20 min)
-    dur = video_meta.get("duration", 0)
-    if 180 <= dur <= 1200: score += 0.25
-    elif 120 <= dur <= 1800: score += 0.15
-    
-    # View velocity (views per hour since publish)
-    age_hours = video_meta.get("age_hours", 999)
-    if age_hours < 720:  # less than 30 days
-        vph = video_meta.get("viewCount", 0) / max(age_hours, 1)
-        if vph > 1000: score += 0.2
-        elif vph > 100: score += 0.1
-    
-    # Description keyword match
-    desc_hits = sum(1 for kw in keywords if kw in desc_lower)
-    score += min(desc_hits / max(len(keywords) * 0.2, 1), 1.0) * 0.15
-    
-    return min(score, 1.0)
-```
+## Candidates (`discovery.ts`)
 
-### Stage 3: Auto-queue to Pipeline
+Results land in `discovered_video`, one row per YouTube id. A video already in the library is marked IMPORTED, and QUEUED / SKIPPED / IMPORTED survive later searches. The default list (`GET /api/discover/candidates`) shows NEW and QUEUED rows of known age ≤ 90 days, ranked as follows:
+- score: `predictedScore` (else relevance);
+- +0.05 for a profiled source channel, +0.05 for a channel you've imported from;
+- channels the crawler rejected are left out.
 
-Discovered videos above a relevance threshold (default 0.6) auto-queue:
+Each row carries plain-language `why` reasons. A status filter shows every age. *Make clips* queues the selected rows and drains the queue (`POST /api/discover/queue`, `/queue/drain`), which imports each video and starts its job.
 
-1. Script outputs ranked video list
-2. Backend new endpoint: `POST /api/discover/queue` — accepts list of URLs
-3. Backend processes them sequentially (avoid GPU overload)
-4. Frontend shows discovery results in a "Discovery" tab
+## ✨ Auto-discover (`discoveryAgent.ts`)
 
-### Stage 4: Frontend Discovery UI
+`POST /api/discover/auto {goal, maxResults}` (default 10, at most 20) runs in the background, one run at a time.
 
-New section in the UI:
+- **With an LLM:** a tool-calling agent (12 rounds, then it must answer) with these tools:
+  - `web_search` (`webSearch.ts`: Bing HTML by default, as DuckDuckGo is blocked by Indonesian ISPs; a SearXNG URL; or `WEB_SEARCH=off`);
+  - `youtube_search` (≥ 10 min, last 90 days);
+  - `analyze_video` (the caption analysis above);
+  - `channel_videos` and `source_channels`.
 
-- **Search tab**: Enter keywords → discover.py runs → show ranked results
-- **Trending tab**: One-click fetch Indonesian trending → show results
-- **Channel tab**: Enter channel URL → fetch recent videos → rank them
-- Each result has an **Import** button and a **relevance score** badge
-- **Import All Top N** button to batch-queue the best videos
+  Picks come with a reason, and only videos the tools returned count. Picks from rejected channels are dropped.
+- **Without an LLM, or when it fails:** the algorithm runs instead.
+  - It searches the goal, then a shuffled sample of the anchor and niche queries: 3 searches, up to 6 while fewer than 2 × `maxResults` usable videos turned up.
+  - It analyzes the best ≤ 16 by relevance and keeps the best predicted scores, at most 2 per channel.
 
-## New Files
+Picks are stored like any search (`sourceMode` "auto", `pickedBy` = the model or "algorithm").
 
-| File | Purpose |
-|------|---------|
-| `ai-pipeline/discover.py` | YouTube search/trending discovery + relevance scoring |
-| `backend/.../DiscoveryController.java` | Discovery API endpoints |
-| `backend/.../DiscoveryService.java` | Orchestrate discovery → queue → process |
-| `frontend src/app/page.tsx` | Discovery tab UI |
+## Source channels (`channels.ts`)
 
-## New API Endpoints
+`POST /api/discover/channels/reseed` runs 12 long-form anchor queries (podcasts, talk shows, stand-up, interviews, livestreams) and stores channels it hasn't seen. It then profiles each one in the background from its last 30 uploads: average length, median views, uploads per week and main content type.
+- A channel is stored as `REJECTED` when ≥ 70 % of its uploads are under 5 min or clip-titled (a clip farm), or when its uploads average under 15 min.
+- `/channels/{id}/refresh` re-profiles a channel; `/channels/{id}/status` sets ACTIVE, PAUSED or REJECTED.
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | /api/discover/search | Search YouTube by keywords |
-| POST | /api/discover/trending | Get trending Indonesian videos |
-| POST | /api/discover/channel | Get latest from a channel |
-| GET | /api/discover/queue | List queued discovery items |
-| POST | /api/discover/queue/{id}/process | Process a queued discovery item |
+## UI and CLI
 
-## Dependency
-- **yt-dlp** (already installed in Docker container)
-- No external API keys needed — yt-dlp handles YouTube scraping
+The studio's *Discover* window has Auto / Search / Trending / Channel tabs. Its *Candidates* list shows each row's predicted (or relevance) score and reasons, with *Make clips* and *Skip*. CLI: `sorot discover search | trending | channel | auto | candidates | queue | skip | drain`.
 
-## Execution Order
-1. Build `discover.py` with search + trending + relevance scoring
-2. Add backend controller + service
-3. Add frontend Discovery tab
-4. Add auto-queue with batch processing
-5. Test E2E: discover → queue → process → clips
-
-## Discovery v2 (implemented)
-
-- The duration curve now favours long-form source material (30–180 min = full
-  fit) and re-clipped titles are filtered before scoring.
-- Search/channel default to the last 90 days; the default candidates view hides
-  rows of unknown or older age.
-- Source channels: `channels.ts` (port of the old `channel_crawler.py`) seeds
-  channels from anchor queries and profiles them; clip farms and short-form
-  channels are stored as `REJECTED`.
-  Endpoints: `/api/discover/channels*` in [api-spec.md](api-spec.md#source-channels).
-- Not built yet: trust-score updates from clip feedback and polling channels on
-  their `pollCadenceHours`.
+Not built: trust-score updates from clip feedback, and polling channels on their `pollCadenceHours` (the columns exist; trust stays 0.5).

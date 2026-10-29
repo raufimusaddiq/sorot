@@ -9,6 +9,7 @@ API JSON keys are the camelCase of these columns (`backend/src/store.ts`):
 
 ```
 Video 1──* Job
+Job   1──* StageStatus
 Video 1──* Clip
 Clip  1──1 ClipScore
 Clip  1──* SocialPost
@@ -26,7 +27,7 @@ Clip  1──1 ClipFeedback   (only once the clip has posted metrics)
 | `source_type` | TEXT | NOT NULL | `YOUTUBE` or `LOCAL` |
 | `title` | TEXT | | Video title from metadata |
 | `duration_sec` | INTEGER | | Duration in seconds |
-| `file_path` | TEXT | NOT NULL | Path to raw video in data/raw/ |
+| `file_path` | TEXT | NOT NULL | Video file: `data/raw/{id}.mp4` (YouTube download or a cut range), else the local file |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `section_start` / `section_end` | REAL | | Only this range of the source was downloaded (seconds), if set at import |
 | `brief` | TEXT | | JSON, written by the LLM director: `{summary, topics[], people[], audience, angle}` |
@@ -36,7 +37,7 @@ Clip  1──1 ClipFeedback   (only once the clip has posted metrics)
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK | UUID |
-| `video_id` | TEXT | FK → video.id | |
+| `video_id` | TEXT | NOT NULL, FK → video.id | |
 | `status` | TEXT | NOT NULL | `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED` |
 | `current_stage` | TEXT | | Current pipeline stage name |
 | `error_message` | TEXT | | Error details if FAILED |
@@ -51,7 +52,7 @@ Tracks each pipeline stage within a job.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK | UUID |
-| `job_id` | TEXT | FK → job.id | |
+| `job_id` | TEXT | NOT NULL, FK → job.id | |
 | `stage` | TEXT | NOT NULL | `IMPORT`, `AUDIO_EXTRACT`, `TRANSCRIBE`, `SEGMENT`, `SCORE`, `RENDER`, `SUBTITLE`, `VARIATION`, `ANALYTICS` |
 | `status` | TEXT | NOT NULL | `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED` |
 | `started_at` | TEXT | | ISO 8601 |
@@ -66,7 +67,7 @@ Unique constraint: `(job_id, stage)`
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK | UUID |
-| `video_id` | TEXT | FK → video.id | |
+| `video_id` | TEXT | NOT NULL, FK → video.id | |
 | `rank_pos` | INTEGER | | Rank by score (1 = best); clips the quality gate held back (FAIL) rank last |
 | `score` | REAL | | Final score (≤ 1.0): rules, or 50/50 with Jev or the LLM review ([scoring-spec.md](scoring-spec.md)) |
 | `tier` | TEXT | NOT NULL | `PRIMARY`, `BACKUP`, `SKIP` |
@@ -77,9 +78,9 @@ Unique constraint: `(job_id, stage)`
 | `duration_sec` | REAL | NOT NULL | Clip duration in seconds |
 | `text_content` | TEXT | | Transcript text for this clip |
 | `render_status` | TEXT | NOT NULL | `PENDING`, `RENDERING` (clip editor), `COMPLETED`, `FAILED` |
-| `render_path` | TEXT | | Path to rendered video in data/renders/ |
+| `render_path` | TEXT | | Rendered video. Captions are burned in the same pass, so it is the captioned file in `data/exports/{videoId}/`; `data/renders/{videoId}/` only for clips an older job rendered without captions |
 | `export_status` | TEXT | NOT NULL | `PENDING`, `RENDERING` (clip editor), `COMPLETED`, `FAILED` |
-| `export_path` | TEXT | | Path to exported video in data/exports/ |
+| `export_path` | TEXT | | Captioned video: `data/exports/{videoId}/clip_{rank}_subtitled.mp4`, or `data/exports/{id}_final.mp4` after `POST /api/clips/export` |
 | `created_at` | TEXT | NOT NULL | ISO 8601 |
 | `options` | TEXT | | JSON editing options set in the clip editor (over the job's) |
 | `caption_words` | TEXT | | JSON edited caption words (absolute source seconds) |
@@ -98,7 +99,7 @@ Breakdown of scoring features per clip.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PK | UUID |
-| `clip_id` | TEXT | FK → clip.id, UNIQUE | One score row per clip |
+| `clip_id` | TEXT | NOT NULL, FK → clip.id, UNIQUE | One score row per clip |
 | `hook_strength` | REAL | | 0.0 - 1.0 |
 | `keyword_trigger` | REAL | | 0.0 - 1.0 |
 | `novelty` | REAL | | 0.0 - 1.0 |
@@ -129,7 +130,7 @@ A clip sent to social accounts through Tebar (`backend/src/publisher.ts`).
 | `scheduled_at` | TEXT | | ISO 8601 |
 | `idempotency_key` | TEXT | NOT NULL | Sent as `Idempotency-Key`; a retry re-sends it |
 | `request` | TEXT | | JSON body sent to Tebar, saved before sending |
-| `targets` | TEXT | | JSON per-account results: platform, status, permalink, error |
+| `targets` | TEXT | | JSON per-account results: accountId, platform, status, permalink, errorCode, errorMessage, publishedAt |
 | `error_message` | TEXT | | |
 | `created_at` / `updated_at` | TEXT | NOT NULL | ISO 8601 |
 | `last_synced_at` | TEXT | | Last status read from Tebar |

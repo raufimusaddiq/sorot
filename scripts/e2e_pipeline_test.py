@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-End-to-end pipeline test.
-Generates synthetic audio, runs through transcribe -> segment -> score,
-verifies JSON envelope at each stage and ffmpeg availability.
+End-to-end check of the Python media side on this machine.
+Checks dependencies and ffmpeg, runs transcribe.py on synthetic audio (JSON
+envelope + output file), imports the features package, and checks render.py's
+command shape and train_scorer's 200-row guard. Segmenting and scoring are
+Bun (backend tests).
 """
 
 import json
@@ -130,127 +132,6 @@ class TestTranscribeStage(unittest.TestCase):
             self.assertIn("text", seg)
 
 
-class TestSegmentStage(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.tmpdir = tempfile.mkdtemp()
-        cls.transcript_path = os.path.join(cls.tmpdir, "transcript.json")
-        transcript = {
-            "videoId": "e2e-test-video",
-            "segments": [
-                {"index": i, "start": float(i * 5), "end": float((i + 1) * 5),
-                 "text": f"Bagian {i} dari pembahasan rahasia penting hari ini",
-                 "confidence": 0.9}
-                for i in range(20)
-            ],
-        }
-        with open(cls.transcript_path, "w") as f:
-            json.dump(transcript, f)
-        cls.output_path = os.path.join(cls.tmpdir, "segments.json")
-
-        result = run_cmd([
-            VENV_PYTHON,
-            os.path.join(SCRIPTS_DIR, "segment.py"),
-            "--transcript", cls.transcript_path,
-            "--output", cls.output_path,
-        ])
-        cls.segment_result = result
-
-    def test_segment_exits_zero(self):
-        self.assertEqual(
-            self.segment_result.returncode, 0,
-            f"Segment failed: {self.segment_result.stderr}"
-        )
-
-    def test_segment_json_envelope(self):
-        output = json.loads(self.segment_result.stdout)
-        self.assertTrue(output["success"])
-        self.assertIn("data", output)
-        self.assertIn("segments", output["data"])
-
-    def test_segment_output_has_reason(self):
-        with open(self.output_path) as f:
-            data = json.load(f)
-        for seg in data["segments"]:
-            self.assertIn("reason", seg)
-            self.assertIn("startTime", seg)
-            self.assertIn("endTime", seg)
-            self.assertIn("duration", seg)
-            self.assertGreaterEqual(seg["duration"], 10)
-
-
-class TestScoreStage(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.tmpdir = tempfile.mkdtemp()
-        cls.segments_path = os.path.join(cls.tmpdir, "segments.json")
-        segments = {
-            "videoId": "e2e-test-video",
-            "segments": [
-                {"index": 0, "startTime": 0.0, "endTime": 25.0, "duration": 25.0,
-                 "text": "Rahasia penting yang tidak banyak orang tahu! Kenapa kok bisa begitu?",
-                 "reason": "strong hook"},
-                {"index": 1, "startTime": 30.0, "endTime": 55.0, "duration": 25.0,
-                 "text": "jadi kemudian lanjut saja pembahasan biasa tanpa hook",
-                 "reason": "generic"},
-                {"index": 2, "startTime": 60.0, "endTime": 85.0, "duration": 25.0,
-                 "text": "Ternyata ada trik dan solusi yang wajib kamu tahu sekarang juga!",
-                 "reason": "strong hook"},
-            ],
-        }
-        with open(cls.segments_path, "w") as f:
-            json.dump(segments, f)
-        cls.video_path = os.path.join(cls.tmpdir, "video.mp4")
-        with open(cls.video_path, "wb") as f:
-            f.write(b"fake video content for testing")
-
-        result = run_cmd([
-            VENV_PYTHON,
-            os.path.join(SCRIPTS_DIR, "score.py"),
-            "--segments", cls.segments_path,
-            "--video", cls.video_path,
-            "--niche-keywords", "rahasia,penting,trik,solusi",
-        ])
-        cls.score_result = result
-
-    def test_score_exits_zero(self):
-        self.assertEqual(
-            self.score_result.returncode, 0,
-            f"Score failed: {self.score_result.stderr}"
-        )
-
-    def test_score_json_envelope(self):
-        output = json.loads(self.score_result.stdout)
-        self.assertTrue(output["success"])
-        self.assertIn("data", output)
-
-    def test_scored_segments_have_all_fields(self):
-        with open(self.segments_path) as f:
-            data = json.load(f)
-        segments = data.get("scoredSegments", [])
-        self.assertGreater(len(segments), 0)
-        for seg in segments:
-            self.assertIn("finalScore", seg)
-            self.assertIn("tier", seg)
-            self.assertIn("scores", seg)
-            self.assertIn("rank", seg)
-            self.assertIn(seg["tier"], ["PRIMARY", "BACKUP", "SKIP"])
-
-    def test_segments_sorted_by_score(self):
-        with open(self.segments_path) as f:
-            data = json.load(f)
-        segments = data.get("scoredSegments", [])
-        scores = [s["finalScore"] for s in segments]
-        self.assertEqual(scores, sorted(scores, reverse=True))
-
-    def test_rank_assigned_correctly(self):
-        with open(self.segments_path) as f:
-            data = json.load(f)
-        segments = data.get("scoredSegments", [])
-        for i, seg in enumerate(segments):
-            self.assertEqual(seg["rank"], i + 1)
-
-
 class TestFFmpegOperations(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -280,85 +161,6 @@ class TestFFmpegOperations(unittest.TestCase):
         self.assertTrue(os.path.exists(output_path))
 
 
-class TestFullPipelineIntegration(unittest.TestCase):
-    """Transcribe -> segment -> score pipeline end to end."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.tmpdir = tempfile.mkdtemp()
-        cls.ffmpeg = find_cmd("ffmpeg")
-
-    def test_pipeline_produces_scored_clips(self):
-        transcript = {
-            "videoId": "full-pipeline-test",
-            "language": "id",
-            "model": "tiny",
-            "segments": [
-                {"index": i, "start": float(i * 8), "end": float((i + 1) * 8),
-                 "text": text, "confidence": 0.9}
-                for i, text in enumerate([
-                    "Halo semuanya apa kabar",
-                    "Rahasia penting yang wajib kamu tahu tentang trik ini",
-                    "Ternyata tidak banyak orang tahu fakta ini bahaya sekali",
-                    "Pertama kita bahas langkah awalnya yang penting",
-                    "Kedua kita lanjutkan dengan praktiknya ada solusi",
-                    "Jadi intinya begini ada solusi untuk masalah ini",
-                    "Kenapa kok bisa begitu bahaya sekali dampaknya",
-                    "Simak baik-baik tips dan trik berikut ini yang penting",
-                    "Ada fakta menarik tentang hal ini yang wajib diketahui",
-                    "Tapi sebenarnya beda sama yang kita kira ternyata",
-                    "Wow ini kaget banget ternyata rahasianya di sini penting",
-                    "Untungnya ada solusi yang mudah untuk masalah ini trik",
-                ])
-            ],
-        }
-        transcript_path = os.path.join(self.tmpdir, "pipeline_transcript.json")
-        with open(transcript_path, "w") as f:
-            json.dump(transcript, f)
-
-        segments_path = os.path.join(self.tmpdir, "pipeline_segments.json")
-        result = run_cmd([
-            VENV_PYTHON,
-            os.path.join(SCRIPTS_DIR, "segment.py"),
-            "--transcript", transcript_path,
-            "--output", segments_path,
-        ])
-        self.assertEqual(result.returncode, 0, f"Segment failed: {result.stderr}")
-
-        video_path = os.path.join(self.tmpdir, "video.mp4")
-        with open(video_path, "wb") as f:
-            f.write(b"fake")
-
-        result = run_cmd([
-            VENV_PYTHON,
-            os.path.join(SCRIPTS_DIR, "score.py"),
-            "--segments", segments_path,
-            "--video", video_path,
-            "--niche-keywords", "rahasia,penting,trik,solusi,tip",
-        ])
-        self.assertEqual(result.returncode, 0, f"Score failed: {result.stderr}")
-
-        with open(segments_path) as f:
-            final = json.load(f)
-
-        segments = final.get("scoredSegments", [])
-        self.assertGreater(len(segments), 0, "No segments produced")
-
-        primary_count = len([s for s in segments if s["tier"] == "PRIMARY"])
-        backup_count = len([s for s in segments if s["tier"] == "BACKUP"])
-        skip_count = len([s for s in segments if s["tier"] == "SKIP"])
-
-        top = segments[0]
-        self.assertEqual(top["rank"], 1)
-        self.assertIn("hookStrength", top["scores"])
-        self.assertIn("boostTotal", top["scores"])
-        self.assertIn("penaltyTotal", top["scores"])
-
-        print(f"\n  Pipeline: {len(segments)} clips "
-              f"({primary_count} PRIMARY, {backup_count} BACKUP, {skip_count} SKIP)")
-        print(f"  Top clip: score={top['finalScore']:.4f} tier={top['tier']}")
-
-
 class TestFeaturesPackageImports(unittest.TestCase):
     """P3.5-A verification: every features/ submodule must import cleanly."""
 
@@ -385,62 +187,9 @@ class TestFeaturesPackageImports(unittest.TestCase):
         r = self._venv_import("features.visual")
         self.assertIn("ok", r.stdout, f"visual import failed: {r.stderr}")
 
-    def test_features_context_importable(self):
-        r = self._venv_import("features.context")
-        self.assertIn("ok", r.stdout, f"context import failed: {r.stderr}")
-
     def test_features_supervised_importable(self):
         r = self._venv_import("features.supervised")
         self.assertIn("ok", r.stdout, f"supervised import failed: {r.stderr}")
-
-
-class TestP3_5B_NewFeatures(unittest.TestCase):
-    """P3.5-B verification: score output must include motion + onsetDensity,
-    and the TF-IDF corpus loader must return None when no corpus is populated."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.tmpdir = tempfile.mkdtemp()
-        cls.segments_path = os.path.join(cls.tmpdir, "segments.json")
-        with open(cls.segments_path, "w") as f:
-            json.dump({
-                "videoId": "p35b",
-                "segments": [
-                    {"index": 0, "startTime": 0.0, "endTime": 20.0, "duration": 20.0,
-                     "text": "Rahasia penting! Kenapa ternyata bisa begitu?",
-                     "reason": "hook"},
-                ],
-            }, f)
-        cls.video_path = os.path.join(cls.tmpdir, "stub.mp4")
-        with open(cls.video_path, "wb") as f:
-            f.write(b"stub")
-
-        cls.result = run_cmd([
-            VENV_PYTHON,
-            os.path.join(SCRIPTS_DIR, "score.py"),
-            "--segments", cls.segments_path,
-            "--video", cls.video_path,
-        ])
-
-    def test_score_runs_without_mediapipe_or_cuda(self):
-        self.assertEqual(self.result.returncode, 0,
-                         f"score.py failed on a stub video: {self.result.stderr}")
-
-    def test_scores_dict_contains_motion(self):
-        with open(self.segments_path) as f:
-            data = json.load(f)
-        seg = data["scoredSegments"][0]
-        self.assertIn("motion", seg["scores"])
-        self.assertGreaterEqual(seg["scores"]["motion"], 0.0)
-        self.assertLessEqual(seg["scores"]["motion"], 1.0)
-
-    def test_scores_dict_contains_onset_density(self):
-        with open(self.segments_path) as f:
-            data = json.load(f)
-        seg = data["scoredSegments"][0]
-        self.assertIn("onsetDensity", seg["scores"])
-        self.assertGreaterEqual(seg["scores"]["onsetDensity"], 0.0)
-        self.assertLessEqual(seg["scores"]["onsetDensity"], 1.0)
 
 
 class TestP3_5C_SupervisedGuard(unittest.TestCase):

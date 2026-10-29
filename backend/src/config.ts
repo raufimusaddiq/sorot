@@ -83,7 +83,7 @@ function int(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Same env vars and defaults as the old application.yml. Empty = unset. */
+/** Env vars and their defaults. Empty = unset. */
 /** data/sorot.db; an install from before the rename keeps using its data/viralclipper.db. */
 export function defaultDbPath(dataDir: string, exists: (p: string) => boolean = existsSync): string {
   const current = `${dataDir}/sorot.db`;
@@ -102,7 +102,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     ytdlpPath: env.YTDLP_PATH || "yt-dlp",
     dataDir,
     dbPath: env.DB_PATH || defaultDbPath(dataDir),
-    whisperModel: env.WHISPER_MODEL || "medium",
+    whisperModel: env.WHISPER_MODEL || "large-v3-turbo",
     whisperDevice: env.WHISPER_DEVICE || "cuda",
     whisperLanguage: env.WHISPER_LANGUAGE || "id",
     frontendUrl: env.FRONTEND_URL || "http://localhost:3000",

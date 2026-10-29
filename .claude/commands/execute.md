@@ -31,6 +31,7 @@ Implement a previously planned set of changes, verifying each step and writing i
 - After backend changes: `cd backend && bun test --coverage && bun run typecheck`
 - After Python changes: `cd ai-pipeline && pytest --cov=. --cov-fail-under=95`
 - After frontend changes: `cd frontend && bun run test`
+- After CLI changes: `cd cli && bun test --coverage && bun run typecheck`
 - After full pipeline: test with a sample video
 
 ## Gate Criteria (must ALL pass before finishing):

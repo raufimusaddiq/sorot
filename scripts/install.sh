@@ -21,7 +21,7 @@ LEGACY_CONF_DIR=/etc/viralclip
 LEGACY_BIN=/usr/local/bin/vclip
 LEGACY_SERVICE=viralclip
 
-MODE=docker
+MODE=""       # docker unless given; a re-install keeps the installed mode
 PORT=8080
 CPU=0
 START=1
@@ -38,7 +38,8 @@ Usage: scripts/install.sh [options]
 
   --mode docker|native   docker (default): the app runs in a container with
                          the GPU passed through. native: Bun + Python on the host,
-                         run by a systemd service.
+                         run by a systemd service. A re-install keeps the
+                         installed mode unless you pass another.
   --port N               port for the web UI and API (default 8080)
   --cpu                  don't use the NVIDIA GPU even if one is present
   --build                (docker) build the image from source instead of
@@ -469,12 +470,18 @@ migrate_legacy() {
 
 # --- uninstall --------------------------------------------------------------------
 
-uninstall() {
-  local mode=""
-  local conf
+# The mode an earlier install wrote to cli.conf (nothing if there is none).
+installed_mode() {
+  local conf mode=""
   for conf in "$CONF_DIR/cli.conf" "$LEGACY_CONF_DIR/cli.conf"; do
     if [ -z "$mode" ] && [ -f "$conf" ]; then mode="$(sed -n 's/^\(SOROT\|VCLIP\)_MODE=//p' "$conf")"; fi
   done
+  echo "$mode"
+}
+
+uninstall() {
+  local mode
+  mode="$(installed_mode)"
   if [ "$PURGE" -eq 1 ]; then
     confirm "Delete $APP_DIR/data (all videos, clips and the database), the venv and the Docker image?" || die "Cancelled"
   fi
@@ -512,6 +519,7 @@ uninstall() {
 
 [ "$(uname -s)" = Linux ] || die "This installer is for Linux (Windows: scripts\\install.ps1; macOS: see README.md)"
 if [ "$UNINSTALL" -eq 1 ]; then uninstall; exit 0; fi
+if [ -z "$MODE" ]; then MODE="$(installed_mode)"; MODE="${MODE:-docker}"; fi
 case "$MODE" in docker|native) ;; *) die "--mode must be docker or native" ;; esac
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then die "--port must be 1-65535"; fi
 

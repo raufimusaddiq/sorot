@@ -105,8 +105,8 @@ $files = @(
     @("backend\src\db.ts", "Database schema"),
     @("bun.lock", "Bun workspace lockfile"),
     @("ai-pipeline\transcribe.py", "Transcribe script"),
-    @("ai-pipeline\segment.py", "Segment script"),
-    @("ai-pipeline\score.py", "Score script"),
+    @("ai-pipeline\media_features.py", "Media features script"),
+    @("ai-pipeline\render.py", "Render script"),
     @("ai-pipeline\features\__init__.py", "features/ package (P3.5-A)"),
     @("ai-pipeline\train_scorer.py", "Supervised trainer (P3.5-C)"),
     @("ai-pipeline\weights.json", "Scoring weights (v3)")

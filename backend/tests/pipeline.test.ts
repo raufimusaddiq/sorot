@@ -75,7 +75,7 @@ describe("full pipeline", () => {
     expect(scripts.filter((s) => s === "render.py")).toHaveLength(2);
     const t = env.calls.find((c) => c.script === "transcribe.py")!.args;
     expect(t).toEqual(["--audio", `${env.config.dataDir}/audio/${videoId}.wav`, "--output",
-      `${env.config.dataDir}/transcripts/${videoId}.json`, "--language", "id", "--model", "medium", "--device", "cuda"]);
+      `${env.config.dataDir}/transcripts/${videoId}.json`, "--language", "id", "--model", "large-v3-turbo", "--device", "cuda"]);
     const s = env.calls.find((c) => c.script === "media_features.py")!.args;
     expect(s).toEqual(["--segments", `${env.config.dataDir}/segments/${videoId}.json`, "--video", video.filePath,
       "--audio", `${env.config.dataDir}/audio/${videoId}.wav`]);
@@ -142,7 +142,7 @@ describe("full pipeline", () => {
       return env.calls.filter((c) => c.script === "transcribe.py").length;
     };
     expect(await again()).toBe(1);
-    env.config.whisperModel = "large-v3-turbo";
+    env.config.whisperModel = "small";
     expect(await again()).toBe(2);
     writeFileSync(`${env.config.dataDir}/transcripts/${videoId}.json`, "{broken");
     expect(await again()).toBe(3);

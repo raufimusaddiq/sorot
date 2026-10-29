@@ -18,7 +18,7 @@
     "onsetDensity": 0.05
   },
   "thresholds": {
-    "PRIMARY": 0.80,
-    "BACKUP": 0.65
+    "PRIMARY": 0.78,
+    "BACKUP": 0.63
   }
 }

@@ -1,7 +1,7 @@
 // Rule-based text signals for clip scoring and discovery, ported from
 // ai-pipeline/features/text.py, context.py and score.py's copy templates.
 // Hand-written Indonesian heuristics — not a trained model. Outputs match the
-// Python originals exactly (tests/fixtures/text-rules.json).
+// Python originals (tests/fixtures/text-rules.json), except keyword matching.
 
 import { readdirSync, readFileSync } from "node:fs";
 import { cpLen, cpSlice, pyIsDigit, pyIsUpper, pyRound, pySplit } from "./pyCompat";
@@ -12,6 +12,18 @@ import {
 
 const has = (hay: string, words: string[]) => words.some((w) => hay.includes(w));
 const count = (hay: string, words: string[]) => words.filter((w) => hay.includes(w)).length;
+// Viral keywords must start a word: a plain substring test (the Python
+// original's) found "lu" in selalu, "lo" in tolong, "tip" in tipis and "unik"
+// in komunikasi. Keywords of 4+ letters keep Indonesian affixes (berbahaya,
+// keuntungan, rahasianya); shorter ones only a suffix (tips), so "lu" and "lo"
+// don't match lucu or loh.
+const KEYWORD_RES = KEYWORD_TRIGGERS.map((k) => {
+  const word = k.replaceAll(" ", "\\s+");
+  return new RegExp(k.length >= 4
+    ? `(?<![\\p{L}\\p{N}])(?:ber|me[mn]?|meng|di|ke|pe[mn]?|peng)?${word}`
+    : `(?<![\\p{L}\\p{N}])${word}(?:nya|lah|kah|pun|ku|mu|s)?(?![\\p{L}\\p{N}])`, "iu");
+});
+const keywordCount = (text: string) => KEYWORD_RES.filter((re) => re.test(text)).length;
 
 /** Up to the first `.`, `?` or `!` (in that priority, as the original), else the first comma clause. */
 export function firstSentence(text: string): string {
@@ -96,7 +108,7 @@ function keywordTfidf(text: string, idf: Record<string, number>): number {
 export function keywordTrigger(text: string, corpusDir?: string): number {
   const idf = corpusDir ? loadKeywordCorpus(corpusDir) : null;
   if (idf) return keywordTfidf(text, idf);
-  const n = count(text.toLowerCase(), KEYWORD_TRIGGERS);
+  const n = keywordCount(text);
   const density = n / Math.max(pySplit(text).length / 10, 1);
   if (n >= 4 || density > 0.8) return 1.0;
   if (n >= 3) return 0.85;
@@ -175,7 +187,7 @@ export function penalties(text: string, duration: number, scores?: Record<string
   let total = 0;
   const first5 = pySplit(text).slice(0, 5).join(" ");
   if (!(has(first5.toLowerCase(), HOOK_PHRASES) || first5.includes("?"))) total += PENALTY_CONDITIONS.slow_opening;
-  if (pySplit(text).length < 8 && !has(text.toLowerCase(), [...HOOK_PHRASES, ...KEYWORD_TRIGGERS])) {
+  if (pySplit(text).length < 8 && !has(text.toLowerCase(), HOOK_PHRASES) && keywordCount(text) === 0) {
     total += PENALTY_CONDITIONS.too_generic;
   }
   if (scores) {

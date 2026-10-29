@@ -33,7 +33,7 @@ $exitCode = 0
 # ──────────────────────────────────────────────
 if (-not $BrowserOnly -and -not $UnitOnly) {
     Write-Host "`n=== Phase 1: Pipeline E2E Tests ===" -ForegroundColor Cyan
-    Write-Host "Testing: deps -> transcribe -> segment -> score -> render -> subtitle -> supervised guard" -ForegroundColor DarkGray
+    Write-Host "Testing: deps -> ffmpeg -> transcribe -> features -> render command -> supervised guard" -ForegroundColor DarkGray
     Write-Host ""
 
     & $VENV_PY scripts\e2e_pipeline_test.py -v

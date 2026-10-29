@@ -22,7 +22,7 @@ export interface PipelineOptions {
   /** File name inside data/music, or "" for none. */
   bgm?: string;
   bgmVolume?: number;
-  /** Free-text creative direction for the LLM ("only the funny parts", "for TikTok, under 40 s"); job level. */
+  /** Free-text creative direction for Jev or the LLM ("only the funny parts", "for TikTok, under 40 s"); job level. */
   direction?: string;
 }
 

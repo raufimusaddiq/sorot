@@ -65,10 +65,10 @@ function fromRow<T>(row: Row | null): T | null {
 export const now = () => new Date().toISOString();
 
 /**
- * Thin typed repository over bun:sqlite. Full-row writes use an upsert
- * (Hibernate `save` semantics); state transitions that race with other
- * writers — job status vs. a user cancel — use targeted UPDATEs instead so a
- * stale in-memory object can never clobber a newer value.
+ * Thin typed repository over bun:sqlite. Full-row writes use an upsert; state
+ * transitions that race with other writers — job status vs. a user cancel —
+ * use targeted UPDATEs instead so a stale in-memory object can never clobber a
+ * newer value.
  */
 export class Store {
   constructor(readonly db: Database) {}

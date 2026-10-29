@@ -2,10 +2,10 @@
 
 > **Drop in a 2-hour podcast. Get back the 60 seconds people will actually watch.** ✂️🔥
 
-**Sorot** (Indonesian for *spotlight*) turns long YouTube or local videos into vertical **9:16 clips** — transcribed, scored, framed on the speaker, captioned word by word, with a ready-to-paste title. Built for **Indonesian**, runs **100% locally**. No uploads, no subscriptions, no watermark. 🏠
+**Sorot** (Indonesian for *spotlight*) turns long YouTube or local videos into vertical **9:16 clips** — transcribed, scored, framed on the speaker, captioned word by word, with a ready-to-paste title. Built for **Indonesian**, runs **100% locally** (Jev, an LLM and Tebar are optional online extras). No uploads, no subscriptions, no watermark. 🏠
 
 ```
-📺 video  →  🎙️ Whisper  →  🧠 scoring (+ optional LLM)  →  📱 9:16 render  →  💬 karaoke captions  →  🚀 post-ready clips
+📺 video  →  🎙️ Whisper  →  🧠 scoring (+ optional Jev / LLM)  →  📱 9:16 render  →  💬 karaoke captions  →  🚀 post-ready clips
 ```
 
 ---
@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://raw
 
 winget brings ffmpeg + Python 3.12, Bun goes in `.tools\bun`, then the venv (+ cuBLAS/cuDNN wheels on NVIDIA — no CUDA toolkit), UI build and Whisper model. Starts at logon. ⚙️ Settings `.env.native` · 📜 logs `data\logs\sorot.log`. *New and untested on real Windows — feedback welcome.* 🙏
 
-Options (both modes): `-Port 8090` · `-Cpu` · `-Dir D:\Sorot` · `-Build` · `-SkipModel` · `-NoStart` · `-Uninstall [-Purge]`.
+Options (both modes): `-Port 8090` · `-Cpu` · `-Dir D:\Sorot` · `-Build` (Docker) · `-SkipModel` · `-NoStart` · `-Uninstall [-Purge]`.
 
 ### 🐧 Linux — installer
 
@@ -185,7 +185,7 @@ Everything runs on the **CPU** — installers switch automatically (`--cpu` / `-
 4. 🏆 Filter **PRIMARY / BACKUP / SKIP**, preview (on a CPU, **Render** the clips past the top 10)
 5. 📋 Copy the title + description, download the `.mp4`
 6. ✏️ **Edit** timing or a word → re-render that clip
-7. 📊 Post, then log the results (**FB**); after 5+, **Retrain** in Learning
+7. 📊 Post, then log the results (**Results**); after 5+, **Retrain scoring** in Learning
 
 ---
 
@@ -220,7 +220,7 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      5. 🧠 Score         13 signals + Jev (or LLM review), quality gate, hook + title
                      6. 📱 Render 9:16   crop, silence trim, hook, captions + music — one encode
                      7. 💬 Captions      (re-burns only clips rendered the old way)
-                     8. 🔁 Variations    zoom / crop presets
+                     8. 🔁 Variations    zoom presets (off unless VARIATIONS=true)
                      9. 📊 Analytics     distribution + recommendations
               Web UI · sorot · scripts ◄── HTTP API (port 8080)
 ```
@@ -246,13 +246,13 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
 | 🥁 Onset Density | 5% | Audio onsets/s (laughs, claps, fast talk) |
 
 ➕ sharp questions, clashes, lists, emotion, conversational tone · ➖ slow openings, silence, generic, no face
-🏆 **PRIMARY** ≥ 0.80 · 🥈 **BACKUP** ≥ 0.65 · 💤 **SKIP** < 0.65
+🏆 **PRIMARY** ≥ 0.78 · 🥈 **BACKUP** ≥ 0.63 · 💤 **SKIP** < 0.63
 
 With Jev (or else an LLM), the score is 50% formula + 50% its judgement; if it's unreachable, the formula decides. Each clip records who scored it and why.
 
-### 🎬 LLM director, 🚦 quality gate, 🚀 publishing
+### 🎬 Director, 🚦 quality gate, 🚀 publishing
 
-- 🎬 **Director** — **Jev first**: code proposes a window at every sentence start, Jev judges them all and keeps the best 40 next to the rule windows, scores every candidate, and picks the hook line and a quoted title for the clips that render. On 10 min of a real transcript, segmenting + scoring took ~10 s with Jev (about $0.01 at TypeSafe's listed price) vs 6.5-9 min with a reasoning LLM as director. Without Jev (or `JEV_DIRECTOR=false`), the **LLM director** reads the video, writes a brief and picks moments + hooks. Either way, overlaps keep the better clip; give a **direction** at import to steer it.
+- 🎬 **Director** — **Jev first**: code proposes a window at every sentence start, Jev judges them all and keeps the best 40 next to the rule windows, scores up to 200 candidates, and picks the hook line and a quoted title for the clips that render. On 10 min of a real transcript, segmenting + scoring took ~10 s with Jev (about $0.01 at TypeSafe's listed price) vs 6.5-9 min with a reasoning LLM as director. Without Jev (or `JEV_DIRECTOR=false`), the **LLM director** reads the video, writes a brief and picks moments + hooks. Either way, overlaps keep the better clip; give a **direction** at import to steer it.
 - 🚦 **Gate** before render: PASS / REVIEW (content risk — you decide) / FAIL (held back, renderable on request). Jev when connected, text rules otherwise. Measure the questions with `bun run jev-eval`.
 - 🤖 **The LLM** is for writing: post copy per platform, and the ✨ auto-discover agent that searches for new videos.
 - 🚀 **Publish** (Tebar), in the studio or `sorot publish`: pick accounts (grouped by Tebar workspace) → LLM copy per platform → you edit and choose (TikTok privacy or send as a draft, YouTube "made for kids") → post or schedule → retry failed accounts or cancel a scheduled post → metrics sync every 6 h into learning.
@@ -265,11 +265,11 @@ Whisper is a neural network, and so is the LLM if you add one. Faces use classic
 
 ### 📈 Learning from your posts
 
-📤 Views / likes / comments / shares / saves — synced from Tebar, or logged by hand → 🧮 a time-normalised viral score → 🔄 after 5+, **Retrain Weights** (Pearson + EMA, α = 0.3) → ✅ next import uses them. Learned weights live in `data/weights.json` and survive updates.
+📤 Views / likes / comments / shares / saves — synced from Tebar, or logged by hand → 🧮 a time-normalised viral score → 🔄 after 5+, **Retrain scoring** (Pearson + EMA, α = 0.3) → ✅ next import uses them. Learned weights live in `data/weights.json` and survive updates.
 
 ### 🔎 Discovery
 
-Finds **long-form sources** (podcasts, talk shows, stand-up, VODs), not other people's clips: re-clips filtered, 30–180 min favoured, last 90 days by default.
+Finds **long-form sources** (podcasts, talk shows, stand-up, VODs), not other people's clips: re-clips filtered, 30 min and longer favoured, last 90 days by default.
 
 - ✨ **Auto-discover** — the LLM agent reads what Indonesians talk about now, searches YouTube, reads captions, picks with reasons. No LLM? Random anchor queries, best scores, ≤ 2 per channel.
 - 🧾 **Whole-video scoring** in 45 s caption windows — strong moments, best timestamps, talk ratio.
@@ -284,7 +284,7 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 
 ## ⚙️ Configuration
 
-`.env.docker` (Docker) · `/etc/sorot/sorot.env` (native Linux) · `.env.native` (native Windows) · `.env` (dev overrides). Most options can also be set per import in the UI or with `sorot import` flags.
+`.env.docker` (Docker) · `/etc/sorot/sorot.env` (native Linux) · `.env.native` (native Windows) · `backend/.env` (dev overrides). Most options can also be set per import in the UI or with `sorot import` flags.
 
 | Variable | Default | What it does |
 |----------|---------|--------------|
@@ -359,10 +359,10 @@ cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~200 pipeline tests
 
 ### 📦 CI & releases
 
-- 🧪 [`ci.yml`](.github/workflows/ci.yml) — tests on every push and PR; image-affecting changes also build the **CPU** image (cached, not pushed) and smoke-test it.
+- 🧪 [`ci.yml`](.github/workflows/ci.yml) — tests on pushes to `master` and every PR; image-affecting changes also build the **CPU** image (cached, not pushed) and smoke-test it.
 - 🚀 [`release-image.yml`](.github/workflows/release-image.yml) — builds + pushes **CPU and CUDA** images only on a **GitHub release** (`v1.2.3` → `:1.2.3`, `:1.2`, `:latest`, + `-cuda`; pre-releases keep `:latest`) or a **manual run** (Actions → *Release image*).
 
-To ship: merge to `master` → *Draft a new release* tagged `v1.2.3`. 🔓 If anonymous `docker pull` fails after the first publish, set the GHCR package to public (profile → Packages → `sorot` → settings).
+To ship: 📋 [docs/release.md](docs/release.md) — versions, checklist, checking the images, rollback. 📰 What changed: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -379,6 +379,7 @@ To ship: merge to `master` → *Draft a new release* tagged `v1.2.3`. 🔓 If an
 | 🔬 [ai-audit.md](docs/ai-audit.md) | Model vs rule vs LLM |
 | 🎬 [creative-loop.md](docs/creative-loop.md) | Jev director, LLM director, Jev quality gate, Tebar publishing |
 | 🐍 [python-pipeline.md](docs/python-pipeline.md) | Each pipeline script's inputs and outputs |
+| 🚀 [release.md](docs/release.md) · 📰 [CHANGELOG.md](CHANGELOG.md) | Cutting a release · what each one changed |
 
 ---
 

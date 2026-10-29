@@ -305,8 +305,9 @@ export class PipelineOrchestrator {
   }
 
   /**
-   * Candidate clips: the rules' pause-based windows, plus — with an LLM and
-   * LLM_DIRECTOR on — a video brief and the LLM's own picks (director.ts).
+   * Candidate clips: the rules' pause-based windows, plus Jev's picks when Jev
+   * is first (jevDirector.ts), or else — with an LLM and LLM_DIRECTOR on — a
+   * video brief and the LLM's own picks (director.ts).
    * Overlaps between the two are settled after scoring.
    */
   private async stageSegment(jobId: string, video: Video, opts: ResolvedOptions) {
@@ -361,8 +362,9 @@ export class PipelineOrchestrator {
 
   /**
    * Python measures the media features (media_features.py); the text rules,
-   * weighting, tiers and post copy run here (scoring.ts), then the optional
-   * LLM review (clipReview.ts) blends in its judgement.
+   * weighting, tiers and post copy run here (scoring.ts), then Jev's judgement
+   * (Jev first, jevDirector.ts) or the optional LLM review (clipReview.ts)
+   * blends in.
    */
   private async stageScore(jobId: string, video: Video, opts: ResolvedOptions, signal: AbortSignal) {
     const segmentsPath = this.path("segments", `${video.id}.json`);

@@ -25,14 +25,15 @@ Every JSON response uses one envelope:
 | 400 | Bad input, or an invalid state transition (retry/cancel) |
 | 404 | Resource or route not found |
 | 405 | Route exists, wrong method |
-| 409 | Can't start a pipeline (video missing, already active, queue full) |
+| 409 | Conflicts with the current state: can't start a pipeline (video missing, already active, queue full), clip busy or not ready, auto-discover already running, Tebar not connected, gate needs confirmation |
 | 416 | Unsatisfiable Range |
 | 500 | Pipeline/subprocess failure or unexpected error |
+| 502 | Tebar failed (5xx) or unreachable |
 
 Request bodies are JSON objects; an empty body is treated as `{}`. Malformed
 JSON → 400 `Invalid JSON body`; a non-object (e.g. an array) → 400.
 
-Row objects (`Video`, `Job`, `StageStatus`, `Clip`, `ClipScore`) use the
+Row objects (`Video`, `Job`, `StageStatus`, `Clip`, `ClipScore`, `SocialPost`) use the
 camelCase form of their SQLite columns, with `null` for unset values. Their
 TypeScript shapes are in [`backend/src/types.ts`](../backend/src/types.ts) and
 [`frontend/src/types.ts`](../frontend/src/types.ts). Timestamps are ISO-8601 UTC strings.
@@ -86,8 +87,9 @@ All videos, newest first: `{ "videos": [Video] }`.
 { "id": "uuid", "sourceUrl": "https://...", "sourceType": "YOUTUBE",
   "title": "Judul", "durationSec": null,
   "filePath": "/app/data/raw/uuid.mp4", "createdAt": "2026-10-27T10:00:00.000Z",
-  "sectionStart": null, "sectionEnd": null }
+  "sectionStart": null, "sectionEnd": null, "brief": null }
 ```
+`brief` is the LLM director's JSON video brief, when it wrote one.
 
 ### `DELETE /api/videos/{videoId}`
 Deletes the video, its clips and clip scores, its jobs and stage rows, and the
@@ -109,7 +111,8 @@ Stages, in order: `IMPORT`, `AUDIO_EXTRACT`, `TRANSCRIBE`, `SEGMENT`, `SCORE`,
 Job status: `QUEUED` → `RUNNING` → `COMPLETED` | `FAILED` | `CANCELLED`.
 Stage status: `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`.
 
-At most 2 pipelines run at once and up to 50 wait in a FIFO queue. A job left
+At most `MAX_CONCURRENT_PIPELINES` pipelines run at once (default 2 on a GPU,
+1 on a CPU) and up to 50 wait in a FIFO queue. A job left
 `RUNNING`/`QUEUED` with no live pipeline is marked `FAILED` by the orphan sweep
 (30 min stale on startup, 10 min stale on the periodic 5-min sweep).
 
@@ -123,8 +126,8 @@ At most 2 pipelines run at once and up to 50 wait in a FIFO queue. A job left
 `options` is optional; every key is optional and falls back to the server
 defaults (`GET /api/options`). Stored on the job (`Job.options`, JSON) and used
 by its TRANSCRIBE / RENDER / SUBTITLE stages. 400 on an unknown style or
-framing, a non-boolean flag, an out-of-range number, or a `bgm` that isn't a
-bare music file name.
+framing, a non-boolean flag, an out-of-range number, a `bgm` that isn't a
+bare music file name, or a `direction` over 500 characters.
 ```json
 { "status": "ok", "data": { "jobId": "uuid", "status": "QUEUED", "currentStage": "" } }
 ```
@@ -141,7 +144,7 @@ All jobs, newest first: `{ "jobs": [Job] }`.
   "status": "ok",
   "data": {
     "job": { "id": "uuid", "videoId": "uuid", "status": "RUNNING", "currentStage": "SCORE",
-             "errorMessage": null, "createdAt": "…", "updatedAt": "…" },
+             "errorMessage": null, "createdAt": "…", "updatedAt": "…", "options": null },
     "stages": [
       { "id": "uuid", "jobId": "uuid", "stage": "IMPORT", "status": "COMPLETED",
         "startedAt": "…", "completedAt": "…", "errorMessage": null,
@@ -151,10 +154,12 @@ All jobs, newest first: `{ "jobs": [Job] }`.
 }
 ```
 `stages` are in pipeline order. While `TRANSCRIBE` runs Whisper, `outputPath`
-holds `"Transcribing 37%"` (then the transcript path). For `RENDER` and `SUBTITLE`, `outputPath` holds
+holds `"Transcribing 37%"` (then the transcript path); `SEGMENT` and `SCORE` show
+Jev's or the LLM's progress (`"Jev judging clips 10/40"`) the same way. For `RENDER` and `SUBTITLE`, `outputPath` holds
 progress text such as `"Rendering 3/8 clips"`, then `"7 rendered, 1 failed"` or
 `"8 burned, 0 failed"` — with `", 35 more render on request"` when
-`MAX_RENDER_CLIPS` held some back. A failed job's `errorMessage` reads
+`MAX_RENDER_CLIPS` held some back. RENDER burns the captions, so `SUBTITLE` only
+re-burns clips rendered without them and otherwise reads `"Captions burned during render"`. A failed job's `errorMessage` reads
 `Stage {STAGE} failed: {reason}`. 404 `Job not found`.
 
 ### `POST /api/jobs/{jobId}/retry`
@@ -198,22 +203,22 @@ Choices and server defaults for the import form and clip editor:
 
 ## Clips
 
-Tiers: `PRIMARY` (≥ 0.80), `BACKUP` (≥ 0.65), `SKIP` (< 0.65). The pipeline
+Tiers: `PRIMARY` (≥ 0.78), `BACKUP` (≥ 0.63), `SKIP` (< 0.63). The pipeline
 renders (with captions) PRIMARY and BACKUP clips — all of them on a GPU, the
 best `MAX_RENDER_CLIPS` (default 10) on a CPU. The others stay `PENDING`;
 `POST /api/clips/{id}/rerender` with `{}` renders any clip. Render/export
 status values are `PENDING`, `RENDERING`, `COMPLETED` or `FAILED`.
 
 ### `GET /api/videos/{videoId}/clips`
-`{ "clips": [Clip] }`, sorted by `score` descending (ties broken by `rankPos`).
+`{ "clips": [Clip] }`, sorted by `rankPos` (best score first; clips the quality gate held back last).
 An unknown video returns `[]`.
 
 ```json
 { "id": "uuid", "videoId": "uuid", "rankPos": 1, "score": 0.87, "tier": "PRIMARY",
   "title": "Ternyata… #fyp", "description": "…", "startTime": 45.2, "endTime": 72.8,
   "durationSec": 27.6, "textContent": "Ternyata ada rahasia…",
-  "renderStatus": "COMPLETED", "renderPath": "/app/data/renders/clip_1.mp4",
-  "exportStatus": "COMPLETED", "exportPath": "/app/data/exports/clip_1_subtitled.mp4",
+  "renderStatus": "COMPLETED", "renderPath": "/app/data/exports/uuid/clip_1_subtitled.mp4",
+  "exportStatus": "COMPLETED", "exportPath": "/app/data/exports/uuid/clip_1_subtitled.mp4",
   "createdAt": "…" }
 ```
 
@@ -223,12 +228,15 @@ when no score row exists. 404 `Clip not found`.
 
 Clips also carry `options` (JSON overrides from the editor), `captionWords`
 (JSON corrected words) and `updatedAt`. Rendered files live in per-video
-folders: `data/renders/{videoId}/clip_{rank}.mp4`,
-`data/exports/{videoId}/clip_{rank}_subtitled.mp4` (+ `clip_{rank}.ass`).
+folders. The render burns captions and music in the same pass, so `renderPath`
+and `exportPath` both point to `data/exports/{videoId}/clip_{rank}_subtitled.mp4`
+(+ `clip_{rank}.ass`); `data/renders/{videoId}/clip_{rank}.mp4` holds only clips
+rendered without captions by an older job.
 
 `ClipScore` fields: `id`, `clipId`, `hookStrength`, `keywordTrigger`,
 `novelty`, `clarity`, `emotionalEnergy`, `textSentiment`, `pauseStructure`,
-`facePresence`, `sceneChange`, `topicFit`, `historyScore`, `boostTotal`, `penaltyTotal`.
+`facePresence`, `sceneChange`, `topicFit`, `historyScore`, `motion`, `onsetDensity`,
+`boostTotal`, `penaltyTotal`.
 
 ### `GET /api/clips/{clipId}/captions`
 Caption words for the clip editor, in absolute source seconds:
@@ -286,6 +294,7 @@ Downloads the export as `application/octet-stream` with
 | `gateVerdict` | `PASS`, `REVIEW` (content risk: a person decides), `FAIL` (held back: tier `SKIP`, ranked last), or `null` (not gated: not in a render tier) |
 | `gate` | JSON: `{verdict, by: "jev"\|"rules", model, reasons[], answers{question: probability, payoff: 0-2}, quality, titleReplaced?}` |
 | `reason` | Why it scored as it did; `Held back: …` when the gate failed it |
+| `scoredBy` | `jev+rules`, `llm+rules` (50/50 blend with the rule score) or `rules` |
 
 The segments file (`data/segments/{videoId}.json`) also records `director`
 (Jev: windows, judged, picks, tokens; LLM: brief, picks; and errors), `gatedBy` (`jev` / `rules` / `mixed`) and `gateError`.
@@ -295,8 +304,8 @@ The segments file (`data/segments/{videoId}.json`) also records `director`
 ## Connections (LLM, Jev, Tebar)
 
 Saved in the database; they override the env. `null` clears a field (back to
-the env value). API keys are never returned: `apiKey` is `••••` + last 4,
-`apiKeySet` says whether one is set.
+the env value). API keys are never returned: `apiKey` is `••••` + last 4
+(keys of 8+ characters; shorter ones show only `••••`), `apiKeySet` says whether one is set.
 
 ### `GET /api/settings`
 ```json
@@ -343,7 +352,7 @@ false where Sorot can't post a single video (e.g. Pinterest). `enabled: false,
 accounts: []` without Tebar.
 
 ### `POST /api/clips/{clipId}/publish/draft`
-Body `{ "accountIds": ["…"] }` (one workspace; 400 otherwise). Sends nothing. Per account: `content` (LLM
+Body `{ "accountIds": ["…"] }` (one workspace; 400 otherwise). Sends nothing. `targets`, per account: `content` (LLM
 copy per platform, or the clip's title + description), `title` (YouTube),
 `copyBy`, `needs` (`tiktokPrivacy`: options to choose from; `madeForKids`),
 `warnings`, `blockers`, `overclaims` (Jev). Also `clip.gateVerdict` /
@@ -375,8 +384,8 @@ cancel a `SCHEDULED` post (409 for any other status).
 
 ### `POST /api/social/sync`
 Status + metrics of live posts; each clip's metrics (summed over its posts)
-become its feedback row. `{ "posts": 3, "clips": 2, "errors": [] }`. Also runs
-every `TEBAR_SYNC_HOURS`.
+become its feedback row. `{ "posts": 3, "clips": 2, "errors": [] }` (all 0
+without Tebar, not a 409). Also runs every `TEBAR_SYNC_HOURS`.
 
 ---
 
@@ -501,7 +510,8 @@ With an LLM (`LLM_BASE_URL` + `LLM_MODEL`), an agent calls tools at temperature
 `youtube_search`, `analyze_video`, `channel_videos`, `source_channels` — and
 answers with picks and reasons; only videos its tools returned are accepted.
 Without an LLM, or if it fails (`llmError` says why), the algorithm runs: 3
-random anchor queries (the goal first), every new result analyzed, best
+random anchor queries (the goal first; up to 6 while few results turn up), the
+most relevant new results analyzed (2 × `maxResults`, at most 16), best
 predicted scores kept, at most 2 per channel. Picks are stored as candidates
 with `sourceMode: "auto"` and `pickedBy`: the LLM's model name, or `"algorithm"`
 (picks from before this field read `"LLM"`). The UI shows it as a badge.

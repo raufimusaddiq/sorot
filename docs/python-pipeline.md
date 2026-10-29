@@ -50,14 +50,15 @@ python ai-pipeline/<script>.py --arg1 value1 --arg2 value2
 
 ### `transcribe.py`
 
-Transcribes audio file to timestamped segments using faster-whisper with CUDA.
+Transcribes audio file to timestamped segments using faster-whisper (CUDA or CPU).
 
 **Invocation:**
 ```bash
 python ai-pipeline/transcribe.py \
   --audio "data/audio/{videoId}.wav" \
+  --output "data/transcripts/{videoId}.json" \
   --language "id" \
-  --model "large-v3" \
+  --model "large-v3-turbo" \
   --device "cuda"
 ```
 
@@ -70,14 +71,14 @@ python ai-pipeline/transcribe.py \
   "data": {
     "videoId": "uuid",
     "language": "id",
-    "model": "large-v3",
+    "model": "large-v3-turbo",
     "segments": [
       {
         "index": 0,
         "start": 0.0,
         "end": 3.2,
         "text": "Halo semuanya",
-        "confidence": 0.95,
+        "confidence": -0.21,
         "words": [
           { "text": "Halo", "start": 0.0, "end": 0.42, "prob": 0.98 },
           { "text": "semuanya", "start": 0.42, "end": 1.1, "prob": 0.95 }
@@ -88,7 +89,7 @@ python ai-pipeline/transcribe.py \
         "start": 3.5,
         "end": 7.8,
         "text": "hari ini kita mau bahas sesuatu yang penting",
-        "confidence": 0.91,
+        "confidence": -0.34,
         "words": [ ... ]
       }
     ]
@@ -96,8 +97,9 @@ python ai-pipeline/transcribe.py \
 }
 ```
 
-**Output file:** `data/transcripts/{videoId}.json` (same content as stdout data)
+**Output file:** `--output` (the backend passes `data/transcripts/{videoId}.json`; same content as stdout data)
 
+`confidence` is Whisper's average log-probability for the line (≤ 0).
 `words` holds Whisper's per-word timestamps; they drive karaoke captions and
 silence trimming (`captions.py`). Transcripts made before word timestamps were
 kept have no `words` key — consumers fall back to splitting the segment text
@@ -108,11 +110,11 @@ evenly over its duration.
 | Arg | Required | Default | Description |
 |-----|----------|---------|-------------|
 | `--audio` | Yes | | Path to WAV audio file |
-| `--output` | No | auto-derived | Path to write transcript JSON |
+| `--output` | No | none | Path to write transcript JSON |
 | `--language` | No | `id` | Language code for Whisper |
 | `--model` | No | `$WHISPER_MODEL` or `large-v3-turbo` | Whisper model |
 | `--device` | No | `$WHISPER_DEVICE` or `cuda` | `cuda` or `cpu` |
-| `--compute-type` | No | auto | `float16` on cuda, `int8` on cpu |
+| `--compute-type` | No | `$WHISPER_COMPUTE_TYPE` or auto | auto: `float16` on cuda, `int8` on cpu |
 
 Env: `WHISPER_THREADS` (CPU threads, default every core), `WHISPER_BEAM_SIZE`
 (default 5; 1 is faster on a CPU and a little less accurate).
@@ -155,7 +157,7 @@ python ai-pipeline/media_features.py --segments "data/segments/{videoId}.json" \
 
 - `rmsRatio`: segment loudness ÷ whole-video loudness (`null` without audio)
 - `onsetDensity`: audio onsets per second, mapped to 0-1
-- `facePresence`: faces in 3 of 5 full-resolution frames (Haar cascades; MediaPipe if installed), smiles boost it
+- `facePresence`: faces in 3 of 5 frames at 640 px wide (Haar cascades; MediaPipe if installed), smiles boost it (Haar)
 - `sceneChange`, `motion`: histogram difference, Farneback optical flow
 
 Frames: each sample time (5 face checks + start/mid/end per segment) uses its
@@ -172,14 +174,18 @@ The backend combines these with its text rules and weights
 
 Runs only when `ai-pipeline/model.lgb` exists (see `train_scorer.py`).
 `--features F.json` with `[{"index": 0, "features": {...13 features}}]` →
-`{"predictions": {"0": 0.71, "1": null}}`; a prediction replaces the weighted sum for that segment.
+`{"predictions": {"0": 0.71, "1": null}, "modelLoaded": true}`; a prediction replaces the weighted sum for that segment.
+Features go to the model in the order it was trained with (`model.lgb.meta.json`); a
+model without that file isn't used.
 
 ### `train_scorer.py` (manual)
 
 `python train_scorer.py --feedback data/feedback/feedback_export.json [--min-rows 200] [--dry-run]`.
-The export is written by `POST /api/feedback/train`. Writes `model.lgb` only
+The export is written by `POST /api/feedback/train`. Writes `model.lgb` (and its
+feature order, `model.lgb.meta.json`) only
 with ≥ 200 labelled clips **and** a 5-fold CV R² at least 0.05 above the
-linear weights; otherwise reports `insufficient_data` / `below_margin`.
+linear weights; otherwise reports `insufficient_data` / `below_margin` /
+`missing_dependency` (no lightgbm).
 
 ---
 
@@ -201,10 +207,11 @@ so only those pixels go through the scaler.
 |-----|----------|---------|-------------|
 | `--segments` | Yes | | Scored segments JSON |
 | `--video` | Yes | | Source video |
-| `--output-dir` | Yes | | Writes `clip_{rank}.mp4` |
+| `--output-dir` | Yes | | Writes `clip_{rank}.mp4` (without `--export-dir`) |
+| `--tiers` | No | `PRIMARY,BACKUP` | Tiers to render |
 | `--clip-index` | No | all | Render one clip (index into the tier-filtered list) |
 | `--reframe` | No | `$REFRAME_MODE` or `face` | `face`: crop follows faces; `center`: centre crop; `blur`: whole frame over a blurred fill |
-| `--transcript` | With `--silence-trim` | | Transcript JSON (word timings) |
+| `--transcript` | With `--silence-trim` / `--hook-first` | | Transcript JSON (word timings; captions with `--export-dir`) |
 | `--silence-trim` | No | off | Cut pauses longer than `--silence-gap` |
 | `--silence-gap` | No | `0.6` | Pause length (s) that gets cut |
 | `--hook-first` | No | off | Replay the segment's hook line (`hookStart`/`hookEnd`) before it (needs `--transcript`) |
@@ -238,8 +245,8 @@ Haar only). Each sample gets a crop centre — on the whole group if all faces
 fit in the 9:16 window, else on the largest face — and the centres are
 smoothed with hysteresis so the crop only moves after a sustained shift (a
 clean cut to the new speaker, no jitter). The track becomes a per-frame
-ffmpeg `crop` x-expression, re-timed onto the trimmed timeline when
-`--silence-trim` is on.
+ffmpeg `crop` x-expression, re-timed onto the output timeline when the clip
+is silence-trimmed or replays its hook.
 
 **Silence trim** (`captions.py`): speech spans come from word timestamps;
 gaps longer than `--silence-gap` (and leading/trailing silence) are cut with
@@ -259,6 +266,7 @@ rendered without them (a job rendered before that change, then retried).
 | `--segments` | Yes | | Scored segments JSON |
 | `--render-dir` | Yes | | Folder with `clip_{rank}.mp4` |
 | `--output-dir` | Yes | | Writes `clip_{rank}_subtitled.mp4` and `clip_{rank}.ass` |
+| `--tiers` | No | `PRIMARY,BACKUP` | Tiers to subtitle |
 | `--clip-index` | No | all | Subtitle one clip |
 | `--style` | No | `$SUBTITLE_STYLE` or `default` | `default`, `hormozi`, `storyteller`, `cinematic` |
 | `--silence-trim` / `--silence-gap` / `--hook-first` | No | off / `0.6` / off | Must match what render.py used |
@@ -284,6 +292,17 @@ absolute seconds for the clip editor:
 
 ---
 
+### `variation.py` (only with `VARIATIONS=true`)
+
+Zoom copies of the best PRIMARY clips, from the source video; the studio doesn't
+show them yet. Args: `--segments` (scored JSON), `--video`, `--output-dir`
+(the backend passes `data/variations/{videoId}/`), `--max-primary` (default 3),
+`--presets` (default `zoom_center,zoom_top`). Writes `clip_{rank}_{preset}.mp4`
+and returns `{videoId, variationCount, failedCount, variations: [{sourceRank,
+preset, path, status}]}`. A failure here never fails the job.
+
+---
+
 ## Python Environment
 
 ### `requirements.txt`
@@ -304,17 +323,17 @@ Scripts expect to run inside the project's venv:
 ```bash
 cd ai-pipeline
 python -m venv .venv
-.venv\Scripts\activate      # Windows
+source .venv/bin/activate   # Linux; Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-The backend calls scripts using the venv Python:
+The backend calls scripts with `PYTHON_PATH` (default `python3`), set to the
+venv Python by `.env.docker` and the installers:
 
 ```
-ai-pipeline/.venv/Scripts/python.exe ai-pipeline/transcribe.py ...
+ai-pipeline/.venv/bin/python3 ai-pipeline/transcribe.py ...         # Docker, Linux
+ai-pipeline/.venv/Scripts/python.exe ai-pipeline/transcribe.py ...  # Windows
 ```
-
-Configure the Python path via `PYTHON_PATH` env var in `.env`.
 
 ---
 

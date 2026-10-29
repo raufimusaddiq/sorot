@@ -11,7 +11,7 @@ describe("up / down / restart", () => {
     expect(h.out.at(-1)).toBe("Ready: http://app:8080");
     await h.run("down");
     await h.run("restart");
-    expect(h.runs.slice(1).map((r) => r.cmd.slice(4))).toEqual([["down"], ["restart", "backend"]]);
+    expect(h.runs.slice(1).map((r) => r.cmd.slice(4))).toEqual([["down"], ["up", "-d", "--force-recreate", "backend"]]);
   });
 
   test("native: systemctl through sudo unless root", async () => {
