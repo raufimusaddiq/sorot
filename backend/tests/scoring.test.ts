@@ -1,6 +1,8 @@
 // Golden test: the Bun scorer reproduces Python's score_segment() on real
 // segments + transcripts with pinned media features (fixtures/scoring.json,
-// written by ai-pipeline/tools/golden_scoring.py).
+// written by ai-pipeline/tools/golden_scoring.py), except keyword matching:
+// `keywordTrigger`, `finalScore` and `tier` come from the Bun rules since
+// keywords match whole words (textRules.ts).
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

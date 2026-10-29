@@ -1,6 +1,8 @@
-// Golden test: the Bun text rules must reproduce the Python originals exactly.
-// fixtures/text-rules.json is written by ai-pipeline/tools/golden_text_rules.py
-// from real transcript segments plus edge cases.
+// Golden test: the Bun text rules must reproduce the Python originals exactly,
+// except keyword matching (whole words, not substrings): the fixture's `keyword`
+// and `penalties` values come from the Bun rules since that fix. The rest of
+// fixtures/text-rules.json was written by the Python originals from real
+// transcript segments plus edge cases.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -99,6 +101,16 @@ describe("pieces the fixtures don't reach", () => {
     expect(R.historyScore([], "x")).toBe(0.5);
     expect(R.historyScore(hist, "")).toBe(0.5);
     expect(R.historyScore(hist, "tidak ada yang sama")).toBe(0.5);
+  });
+
+  test.each([
+    ["selalu dulu belum tolong kalo logo tipis intip komunikasi resolusi", 0.1], // inside other words
+    ["ternyata", 0.4],                                                           // not "nyata" as well
+    ["tidak banyak orang tahu", 0.4],
+    ["lu sama lo, tips", 0.85],                                                  // short ones: whole word (+ suffix)
+    ["rahasianya berbahaya, keuntungan", 0.85],                                  // longer ones keep affixes
+  ])("keywords count at word starts: %s", (text, score) => {
+    expect(R.keywordTrigger(`${text} ${"kata ".repeat(40)}`)).toBe(score);
   });
 
   test("keyword TF-IDF corpus", () => {

@@ -67,8 +67,8 @@ PATH (see [cli.md](cli.md)).
    `hf-cache` Docker volume — it isn't in the image, and it survives image
    updates — then starts the app.
 
-Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot up`
-(it recreates the container; `sorot restart` keeps the old settings).
+Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`
+(it recreates the container, so the new settings apply).
 
 ### Native mode
 
@@ -110,7 +110,7 @@ installer prints the command to run the app by hand.
 
 ```bash
 git pull
-scripts/install.sh            # pass the same mode/options as before; pulls the newest image (or rebuilds native) and restarts
+scripts/install.sh            # keeps the installed mode (pass other options again); pulls the newest image (or rebuilds native) and restarts
 ```
 
 ## Uninstalling

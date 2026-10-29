@@ -95,11 +95,11 @@ describe("defaultDbPath", () => {
 });
 
 describe("loadConfig", () => {
-  test("defaults match the old application.yml", () => {
+  test("defaults", () => {
     const c = loadConfig({});
     expect(c).toMatchObject({
       port: 8080, pythonPath: "python3", pipelineDir: "ai-pipeline", ffmpegPath: "ffmpeg", ytdlpPath: "yt-dlp",
-      dataDir: "data", dbPath: "data/sorot.db", whisperModel: "medium", whisperDevice: "cuda",
+      dataDir: "data", dbPath: "data/sorot.db", whisperModel: "large-v3-turbo", whisperDevice: "cuda",
       whisperLanguage: "id", maxConcurrentPipelines: 2, maxRenderClips: 0, queueCapacity: 50, staticDir: "../frontend/out",
       subtitleStyle: "default", silenceTrim: false, silenceGapSec: 0.6, reframeMode: "face",
     });
@@ -128,7 +128,7 @@ describe("loadConfig", () => {
     const c = loadConfig({ SERVER_PORT: "9000", DATA_DIR: "/app/data", WHISPER_MODEL: "", MAX_PARALLEL_RENDERS: "x", STATIC_DIR: "" });
     expect(c.port).toBe(9000);
     expect(c.dbPath).toBe("/app/data/sorot.db");
-    expect(c.whisperModel).toBe("medium");
+    expect(c.whisperModel).toBe("large-v3-turbo");
     expect(c.maxParallelRenders).toBe(2);
     expect(c.staticDir).toBe("");
   });

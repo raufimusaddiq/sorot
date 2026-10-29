@@ -35,7 +35,8 @@ async function control(d: Deps, action: "up" | "down" | "restart"): Promise<numb
   const cwd = d.config.appDir;
   let code: number;
   if (d.config.mode === "docker") {
-    const args = action === "up" ? ["up", "-d", "backend"] : action === "down" ? ["down"] : ["restart", "backend"];
+    // A restart recreates the container: `compose restart` would keep the old .env.docker settings.
+    const args = action === "up" ? ["up", "-d", "backend"] : action === "down" ? ["down"] : ["up", "-d", "--force-recreate", "backend"];
     code = await d.run(compose(d, ...args), { cwd });
   } else {
     code = await d.run(systemctl(d, action === "up" ? "start" : action === "down" ? "stop" : "restart", d.config.service));

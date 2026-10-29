@@ -62,7 +62,10 @@ curhat, jebakan, trik, hack, tip, solusi, …
 ```
 
 **Implementation:**
-- Count list entries found in the lowercased text (substring match)
+- Count list entries found in the text, at word starts: keywords of 4+ letters
+  may carry Indonesian affixes (`rahasianya`, `berbahaya`, `keuntungan`), shorter
+  ones (`lu`, `lo`, `gue`, `tip`) only a suffix (`tips`), so `lu` doesn't count
+  in `selalu`
 - `1.0` = 4+ matches or more than 0.8 per 10 words, `0.85` = 3, `0.65` = 2,
   `0.4` = 1, `0.1` = none
 - With 2+ `.txt` files in `data/corpus/`, a TF-IDF score over that corpus

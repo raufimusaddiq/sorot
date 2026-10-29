@@ -68,27 +68,37 @@ def sup(monkeypatch, tmp_path):
     supervised.reset_cache()
 
 
+def with_meta(model, keys=("motion", "hookStrength")):
+    """A model file plus the feature order train_scorer.py writes next to it."""
+    model.write_text("x")
+    (model.parent / "model.lgb.meta.json").write_text(json.dumps({"feature_keys": list(keys)}))
+
+
 class TestSupervised:
-    def test_no_model_file(self, sup):
+    @pytest.mark.parametrize("files", ["none", "model without its feature order"])
+    def test_no_usable_model(self, sup, monkeypatch, files):
+        if files != "none":
+            sup.write_text("x")
+        monkeypatch.setitem(sys.modules, "lightgbm", fake_lgb())
         assert supervised.predict({"hookStrength": 1}) is None
         assert supervised.is_model_loaded() is False
 
-    def test_loads_once_and_clamps(self, sup, monkeypatch):
-        sup.write_text("x")
+    def test_features_go_in_the_trained_order_and_clamp(self, sup, monkeypatch):
+        with_meta(sup)
         monkeypatch.setitem(sys.modules, "lightgbm", fake_lgb())
-        first_key = supervised.FEATURE_ORDER[0]
-        assert supervised.predict({first_key: 0.42}) == pytest.approx(0.42)
-        assert supervised.predict({first_key: 7}) == 1.0
-        assert supervised.predict({first_key: -3}) == 0.0
+        # The fake model returns its first column: the trainer's first key, motion.
+        assert supervised.predict({"hookStrength": 0.9, "motion": 0.42}) == pytest.approx(0.42)
+        assert supervised.predict({"motion": 7}) == 1.0
+        assert supervised.predict({"motion": -3}) == 0.0
         assert supervised.is_model_loaded() is True
 
     def test_broken_model_and_predict_error(self, sup, monkeypatch):
-        sup.write_text("x")
+        with_meta(sup)
         monkeypatch.setitem(sys.modules, "lightgbm", fake_lgb(booster_error=True))
         assert supervised.predict({}) is None
         supervised.reset_cache()
         monkeypatch.setitem(sys.modules, "lightgbm", fake_lgb())
-        assert supervised.predict({supervised.FEATURE_ORDER[0]: "not a number"}) is None
+        assert supervised.predict({"motion": "not a number"}) is None
 
 
 # --- train_scorer --------------------------------------------------------------

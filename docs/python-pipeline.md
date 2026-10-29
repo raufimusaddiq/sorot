@@ -175,11 +175,14 @@ The backend combines these with its text rules and weights
 Runs only when `ai-pipeline/model.lgb` exists (see `train_scorer.py`).
 `--features F.json` with `[{"index": 0, "features": {...13 features}}]` →
 `{"predictions": {"0": 0.71, "1": null}, "modelLoaded": true}`; a prediction replaces the weighted sum for that segment.
+Features go to the model in the order it was trained with (`model.lgb.meta.json`); a
+model without that file isn't used.
 
 ### `train_scorer.py` (manual)
 
 `python train_scorer.py --feedback data/feedback/feedback_export.json [--min-rows 200] [--dry-run]`.
-The export is written by `POST /api/feedback/train`. Writes `model.lgb` only
+The export is written by `POST /api/feedback/train`. Writes `model.lgb` (and its
+feature order, `model.lgb.meta.json`) only
 with ≥ 200 labelled clips **and** a 5-fold CV R² at least 0.05 above the
 linear weights; otherwise reports `insufficient_data` / `below_margin` /
 `missing_dependency` (no lightgbm).

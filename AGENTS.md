@@ -28,7 +28,7 @@ Tests are on point and compressed (the owner dislikes test bloat): one test per 
 ## Rules
 **Boundaries**
 - Python = media/ML only (Whisper, `media_features.py`, render/subtitle/variation, captions/reframe, LightGBM); segmenting, scoring, hooks, analytics, learning, discovery, LLM/Jev/Tebar are Bun. No new Python for non-media logic. Scripts print a JSON envelope `{"success":bool,"data":{}}`, exit 0/non-zero.
-- Python ports keep golden fixtures (`backend/tests/fixtures/*.json`, made by the Python originals); `pyCompat.ts` reproduces Python rounding/splitting.
+- Python ports keep golden fixtures (`backend/tests/fixtures/*.json`, made by the Python originals; keyword-dependent values follow the Bun whole-word keyword rule); `pyCompat.ts` reproduces Python rounding/splitting.
 - Backend runs Python via `runner.ts`: per-script timeouts (`timeoutFor` scales transcribe/media_features with length), cancel kills the whole process tree (POSIX group / `taskkill /T`). Tests inject fakes through `createApp(config, deps)` (`exec`, `runScript`, `fetch`).
 - Prefer executable source over plan docs. Memory = pointers only; details go to the journal.
 
