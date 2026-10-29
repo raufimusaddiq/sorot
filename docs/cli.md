@@ -4,7 +4,7 @@
 jobs, list and download clips, run discovery, and start/stop the app. It is a
 thin client over the [HTTP API](api-spec.md), compiled into one binary with
 `bun build --compile` (no runtime needed). `scripts/install.sh` builds and
-installs it to `/usr/local/bin/sorot` (with `sorot`, the app's old name, as an alias).
+installs it to `/usr/local/bin/sorot` (with `vclip`, the app's old name, as an alias).
 
 Run from source instead: `bun run cli/src/main.ts <command>` (or `bun run sorot <command>` at the repo root).
 
@@ -15,7 +15,7 @@ another machine or another program: [integration.md](integration.md).
 
 Written by the installer to `/etc/sorot/cli.conf` (first match wins:
 `$SOROT_CONFIG`, `~/.config/sorot/cli.conf`, `/etc/sorot/cli.conf`; installs from
-before the rename are still found at `/etc/sorot/cli.conf` with `SOROT_*` keys):
+before the rename are still found at `/etc/viralclip/cli.conf` with `VCLIP_*` keys):
 
 ```
 SOROT_MODE=docker          # docker | native — how `up/down/logs` work

@@ -1,7 +1,7 @@
 # What is actually "AI" in Sorot
 
 An honest inventory, so nobody (including us) mistakes a rule for a model.
-Checked against the code on 2026-10-28.
+Checked against the code on 2026-10-29.
 
 ## Summary
 
@@ -13,14 +13,14 @@ Checked against the code on 2026-10-28.
 | Scene changes | Signal processing: colour-histogram difference | `features/visual.py` |
 | Audio energy, onsets | Signal processing: RMS ratio, onset counting | `features/audio.py` |
 | Hook, keywords, novelty, clarity, sentiment, pauses, topic fit, history | **Rules**: Indonesian word lists, regexes, counts; keywords use TF-IDF when `data/corpus/*.txt` exists | `backend/src/textRules.ts` |
-| Clip score | **Hand-tuned weighted sum** of the 13 signals above + boosts/penalties → PRIMARY ≥ 0.80, BACKUP ≥ 0.65 | `backend/src/scoring.ts`, `ai-pipeline/weights.json` |
+| Clip score | **Hand-tuned weighted sum** of the 13 signals above + boosts/penalties → PRIMARY ≥ 0.80, BACKUP ≥ 0.65; blended 50/50 with Jev's or the LLM's judgement when connected | `backend/src/scoring.ts`, `ai-pipeline/weights.json` |
 | Titles, descriptions, hashtags | **Templates** (first question or hook line + keyword → hashtag map + CTA) | `backend/src/textRules.ts` |
 | "Learning" from your posts | **Linear re-weighting**: Pearson correlation of each feature with your real viral scores, blended into the weights (EMA, α = 0.3) after 5+ results | `backend/src/learning.ts` |
 | Supervised model | **LightGBM**, but only after **200+** labelled clips *and* only if it beats the linear weights in 5-fold CV. Until then no `model.lgb` exists and it never runs | `ai-pipeline/train_scorer.py`, `predict_supervised.py` |
 | Discovery ranking | **Hand-set formula**: 40% best caption moments, 15% strong-moment rate, 10% speech density, 20% view velocity, 15% length fit | `backend/src/captionAnalysis.ts` |
 | LLM (optional) | **Large language model** you plug in (Ollama, Groq, OpenRouter, OpenAI…). Off unless `LLM_BASE_URL` + `LLM_MODEL` are set | `backend/src/llm.ts` |
 | Quality gate | **Decision model** (Jev, TypeSafe) answering fixed yes/no questions with probabilities when `JEV_API_KEY` is set; otherwise **rules** (regexes, word lists) answer the same questions. The verdict is code. Thresholds not yet calibrated on Indonesian clips | `backend/src/clipGate.ts`, `jev.ts` |
-| Hook line | LLM's pick (director) or **rules** (strongest question/hook sentence, Bun port of `captions.find_hook`) | `backend/src/hooks.ts`, `director.ts` |
+| Hook line | Jev's pick (Jev first), the LLM director's, or **rules** (strongest question/hook sentence, Bun port of `captions.find_hook`) | `backend/src/hooks.ts`, `jevDirector.ts`, `director.ts` |
 
 So, out of the box: one neural model (Whisper), one classic detector (Haar),
 and everything else is rules and signal processing. That is a deliberate
@@ -29,10 +29,11 @@ but it should be described as *heuristic scoring*, not "AI that predicts viralit
 
 ## What the LLM adds (when configured)
 
-- **Clip review** (`clipReview.ts`): excerpts go to the LLM in batches of 6. The
-  final score is 50% formula, 50% LLM judgement; the LLM also writes the title,
-  description and hashtags. Each clip stores `scoredBy` (`rules` or `llm+rules`)
-  and a one-sentence `reason`. If the LLM fails, that batch keeps the formula.
+- **Clip review** (`clipReview.ts`, skipped when Jev is first): excerpts go to
+  the LLM in batches of 6. The final score is 50% formula, 50% LLM judgement;
+  the LLM also writes the title, description and hashtags. Each clip stores
+  `scoredBy` (`rules`, `llm+rules` or `jev+rules`) and a one-sentence `reason`.
+  If the LLM fails, that batch keeps the formula.
 - **Auto-discover agent** (`discoveryAgent.ts`): a tool-calling loop at
   temperature 0.8 — `web_search` (Bing HTML or SearXNG), `youtube_search`,
   `analyze_video`, `channel_videos`, `source_channels`. Only videos the tools
@@ -40,8 +41,8 @@ but it should be described as *heuristic scoring*, not "AI that predicts viralit
   Without an LLM, or when it fails, the algorithm path runs instead (random
   anchor queries → caption analysis → best predicted scores, ≤ 2 per channel).
 
-- **Director** (`director.ts`, on by default with an LLM): one call for a video
-  brief, one per ~5-minute transcript part to pick moments (line ids, hook line,
+- **Director** (`director.ts`, on by default with an LLM unless Jev is first):
+  one call for a video brief, one per ~5-minute transcript part to pick moments (line ids, hook line,
   why). Code validates every pick (ids, 10-60 s, hook inside), keeps the rule
   windows as candidates and drops overlaps after scoring. A creator `direction`
   steers it. See [creative-loop.md](creative-loop.md).
@@ -53,7 +54,10 @@ but it should be described as *heuristic scoring*, not "AI that predicts viralit
 A decision model, not a text generator: per clip it returns probabilities for
 11 fixed questions (hook, needs context, ending, filler, payoff level, five
 content risks, LLM-title over-claim). Code turns them into PASS / REVIEW /
-FAIL. Its documented best language is English; the clips are Indonesian, so
+FAIL. With `JEV_DIRECTOR` on (the default) Jev is first: it also screens a
+window at every sentence start for moments, scores the candidates (up to
+200; 50/50 with the rules) and picks hook lines and quoted titles (`jevDirector.ts`).
+Its documented best language is English; the clips are Indonesian, so
 treat its answers as unvalidated until `bun run jev-eval` has been run on your
 own labelled clips. Without Jev, keyword/regex rules answer the same questions
 (weaker: they can't judge payoff or titles).
@@ -64,19 +68,7 @@ own labelled clips. Without Jev, keyword/regex rules answer the same questions
   you feed back results, the weights are the author's guesses.
 - "Strong moment" (caption window ≥ 0.55) is relative: ~10% of windows on a
   horror-story channel, over half on a busy talk podcast. Compare within a search.
-- Haar cascades miss profile and small faces; framing falls back to a centre crop.
+- Haar cascades miss small faces, and the scorer's frontal cascade misses
+  profiles (framing also tries a profile cascade); with no face, framing falls
+  back to a centre crop.
 - Keyword rules are Indonesian-specific.
-
-## History of this audit
-
-- Before the 2026-10 fixes, two features were silently constant: `topicFit`
-  (niche keywords were never passed to the scorer) and `historyScore` (feedback
-  history was never loaded). Both are fed now.
-- Feedback training only re-weighted 11 of the 13 features and would have
-  dropped `motion` and `onsetDensity` (and the tier thresholds) from
-  `weights.json`; learned weights were also written into the code folder,
-  which a Docker rebuild wiped. Fixed: all 13, written to `data/weights.json`.
-- Discovery used to score only the first minutes of captions; it now scores
-  the whole video.
-- The Python CTA picker used Python's per-process randomised `hash()`, so the
-  same clip got a different call to action on every run. The Bun port is stable.

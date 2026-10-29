@@ -9,9 +9,10 @@ Delegate to the **test-runner** sub-agent (defined in `.claude/agents/test-runne
 Use the Agent tool with `subagent_type: "test-runner"` and pass `$ARGUMENTS` as additional context. Do not run the tests yourself.
 
 ## What happens:
-1. The test-runner agent executes all 3 test suites:
+1. The test-runner agent executes all 4 test suites:
    - AI Pipeline: `cd ai-pipeline && pytest --cov=. --cov-fail-under=95 -v`
    - Backend: `cd backend && bun test --coverage && bun run typecheck`
+   - CLI: `cd cli && bun test --coverage && bun run typecheck`
    - Frontend: `cd frontend && bun run test`
 2. Produces a structured gate report with pass/fail/coverage
 3. Gives a binary verdict: 🟢 GATE OPEN or 🔴 GATE BLOCKED

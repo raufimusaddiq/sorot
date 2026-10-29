@@ -9,7 +9,7 @@ What a release does *not* version:
 - The installers. Windows runs `scripts/install.ps1` straight from `master`, and Linux runs it from a clone. A change to
   them reaches users as soon as it is merged.
 - Native installs (Linux systemd, Windows native, macOS). They run whatever checkout they have, and update with
-  `git pull` plus the installer.
+  `git pull` plus the installer (a Windows install made without git: re-running the installer downloads `master`).
 
 ## Versions
 
@@ -64,7 +64,7 @@ cd ai-pipeline && .venv/bin/python -m pytest tests --cov=. && cd ..
 On the merge commit, the CI workflow must pass all three jobs:
 - Backend + CLI + UI
 - Media pipeline
-- Docker image (CPU build + smoke test). This job runs only when the change touches the image.
+- Docker image (CPU build + smoke test). This job builds only when the change touches the image.
 
 Don't tag a red `master`.
 

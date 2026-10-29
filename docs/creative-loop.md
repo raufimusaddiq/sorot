@@ -57,12 +57,12 @@ title are all questions of that shape once code proposes the options.
 | **Find** (SEGMENT) | one window per line that starts a sentence (previous line ends with `. ! ? …` or a ≥ 0.6 s pause), grown to 25 s then to the next sentence end (same rule: punctuation or a pause, since Whisper sometimes drops punctuation for a whole video); 15-60 s | the five quality questions (§3) + `fits_direction` when there is a direction | non-FAIL windows, best first, no overlaps > 50 %; top 40, each then re-cut from the same start to ~40 s and ~55 s (sentence end, ≤ 60 s) and asked again: the longest non-FAIL cut within 0.05 of the best-judged one wins (Jev favours tight excerpts by a hair), so picks aren't all ~25 s; kept as `source: "jev"` next to the rule windows |
 | **Score + gate** (SCORE) | every candidate (best 200 by rule score + every Jev pick) | the full gate questions (quality + risks) + `fits_direction` | `finalScore` = 0.5 × Jev (quality composite, 50/50 with the fit) + 0.5 × rules; the verdict from the *same* answers (`verdictFrom`); a reason built from them ("Jev: strong opening, complete ending, clear payoff, fits your direction") |
 | **Hook** | every line of the clip; lines ≥ 3 s in are teaser candidates | per line: the gate's hook question, and for candidates "is this an ad, a sponsor read or a like/subscribe request?" (one Noul each — a single Choice picked a sponsor line) | measured against the clip's **own opening** (line 0): opening ≥ 0.7 → no replay; else the best non-ad line if ≥ 0.7, or ≥ 0.5 when the opening is ≤ 0.3. Jev's "no replay" stands — the rules' hook only fills clips Jev had no line to judge |
-| **Title** | the clip's sentences of 15-110 chars | a Choice, one judgment: "which of these sentences, used as the clip's post title, would make the most viewers want to watch it?" — each option described by the sentence itself | the quote (≤ 80 chars) + 2 rule hashtags. A quote can't over-claim, so no title check is needed |
+| **Title** | the clip's sentences of 15-110 chars | a Choice, one judgment: "which of these sentences from `excerpt`, used as the clip's post title, would make the most viewers want to watch it?" — each option described by the sentence itself | the quote (≤ 80 chars) + 2 rule hashtags. A quote can't over-claim, so no title check is needed |
 
 Hooks and titles are asked only for the clips that will render
 (`MAX_RENDER_CLIPS` on CPU). A Jev failure keeps the rules' answers for that
 clip; after 3 failures in a row the rest of the video uses the rules.
-`JEV_DIRECTOR=false` (or the Settings / `sorot connect jev --director false`
+`JEV_DIRECTOR=false` (or the Settings / `sorot connect jev --director off`
 toggle) makes Jev a gate only, and the LLM director (§2) runs if configured.
 
 ### The context Jev reads (its "system prompt")
@@ -155,9 +155,9 @@ ends*, which line is the hook, or follow what the creator wanted.
 | Step | LLM call | Code keeps |
 |---|---|---|
 | **Brief** | 1 call on a transcript sample (≤ 6 000 chars, evenly spaced runs): summary, topics, people (spelled right), audience, angle. Saved on the video (`video.brief`). | — |
-| **Moments** | 1 call per ~5-minute part (45 s overlap, fits a 4k-context local model): up to 4 moments as line ids `{start, end, hook, why}`. | ids must exist and sit in that part; 10-60 s (trimmed / extended by whole lines); hook inside the clip, cut to one 1.2-6 s sentence; duplicates across parts dropped. |
+| **Moments** | 1 call per ~5-minute part (45 s overlap, fits a 4k-context local model): up to 4 moments as line ids `{start, end, hook_line, why}`. | ids must exist and sit in that part; 10-60 s (trimmed / extended by whole lines); hook inside the clip, cut to one 1.2-6 s sentence; duplicates across parts dropped. |
 | **Review** | as before, now with the brief (title, summary, people) and the direction. | 50/50 blend with the rule score. |
-| **Hook** | the moment's `hook` line. | Bun decides *every* hook now (rules port of `find_hook` for rule clips); render.py only replays it. |
+| **Hook** | the moment's `hook_line`. | Bun decides *every* hook now (rules port of `find_hook` for rule clips); render.py only replays it. |
 | **Copy per platform** | at publish time: TikTok / Instagram / YouTube / Threads / X / LinkedIn styles. | platform limits (characters, hashtags) cut in code; Jev checks it. |
 
 Rule windows are always kept as candidates; after scoring, any two candidates
@@ -197,7 +197,8 @@ Sources: [Models](https://docs.typesafe.ai/models.md),
 ### Where it runs
 
 1. **Clip gate** (SCORE stage, before render): the best ≤ 40 clips in the render
-   tiers, one request each (4 in flight). FAIL → tier SKIP (not rendered,
+   tiers, one request each (4 in flight); with Jev first, the verdict comes from
+   the judging in §1 instead. FAIL → tier SKIP (not rendered,
    still listed with the reason, renderable on request) and ranked last.
 2. **LLM title check**: when the LLM wrote the title, `title_overclaims` asks if
    it claims more than the clip says; if yes, the rule title (quoted from the
@@ -238,12 +239,12 @@ checks mechanically):
 | id | type | asks | used for |
 |---|---|---|---|
 | `hook_opening` | noul | Would `opening`, heard at the very start of a short video, make a viewer want to keep watching? | FAIL with a cut-off ending; note alone |
-| `needs_prior_context` | noul | Does `excerpt` depend on something said before it started? | FAIL ≥ 0.7 — the #1 reason a cut clip doesn't work |
-| `ends_complete` | noul | Does `closing` finish the point `excerpt` was making? | FAIL with a weak opening; note alone |
-| `mostly_filler` | noul | Is most of `excerpt` greetings, thanks, sponsor reads, promotion, housekeeping or small talk? | FAIL ≥ 0.7 |
+| `needs_prior_context` | noul | Does `excerpt` depend on something that was said before it started? | FAIL ≥ 0.7 — the #1 reason a cut clip doesn't work |
+| `ends_complete` | noul | Does `closing` finish the point that `excerpt` was making? | FAIL with a weak opening; note alone |
+| `mostly_filler` | noul | Is most of `excerpt` greetings, thanks, sponsor reads, channel promotion, housekeeping or small talk? | FAIL ≥ 0.7 |
 | `payoff` | score 0-2 | What does a viewer get from `excerpt` by watching it to the end? | FAIL ≤ 0.5 *and* confidence ≥ 0.5 |
 | `risk_accusation` | noul | …accuse a named, real person, company or institution of a crime or wrongdoing? | REVIEW ≥ 0.5 (UU ITE defamation risk) |
-| `risk_sara` | noul | …insult, mock or stereotype people for religion, ethnicity, race or group? | REVIEW ≥ 0.5 |
+| `risk_sara` | noul | …insult, mock or stereotype people because of their religion, ethnicity, race or group? | REVIEW ≥ 0.5 |
 | `risk_sexual` | noul | …describe sexual acts or intimate body parts explicitly? | REVIEW ≥ 0.5 |
 | `risk_dangerous` | noul | …encourage or explain violence, self-harm, illegal drug use or another dangerous act? | REVIEW ≥ 0.5 |
 | `risk_health_money` | noul | …present a health cure or a guaranteed money result as fact? | REVIEW ≥ 0.5 |
@@ -345,11 +346,12 @@ API access needs a paid plan (Starter, Basic or Pro; the free plan answers
    which redoes only the failed accounts; **Cancel** (`DELETE /posts/{id}`)
    stops a scheduled post.
 4. **Status** `GET /posts/{id}` → per-account `published` + permalink / `failed`
-   + `error_code` (PUBLISHED, PARTIAL, FAILED, SCHEDULED, CANCELLED). Error
+   + `error_code` (PUBLISHING, PUBLISHED, PARTIAL, FAILED, SCHEDULED, CANCELLED). Error
    codes a user can fix get a plain hint (`account_expired` → reconnect it,
    `insufficient_scope` → the key is read-only, `plan_required`,
    `publishing_limit_reached`).
-5. **Metrics → learning** every `TEBAR_SYNC_HOURS` (6) or *Sync*: status, then
+5. **Metrics → learning** every `TEBAR_SYNC_HOURS` (6) or *Sync*: `POST /insights/sync`
+   (Tebar fetches fresh numbers), status, then
    `GET /posts/{id}/insights` for published posts, summed per clip →
    `clip_feedback` → the existing feedback training re-weights the scorer.
    Before, you typed views/likes in by hand.

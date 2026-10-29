@@ -10,7 +10,7 @@ Analyze the codebase and docs to understand what's needed for a specific pipelin
 ## Steps:
 
 1. **Read the spec**: Read `docs/architecture.md`, `docs/python-pipeline.md`, and `docs/api-spec.md` to understand the target step
-2. **Check existing code**: Find all related existing code in `backend/`, `ai-pipeline/`, and `frontend/`
+2. **Check existing code**: Find all related existing code in `backend/`, `cli/`, `ai-pipeline/`, and `frontend/`
 3. **Identify gaps**: Compare spec vs. current implementation
 4. **Check dependencies**: Verify prerequisites (earlier pipeline steps) are working
 5. **Document findings**: Write a concise summary of what exists, what's missing, and what to build

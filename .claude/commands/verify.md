@@ -9,11 +9,11 @@ Run focused verification on a specific pipeline step — integration tests must 
 
 ## Steps:
 
-1. **Identify the step**: Which pipeline step to verify (1-9 per AGENTS.md build order)
+1. **Identify the step**: Which pipeline step to verify (1-11 per AGENTS.md build order)
 2. **Check prerequisites**: Ensure earlier steps in the build order work
 3. **Run integration tests for the step**:
    - Backend: `cd backend && bun test -t "StepName"`
-   - AI Pipeline: `cd ai-pipeline && pytest tests/test_<step>.py --cov=. --cov-fail-under=95 -v`
+   - AI Pipeline (media steps only): `cd ai-pipeline && pytest tests/test_<module>.py --cov=<module> --cov-fail-under=95 -v`
 4. **Run the step manually**: Execute with sample input if possible
 5. **Validate output**: Check that output matches expected format
 6. **Test error handling**: Verify failure cases produce useful errors
@@ -22,13 +22,13 @@ Run focused verification on a specific pipeline step — integration tests must 
 ## Pipeline steps for reference:
 1. Video input (yt-dlp / local file)
 2. Audio extraction (ffmpeg)
-3. Transcription (faster-whisper + CUDA, model=medium)
+3. Transcription (faster-whisper, `large-v3-turbo` in Docker; CPU or CUDA per `WHISPER_DEVICE`)
 4. Segment finding (10-60s candidates)
 5. Scoring engine (weighted formula)
 6. Vertical render (1080x1920)
 7. Subtitle burn-in
 8. Variation engine (clip variations)
-9. Analytics (engagement predictions)
+9. Analytics (per-video report: tiers, score/duration stats, recommendations)
 10. Preview UI (Next.js)
 11. Export
 

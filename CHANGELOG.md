@@ -32,8 +32,8 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
   topic fit, history, motion, audio onsets) rank every moment PRIMARY (≥ 0.80) / BACKUP (≥ 0.65) / SKIP.
 - **Jev first** (optional, [TypeSafe](https://docs.typesafe.ai)): Jev judges a window at every sentence
   start and keeps the best 40. Each pick is then re-cut to ~40 s and ~55 s, and the longest cut Jev still
-  rates within 0.05 of the best wins, so picks are not all ~25 s. Every candidate's score is half Jev,
-  half formula. Clips that render get Jev's hook line and a title quoted from the clip.
+  rates within 0.05 of the best wins, so picks are not all ~25 s. The candidates Jev scores (up to 200)
+  get half Jev, half formula. Clips that render get Jev's hook line and a title quoted from the clip.
 - **LLM director** when Jev is off: reads the transcript, writes a brief, picks its own moments and hooks.
 - **Direction** at import ("only the funny parts", ≤ 500 characters) steers Jev or the LLM.
 - **Quality gate** before render: PASS / REVIEW (content risk, you decide) / FAIL (held back, renderable on
@@ -118,6 +118,7 @@ Installs made before this release ran a `:latest` built by hand from PR #15 (`sh
     `TEBAR_API_KEY`, `TEBAR_SYNC_HOURS`.
   - CPU tuning: `MAX_RENDER_CLIPS`, `WHISPER_THREADS`, `WHISPER_BEAM_SIZE`, `X264_PRESET`.
   - `MAX_CONCURRENT_PIPELINES` now defaults to 1 on a CPU.
+  - `VARIATIONS` now defaults to off: the zoom-preset copies are no longer made.
   - API keys go in the gitignored `.env.llm`, never in `.env.docker`.
 
 ### Known limitations

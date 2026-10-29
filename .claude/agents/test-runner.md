@@ -1,6 +1,6 @@
 ---
 name: test-runner
-description: Integration test runner — executes all test suites (AI Pipeline, Backend, Frontend) and produces a structured gate report. Use after /execute, /review, or any time a full health check is needed. Never writes code, only reports.
+description: Integration test runner — executes all test suites (AI Pipeline, Backend, CLI, Frontend) and produces a structured gate report. Use after /execute, /review, or any time a full health check is needed. Never writes code, only reports.
 model: haiku
 tools: Bash, Read, Glob, Grep
 ---
@@ -17,33 +17,39 @@ You are a dedicated integration test runner for the Sorot project. Your ONLY job
 
 Before running tests, detect which environment is available:
 
-All three suites run natively on the host (Python venv + Bun). Backend and
+All four suites run natively on the host (Python venv + Bun). Backend, CLI and
 frontend share one Bun workspace — run `bun install` at the repo root first if
-`node_modules/` is missing.
+`node_modules/` is missing. Commands below run from the repo root.
 
 Check in this order:
 1. Python (always available on host): `python -m pytest`
-2. Bun (`bun`): backend tests + type check, frontend tests
+2. Bun (`bun`): backend and CLI tests + type check, frontend tests
 
 #### AI Pipeline (Python — always runs on host):
 ```bash
-python -m pytest D:/VibeCoding/ViralVideo/ai-pipeline/tests --cov=D:/VibeCoding/ViralVideo/ai-pipeline --cov-fail-under=95 -v --tb=short 2>&1
+cd ai-pipeline && python -m pytest tests --cov=. --cov-fail-under=95 -v --tb=short 2>&1
 ```
 Capture: total tests, passed, failed, skipped, coverage %
 
 #### Backend (Bun/TypeScript):
 ```bash
-cd D:/VibeCoding/ViralVideo/backend && bun test --coverage 2>&1
-cd D:/VibeCoding/ViralVideo/backend && bun run typecheck 2>&1
+cd backend && bun test --coverage 2>&1
+cd backend && bun run typecheck 2>&1
 ```
 `bun test` enforces the 95% line/function threshold itself (bunfig.toml) and
 exits non-zero below it. Any `tsc` output = type errors → BLOCKED.
 
+#### CLI (Bun/TypeScript, same threshold in `cli/bunfig.toml`):
+```bash
+cd cli && bun test --coverage 2>&1
+cd cli && bun run typecheck 2>&1
+```
+
 #### Frontend (Jest via Bun workspace):
 ```bash
-cd D:/VibeCoding/ViralVideo/frontend && bun run test 2>&1
+cd frontend && bun run test 2>&1
 ```
-If `bun` not found: mark Backend + Frontend as ❌ with reason "bun not available on host"
+If `bun` not found: mark Backend, CLI + Frontend as ❌ with reason "bun not available on host"
 
 ## Report Format
 
@@ -56,6 +62,7 @@ After running ALL suites, produce this exact report:
 |---|---|---|---|---|---|---|
 | AI Pipeline | X | X | X | X | X% | ✅/❌ |
 | Backend | X | X | X | X | X% | ✅/❌ |
+| CLI | X | X | X | X | X% | ✅/❌ |
 | Frontend | X | X | X | X | X% | ✅/❌ |
 | **TOTAL** | **X** | **X** | **X** | **X** | **X%** | ✅/❌ |
 

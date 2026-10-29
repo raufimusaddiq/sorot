@@ -44,7 +44,7 @@ PATH (see [cli.md](cli.md)).
 | `--no-service` | Native: no systemd unit (you run the app yourself) |
 | `--skip-model` | Don't pre-download the Whisper model (it downloads on the first import) |
 | `-y`, `--yes` | No confirmation prompts (for scripts / provisioning) |
-| `--uninstall [--purge]` | Remove the install; `--purge` also deletes `data/`, the venv and the image |
+| `--uninstall [--purge]` | Remove the install; `--purge` also deletes `data/`, the venv, the image and the model volume |
 
 ## What each mode installs
 
@@ -67,11 +67,12 @@ PATH (see [cli.md](cli.md)).
    `hf-cache` Docker volume — it isn't in the image, and it survives image
    updates — then starts the app.
 
-Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`.
+Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot up`
+(it recreates the container; `sorot restart` keeps the old settings).
 
 ### Native mode
 
-1. apt: `ffmpeg python3 python3-venv python3-pip curl unzip fonts-dejavu-core`.
+1. apt: `ffmpeg python3 python3-venv python3-pip curl ca-certificates unzip fonts-dejavu-core`.
 2. **Bun 1.3.12** from its GitHub release into `/usr/local/bin/bun` (skipped if
    that version is already installed).
 3. **Python venv** `ai-pipeline/.venv` with `requirements.txt`; on a GPU also the
@@ -109,14 +110,14 @@ installer prints the command to run the app by hand.
 
 ```bash
 git pull
-scripts/install.sh            # same mode/options as before; pulls the newest image (or rebuilds native) and restarts
+scripts/install.sh            # pass the same mode/options as before; pulls the newest image (or rebuilds native) and restarts
 ```
 
 ## Uninstalling
 
 ```bash
 scripts/install.sh --uninstall          # keeps data/
-scripts/install.sh --uninstall --purge  # also deletes data/, the venv and the Docker image
+scripts/install.sh --uninstall --purge  # also deletes data/, the venv, the Docker image and the hf-cache volume
 ```
 
 Docker, Bun, ffmpeg and other system packages stay installed.

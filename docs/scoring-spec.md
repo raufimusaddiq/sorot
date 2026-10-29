@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Score each candidate segment (10-60s) to rank clips by viral potential. This is a heuristic formula, not a trained model (see [ai-audit.md](ai-audit.md)). Good enough to filter 20 candidates down to the top 5.
+Score each candidate segment (10-60s) to rank clips by viral potential. This is a heuristic formula, not a trained model (see [ai-audit.md](ai-audit.md)).
 
 Where it runs: Python `media_features.py` measures the audio/visual signals;
 the Bun backend computes the text signals, the weighted sum, boosts,
@@ -40,74 +40,76 @@ If `ai-pipeline/model.lgb` exists, its prediction replaces the weighted sum
 for the segments it can score. This is the **rule score**; Jev or the LLM
 review may then blend it (below).
 
-The per-feature sections below keep their original design notes; the
-weights above are the current ones.
-
 ## Feature Definitions
 
-### hook_strength (weight: 0.20)
-How strong the opening sentence is in the first 3 seconds.
+### hook_strength (weight: 0.17)
+How strong the opening sentence is.
 
 **Implementation:**
-- First sentence = text up to the first `.`, `?` or `!` (else up to the first comma)
+- First sentence = text up to the first `.`, else `?`, else `!` (else up to the first comma)
 - Score: `1.0` question + hook phrase · `0.9` hook phrase and < 10 words ·
   `0.7` question or hook phrase · `0.6` question word (apa, kenapa, kok…) ·
   `0.4` short (< 10 words) · `0.2` otherwise
 
-### keyword_trigger (weight: 0.10)
+### keyword_trigger (weight: 0.08)
 Presence of attention-grabbing Indonesian keywords.
 
-**Keyword list:**
+**Keyword list** (18 of the 39 in `KEYWORD_TRIGGERS`, `backend/src/ruleConstants.ts`):
 ```
 rahasia, penting, tidak banyak orang tahu, kesalahan, ternyata,
 wajib, harus, jangan, bahaya, untung, sayangnya, fakta,
-curhat, jebakan, trik, hack, tip, solusi
+curhat, jebakan, trik, hack, tip, solusi, …
 ```
 
 **Implementation:**
-- Count keyword matches in segment text
-- `1.0` = 3+ matches, `0.7` = 2 matches, `0.4` = 1 match, `0.0` = none
+- Count list entries found in the lowercased text (substring match)
+- `1.0` = 4+ matches or more than 0.8 per 10 words, `0.85` = 3, `0.65` = 2,
+  `0.4` = 1, `0.1` = none
+- With 2+ `.txt` files in `data/corpus/`, a TF-IDF score over that corpus
+  replaces the list
 
-### novelty (weight: 0.10)
+### novelty (weight: 0.08)
 How unique or non-generic the segment content is.
 
-**Implementation (MVP):**
-- If segment contains specific numbers/percentages → +0.3
-- If segment contains named entities (proper nouns) → +0.3
-- If segment has step-by-step structure ("pertama", "kedua", "ketiga") → +0.2
-- If segment is purely generic advice → 0.2
+**Implementation:**
+- Base 0.15
+- Any digit → +0.25
+- Capitalised words longer than 3 letters (names): 2+ → +0.25, 1 → +0.15
+- Step-by-step words ("pertama", "kedua", "ketiga", "keempat", "terakhir") → +0.2
+- Twist words ("ternyata", "nyatanya", "faktanya", "malah", "justru", "bohong") → +0.2
 - Cap at 1.0
 
-### clarity (weight: 0.10)
+### clarity (weight: 0.09)
 How quickly the segment's context can be understood.
 
-**Implementation (MVP):**
-- Short segment (< 30s) with clear single topic → 0.9
-- Long segment with topic shifts → 0.4
-- Mid-range: interpolate
-- If segment starts with context-setting phrase ("jadi", "maksudnya", "singkatnya") → +0.2
+**Implementation:**
+- By length: < 15 s → 0.9, < 30 s → 0.85, < 45 s → 0.7, < 60 s → 0.55, else 0.4
+- Context-setting phrase anywhere ("jadi", "maksudnya", "singkatnya", "intinya",
+  "artinya", "maksud gue") → +0.15 (cap 1.0)
 
-### emotional_energy (weight: 0.10)
-Speech intensity and dynamism from audio analysis.
+### emotional_energy (weight: 0.08)
+Speech intensity: loudness plus emotional wording.
 
-**Implementation (MVP):**
-- Analyze audio RMS energy in the segment vs average
-- Segments with > 1.5x average energy → 0.9
-- Segments with average energy → 0.5
-- Segments with < 0.5x average energy → 0.2
-- Future: use prosody detection for better accuracy
+**Implementation:**
+- Audio: segment RMS ÷ whole-video RMS (`rmsRatio`): > 1.8 → 1.0, > 1.3 → 0.8,
+  > 0.8 → 0.5, > 0.4 → 0.3, else 0.1
+- Text: 0.3, + 0.2 / 0.3 / 0.4 for 1 / 2 / 3+ emotion words ("sedih", "marah",
+  "kaget", "wow"…), + 0.1 / 0.15 for 1 / 2+ `!`, + 0.1 for 2+ all-caps words (cap 1.0)
+- Score = 0.4 × text + 0.6 × audio; text alone without audio
 
-### pause_structure (weight: 0.07)
+### pause_structure (weight: 0.06)
 Penalizes segments with too much silence.
 
 **Implementation:**
-- Calculate silence ratio = total pause time / segment duration
+- Silence ratio = gaps between transcript lines inside the segment ÷ segment duration
 - `< 10%` silence → 0.9
-- `10-25%` → 0.6
-- `25-40%` → 0.3
-- `> 40%` → 0.1
+- `10-25%` → 0.7
+- `25-40%` → 0.4
+- `≥ 40%` → 0.1
+- Under 2 transcript lines in range: words per second instead (2-4 → 0.9,
+  1.5-5 → 0.7, < 1.5 → 0.4, > 5 → 0.5)
 
-### face_presence (weight: 0.10)
+### face_presence (weight: 0.09)
 Whether a face is visible in the video during the segment.
 
 **Implementation** (`features/visual.py`, batch path used by `media_features.py`):
@@ -120,38 +122,37 @@ Whether a face is visible in the video during the segment.
 - **Majority vote**: a face must be found in at least 3 of the 5 frames.
   Single-frame Haar fires on busy textures (measured: 3–13 of 30 frames on a
   no-face video), so one hit is not enough
-- `1.0` = face majority plus a smile detected, `0.7` = face majority,
+- `1.0` = face majority plus a smile detected (Haar only), `0.7` = face majority,
   `0.0` = otherwise
 - Calibration (2026-10-27): a real podcast clip went from faces `0.0` on 2 of 3
   segments (224-px single frame) to faces found in 5 of 6 five-second
   segments. A synthetic no-face video scored `0.0` on all segments
 
-### scene_change (weight: 0.08)
+### scene_change (weight: 0.07)
 Visual activity in the segment.
 
-**Implementation (MVP):**
-- Calculate frame difference (optical flow or histogram diff) between consecutive sample frames
-- High visual change → 0.8-1.0
-- Moderate → 0.5
-- Static (talking head, no cuts) → 0.2
+**Implementation** (`features/visual.py`):
+- Start, middle and end frame (224 px wide); change = 1 − mean correlation of
+  consecutive grey histograms
+- change > 0.5 → 0.9, > 0.3 → 0.7, > 0.15 → 0.5, else 0.3
+- + 0.1 each for mean brightness > 0.5 and > 0.65, saturation > 0.35 and > 0.5 (cap 1.0)
 - Note: talking head isn't bad for short-form, but scene variety helps engagement
 
-### topic_fit (weight: 0.08)
+### topic_fit (weight: 0.07)
 How well the segment matches the user's niche/topic.
 
-**Implementation (MVP):**
-- Default niche keywords are configurable (set in `.env` or UI)
-- Count overlap between segment keywords and niche keywords
-- `1.0` = strong overlap, `0.5` = moderate, `0.2` = weak, `0.0` = no match
+**Implementation:**
+- Niche keywords: `NICHE_KEYWORDS` (comma-separated env)
+- Share of niche keywords found in the segment text: > 30% → 1.0, > 10% → 0.7, else 0.3
 - If no niche is configured, default to 0.5 for all segments
 
-### history_score (weight: 0.07)
+### history_score (weight: 0.06)
 Based on how similar past clips performed.
 
-**Implementation (MVP):**
-- No history data yet for initial version
-- Default to 0.5 for all segments
-- Future: track which exported clips were actually uploaded and performed well
+**Implementation:**
+- Past clips with a real viral score (`clip_feedback`)
+- Mean viral score of the 3 that share the most words with the segment (at least 3 shared words)
+- 0.5 without such clips
 
 ## Boosts (added after base score)
 
@@ -161,21 +162,23 @@ Based on how similar past clips performed.
 | Opinion conflict present | +0.05 |
 | Contains number/list/step-by-step | +0.03 |
 | Emotional moment detected | +0.05 |
+| Conversational tone | +0.03 |
 
-**Detection (MVP):**
-- "Sharp question": first sentence ends with "?" and contains interrogative ("kok", "kenapa", "bagaimana", "apa")
-- "Opinion conflict": segment contains contrast phrases ("tapi", "namun", "sebenarnya", "beda sama")
-- "Number/list": contains digits or ordering words ("pertama", "kedua", "1", "2", dll.)
-- "Emotional moment": high energy + exclamation mark or emotional words ("sedih", "marah", "kaget", "wow")
+**Detection:**
+- "Sharp question": first sentence contains "?" and an interrogative ("kok", "kenapa", "bagaimana", "apa"…)
+- "Opinion conflict": segment contains contrast phrases ("tapi", "namun", "sebenarnya", "beda sama"…)
+- "Number/list": contains "1", "2", "3" or "pertama", "kedua", "ketiga"
+- "Emotional moment": contains an emotion word ("sedih", "marah", "kaget", "wow"…)
+- "Conversational tone": 3+ different particles as words ("kan", "ya", "dong", "sih", "nih"…)
 
 ## Penalties (subtracted after boosts)
 
 | Condition | Penalty |
 |-----------|---------|
-| Slow opening (no hook in first 5s) | -0.08 |
-| Too much silence (> 30% of segment) | -0.07 |
-| Too generic / no specifics | -0.05 |
-| No face visible at all | -0.04 |
+| Slow opening (no hook phrase or "?" in the first 5 words) | -0.08 |
+| Too much silence (pause_structure < 0.3: ≥ 40% silence) | -0.07 |
+| Too generic (under 8 words, no hook phrase or keyword) | -0.05 |
+| No face visible at all (face_presence 0) | -0.04 |
 
 ## Tier Classification
 
@@ -253,13 +256,13 @@ All features output a float between 0.0 and 1.0:
 
 | Feature | 0.0 | 0.5 | 1.0 |
 |---------|-----|-----|-----|
-| hook_strength | No hook, slow start | Mild hook | Strong question/hook phrase in first 3s |
-| keyword_trigger | No trigger words | 1 trigger word | 3+ trigger words |
+| hook_strength | No hook, slow start | Mild hook | Strong question/hook phrase in the first sentence |
+| keyword_trigger | No trigger words | 1 trigger word | 4+ trigger words |
 | novelty | Purely generic | Some specifics | Unique, named entities, numbers |
-| clarity | Confusing, multiple topics | Single topic, moderate length | Clear single topic, short |
+| clarity | 60 s (0.4 at worst) | 45-60 s | Under 30 s with a context-setting phrase |
 | emotional_energy | Flat, monotone | Average | Loud, dynamic, passionate |
 | pause_structure | >40% silence | 10-25% | <10% silence |
-| face_presence | No face | Face in some frames | Face in all frames |
+| face_presence | Face in under 3 of 5 frames | No video measured | Face in 3+ of 5 frames and a smile (0.7 without) |
 | scene_change | Static throughout | Some changes | Frequent cuts/movement |
 | topic_fit | No niche match | Moderate match | Strong niche match |
 | history_score | Poor history | Average | Good history |

@@ -82,7 +82,7 @@ What is a model and what is a rule: [ai-audit.md](ai-audit.md).
   (same origin, no CORS). `next dev` on :3000 is optional for hot reload.
 - `/` is the landing page (what Sorot is, a live caption demo, install facts);
   `/studio` is the app below. Both share the brand tokens in `tailwind.config.js`.
-- Video input (paste URL or upload file)
+- Video input (paste a YouTube URL)
 - Job status display
 - Clip list with scores and ranking
 - Video preview player
@@ -109,7 +109,7 @@ See [linux-install.md](linux-install.md).
 
 ```
 1. User pastes YouTube URL in UI
-2. Frontend → POST /api/import { url }
+2. Frontend → POST /api/import { url }, then POST /api/process { videoId, options }
 3. Backend creates Job (status=QUEUED), saves to SQLite
 4. Backend starts worker:
    a. yt-dlp downloads video → data/raw/{videoId}.mp4 (a time range: only that section, stream-copied)
@@ -125,7 +125,7 @@ See [linux-install.md](linux-install.md).
       render on request)
       → data/exports/{videoId}/clip_{rank}_subtitled.mp4 (+ clip_{rank}.ass)
    g. SUBTITLE: subtitle.py re-burns only clips rendered without captions (old jobs, retried)
-   h. variations, then the analytics report (Bun)
+   h. variations (only with VARIATIONS=true), then the analytics report (Bun)
 5. Backend updates Job status=COMPLETED
 6. Frontend polls GET /api/jobs/{id} and shows results
 7. User previews clips, picks favorites, exports
@@ -137,8 +137,8 @@ See [linux-install.md](linux-install.md).
 | Decision | Choice | Why |
 |----------|--------|-----|
 | Architecture | One Bun process (API + UI + queue) | Personal use, one container, simplest to build and debug |
-| Backend runtime | Bun + TypeScript | Same language as the UI, zero runtime deps, built-in SQLite; replaced Spring Boot (JVM) |
-| Repo layout | Bun workspace monorepo | One lockfile + install for backend and frontend |
+| Backend runtime | Bun + TypeScript | Same language as the UI, zero runtime deps, built-in SQLite |
+| Repo layout | Bun workspace monorepo | One lockfile + install for backend, frontend and CLI |
 | Backend↔Python bridge | CLI subprocess + JSON | No extra service, no network dependency, simple |
 | DB | SQLite | Zero config, local-only, file-based |
 | GPU | CUDA | Available; significantly speeds up transcription |
@@ -162,23 +162,25 @@ Each stage reads from `data/` subfolder and writes output to the next subfolder.
 
 | Stage | Input | Process | Output |
 |-------|-------|---------|--------|
-| 1. Import | URL or file path | yt-dlp / file copy | `data/raw/{videoId}.mp4` |
+| 1. Import | URL or file path | yt-dlp; a local file is used in place (a range: ffmpeg cut) | `data/raw/{videoId}.mp4` |
 | 2. Audio | raw video | ffmpeg extract | `data/audio/{videoId}.wav` |
 | 3. Transcribe | audio WAV | faster-whisper (CUDA or CPU) | `data/transcripts/{videoId}.json` |
 | 4. Segment | transcript JSON | Bun rule windows (`segments.ts`) + Jev or LLM director picks | `data/segments/{videoId}.json` |
 | 5. Score | segments JSON | `media_features.py`, then Bun: rules (+ Jev or LLM review), quality gate, hooks | updates segments JSON, `clip` rows |
 | 6. Render | raw video + segments + transcript | ffmpeg, one encode: face-tracking crop / centre / blur, silence trim, ASS karaoke captions, music | `data/exports/{videoId}/clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` |
 | 7. Subtitle | old-style renders only | re-burns captions on clips rendered without them | same |
+| 8. Variation | segments + raw video | `variation.py`, only with `VARIATIONS=true` | `data/variations/{videoId}/` |
+| 9. Analytics | segments JSON | Bun report | `data/analytics/{videoId}.json` |
 
 ## Error Handling
 
 - Any pipeline stage failure → Job status = FAILED, error message stored
-- Frontend shows error with retry option
-- Python scripts write errors to stderr (not stdout) to keep JSON output clean
+- Frontend shows the error; retry with `sorot retry <job>` or `POST /api/jobs/{id}/retry`
+- Python scripts print only the JSON envelope on stdout (`success: false` + `error` on failure); logs and `PROGRESS` lines go to stderr
 - Backend captures subprocess stdout/stderr separately
 
 ## Concurrency
 
 - `MAX_CONCURRENT_PIPELINES` jobs at a time (default 1 on a CPU, 2 on a GPU)
 - Job queue is in-memory, FIFO (`PIPELINE_QUEUE_CAPACITY`, default 50)
-- Future: could add parallel clip rendering if needed
+- Clips render `MAX_PARALLEL_RENDERS` at a time (default 2)
