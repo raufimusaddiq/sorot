@@ -362,7 +362,7 @@ cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~200 pipeline tests
 - 🧪 [`ci.yml`](.github/workflows/ci.yml) — tests on every push and PR; image-affecting changes also build the **CPU** image (cached, not pushed) and smoke-test it.
 - 🚀 [`release-image.yml`](.github/workflows/release-image.yml) — builds + pushes **CPU and CUDA** images only on a **GitHub release** (`v1.2.3` → `:1.2.3`, `:1.2`, `:latest`, + `-cuda`; pre-releases keep `:latest`) or a **manual run** (Actions → *Release image*).
 
-To ship: merge to `master` → *Draft a new release* tagged `v1.2.3`. 🔓 If anonymous `docker pull` fails after the first publish, set the GHCR package to public (profile → Packages → `sorot` → settings).
+To ship: 📋 [docs/release.md](docs/release.md) — versions, checklist, checking the images, rollback. 📰 What changed: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -379,6 +379,7 @@ To ship: merge to `master` → *Draft a new release* tagged `v1.2.3`. 🔓 If an
 | 🔬 [ai-audit.md](docs/ai-audit.md) | Model vs rule vs LLM |
 | 🎬 [creative-loop.md](docs/creative-loop.md) | Jev director, LLM director, Jev quality gate, Tebar publishing |
 | 🐍 [python-pipeline.md](docs/python-pipeline.md) | Each pipeline script's inputs and outputs |
+| 🚀 [release.md](docs/release.md) · 📰 [CHANGELOG.md](CHANGELOG.md) | Cutting a release · what each one changed |
 
 ---
 

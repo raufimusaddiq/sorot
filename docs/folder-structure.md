@@ -85,11 +85,13 @@ sorot/
 │   ├── creative-loop.md             # Jev director, LLM director, quality gate, Tebar
 │   ├── scoring-spec.md · self-learning-scoring.md · discovery-system.md
 │   ├── python-pipeline.md · cli.md · integration.md · linux-install.md · ai-audit.md
+│   ├── release.md                   # Cutting a release, versions, rollback
 │   ├── connectors/ · optimization/
 │   └── journal/                     # Session history and decisions
 │
 ├── AGENTS.md                        # Agent instructions (CLAUDE.md imports it)
 ├── README.md                        # Project overview
+├── CHANGELOG.md                     # What each release changed
 ├── .env.example · .env.docker       # Environment templates (secrets: .env.llm, gitignored; see .env.llm.example)
 ├── .gitignore
 └── ai_viral_clipper_personal_local_plan.md  # Original plan doc

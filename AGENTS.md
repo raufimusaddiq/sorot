@@ -58,7 +58,7 @@ Tests are on point and compressed (the owner dislikes test bloat): one test per 
 
 **Docker, release, scripts**
 - Always `--env-file .env.docker`. `docker-compose.yml` is CPU-only; GPU settings live in the gitignored `docker-compose.override.yml` (written by `install.sh` / `install.ps1` / `start.ps1`). Linux machine settings: override file or `/etc/sorot/`, never tracked files.
-- Image `ghcr.io/raufimusaddiq/sorot` is built by `release-image.yml` only on a published release or manual run (CPU `:latest`, GPU `:latest-cuda`; `v1.2.3` → `1.2.3`, `1.2`, `latest`); `ci.yml` tests and smoke-tests an unpushed CPU image on image-affecting changes. `SOROT_VERSION` picks the tag.
+- Image `ghcr.io/raufimusaddiq/sorot` is built by `release-image.yml` only on a published release or manual run (CPU `:latest`, GPU `:latest-cuda`; `v1.2.3` → `1.2.3`, `1.2`, `latest`); `ci.yml` tests and smoke-tests an unpushed CPU image on image-affecting changes. `SOROT_VERSION` picks the tag. Release steps: `docs/release.md`; user-facing changes go under `## [Unreleased]` in `CHANGELOG.md` as they merge.
 - PowerShell: ASCII only (PS 5.1); `install.ps1` never `exit`s (runs under `irm | iex`); `$ErrorActionPreference = "Continue"`; `-UseBasicParsing` on every `Invoke-WebRequest`; capture docker output in a variable and check `$LASTEXITCODE`. `scripts/install.sh` stays shellcheck-clean.
 
 ## Git
