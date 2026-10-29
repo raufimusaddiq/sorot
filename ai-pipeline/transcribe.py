@@ -44,6 +44,29 @@ DRIFT_RATIO = 0.5
 UNPUNCTUATED = {"th", "lo", "km", "my"}
 # Shown to Whisper before every window of the re-run so it starts punctuated.
 PUNCTUATED_PROMPT = {"id": "Halo, apa kabar? Baik, terima kasih. Jadi gini ceritanya, oke."}
+# A re-run that drops speech (or loops on a phrase) can punctuate better and
+# still be worse: it is kept only within this share of the words it replaces.
+DRIFT_WORD_SLACK = 0.2
+REDO_LABEL = "Re-transcribing (punctuation lost)"
+
+
+def progress_printer(label=""):
+    """on_progress for decode(): "PROGRESS 37" on stderr as segments arrive, or
+    "PROGRESS 37 <label>" (the backend shows "<label> 37%"); never goes back."""
+    reported = 0
+
+    def progress(end, info):
+        nonlocal reported
+        duration = getattr(info, "duration", 0) or 0
+        pct = min(99, int(end / duration * 100)) if duration > 0 else 0
+        if pct > reported:
+            reported = pct
+            print(f"PROGRESS {pct}{' ' + label if label else ''}", file=sys.stderr, flush=True)
+    return progress
+
+
+def word_count(segments):
+    return sum(len(s["text"].split()) for s in segments)
 
 
 def punctuated(segments):
@@ -103,7 +126,8 @@ def decode(model, audio, language, offset=0.0, on_progress=None, **options):
 
 def repair_drift(model, audio_path, language, segments):
     """Re-run Whisper from the first bucket that lost its punctuation, starting
-    fresh with a punctuated prompt; keep the re-run only if it is better."""
+    fresh with a punctuated prompt; keep the re-run only if it is better
+    punctuated and holds about as many words as the part it replaces."""
     t0 = drift_start(segments, language)
     if t0 is None:
         return segments
@@ -115,10 +139,11 @@ def repair_drift(model, audio_path, language, segments):
     audio = decode_audio(audio_path, sampling_rate=SAMPLE_RATE)
     prompt = PUNCTUATED_PROMPT.get(language)
     redo, _ = decode(model, audio[int(cut * SAMPLE_RATE):], language, offset=cut,
-                     **({"hotwords": prompt} if prompt else {}))
-    better = punctuated(redo) > punctuated(after)
+                     on_progress=progress_printer(REDO_LABEL), **({"hotwords": prompt} if prompt else {}))
+    words, was = word_count(redo), word_count(after)
+    better = abs(words - was) <= DRIFT_WORD_SLACK * was and punctuated(redo) > punctuated(after)
     print(f"Punctuation lost from {t0:.0f} s ({punctuated(after):.0%}); re-run: {punctuated(redo):.0%}, "
-          f"{'kept' if better else 'discarded'}", file=sys.stderr, flush=True)
+          f"{words}/{was} words, {'kept' if better else 'discarded'}", file=sys.stderr, flush=True)
     return before + redo if better else segments
 
 
@@ -153,18 +178,8 @@ def main():
                              cpu_threads=cpu_threads(args.device))
 
         # Segments arrive as Whisper decodes, so their end times give progress
-        # ("PROGRESS 37" on stderr; the backend shows "Transcribing 37%").
-        reported = 0
-
-        def progress(end, info):
-            nonlocal reported
-            duration = getattr(info, "duration", 0) or 0
-            pct = min(99, int(end / duration * 100)) if duration > 0 else 0
-            if pct > reported:
-                reported = pct
-                print(f"PROGRESS {pct}", file=sys.stderr, flush=True)
-
-        segments, info = decode(model, args.audio, args.language, on_progress=progress)
+        # (the backend shows "Transcribing 37%").
+        segments, info = decode(model, args.audio, args.language, on_progress=progress_printer())
         segments = repair_drift(model, args.audio, args.language, segments)
         segments = [{"index": i, **s} for i, s in enumerate(segments)]
 

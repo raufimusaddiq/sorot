@@ -105,13 +105,14 @@ class TestTranscribe:
         class DriftWhisper(FakeWhisper):
             def transcribe(self, audio, language, word_timestamps, vad_filter, beam_size, **options):
                 calls.append((audio if isinstance(audio, str) else len(audio), options))
+                duration = 1200.0 if len(calls) == 1 else float(len(audio))
                 if len(calls) == 1:   # punctuated for 10 min, then not
                     texts = [(i * 20.0, "Oke.") for i in range(30)] + [(600 + i * 20.0, "oke deh") for i in range(30)]
                 else:                 # the re-run, from 600 s: times relative to the cut
                     texts = [(i * 20.0, "Oke deh.") for i in range(30)]
                 word = types.SimpleNamespace(word=" oke", start=1.0, end=1.5, probability=0.9)
                 segs = [types.SimpleNamespace(start=t, end=t + 5, text=x, avg_logprob=-0.1, words=[word]) for t, x in texts]
-                return iter(segs), types.SimpleNamespace(language=language, duration=1200.0)
+                return iter(segs), types.SimpleNamespace(language=language, duration=duration)
 
         decoded = [0.0] * 1200                     # one stand-in sample per second
         monkeypatch.setattr(transcribe, "SAMPLE_RATE", 1)
@@ -125,20 +126,29 @@ class TestTranscribe:
         assert [s["index"] for s in segs] == list(range(60))
         assert segs[30]["start"] == 585.0 and segs[30]["text"] == "Oke deh."
         assert segs[30]["words"][0]["start"] == 586.0
-        assert "Punctuation lost from 600 s (0%); re-run: 100%, kept" in run_main.err
+        # The re-run reports its own progress (585 of its 615 s), labelled.
+        assert f"PROGRESS 95 {transcribe.REDO_LABEL}" in run_main.err
+        assert "Punctuation lost from 600 s (0%); re-run: 100%, 60/60 words, kept" in run_main.err
 
-    def test_a_worse_re_run_is_discarded(self, monkeypatch, capsys):
+    @pytest.mark.parametrize("redo,said", [
+        (["oke"] * 30, "0%, 30/30 words"),                # no better punctuated
+        ([], "100%, 0/30 words"),                         # heard nothing
+        (["Oke oke oke."] * 30, "100%, 90/30 words"),     # loops on a phrase
+    ])
+    def test_a_worse_re_run_is_discarded(self, monkeypatch, capsys, redo, said):
+        runs = [["oke"] * 30, redo]
+
         class StuckWhisper(FakeWhisper):
             def transcribe(self, audio, language, word_timestamps, vad_filter, beam_size, **options):
-                segs = [types.SimpleNamespace(start=i * 20.0, end=i * 20.0 + 5, text="oke", avg_logprob=None)
-                        for i in range(30)]
+                segs = [types.SimpleNamespace(start=i * 20.0, end=i * 20.0 + 5, text=x, avg_logprob=None)
+                        for i, x in enumerate(runs.pop(0))]
                 return iter(segs), types.SimpleNamespace(language=language, duration=600.0)
 
         monkeypatch.setitem(sys.modules, "faster_whisper",
                             types.SimpleNamespace(WhisperModel=StuckWhisper, decode_audio=lambda path, sampling_rate: [0] * 10))
         code, env = run_main(transcribe, monkeypatch, capsys, "--audio", "a.wav", "--language", "en")
-        assert code == 0 and len(env["data"]["segments"]) == 30
-        assert "re-run: 0%, discarded" in run_main.err
+        assert code == 0 and [s["text"] for s in env["data"]["segments"]] == ["oke"] * 30
+        assert f"re-run: {said}, discarded" in run_main.err
 
     def test_model_failure(self, monkeypatch, capsys):
         def boom(*a, **k):

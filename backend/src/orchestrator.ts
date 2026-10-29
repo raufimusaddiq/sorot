@@ -277,9 +277,12 @@ export class PipelineOrchestrator {
     // CPU Whisper runs from ~0.5x real time (12 cores) to slower than real
     // time (4 cores or fewer); this guards against a hang, so it's generous.
     const perMediaMinute = this.config.whisperDevice === "cpu" ? 4 : 0.5;
-    // An hour of CPU transcription with no sign of life looks hung: show "Transcribing 37%".
+    // An hour of CPU transcription with no sign of life looks hung: show "Transcribing 37%"
+    // (or the script's own label, e.g. while it re-runs a stretch that lost its punctuation).
     const stage = this.store.getStage(jobId, "TRANSCRIBE");
-    const onProgress = (p: number) => { if (stage) this.store.updateStage(stage.id, { outputPath: `Transcribing ${p}%` }); };
+    const onProgress = (p: number, label = "Transcribing") => {
+      if (stage) this.store.updateStage(stage.id, { outputPath: `${label} ${p}%` });
+    };
     const result = await this.runScript("transcribe.py", [
       "--audio", this.path("audio", `${video.id}.wav`),
       "--output", outputPath,

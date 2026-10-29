@@ -27,16 +27,17 @@ export type ExecFn = (cmd: string, args: string[], opts?: SpawnOptions) => Promi
 export interface ScriptOptions {
   signal?: AbortSignal;
   timeoutMinutes?: number;
-  /** Percent done, from the script's "PROGRESS n" stderr lines. */
-  onProgress?: (percent: number) => void;
+  /** Percent done, from the script's "PROGRESS n" stderr lines; "PROGRESS n text"
+   *  also names what the script is doing now. */
+  onProgress?: (percent: number, label?: string) => void;
 }
 
 /** Runs an ai-pipeline script and returns its `data` envelope field. */
 export type ScriptRunner = (script: string, args: string[], opts?: ScriptOptions) => Promise<Json>;
 
 const STDERR_TAIL = 64 * 1024;
-const PROGRESS_LINE = /^PROGRESS (\d{1,3})\s*$/;
-const PROGRESS_LINES = /^PROGRESS \d{1,3}[ \t\r]*(\n|$)/gm;
+const PROGRESS_LINE = /^PROGRESS (\d{1,3})(?:[ \t]+(.*?))?\s*$/;
+const PROGRESS_LINES = /^PROGRESS \d{1,3}(?:[ \t\r][^\n]*)?(\n|$)/gm;
 // Grace period for pipe drains after the child exits. A killed Python parent
 // can leave an ffmpeg grandchild holding the pipes open.
 const DRAIN_GRACE_MS = 5_000;
@@ -178,7 +179,7 @@ export function createPythonRunner(config: AppConfig, exec: ExecFn = spawnCaptur
       env: { PYTHONIOENCODING: "utf-8" },
       ...(onProgress ? { onStderrLine: (line: string) => {
         const m = PROGRESS_LINE.exec(line);
-        if (m) onProgress(Number(m[1]));
+        if (m) onProgress(Number(m[1]), m[2] || undefined);
       } } : {}),
     });
     // Progress lines aren't worth logging or quoting in errors.

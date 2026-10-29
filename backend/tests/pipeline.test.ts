@@ -117,17 +117,19 @@ describe("full pipeline", () => {
     expect(clips[1]).toMatchObject({ renderStatus: "COMPLETED", exportStatus: "COMPLETED", startTime: 30, endTime: 55 });
   });
 
-  test("TRANSCRIBE shows Whisper's progress while it runs", async () => {
+  test("TRANSCRIBE shows Whisper's progress while it runs, under the script's label if it gives one", async () => {
     const seen: Array<string | null | undefined> = [];
     const orig = env.scripts["transcribe.py"]!;
     env.scripts["transcribe.py"] = (args, signal, opts) => {
-      opts?.onProgress?.(37);
       const job = env.app.store.listJobs()[0]!;
-      seen.push(env.app.store.getStage(job.id, "TRANSCRIBE")?.outputPath);
+      for (const label of [undefined, "Re-transcribing"]) {
+        opts?.onProgress?.(37, label);
+        seen.push(env.app.store.getStage(job.id, "TRANSCRIBE")?.outputPath);
+      }
       return orig(args, signal, opts);
     };
     const { videoId, jobId } = await importAndRun();
-    expect(seen).toEqual(["Transcribing 37%"]);
+    expect(seen).toEqual(["Transcribing 37%", "Re-transcribing 37%"]);
     const t = (await detail(jobId)).stages.find((s: any) => s.stage === "TRANSCRIBE");
     expect(t.outputPath).toBe(`${env.config.dataDir}/transcripts/${videoId}.json`);
   });
