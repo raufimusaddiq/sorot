@@ -15,6 +15,12 @@ rules decide.
 Images: `ghcr.io/raufimusaddiq/sorot:1.0.0` (CPU) · `:1.0.0-cuda` (NVIDIA GPU). `:latest` and `:latest-cuda`
 now point here.
 
+![Sorot landing page](https://raw.githubusercontent.com/raufimusaddiq/sorot/v1.0.0/docs/screenshots/landing.png)
+
+| Studio: import with options | Settings: LLM, Jev and Tebar |
+|---|---|
+| ![Studio import window](https://raw.githubusercontent.com/raufimusaddiq/sorot/v1.0.0/docs/screenshots/studio.png) | ![Settings windows](https://raw.githubusercontent.com/raufimusaddiq/sorot/v1.0.0/docs/screenshots/settings.png) |
+
 Timings below were each measured once, on the machine named in `docs/journal/`; yours will differ.
 
 ### Import and transcription
