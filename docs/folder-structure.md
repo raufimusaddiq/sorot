@@ -90,6 +90,7 @@ sorot/
 │   ├── scoring-spec.md · self-learning-scoring.md · discovery-system.md
 │   ├── python-pipeline.md · cli.md · integration.md · linux-install.md · ai-audit.md
 │   ├── release.md                   # Cutting a release, versions, rollback
+│   ├── screenshots/                 # README and release screenshots of the UI
 │   └── journal/                     # Session history and decisions
 │
 ├── AGENTS.md                        # Agent instructions (CLAUDE.md imports it)

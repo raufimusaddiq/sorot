@@ -31,6 +31,20 @@
 
 ---
 
+## 📸 Screenshots
+
+![Sorot landing page](docs/screenshots/landing.png)
+
+| 🎬 Studio: import with options | 🔌 Settings: LLM, Jev and Tebar |
+|---|---|
+| ![Studio import window with options open](docs/screenshots/studio.png) | ![Settings windows for LLM, Jev and Tebar](docs/screenshots/settings.png) |
+| 💬 **Captions**: 4 styles, word by word | 🏅 **Ranking**: 13 signals per moment |
+| ![Caption styles demo](docs/screenshots/captions.png) | ![Ranked clip demo](docs/screenshots/rank.png) |
+
+Captions and ranking are the landing page's live demo.
+
+---
+
 ## 🚀 Install
 
 Ready-made images on **`ghcr.io/raufimusaddiq/sorot`**, published per release — no 10-minute build. 📦 **`:latest`** = CPU (smaller) · **`:latest-cuda`** = NVIDIA GPU. The installers pick for you.
