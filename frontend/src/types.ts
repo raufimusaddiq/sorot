@@ -251,10 +251,18 @@ export type GenEvent = {
   id: string; kind: string; model: string | null; request: string | null; response: string | null; ok: number; ms: number | null; createdAt: string;
 };
 
+/** A finished video, ready to post: what the Library's "Generated" group lists. */
+export type GenExport = {
+  id: string; projectId: string; versionId: string; path: string; format: string | null; durationSec: number | null;
+  title: string | null; description: string | null; createdAt: string;
+  /** Only on the Library list. */
+  projectTitle?: string;
+};
+
 export type GenVerdictStatuses = Record<string, Partial<Record<'TECHNICAL' | 'CREATIVE', GenVerdict['status']>>>;
 
 export type GenProjectDetail = {
-  project: GenProject; plans: GenPlanRow[]; versions: GenVersion[]; assets: GenAsset[]; exports: unknown[];
+  project: GenProject; plans: GenPlanRow[]; versions: GenVersion[]; assets: GenAsset[]; exports: GenExport[];
   /** Each version's two verdict statuses, for the history list. */
   verdictStatuses: GenVerdictStatuses;
 };

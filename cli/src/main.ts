@@ -71,6 +71,7 @@ Generate (2D videos from a brief)
   gen revise <p> "<change>" | approve <p> | asset <p> <file>   a brief becomes storylines, then an approved plan
   gen build <p> [--no-watch] | verdicts <p|v> | cancel <p|v> | accept <p|v>   build a draft, see both verdicts
   gen fix <p|v> [--finding id]... [--note ".."] [--shot s02] [--no-watch] | restore <p|v>   fix findings into a new version, restore a plan
+  gen export <p|v> [--title ".."] [--description ".."] [-o DIR]   the finished video, into the Library; post it with: publish --generated <export>
 
 App
   up | down | restart           start / stop the app (Docker or systemd)

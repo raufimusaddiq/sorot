@@ -1,5 +1,5 @@
 import type { Store } from "../store";
-import type { GenProject, GenVersion } from "../types";
+import type { GenExport, GenProject, GenVersion } from "../types";
 import type { AppConfig } from "../config";
 import type { ExecFn } from "../runner";
 import type { Jev } from "../jev";
@@ -209,6 +209,23 @@ export class Runner {
       }
     }
     return this.mustVersion(versionId);
+  }
+
+  // ---- export ---------------------------------------------------------------------
+
+  /**
+   * The owner's export of a built version: the recipe's `export` step (or its defaults when the recipe
+   * has none) runs once, outside the build, with the title and description the owner typed.
+   */
+  async exportVersion(versionId: string, input: { title?: string; description?: string } = {}, signal?: AbortSignal): Promise<GenExport> {
+    const version = this.mustVersion(versionId);
+    const project = this.mustProject(version.projectId);
+    const recipe = parseRecipe(project);
+    const step = recipe.steps.find((s) => s.use === "export") ?? { use: "export" as const };
+    const ctx = this.context(project, version, recipe, step, signal);
+    ctx.settings = { ...ctx.settings, ...(input.title ? { title: input.title } : {}), ...(input.description ? { description: input.description } : {}) };
+    const result = await this.steps.export.run(ctx);
+    return this.store.getGenExport(result.outputRef as string) as GenExport;
   }
 
   // ---- restart --------------------------------------------------------------------

@@ -77,6 +77,41 @@ describe("a build, from the approved plan to two verdicts", () => {
     expect(accepted.body.data.project).toMatchObject({ status: "ACCEPTED", acceptedVersionId: vid });
   });
 
+  test("export: the accepted-quality video lands in the project's exports folder, is served, and is listed with the project", async () => {
+    const { id } = await approved({ replies: [...SCENES, JUDGE, json({ title: "Bunga berbunga", description: "Uang tumbuh." })] });
+    const v = (await env.json("POST", `${base}/projects/${id}/versions`)).body.data.version.id as string;
+    await gen().whenIdle();
+    const made = await env.json("POST", `${base}/versions/${v}/export`, { title: " Judul saya " });
+    expect(made.status).toBe(201);
+    const exp = made.body.data.export;
+    expect(exp).toMatchObject({ projectId: id, versionId: v, title: "Judul saya", description: "Uang tumbuh.", format: "9:16" });
+    expect(exp.path).toBe(join(env.config.genDir, id, "exports", `${v}.mp4`));
+    expect(await (await env.req("GET", `${base}/exports/${exp.id}/file`)).text()).toBe("mp4-bytes");
+    const dl = await env.req("GET", `${base}/exports/${exp.id}/file?download=1`);
+    expect(dl.headers.get("content-disposition")).toContain(`${v}.mp4`);
+    expect((await env.json("GET", `${base}/projects/${id}`)).body.data.exports).toHaveLength(1);
+    expect((await env.json("GET", `${base}/exports`)).body.data.exports).toMatchObject([{ id: exp.id, title: "Judul saya", projectTitle: expect.any(String) }]);
+    expect((await env.json("GET", `${base}/exports/nope/file`)).status).toBe(404);
+    // two requests at once share one render
+    const [a, b] = await Promise.all([gen().exportVersion(v, { title: "A", description: "d" }), gen().exportVersion(v, { title: "A", description: "d" })]);
+    expect(a.id).toBe(b.id);
+  });
+
+  test("export is refused while TECHNICAL fails, before the build is finished, or after the files were removed", async () => {
+    const { id } = await approved();
+    const v = (await env.json("POST", `${base}/projects/${id}/versions`)).body.data.version.id as string;
+    expect((await env.json("POST", `${base}/versions/${v}/export`)).body.error).toContain("finished build");
+    await gen().whenIdle();
+    const technical = store().genVerdictsForVersion(v).find((x) => x.kind === "TECHNICAL")!;
+    store().saveGenVerdict({ ...technical, status: "FAIL" });
+    const refused = await env.json("POST", `${base}/versions/${v}/export`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toContain("TECHNICAL failed");
+    store().updateGenVersion(v, { projectDir: null });
+    expect((await env.json("POST", `${base}/versions/${v}/export`)).body.error).toContain("removed to save space");
+    expect((await env.json("POST", `${base}/versions/nope/export`)).status).toBe(404);
+  });
+
   test("the video is served with range requests; the sheet only once the judge made one", async () => {
     const { id } = await approved();
     const v = (await env.json("POST", `${base}/projects/${id}/versions`)).body.data.version.id as string;

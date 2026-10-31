@@ -7,9 +7,10 @@ import { Jev } from "../src/jev";
 import { Llm } from "../src/llm";
 import { fitCopy, postStatus } from "../src/publisher";
 import { ConnectionSettings, mask } from "../src/settings";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { Store } from "../src/store";
 import { Tebar } from "../src/tebar";
-import { makeEnv, type TestEnv } from "./helpers";
+import { makeEnv, samplePlan, type TestEnv } from "./helpers";
 
 let env: TestEnv;
 beforeEach(() => { env = makeEnv(); });
@@ -388,5 +389,82 @@ describe("publishing through Tebar", () => {
       targets: statuses.map((x) => ({ id: null, accountId: "a", platform: "x", status: x, permalink: null, errorCode: null, errorMessage: null, publishedAt: null })) });
     expect([status(["published", "published"]), status(["published", "failed"]), status(["failed"]), status(["pending"], "scheduled"), status([])])
       .toEqual(["PUBLISHED", "PARTIAL", "FAILED", "SCHEDULED", "PUBLISHING"]);
+  });
+});
+
+describe("publishing a generated video", () => {
+  const T = "2026-01-01T00:00:00.000Z";
+  /** A generated project with one built version, its TECHNICAL verdict and an exported video. */
+  function exported(status: "PASS" | "REVIEW" | "FAIL" = "PASS", withFile = true) {
+    const store = env.app.store;
+    store.saveGenProject({
+      id: "g1", title: null, brief: "x", format: "9:16", targetSec: 30, language: "id", styleNotes: "santai", preset: null, recipeId: "quick", recipe: "{}",
+      ideaId: null, briefFlags: null, narrationScript: null, concept: null, stepIndex: 0, stepState: null, narration: 0, storylines: null, pickedStoryline: null,
+      status: "ACCEPTED", currentPlanId: "gp1", acceptedVersionId: "gv1", errorMessage: null, createdAt: T, updatedAt: T,
+    });
+    store.saveGenPlan({ id: "gp1", projectId: "g1", revision: 1, plan: JSON.stringify(samplePlan()), changeRequest: null, changeSummary: null, approvedAt: T, createdAt: T });
+    store.saveGenVersion({
+      id: "gv1", projectId: "g1", planId: "gp1", number: 1, parentVersionId: null, status: "BUILT", step: null, progress: 100, projectDir: null,
+      renderKind: "final", draftPath: null, stepState: null, hyperframesVersion: null, buildMs: 1, errorMessage: null, createdAt: T, updatedAt: T,
+    });
+    const findings = [{ id: "f1", severity: "should-fix", state: "open", description: "Text is small in shot 2." }, { id: "f2", severity: "polish", state: "open", description: "A nit." }];
+    store.saveGenVerdict({ id: "gd1", versionId: "gv1", kind: "TECHNICAL", status, findings: JSON.stringify(findings), judgedBy: "code", inputs: null, createdAt: T });
+    const path = `${env.config.genDir}/g1/exports/gv1.mp4`;
+    if (withFile) {
+      mkdirSync(`${env.config.genDir}/g1/exports`, { recursive: true });
+      writeFileSync(path, "mp4-bytes");
+    }
+    store.saveGenExport({ id: "ge1", projectId: "g1", versionId: "gv1", path, format: "9:16", durationSec: 30, title: "Bunga berbunga", description: "Uang tumbuh sendiri.", createdAt: T });
+  }
+  const route = "/api/generate/exports/ge1";
+
+  test("draft, publish and the posts list work like a clip's, and the post says what it is", async () => {
+    const st = fakeTebar();
+    await put("tebar", { apiKey: "tb_live_secret1234" });
+    exported();
+    const d = (await post(`${route}/publish/draft`, { accountIds: ["tt", "yt"] })).body.data;
+    expect(d.clip).toMatchObject({ id: "ge1", title: "Bunga berbunga", gateVerdict: "PASS" });
+    expect(d.targets[0]).toMatchObject({ platform: "tiktok", content: "Bunga berbunga\n\nUang tumbuh sendiri.", copyBy: "template", blockers: [], needs: { tiktokPrivacy: ["PUBLIC_TO_EVERYONE", "SELF_ONLY"] } });
+    expect(d.targets[1]).toMatchObject({ platform: "youtube", title: "Bunga berbunga", needs: { madeForKids: true } });
+
+    expect((await post(`${route}/publish`, { targets: [{ accountId: "tt", content: "x" }] })).body.error).toContain("choose who can see it");
+    const r = await post(`${route}/publish`, tt("Bunga!"));
+    expect(r.body.data.post).toMatchObject({ clipId: "ge1", subjectKind: "generated", providerPostId: "post-1", status: "PUBLISHING" });
+    expect(st.calls.find((c) => c.path === "/media/upload")).toBeDefined();
+    expect((await get(`${route}/posts`)).body.data.posts).toHaveLength(1);
+    expect((await get("/api/clips/ge1/posts")).status).toBe(404);   // an export is not a clip
+    expect((await get("/api/generate/exports/nope/posts")).status).toBe(404);
+  });
+
+  test("retry, cancel and sync work on it, but its numbers never become clip feedback", async () => {
+    const st = fakeTebar();
+    await put("tebar", { apiKey: "tb_live_secret1234" });
+    exported();
+    const { body } = await post(`${route}/publish`, { scheduledAt: new Date(Date.now() + 86_400_000).toISOString().replace("Z", "+00:00"), ...tt("Bunga!") });
+    expect(body.data.post.status).toBe("SCHEDULED");
+    st.postStatus = "published";
+    const synced = (await post("/api/social/sync")).body.data;
+    expect(synced).toMatchObject({ posts: 1, clips: 0, errors: [] });
+    expect((await post(`/api/social/posts/${body.data.post.id}/refresh`)).body.data.post.status).toBe("PUBLISHED");
+  });
+
+  test.each([
+    ["REVIEW", "technical", "confirmReview", "Text is small in shot 2."],
+    ["FAIL", "technical", "override", "Text is small in shot 2."],
+  ] as const)("a %s verdict asks for the same confirmation a clip's gate does", async (status, _k, ask, reason) => {
+    fakeTebar();
+    await put("tebar", { apiKey: "tb_live_secret1234" });
+    exported(status);
+    const d = (await post(`${route}/publish/draft`, { accountIds: ["tt"] })).body.data;
+    expect(d.clip).toMatchObject({ gateVerdict: status, gateReasons: [reason] });
+    expect((await post(`${route}/publish`, tt())).body.error).toContain(ask);
+  });
+
+  test("an export whose video is gone can't be posted", async () => {
+    fakeTebar();
+    await put("tebar", { apiKey: "tb_live_secret1234" });
+    exported("PASS", false);
+    expect((await post(`${route}/publish/draft`, { accountIds: ["tt"] })).body.data.targets[0].blockers).toEqual(["The export has no video file"]);
+    expect((await post(`${route}/publish`, tt())).body.error).toContain("no video file");
   });
 });

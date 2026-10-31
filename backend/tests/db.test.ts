@@ -23,9 +23,14 @@ describe("openDatabase", () => {
         export_status TEXT NOT NULL DEFAULT 'PENDING', export_path TEXT, created_at TEXT NOT NULL)`);
       raw.run(`INSERT INTO clip (id, video_id, tier, start_time, end_time, duration_sec, created_at)
         VALUES ('c1', 'v1', 'PRIMARY', 0, 1, 1, '2026-01-01')`);
+      raw.run("DROP TABLE social_post");
+      raw.run(`CREATE TABLE social_post (id TEXT PRIMARY KEY, clip_id TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+      raw.run("INSERT INTO social_post VALUES ('p1', 'c1', 'tebar', 'PUBLISHED', 'k', '2026-01-01', '2026-01-01')");
       raw.close();
 
       const db = openDatabase(path);
+      expect(db.query("SELECT subject_kind FROM social_post").all()).toEqual([{ subject_kind: "clip" }]);
       const cols = (db.query("PRAGMA table_info(clip)").all() as Array<{ name: string }>).map((c) => c.name);
       expect(cols).toContain("title");
       expect(cols).toContain("description");

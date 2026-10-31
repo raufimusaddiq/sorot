@@ -98,6 +98,10 @@ const TOOLS = {
     planEdits: { type: "object", description: "the full revised plan, only when a finding can't be fixed without changing the plan (its text or timing)", properties: PLAN_PROPS, required: ["title", "message", "look", "shots"] },
     summary: str("one sentence on what you changed"),
   }, ["sceneEdits", "summary"]),
+  copy: tool("submit_copy", "Submit the title and the description to post the finished video with.", {
+    title: str("at most 100 characters, plain text, in the video's language; no hashtags"),
+    description: str("at most 400 characters; what the video says, in the video's language; a few hashtags at the end are fine"),
+  }, ["title", "description"]),
   judge: tool("submit_judgement", "Submit your judgement of the finished video.", {
     criteria: {
       type: "array", items: {
@@ -129,7 +133,7 @@ const TOOLS = {
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
@@ -137,15 +141,16 @@ const INSTRUCTIONS = {
   revise: "You are the director of a short 2D motion video. Change the plan as the owner asks. Change only what the request names: every other shot keeps its text, timing and look exactly as it is.",
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
   fix: "You are the director of a short 2D motion video. The video was built and judged; fix the findings the owner chose (and do what their note says). Prefer sceneEdits: they change how a shot looks and moves and cost little. Change the plan (planEdits) only when a finding cannot be fixed without it, because changing the plan's words or timing makes the owner approve again. Keep everything the findings don't touch exactly as it is.",
+  copy: "You write the post text for a finished 2D motion video: a title and a short description a viewer would read before watching. Say only what the video says. Do not invent numbers, names or promises.",
   judge: "You are a fresh judge of a finished 2D video. You did not make it and know nothing of how it was made. Judge only what the brief, the plan, and what was built (and the pictures, if any) show. Answer every criterion and every risk you are given, honestly: yes only when it clearly holds, no when it clearly doesn't, partly in between. A risk is flagged only when you can point at it. Point at the shot and the moment when you can, and say what to change.",
   scene: "You are the motion designer of a short 2D video. Write the scene file for the ONE shot you are given, exactly as the approved plan describes it, following the authoring contract below.",
   repair: "You are the motion designer of a short 2D video. Fix the scene file for the ONE shot you are given so that every finding listed is resolved, changing nothing else, following the authoring contract below. A warning that is intended may be kept: list it in holds with the reason.",
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3 };
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5 };
 /** Output budget by job, as a floor: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000 };
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000 };
 
 export interface JudgeAnswer {
   criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
@@ -463,6 +468,27 @@ export class Director {
         return missing.length ? { errors: [`you didn't answer: ${missing.join(", ")}`] } : { value: { criteria, risks } };
       },
       input.images,
+    );
+  }
+
+  // ---- copy -----------------------------------------------------------------
+
+  /** The title and description an export is posted with, from the approved plan. */
+  async copy(input: { project: GenProject; step: RecipeStep; plan: Plan }): Promise<{ title: string; description: string }> {
+    const { plan } = input;
+    return this.ask<{ title: string; description: string }>(
+      input.project, "copy", input.step,
+      {
+        language: plan.language, title: plan.title, message: plan.message,
+        shots: plan.shots.map((s) => ({ text: s.text.map((t) => t.value), narration: s.narration })),
+      },
+      "Write the title (at most 100 characters) and the description (at most 400 characters) to post this video with.",
+      (parsed) => {
+        const raw = parsed as { title?: unknown; description?: unknown };
+        const title = clip(raw.title, 100).replace(/[<>]/g, "");
+        const description = clip(raw.description, 400);
+        return title && description ? { value: { title, description } } : { errors: ["give both a title and a description"] };
+      },
     );
   }
 

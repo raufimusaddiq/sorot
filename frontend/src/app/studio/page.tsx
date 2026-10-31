@@ -20,6 +20,7 @@ import { LearningPanel, type LearningStats } from '@/components/LearningPanel';
 import { Dock, ICONS, MenuBar } from '@/components/Desktop';
 import { GenerateWindow } from '@/components/generate/GenerateWindow';
 import { ConnectionsPanel } from '@/components/ConnectionsPanel';
+import { GeneratedLibrary } from '@/components/GeneratedLibrary';
 import { PublishPanel } from '@/components/PublishPanel';
 
 // Adaptive polling bounds for job status — start fast so stage transitions
@@ -1136,6 +1137,7 @@ export default function Studio() {
           </div>
         </>
       )}
+      <GeneratedLibrary api={api} />
       </Window>
       </div>
       )}

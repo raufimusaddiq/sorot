@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { AppConfig } from "../config";
 import { HttpError } from "../http";
@@ -6,7 +6,7 @@ import type { Jev } from "../jev";
 import type { Llm } from "../llm";
 import type { ExecFn } from "../runner";
 import { now, type Store } from "../store";
-import type { GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
+import type { GenExport, GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
 import { Assets, projectDir } from "./assets";
 import { Director, changedShots, type GateDecision as DirectorDecision } from "./director";
 import { DirectorLog } from "./events";
@@ -527,6 +527,40 @@ export class GenerateService {
     if (technical.status === "FAIL") throw new HttpError(409, "TECHNICAL failed: fix the must-fix findings before accepting");
     this.store.updateGenProject(v.projectId, { acceptedVersionId: v.id, status: "ACCEPTED" });
     return this.mustProject(v.projectId);
+  }
+
+  // ---- export ---------------------------------------------------------------
+
+  private exporting = new Map<string, Promise<GenExport>>();
+
+  /**
+   * The finished video of a built version (the export step), refused while TECHNICAL fails. It runs
+   * inside the request: a second request for the same version waits for the first one.
+   */
+  exportVersion(versionId: string, input: { title?: string; description?: string } = {}): Promise<GenExport> {
+    const v = this.mustVersion(versionId);
+    if (v.status !== "BUILT") throw new HttpError(409, "Only a finished build can be exported");
+    if (!v.projectDir) throw new HttpError(409, "The files of that version were removed to save space: build again, or export a newer version");
+    const running = this.exporting.get(versionId);
+    if (running) return running;
+    const work = this.runner.exportVersion(versionId, input).finally(() => this.exporting.delete(versionId));
+    this.exporting.set(versionId, work);
+    return work;
+  }
+
+  /** Every export, newest first, with the title of its project (the Library's "Generated" group). */
+  listExports(): Array<GenExport & { projectTitle: string }> {
+    return this.store.listGenExports().map((e) => {
+      const p = this.store.getGenProject(e.projectId);
+      return { ...e, projectTitle: p?.title ?? p?.brief.slice(0, 60) ?? "" };
+    });
+  }
+
+  /** The exported video. */
+  exportFile(exportId: string): string {
+    const row = this.store.getGenExport(exportId);
+    if (!row || !existsSync(row.path)) throw new HttpError(404, "Export not found");
+    return row.path;
   }
 
   // ---- fix rounds, history -------------------------------------------------

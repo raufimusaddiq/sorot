@@ -400,3 +400,24 @@ describe("director: fix", () => {
     expect(await ask(r)).toEqual({ plan: null, needsApproval: false, sceneEdits: [{ shotId: "s01", instruction: "Zoom slower." }], summary: "" });
   });
 });
+
+describe("director: copy", () => {
+  const plan = validatePlan(samplePlan(), planCtx).plan as Plan;
+  const ask = (r: ReturnType<typeof rig>) => r.director.copy({ project, step: step({ use: "export" }), plan });
+
+  test("the plan's words go in; a title and a description come out, cleaned and cut to length", async () => {
+    const r = rig([json({ title: `<b>${"Judul ".repeat(30)}</b>`, description: "Isi singkat." })]);
+    const out = await ask(r);
+    expect(out.title.length).toBeLessThanOrEqual(100);
+    expect(out.title).not.toMatch(/[<>]/);
+    expect(out.description).toBe("Isi singkat.");
+    const req = r.requests[0]!;
+    expect(req.tool_choice.function.name).toBe("submit_copy");
+    expect(userOf(req)).toMatchObject({ language: "id", title: "Bunga berbunga", shots: [{ text: ["Bunga berbunga?"] }, {}, {}] });
+    expect(req.max_tokens).toBe(4000);
+  });
+
+  test("an answer without both parts is asked again, then fails", async () => {
+    await expect(ask(rig([json({ title: "Saja" }), json({ description: "Saja" })]))).rejects.toThrow("give both a title and a description");
+  });
+});
