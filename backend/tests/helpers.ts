@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createApp, type App } from "../src/app";
@@ -6,6 +6,7 @@ import { loadConfig, type AppConfig } from "../src/config";
 import { openDatabase } from "../src/db";
 import { Jev } from "../src/jev";
 import type { ExecFn, ProcResult, ScriptOptions, ScriptRunner } from "../src/runner";
+import type { Recipe } from "../src/generate/recipe";
 import type { Json } from "../src/types";
 
 export type ScriptHandler = (args: string[], signal?: AbortSignal, opts?: ScriptOptions) => Json | Promise<Json>;
@@ -18,6 +19,8 @@ export interface TestEnv {
   execCalls: Array<{ cmd: string; args: string[] }>;
   scripts: Record<string, ScriptHandler>;
   execHandler: { fn: (cmd: string, args: string[], signal?: AbortSignal) => Promise<ProcResult> | ProcResult };
+  /** Per-command answers of the fake HyperFrames CLI (`node hyperframes.mjs <command>`); the captured outputs by default. */
+  hfHandlers: Record<string, HfHandler>;
   /** Outbound HTTP (web search, LLM): tests never reach the network. */
   fetchHandler: { fn: (url: string, init?: RequestInit) => Promise<Response> | Response };
   req(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Response>;
@@ -147,7 +150,10 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   const calls: TestEnv["calls"] = [];
   const execCalls: TestEnv["execCalls"] = [];
   const scripts = defaultScripts(config.dataDir);
-  const execHandler: TestEnv["execHandler"] = { fn: defaultExec };
+  const hfHandlers: Record<string, HfHandler> = {};
+  const execHandler: TestEnv["execHandler"] = {
+    fn: (cmd, args) => (cmd === config.nodePath ? fakeHyperframes(hfHandlers).exec(cmd, args) : defaultExec(cmd, args)),
+  };
   const fetchHandler: TestEnv["fetchHandler"] = { fn: (url) => { throw new Error(`no network in tests: ${url}`); } };
 
   const runScript: ScriptRunner = async (script, args, opts) => {
@@ -170,7 +176,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
       body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
     }));
   return {
-    app, config, dir, calls, execCalls, scripts, execHandler, fetchHandler, req,
+    app, config, dir, calls, execCalls, scripts, execHandler, hfHandlers, fetchHandler, req,
     async json(method, path, body) {
       const res = await req(method, path, body);
       return { status: res.status, body: await res.json() };
@@ -234,3 +240,64 @@ export function unknownFields({ state, questions }: JevRequest): string[] {
   const paths = [...JSON.stringify(questions).matchAll(/`([\w.]+)`/g)].map((m) => m[1]!);
   return paths.filter((p) => p.split(".").reduce((o: any, k) => (o == null ? undefined : o[k]), state) === undefined);
 }
+
+// ---- HyperFrames --------------------------------------------------------------
+
+const HF_FIXTURES = join(import.meta.dir, "fixtures", "hyperframes");
+/** A captured CLI output (spike S1): doctor, lint-ok, lint-fail, check-ok, snapshot-review, snapshot-at. */
+export const hfFixture = (name: string) => readFileSync(join(HF_FIXTURES, `${name}.json`), "utf8");
+
+export type HfHandler = (args: string[]) => ProcResult | Promise<ProcResult>;
+
+/**
+ * Fake `node hyperframes.mjs <command> ...`: answers each command with a captured real output
+ * (override per command with `handlers`). `render` writes its `-o` file. `calls` lists each
+ * command's arguments (without the node script).
+ */
+export function fakeHyperframes(handlers: Record<string, HfHandler> = {}) {
+  const calls: string[][] = [];
+  const base: Record<string, HfHandler> = {
+    init: (args) => {
+      const dir = args[1] as string;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "index.html"), "<!doctype html>");
+      return procOk();
+    },
+    add: () => procOk("{}"),
+    catalog: () => procOk(JSON.stringify([{ name: "data-chart", type: "block", title: "Data chart", description: "d", tags: ["chart"] }])),
+    lint: () => procOk(hfFixture("lint-ok")),
+    check: () => procOk(hfFixture("check-ok")),
+    snapshot: () => procOk(hfFixture("snapshot-review")),
+    render: (args) => {
+      const out = argAfter(args, "-o");
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, "mp4-bytes");
+      return procOk();
+    },
+    doctor: () => procOk(hfFixture("doctor")),
+  };
+  const handler = { ...base, ...handlers };
+  const exec = async (_node: string, args: string[]): Promise<ProcResult> => {
+    const [, command, ...rest] = args;
+    calls.push([command as string, ...rest]);
+    const h = handler[command as string];
+    return h ? h([command as string, ...rest]) : { exitCode: 2, stdout: "", stderr: "unknown command", timedOut: false, aborted: false };
+  };
+  return { exec: exec as ExecFn, calls };
+}
+
+// ---- Generate ------------------------------------------------------------------
+
+/** The `quick` example's shape: the simplest valid recipe. */
+export const quickRecipe = (): Recipe => ({
+  id: "quick", name: "Quick", version: 1, language: "id",
+  output: { width: 1080, height: 1920, fps: 30, minSec: 5, maxSec: 90 },
+  steps: [
+    { use: "storylines", with: { count: 3, skipUnderSec: 15 }, gate: "owner" },
+    { use: "plan", gate: "owner", with: { blocks: true } },
+    { use: "author" }, { use: "check" },
+    { use: "render", with: { quality: "draft" } },
+    { use: "technical" }, { use: "creative", with: { criteria: [{ id: "hook", question: "Does `opening` hold the eye?" }] } },
+    { use: "export", with: { mode: "rerender" } },
+  ],
+});

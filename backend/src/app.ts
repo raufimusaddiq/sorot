@@ -9,6 +9,8 @@ import { DiscoveryService } from "./discovery";
 import { DiscoveryAgent } from "./discoveryAgent";
 import { WebSearch } from "./webSearch";
 import { FeedbackService, ValidationError } from "./feedback";
+import { Hyperframes } from "./generate/hyperframes";
+import { GenerateService } from "./generate/service";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
 import { ClipEditor } from "./editor";
 import { ConflictError, JobService } from "./jobs";
@@ -66,6 +68,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const feedback = new FeedbackService(config, store);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
   const publisher = new Publisher(config, store, tebar, llm, jev, feedback);
+  const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev);
 
   const router = new Router();
 
@@ -304,6 +307,9 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     return ch ? ok(channelToMap(ch)) : fail(404, "not found");
   });
 
+  // ---- generate ----
+  router.on("GET", "/api/generate/status", async () => ok({ ...(await generate.status()) }));
+
   const allowedOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000", config.frontendUrl]);
 
   async function fetch(req: Request): Promise<Response> {
@@ -323,10 +329,11 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   return {
     fetch,
-    store, jobs, discovery, channels, orchestrator, llm, jev, tebar, settings, publisher, youtube, agent,
+    store, jobs, discovery, channels, orchestrator, llm, jev, tebar, settings, publisher, youtube, agent, generate,
     start() {
       jobs.startMaintenance();
       publisher.start();
+      generate.start();
     },
     close() {
       publisher.stop();

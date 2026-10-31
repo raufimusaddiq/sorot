@@ -1,0 +1,98 @@
+{
+  "ok": true,
+  "outputDir": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4",
+  "frames": [
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-01-at-1s.png",
+      "time": 1,
+      "role": "beat",
+      "label": "t=1"
+    },
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-02-at-3s.png",
+      "time": 3,
+      "role": "beat",
+      "label": "t=3"
+    },
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-03-at-5s.png",
+      "time": 5,
+      "role": "beat",
+      "label": "t=5"
+    },
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-04-at-7s.png",
+      "time": 7,
+      "role": "beat",
+      "label": "t=7"
+    },
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-05-at-9s.png",
+      "time": 9,
+      "role": "beat",
+      "label": "t=9"
+    }
+  ],
+  "contactSheets": [
+    "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\review-beats.jpg",
+    "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\review-phone.jpg"
+  ],
+  "review": {
+    "window": [
+      0,
+      10
+    ],
+    "scenes": [
+      {
+        "id": "title",
+        "start": 0,
+        "end": 10
+      }
+    ],
+    "beats": [
+      {
+        "time": 1,
+        "label": "t=1",
+        "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-01-at-1s.png"
+      },
+      {
+        "time": 3,
+        "label": "t=3",
+        "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-02-at-3s.png"
+      },
+      {
+        "time": 5,
+        "label": "t=5",
+        "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-03-at-5s.png"
+      },
+      {
+        "time": 7,
+        "label": "t=7",
+        "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-04-at-7s.png"
+      },
+      {
+        "time": 9,
+        "label": "t=9",
+        "path": "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\beat-05-at-9s.png"
+      }
+    ],
+    "seams": [],
+    "sheets": {
+      "beats": [
+        "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\review-beats.jpg"
+      ],
+      "seams": [],
+      "phone": [
+        "<project>\\.hyperframes\\artifacts\\snapshots\\294d1ef4-90fc-4d8c-882e-21d6ba2cd0f4\\review-phone.jpg"
+      ]
+    },
+    "notes": [
+      "Fewer than two scene starts; 5 beats are spread evenly instead. Time scenes as sub-composition hosts or clips to review each one."
+    ]
+  },
+  "_meta": {
+    "version": "0.8.223",
+    "latestVersion": "0.8.223",
+    "updateAvailable": false
+  }
+}

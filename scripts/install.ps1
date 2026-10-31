@@ -53,6 +53,7 @@ try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAc
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $Repo = "raufimusaddiq/sorot"
+$NodeMin = 22                   # HyperFrames (Generate) needs Node 22 or newer
 $BunVersion = "1.3.12"          # same as backend/Dockerfile and scripts/install.sh
 $ComposeMin = [version]"2.24"   # docker-compose.override.yml uses !override / !reset
 
@@ -264,6 +265,33 @@ function Ensure-Bun($app) {
     return $bun
 }
 
+# Generate (HyperFrames) needs Node >= 22. Optional: clipping works without it, so a failure only warns.
+function Ensure-Node {
+    $ok = $false
+    if (Have node) {
+        $v = (& node --version 2>$null)
+        if ($v -match '^v(\d+)\.' -and [int]$Matches[1] -ge $NodeMin) { $ok = $true; Ok "Node $v" }
+    }
+    if ($ok) { return $true }
+    try {
+        Winget-Install "OpenJS.NodeJS.LTS" "Node.js (for Generate)"
+        Refresh-Path
+        $v = (& node --version 2>$null)
+        if ($v -match '^v(\d+)\.' -and [int]$Matches[1] -ge $NodeMin) { Ok "Node $v"; return $true }
+    } catch { }
+    Warn "Node $NodeMin or newer is missing: Generate stays unavailable (clipping is unaffected). Install Node from nodejs.org, then re-run."
+    return $false
+}
+
+# Chrome for HyperFrames renders (a system Chrome is used when present).
+function Ensure-RenderBrowser($app) {
+    $hf = Join-Path $app "node_modules\hyperframes\bin\hyperframes.mjs"
+    if (-not (Test-Path $hf)) { Warn "HyperFrames is not installed (bun install first)"; return }
+    Step "Browser for Generate (hyperframes browser ensure)"
+    $out = & node $hf browser ensure 2>&1
+    if ($LASTEXITCODE -ne 0) { Warn "browser ensure failed: Generate may be unavailable. $out" } else { Ok "render browser ready" }
+}
+
 function Ensure-Ffmpeg {
     if (-not (Have ffmpeg)) { Winget-Install "Gyan.FFmpeg" "ffmpeg" }
     $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
@@ -361,12 +389,14 @@ function Install-Native($app) {
     $ffmpegDir = Ensure-Ffmpeg
     $bun = Ensure-Bun $app
     $py = Ensure-Python
+    $hasNode = Ensure-Node
     $cudaDirs = Python-Venv $app $py $gpu
     Step "Web UI (bun install + build)"
     Push-Location $app
     try {
         & $bun install --frozen-lockfile 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Fail "bun install failed" }
+        if ($hasNode) { Ensure-RenderBrowser $app }
         & $bun run build 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) { Fail "UI build failed (run: .tools\bun\bun.exe run build)" }
     } finally { Pop-Location }

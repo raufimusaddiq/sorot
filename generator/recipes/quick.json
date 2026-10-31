@@ -1,0 +1,27 @@
+{
+  "id": "quick",
+  "name": "Quick",
+  "description": "The simplest flow: pick a storyline, approve the plan, build a draft, get both verdicts, export. Any format, 5 to 90 s.",
+  "version": 1,
+  "builtIn": true,
+  "language": "id",
+  "output": { "width": 1080, "height": 1920, "fps": 30, "minSec": 5, "maxSec": 90 },
+  "steps": [
+    { "use": "storylines", "gate": "owner", "with": { "count": 3, "skipUnderSec": 15 } },
+    { "use": "plan", "gate": "owner", "with": { "blocks": true } },
+    { "use": "author", "with": { "repairRounds": 3 } },
+    { "use": "check", "with": { "warnings": "fix-or-hold" } },
+    { "use": "render", "with": { "quality": "draft" } },
+    { "use": "technical" },
+    {
+      "use": "creative",
+      "with": {
+        "criteria": [
+          { "id": "opening", "question": "Does the opening of the video hold a stranger's eye in the first 2 seconds?" },
+          { "id": "pace", "question": "Is the pace of the shots comfortable to follow for the length of the video?" }
+        ]
+      }
+    },
+    { "use": "export", "with": { "mode": "rerender", "quality": "delivery" } }
+  ]
+}

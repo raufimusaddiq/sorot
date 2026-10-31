@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -191,6 +191,10 @@ export class ApiClient {
 
   async testConnection(kind: ConnectionKind) {
     return this.request<ConnectionTest>(`/api/settings/${kind}/test`, { method: 'POST' });
+  }
+
+  async getGenerateStatus() {
+    return this.request<GenerateStatus>('/api/generate/status');
   }
 
   // ---- publishing (Tebar) ----

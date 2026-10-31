@@ -18,6 +18,7 @@ import { Window } from '@/components/Window';
 import { ResultsForm } from '@/components/ResultsForm';
 import { LearningPanel, type LearningStats } from '@/components/LearningPanel';
 import { Dock, ICONS, MenuBar } from '@/components/Desktop';
+import { GenerateWindow } from '@/components/generate/GenerateWindow';
 import { ConnectionsPanel } from '@/components/ConnectionsPanel';
 import { PublishPanel } from '@/components/PublishPanel';
 
@@ -270,7 +271,7 @@ const WHY_SHOWN = 3;
 const statusLabel = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 type DiscoveryMode = 'auto' | 'search' | 'trending' | 'channel';
-type MainTab = 'import' | 'discovery' | 'learning' | 'settings';
+type MainTab = 'import' | 'discovery' | 'generate' | 'learning' | 'settings';
 type TabKey = 'clips' | 'transcript';
 
 function DiscoveryPanel({ api }: { api: ApiClient }) {
@@ -1142,6 +1143,8 @@ export default function Studio() {
       {/* Discovery imports go Queue → Drain → backend import; no direct import here. */}
       {mainTab === 'discovery' && <DiscoveryPanel api={api} />}
 
+      {mainTab === 'generate' && <GenerateWindow api={api} onOpenSettings={() => setMainTab('settings')} />}
+
       {mainTab === 'learning' && (
         <LearningPanel api={api} groups={videoGroups} stats={learningStats} onStats={setLearningStats} />
       )}
@@ -1152,6 +1155,7 @@ export default function Studio() {
       <Dock current={mainTab} onOpen={setMainTab} apps={[
         { key: 'import', label: 'Import & Clips', icon: ICONS.import },
         { key: 'discovery', label: 'Discover', icon: ICONS.discover },
+        { key: 'generate', label: 'Generate', icon: ICONS.generate },
         {
           key: 'learning',
           label: `Learning${

@@ -1,14 +1,17 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type {
-  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, Job, SocialPost, StageStatus, Video,
+  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, GenAsset, GenEvent, GenExport, GenFact, GenIdea,
+  GenPlan, GenProject, GenRecipeRow, GenVerdict, GenVersion, Job, SocialPost, StageStatus, Video,
 } from "./types";
 
 type Row = Record<string, unknown>;
 type Table =
   | "video" | "job" | "stage_status" | "clip" | "clip_score"
-  | "clip_feedback" | "discovered_video" | "discovery_channel" | "social_post";
+  | "clip_feedback" | "discovered_video" | "discovery_channel" | "social_post"
+  | "gen_project" | "gen_plan" | "gen_version" | "gen_verdict" | "gen_asset" | "gen_export" | "gen_event"
+  | "gen_recipe" | "gen_fact" | "gen_idea";
 
-const COLUMNS: Record<Table, string[]> = {
+const COLUMNS = {
   video: [
     "id", "source_url", "source_type", "title", "duration_sec", "file_path", "created_at",
     "section_start", "section_end", "brief",
@@ -50,7 +53,31 @@ const COLUMNS: Record<Table, string[]> = {
     "id", "clip_id", "provider", "provider_post_id", "status", "scheduled_at", "idempotency_key",
     "request", "targets", "error_message", "created_at", "updated_at", "last_synced_at", "profile_id",
   ],
-};
+} as Record<Table, string[]>;
+
+COLUMNS.gen_project = [
+  "id", "title", "brief", "format", "target_sec", "language", "style_notes", "preset", "recipe_id", "recipe",
+  "idea_id", "brief_flags", "narration_script", "concept", "step_index", "step_state", "narration", "storylines",
+  "picked_storyline", "status", "current_plan_id", "accepted_version_id", "error_message", "created_at", "updated_at",
+];
+COLUMNS.gen_plan = ["id", "project_id", "revision", "plan", "change_request", "change_summary", "approved_at", "created_at"];
+COLUMNS.gen_version = [
+  "id", "project_id", "plan_id", "number", "parent_version_id", "status", "step", "progress", "project_dir",
+  "render_kind", "draft_path", "step_state", "hyperframes_version", "build_ms", "error_message", "created_at", "updated_at",
+];
+COLUMNS.gen_verdict = ["id", "version_id", "kind", "status", "findings", "judged_by", "inputs", "created_at"];
+COLUMNS.gen_asset = ["id", "project_id", "kind", "origin", "path", "shot_id", "prompt_hash", "meta", "created_at"];
+COLUMNS.gen_export = ["id", "project_id", "version_id", "path", "format", "duration_sec", "title", "description", "created_at"];
+COLUMNS.gen_event = ["id", "project_id", "version_id", "kind", "model", "request", "response", "ok", "ms", "tokens", "created_at"];
+COLUMNS.gen_recipe = ["id", "name", "version", "built_in", "description", "recipe", "idea_cursor", "created_at", "updated_at"];
+COLUMNS.gen_fact = [
+  "id", "project_id", "idea_id", "claim", "value", "source_url", "status", "original_value", "evidence", "added_by",
+  "created_at", "updated_at",
+];
+COLUMNS.gen_idea = ["id", "slug", "brief", "flags", "status", "project_id", "created_at", "updated_at"];
+
+/** gen_event.response is capped: the director log keeps the start of a long answer. */
+export const EVENT_RESPONSE_MAX = 20_000;
 
 const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 const toSnake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
@@ -272,6 +299,93 @@ export class Store {
     );
   }
   updateSocialPost(id: string, fields: Partial<SocialPost>) { this.patch("social_post", id, { ...fields, updatedAt: now() }); }
+
+  // ---- generate: gen_project / gen_plan / gen_version / gen_verdict / gen_asset / gen_export ----
+  saveGenProject(p: GenProject) { return this.upsert("gen_project", p); }
+  getGenProject(id: string) { return this.one<GenProject>("SELECT * FROM gen_project WHERE id = ?", id); }
+  listGenProjects() { return this.all<GenProject>("SELECT * FROM gen_project ORDER BY created_at DESC"); }
+  updateGenProject(id: string, fields: Partial<GenProject>) { this.patch("gen_project", id, { ...fields, updatedAt: now() }); }
+  /** Removes the project and every row that belongs to it (files are the service's job). */
+  deleteGenProject(id: string) {
+    this.db.query("DELETE FROM gen_verdict WHERE version_id IN (SELECT id FROM gen_version WHERE project_id = ?)").run(id);
+    for (const t of ["gen_version", "gen_plan", "gen_asset", "gen_export", "gen_event", "gen_fact"]) {
+      this.db.query(`DELETE FROM ${t} WHERE project_id = ?`).run(id);
+    }
+    this.db.query("DELETE FROM gen_project WHERE id = ?").run(id);
+  }
+
+  saveGenPlan(p: GenPlan) { return this.upsert("gen_plan", p); }
+  getGenPlan(id: string) { return this.one<GenPlan>("SELECT * FROM gen_plan WHERE id = ?", id); }
+  /** Newest revision first. */
+  genPlansForProject(projectId: string) {
+    return this.all<GenPlan>("SELECT * FROM gen_plan WHERE project_id = ? ORDER BY revision DESC", projectId);
+  }
+  updateGenPlan(id: string, fields: Partial<GenPlan>) { this.patch("gen_plan", id, fields); }
+
+  saveGenVersion(v: GenVersion) { return this.upsert("gen_version", v); }
+  getGenVersion(id: string) { return this.one<GenVersion>("SELECT * FROM gen_version WHERE id = ?", id); }
+  genVersionsForProject(projectId: string) {
+    return this.all<GenVersion>("SELECT * FROM gen_version WHERE project_id = ? ORDER BY number DESC", projectId);
+  }
+  genVersionsByStatus(status: string) {
+    return this.all<GenVersion>("SELECT * FROM gen_version WHERE status = ? ORDER BY created_at", status);
+  }
+  updateGenVersion(id: string, fields: Partial<GenVersion>) { this.patch("gen_version", id, { ...fields, updatedAt: now() }); }
+
+  /** One verdict per kind per version: judging again replaces it. */
+  saveGenVerdict(v: GenVerdict) {
+    this.db.query("DELETE FROM gen_verdict WHERE version_id = ? AND kind = ?").run(v.versionId, v.kind);
+    return this.upsert("gen_verdict", v);
+  }
+  genVerdictsForVersion(versionId: string) {
+    return this.all<GenVerdict>("SELECT * FROM gen_verdict WHERE version_id = ? ORDER BY kind DESC", versionId);
+  }
+
+  saveGenAsset(a: GenAsset) { return this.upsert("gen_asset", a); }
+  getGenAsset(id: string) { return this.one<GenAsset>("SELECT * FROM gen_asset WHERE id = ?", id); }
+  genAssetsForProject(projectId: string) {
+    return this.all<GenAsset>("SELECT * FROM gen_asset WHERE project_id = ? ORDER BY created_at", projectId);
+  }
+  deleteGenAsset(id: string) { this.db.query("DELETE FROM gen_asset WHERE id = ?").run(id); }
+
+  saveGenExport(e: GenExport) { return this.upsert("gen_export", e); }
+  getGenExport(id: string) { return this.one<GenExport>("SELECT * FROM gen_export WHERE id = ?", id); }
+  genExportsForProject(projectId: string) {
+    return this.all<GenExport>("SELECT * FROM gen_export WHERE project_id = ? ORDER BY created_at DESC", projectId);
+  }
+  listGenExports() { return this.all<GenExport>("SELECT * FROM gen_export ORDER BY created_at DESC"); }
+
+  // ---- generate: gen_event (the director log) ----
+  saveGenEvent(e: GenEvent) {
+    return this.upsert("gen_event", { ...e, response: e.response === null ? null : e.response.slice(0, EVENT_RESPONSE_MAX) });
+  }
+  /** Newest first. */
+  genEventsForProject(projectId: string, limit = 200) {
+    return this.all<GenEvent>(
+      "SELECT * FROM gen_event WHERE project_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?", projectId, limit,
+    );
+  }
+
+  // ---- generate: gen_recipe / gen_fact / gen_idea ----
+  saveGenRecipe(r: GenRecipeRow) { return this.upsert("gen_recipe", r); }
+  getGenRecipe(id: string) { return this.one<GenRecipeRow>("SELECT * FROM gen_recipe WHERE id = ?", id); }
+  listGenRecipes() { return this.all<GenRecipeRow>("SELECT * FROM gen_recipe ORDER BY built_in DESC, name"); }
+  updateGenRecipe(id: string, fields: Partial<GenRecipeRow>) { this.patch("gen_recipe", id, { ...fields, updatedAt: now() }); }
+  deleteGenRecipe(id: string) { this.db.query("DELETE FROM gen_recipe WHERE id = ?").run(id); }
+
+  saveGenFact(f: GenFact) { return this.upsert("gen_fact", f); }
+  getGenFact(id: string) { return this.one<GenFact>("SELECT * FROM gen_fact WHERE id = ?", id); }
+  genFactsForProject(projectId: string) {
+    return this.all<GenFact>("SELECT * FROM gen_fact WHERE project_id = ? ORDER BY created_at", projectId);
+  }
+  updateGenFact(id: string, fields: Partial<GenFact>) { this.patch("gen_fact", id, { ...fields, updatedAt: now() }); }
+  deleteGenFact(id: string) { this.db.query("DELETE FROM gen_fact WHERE id = ?").run(id); }
+
+  saveGenIdea(i: GenIdea) { return this.upsert("gen_idea", i); }
+  getGenIdea(id: string) { return this.one<GenIdea>("SELECT * FROM gen_idea WHERE id = ?", id); }
+  listGenIdeas() { return this.all<GenIdea>("SELECT * FROM gen_idea ORDER BY created_at"); }
+  updateGenIdea(id: string, fields: Partial<GenIdea>) { this.patch("gen_idea", id, { ...fields, updatedAt: now() }); }
+  deleteGenIdea(id: string) { this.db.query("DELETE FROM gen_idea WHERE id = ?").run(id); }
 
   // ---- setting ----
   settings(): Record<string, string> {

@@ -5,7 +5,8 @@
   "workspaces": [
     "backend",
     "frontend",
-    "cli"
+    "cli",
+    "generator"
   ],
   "scripts": {
     "dev": "bun run --filter sorot-backend dev",

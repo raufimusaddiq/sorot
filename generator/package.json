@@ -1,0 +1,10 @@
+{
+  "name": "sorot-generator",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Pinned HyperFrames CLI, prompts, fonts and example recipes for Sorot Generate. No Sorot logic lives here.",
+  "dependencies": {
+    "hyperframes": "0.8.223"
+  }
+}
