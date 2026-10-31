@@ -1,4 +1,5 @@
-import { rmSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import type { AppConfig } from "../config";
 import { HttpError } from "../http";
 import type { Jev } from "../jev";
@@ -7,8 +8,10 @@ import type { ExecFn } from "../runner";
 import { now, type Store } from "../store";
 import type { GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
 import { Assets, projectDir } from "./assets";
-import { Director, type GateDecision as DirectorDecision } from "./director";
+import { Director, changedShots, type GateDecision as DirectorDecision } from "./director";
 import { DirectorLog } from "./events";
+import { readFindings, type Finding } from "./findings";
+import { readFix, writeFix, type FixEdit, type FixFile } from "./fixes";
 import { Hyperframes, requiredOk } from "./hyperframes";
 import { mirrorProject, mirrorReview, readMirror } from "./mirror";
 import { planContext } from "./planContext";
@@ -16,6 +19,7 @@ import { validatePlan, type Plan } from "./planSchema";
 import { freezeRecipe, parseRecipe, seedRecipes, type Recipe, type RecipeStep } from "./recipe";
 import { BuildQueue, clipJobBusy, estimateBuild } from "./queue";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
+import { settingsOf } from "./steps";
 import { STORYLINE_NOTE, chosenStoryline, parseStorylines, projectFlags } from "./steps/storylines";
 
 // Entry point of Generate for the routes: availability, projects, the storyline pick and the plan
@@ -103,6 +107,7 @@ export class GenerateService {
           await this.runner.runBuild(versionId, signal);
         } finally {
           mirrorReview(config, store, versionId);
+          await this.afterBuild(versionId).catch((e: Error) => console.error(`Generate: after-build work for ${versionId} failed: ${e.message}`));
         }
       },
       cancelQueued: (versionId) => this.endQueued(versionId),
@@ -297,9 +302,11 @@ export class GenerateService {
 
   getProject(id: string) {
     const project = this.mustProject(id);
+    const versions = this.store.genVersionsForProject(id);
     return {
-      project, plans: this.store.genPlansForProject(id), versions: this.store.genVersionsForProject(id),
-      assets: this.store.genAssetsForProject(id), exports: this.store.genExportsForProject(id),
+      project, plans: this.store.genPlansForProject(id), versions, assets: this.store.genAssetsForProject(id), exports: this.store.genExportsForProject(id),
+      /** Each version's TECHNICAL and CREATIVE status, for the history list. */
+      verdictStatuses: Object.fromEntries(versions.map((v) => [v.id, Object.fromEntries(this.store.genVerdictsForVersion(v.id).map((x) => [x.kind, x.status]))])) as Record<string, Partial<Record<"TECHNICAL" | "CREATIVE", string>>>,
     };
   }
 
@@ -393,15 +400,15 @@ export class GenerateService {
   }
 
   /** Saves a new plan revision and sends it back to the owner for approval. */
-  private savePlan(p: GenProject, plan: Plan, change: { request: string | null; summary: string | null }): GenPlan {
+  private savePlan(p: GenProject, plan: Plan, change: { request: string | null; summary: string | null }, approved = false): GenPlan {
     const revision = (this.store.genPlansForProject(p.id)[0]?.revision ?? 0) + 1;
     const row = this.store.saveGenPlan({
       id: crypto.randomUUID(), projectId: p.id, revision, plan: JSON.stringify(plan), changeRequest: change.request,
-      changeSummary: change.summary, approvedAt: null, createdAt: now(),
+      changeSummary: change.summary, approvedAt: approved ? now() : null, createdAt: now(),
     });
     this.store.updateGenProject(p.id, { currentPlanId: row.id, title: plan.title });
     const planStep = parseRecipe(p).steps.find((s) => s.use === "plan") as RecipeStep;
-    this.runner.markWaiting(p.id, stepId(planStep));
+    if (!approved) this.runner.markWaiting(p.id, stepId(planStep));
     mirrorProject(this.config, this.store, p.id);
     return row;
   }
@@ -462,16 +469,32 @@ export class GenerateService {
   /** Queues a build of the approved plan as a new version; nothing is built from an unapproved plan (FR-006). */
   startBuild(projectId: string): GenVersion {
     const p = this.idle(projectId);
-    const plan = this.assertCanBuild(projectId);
+    return this.queueVersion(p, this.assertCanBuild(projectId));
+  }
+
+  /**
+   * Makes the next version of a project and queues it. A fix round starts from the version it fixes:
+   * that version's scenes are copied over, and fix.json says which shots change and how, so only
+   * those are written again.
+   */
+  private queueVersion(p: GenProject, plan: GenPlan, opts: { parent?: GenVersion; fix?: FixFile } = {}): GenVersion {
     const quality = parseRecipe(p).steps.find((s) => s.use === "render")?.with?.quality;
-    const number = (this.store.genVersionsForProject(projectId)[0]?.number ?? 0) + 1;
+    const number = (this.store.genVersionsForProject(p.id)[0]?.number ?? 0) + 1;
+    const dir = `${projectDir(this.config, p.id)}/v${number}`;
+    if (opts.parent?.projectDir && opts.fix) {
+      mkdirSync(join(dir, "compositions"), { recursive: true });
+      for (const f of readdirSync(join(opts.parent.projectDir, "compositions")).filter((x) => x.endsWith(".html"))) {
+        cpSync(join(opts.parent.projectDir, "compositions", f), join(dir, "compositions", f));
+      }
+      writeFix(dir, opts.fix);
+    }
     const t = now();
     const version = this.store.saveGenVersion({
-      id: crypto.randomUUID(), projectId, planId: plan.id, number, parentVersionId: null, status: "QUEUED", step: null, progress: 0,
-      projectDir: `${projectDir(this.config, projectId)}/v${number}`, renderKind: quality === "delivery" ? "final" : "draft", draftPath: null,
+      id: crypto.randomUUID(), projectId: p.id, planId: plan.id, number, parentVersionId: opts.parent?.id ?? null, status: "QUEUED", step: null, progress: 0,
+      projectDir: dir, renderKind: quality === "delivery" ? "final" : "draft", draftPath: null,
       stepState: null, hyperframesVersion: this.hyperframes.version, buildMs: null, errorMessage: null, createdAt: t, updatedAt: t,
     });
-    this.store.updateGenProject(projectId, { status: "BUILDING", errorMessage: null });
+    this.store.updateGenProject(p.id, { status: "BUILDING", errorMessage: null });
     this.queue.enqueue(version.id);
     return version;
   }
@@ -506,6 +529,114 @@ export class GenerateService {
     return this.mustProject(v.projectId);
   }
 
+  // ---- fix rounds, history -------------------------------------------------
+
+  private async planContextOf(p: GenProject) {
+    const catalog = (await this.catalog()).map((b) => b.name);
+    return planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog });
+  }
+
+  /**
+   * A fix round (FR-015): the chosen findings (by default every open must-fix one) and the owner's
+   * note go to the director. Scene edits start a new version that rewrites only those shots and
+   * re-runs both verdicts. If the director has to change the plan's words or timing, nothing is
+   * built: the new plan revision waits for the owner's approval (`needsApproval`).
+   */
+  async fixVersion(versionId: string, input: { findingIds?: string[]; note?: string; shotId?: string } = {}, auto?: { depth: number }):
+    Promise<{ version: GenVersion | null; plan: GenPlan | null; needsApproval: boolean; summary: string }> {
+    const v = this.mustVersion(versionId);
+    const p = this.idle(v.projectId);
+    if (v.status !== "BUILT") throw new HttpError(409, "Only a finished build can be fixed");
+    if (!v.projectDir) throw new HttpError(409, "The files of that version were removed to save space: build again, or fix a newer version");
+    const all = readFindings(v.projectDir);
+    const wanted = input.findingIds ?? [];
+    const unknown = wanted.filter((id) => !all.some((f) => f.id === id));
+    if (unknown.length) throw new HttpError(400, `No such finding: ${unknown.join(", ")}`);
+    const chosen = wanted.length ? all.filter((f) => wanted.includes(f.id)) : all.filter((f) => f.severity === "must-fix" && f.state === "open");
+    const note = input.note?.trim() || undefined;
+    if (!chosen.length && !note) throw new HttpError(409, "There is nothing to fix: no must-fix findings are open. Choose findings or give a note.");
+    const oldRow = this.store.getGenPlan(v.planId);
+    if (!oldRow) throw new HttpError(409, "The plan of that version is missing");
+    const plan = JSON.parse(oldRow.plan) as Plan;
+    if (input.shotId && !plan.shots.some((x) => x.id === input.shotId)) throw new HttpError(400, `The plan has no shot ${input.shotId}`);
+
+    const recipe = parseRecipe(p);
+    const authorStep = recipe.steps.find((x) => x.use === "author") as RecipeStep;
+    const answer = await this.director.fix({
+      project: p, step: authorStep, plan, planCtx: await this.planContextOf(p), note, shotId: input.shotId,
+      findings: chosen.map((f) => ({ id: f.id, severity: f.severity, shotId: f.shotId, fromSec: f.fromSec, toSec: f.toSec, code: f.code, description: f.description, suggestedFix: f.suggestedFix })),
+    });
+
+    let row = oldRow;
+    if (answer.plan) {
+      row = this.savePlan(p, answer.plan, { request: note ?? `Fix: ${chosen.map((f) => f.code).join(", ")}`, summary: answer.summary }, !answer.needsApproval);
+      if (answer.needsApproval) return { version: null, plan: row, needsApproval: true, summary: answer.summary };
+    }
+
+    const forShot = (shotId: string) => chosen.filter((f) => f.shotId === shotId).map((f) => ({ code: f.code, message: f.description, hint: f.suggestedFix }));
+    const edits = new Map<string, FixEdit>();
+    for (const e of answer.sceneEdits) {
+      const had = edits.get(e.shotId);
+      edits.set(e.shotId, { shotId: e.shotId, instruction: had ? `${had.instruction} ${e.instruction}` : e.instruction, findings: forShot(e.shotId) });
+    }
+    if (answer.plan) {
+      for (const id of changedShots(plan, answer.plan)) {
+        if (!edits.has(id)) edits.set(id, { shotId: id, instruction: "The plan for this shot changed: update the scene to match it.", findings: forShot(id) });
+      }
+    }
+    const version = this.queueVersion(this.mustProject(p.id), row, {
+      parent: v, fix: { parentVersionId: v.id, summary: answer.summary, edits: [...edits.values()], auto: !!auto, depth: auto?.depth ?? 0 },
+    });
+    return { version, plan: answer.plan ? row : null, needsApproval: false, summary: answer.summary };
+  }
+
+  /** Makes the plan a version was built from the project's current plan again (an older version can be rebuilt or edited from). */
+  restoreVersion(versionId: string): GenProject {
+    const v = this.mustVersion(versionId);
+    const p = this.idle(v.projectId);
+    const row = this.store.getGenPlan(v.planId);
+    if (!row) throw new HttpError(409, "The plan of that version is missing");
+    this.store.updateGenProject(p.id, { currentPlanId: row.id, title: (JSON.parse(row.plan) as Plan).title });
+    mirrorProject(this.config, this.store, p.id);
+    return this.mustProject(p.id);
+  }
+
+  /** After a build ends: automatic fix rounds the recipe asks for, then the pruning of old versions. */
+  private async afterBuild(versionId: string): Promise<void> {
+    const v = this.mustVersion(versionId);
+    try {
+      if (v.status === "BUILT" && v.projectDir) await this.autoFix(v);
+    } finally {
+      this.prune(v.projectId);
+    }
+  }
+
+  /** `autoFixRounds` on the technical and creative steps: a FAIL goes back to the director by itself, up to that many times. */
+  private async autoFix(v: GenVersion): Promise<void> {
+    const p = this.mustProject(v.projectId);
+    const recipe = parseRecipe(p);
+    const rounds = (use: "technical" | "creative") => Number(settingsOf(use, recipe.steps.find((s) => s.use === use)?.with).autoFixRounds);
+    const depth = readFix(v.projectDir as string)?.depth ?? 0;
+    const verdicts = this.store.genVerdictsForVersion(v.id);
+    const failed = (kind: string) => verdicts.some((x) => x.kind === kind && x.status === "FAIL");
+    const open = (f: Finding) => f.state === "open";
+    const findings = readFindings(v.projectDir as string);
+    const pick = failed("TECHNICAL") && depth < rounds("technical") ? findings.filter((f) => f.source !== "creative" && f.severity === "must-fix" && open(f))
+      : failed("CREATIVE") && depth < rounds("creative") ? findings.filter((f) => f.source === "creative" && open(f)) : [];
+    if (pick.length) await this.fixVersion(v.id, { findingIds: pick.map((f) => f.id) }, { depth: depth + 1 });
+  }
+
+  /** Old drafts are removed beyond GEN_KEEP_VERSIONS (the accepted one and any running build stay); the rows, plans and exports stay. */
+  private prune(projectId: string): void {
+    const p = this.store.getGenProject(projectId);
+    if (!p) return;
+    for (const v of this.store.genVersionsForProject(projectId).slice(this.config.genKeepVersions)) {
+      if (!v.projectDir || v.id === p.acceptedVersionId || v.status === "QUEUED" || v.status === "BUILDING") continue;
+      rmSync(v.projectDir, { recursive: true, force: true });
+      this.store.updateGenVersion(v.id, { projectDir: null, draftPath: null });
+    }
+  }
+
   /** What a build and an export will take, from the builds so far. */
   estimate(projectId: string) { return estimateBuild(this.store, this.mustProject(projectId).targetSec); }
 
@@ -519,7 +650,7 @@ export class GenerateService {
   /** A review sheet (review-beats, review-phone) the CREATIVE judge looked at. */
   sheetFile(versionId: string, name: string): string {
     const v = this.mustVersion(versionId);
-    if (!["review-beats", "review-phone"].includes(name)) throw new HttpError(404, `No sheet called ${name}`);
+    if (!["review-beats", "review-phone"].includes(name) || !v.projectDir) throw new HttpError(404, `No sheet called ${name}`);
     return `${v.projectDir}/sheets/${name}.jpg`;
   }
 

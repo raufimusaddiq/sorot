@@ -251,7 +251,13 @@ export type GenEvent = {
   id: string; kind: string; model: string | null; request: string | null; response: string | null; ok: number; ms: number | null; createdAt: string;
 };
 
-export type GenProjectDetail = { project: GenProject; plans: GenPlanRow[]; versions: GenVersion[]; assets: GenAsset[]; exports: unknown[] };
+export type GenVerdictStatuses = Record<string, Partial<Record<'TECHNICAL' | 'CREATIVE', GenVerdict['status']>>>;
+
+export type GenProjectDetail = {
+  project: GenProject; plans: GenPlanRow[]; versions: GenVersion[]; assets: GenAsset[]; exports: unknown[];
+  /** Each version's two verdict statuses, for the history list. */
+  verdictStatuses: GenVerdictStatuses;
+};
 
 export type GenCreateBody = {
   brief: string; format?: string; targetSec?: number; language?: string; styleNotes?: string; recipeId?: string; narration?: boolean;
@@ -277,3 +283,7 @@ export type GenVersion = {
 };
 
 export type GenEstimate = { draftSec: number; exportSec: number };
+
+/** What a fix round answers: a new version, or (when the plan's words or timing change) a plan waiting for approval. */
+export type GenFixResult = { version: GenVersion | null; plan: GenPlanRow | null; needsApproval: boolean; summary: string };
+export type GenFixBody = { findingIds?: string[]; note?: string; shotId?: string };

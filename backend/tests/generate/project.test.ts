@@ -274,7 +274,7 @@ describe("project housekeeping", () => {
     expect(gen().patchProject(id, { title: " ", narration: false, styleNotes: "" })).toMatchObject({ title: null, narration: 0, styleNotes: null });
     expect(gen().patchProject(id, {}).id).toBe(id);
     expect(gen().listProjects().map((p) => p.id)).toEqual([id]);
-    expect(Object.keys(gen().getProject(id))).toEqual(["project", "plans", "versions", "assets", "exports"]);
+    expect(Object.keys(gen().getProject(id))).toEqual(["project", "plans", "versions", "assets", "exports", "verdictStatuses"]);
     expect(gen().storyline(id)!.title).toBe("Film 1");
 
     const dir = `${env.config.genDir}/${id}`;

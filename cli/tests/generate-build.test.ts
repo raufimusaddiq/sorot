@@ -34,7 +34,7 @@ describe("gen build", () => {
       `Built version 1 (${VID}) in 61 s.`,
       "TECHNICAL: PASS  (judged by code)", "  nothing to fix",
       "CREATIVE: REVIEW  (judged by llm:m)", "  polish     creative.pace  Pace drags.",
-      "Accept it with: sorot gen accept 11111111",
+      "Accept it with: sorot gen accept 11111111  ·  fix what is left: sorot gen fix 11111111",
     ]);
   });
 
@@ -138,5 +138,50 @@ describe("gen verdicts, cancel, accept", () => {
     const refused = harness({ [`POST ${VERSIONS}/${VID}/accept`]: new Fail(409, "TECHNICAL failed: fix the must-fix findings before accepting") });
     expect(await refused.run("gen", "accept", VID)).toBe(1);
     expect(refused.err[0]).toContain("TECHNICAL failed");
+  });
+});
+
+describe("gen fix, restore", () => {
+  const fixed = (over: object = {}) => ({ version: version({ number: 2, projectId: ID, status: "QUEUED", progress: 0 }), plan: null, needsApproval: false, summary: "Judul diperbesar", ...over });
+
+  test("fixes into a new version and follows it; --finding repeats, a note and a shot travel along", async () => {
+    const h = harness(routes({
+      [`POST ${VERSIONS}/${VID}/fix`]: fixed(),
+      [`GET ${VERSIONS}/${VID}`]: { version: version({ number: 2 }), verdicts: GOOD },
+    }));
+    expect(await h.run("gen", "fix", VID, "--finding", "f1", "--finding", "f2", "--note", "lebih besar", "--shot", "s02")).toBe(0);
+    expect(h.requests.find((r) => r.path === `${VERSIONS}/${VID}/fix`)!.body).toEqual({ findingIds: ["f1", "f2"], note: "lebih besar", shotId: "s02" });
+    expect(h.out[0]).toBe("Judul diperbesar");
+    expect(h.out).toContain(`Built version 2 (${VID}) in 61 s.`);
+    expect(h.out.at(-1)).toContain("sorot gen fix 11111111");
+  });
+
+  test("with no options it fixes the open must-fix items; --no-watch returns at once", async () => {
+    const h = harness(routes({ [`POST ${VERSIONS}/${VID}/fix`]: fixed() }));
+    expect(await h.run("gen", "fix", VID, "--no-watch")).toBe(0);
+    expect(h.requests.find((r) => r.path === `${VERSIONS}/${VID}/fix`)!.body).toEqual({});
+    expect(h.out).toEqual(["Judul diperbesar", `Queued version 2: ${VID}. Follow it with: sorot gen verdicts 11111111`]);
+  });
+
+  test("a fix that changes the plan's words waits for approval; --json prints the answer; the server's refusal is an error", async () => {
+    const waiting = fixed({ version: null, plan: { projectId: ID }, needsApproval: true, summary: "Judul diganti" });
+    const h = harness(routes({ [`POST ${VERSIONS}/${VID}/fix`]: waiting }));
+    expect(await h.run("gen", "fix", VID)).toBe(0);
+    expect(h.out[0]).toBe("Judul diganti");
+    expect(h.out[1]).toContain("needs your approval");
+    const j = harness(routes({ [`POST ${VERSIONS}/${VID}/fix`]: waiting }));
+    expect(await j.run("gen", "fix", VID, "--json")).toBe(0);
+    expect(JSON.parse(j.out[0]!).needsApproval).toBe(true);
+    const refused = harness({ [`POST ${VERSIONS}/${VID}/fix`]: new Fail(409, "Nothing to fix") });
+    expect(await refused.run("gen", "fix", VID)).toBe(1);
+    expect(refused.err[0]).toContain("Nothing to fix");
+  });
+
+  test("restore makes a version's plan current again", async () => {
+    const h = harness({ [`POST ${VERSIONS}/${VID}/restore`]: { project: { id: ID } } });
+    expect(await h.run("gen", "restore", VID)).toBe(0);
+    expect(h.out[0]).toBe("Restored. Build again with: sorot gen build 11111111");
+    expect(await h.run("gen", "restore", VID, "--json")).toBe(0);
+    expect(JSON.parse(h.out.at(-1)!).project.id).toBe(ID);
   });
 });

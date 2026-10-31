@@ -130,11 +130,11 @@ restorable.
 **Independent Test**: build, request one fix, get a new version with new verdicts, and restore
 the old one (quickstart §4).
 
-- [ ] T049 [P] [US3] Add the director `fix` call (chosen findings + user note → `{planEdits?, sceneEdits[], summary}`; a `planEdits` that changes approved text or durations requires re-approval) to `backend/src/generate/director.ts`, with tests in `backend/tests/generate/director.test.ts`
-- [ ] T050 [US3] Implement fix rounds in the runner and service: a new `gen_version` with `parent_version_id`, re-run from the first step whose input hash changed (unchanged scenes and assets reused), fresh verdicts; `autoFixRounds` 0..3 on `technical`/`creative`; restore makes a version's plan current; old drafts pruned beyond `GEN_KEEP_VERSIONS` (exports kept), in `backend/src/generate/runner.ts` and `backend/src/generate/service.ts`, with tests in `backend/tests/generate/runner.test.ts`
-- [ ] T051 [US3] Add routes `POST /versions/:id/fix` (`findingIds?[]`, `note?`, `shotId?`; no ids = all must-fix) and `/versions/:id/restore` in `backend/src/app.ts`, with tests in `backend/tests/generate/api.test.ts`
-- [ ] T052 [P] [US3] Build `VersionHistory.tsx` (versions with their verdicts, view and restore) and the "Fix must-fix items" and per-finding note actions in `frontend/src/components/generate/`, with tests in `frontend/src/components/generate/__tests__/verdicts.test.tsx`
-- [ ] T053 [P] [US3] Add `sorot gen fix [--finding <id>...] [--note] [--shot]|restore` in `cli/src/generate.ts`, with tests in `cli/tests/generate.test.ts`
+- [X] T049 [P] [US3] Add the director `fix` call (chosen findings + user note → `{planEdits?, sceneEdits[], summary}`; a `planEdits` that changes approved text or durations requires re-approval) to `backend/src/generate/director.ts`, with tests in `backend/tests/generate/director.test.ts`
+- [X] T050 [US3] Implement fix rounds in the runner and service: a new `gen_version` with `parent_version_id`, re-run from the first step whose input hash changed (unchanged scenes and assets reused), fresh verdicts; `autoFixRounds` 0..3 on `technical`/`creative`; restore makes a version's plan current; old drafts pruned beyond `GEN_KEEP_VERSIONS` (exports kept), in `backend/src/generate/runner.ts` and `backend/src/generate/service.ts`, with tests in `backend/tests/generate/runner.test.ts`
+- [X] T051 [US3] Add routes `POST /versions/:id/fix` (`findingIds?[]`, `note?`, `shotId?`; no ids = all must-fix) and `/versions/:id/restore` in `backend/src/app.ts`, with tests in `backend/tests/generate/api.test.ts`
+- [X] T052 [P] [US3] Build `VersionHistory.tsx` (versions with their verdicts, view and restore) and the "Fix must-fix items" and per-finding note actions in `frontend/src/components/generate/`, with tests in `frontend/src/components/generate/__tests__/verdicts.test.tsx`
+- [X] T053 [P] [US3] Add `sorot gen fix [--finding <id>...] [--note] [--shot]|restore` in `cli/src/generate.ts`, with tests in `cli/tests/generate.test.ts`
 
 **Checkpoint**: drafts can be iterated without losing earlier versions.
 

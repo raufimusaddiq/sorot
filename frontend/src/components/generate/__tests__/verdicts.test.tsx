@@ -3,6 +3,7 @@ import { ApiClient } from '@/lib/api';
 import { aboutTime, BuildPanel } from '../BuildPanel';
 import { GenerateWindow } from '../GenerateWindow';
 import { VerdictPanel, where } from '../VerdictPanel';
+import { VersionHistory } from '../VersionHistory';
 import {
   emptyState, installFakeApi, makeFinding, makeGenPlan, makeGenProject, makeGenVersion, makePlanRow, makeStoryline, makeVerdict, type FakeState,
 } from '../../../../test/fakeApi';
@@ -76,7 +77,7 @@ describe('VerdictPanel', () => {
 describe('BuildPanel', () => {
   const props = (over: Partial<React.ComponentProps<typeof BuildPanel>> = {}) => ({
     api, project: makeGenProject('g1'), version: null, verdicts: [], estimate: { draftSec: 600, exportSec: 30 }, busy: false,
-    onBuild: jest.fn(), onCancel: jest.fn(), onAccept: jest.fn(), ...over,
+    shots: ['s01', 's02'], onBuild: jest.fn(), onCancel: jest.fn(), onAccept: jest.fn(), onFix: jest.fn(), ...over,
   });
 
   it('offers a build with its estimate; a finished one can be built again', () => {
@@ -130,6 +131,28 @@ describe('BuildPanel', () => {
     expect(screen.queryByLabelText('Draft video')).not.toBeInTheDocument();
   });
 
+  it('fixes: the must-fix items in one go, one finding, or a note aimed at a shot', () => {
+    const p = props({ version: makeGenVersion('ver1'), verdicts: [makeVerdict('TECHNICAL', 'FAIL', [makeFinding('f1', { description: 'Too small.' }), makeFinding('f2', { severity: 'polish' })])] });
+    render(<BuildPanel {...p} />);
+    expect(screen.getByRole('button', { name: 'Fix with this note' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Fix the must-fix items (1)' }));
+    expect(p.onFix).toHaveBeenLastCalledWith('ver1', {});
+    fireEvent.click(screen.getByRole('button', { name: 'Fix this: Too small.' }));
+    expect(p.onFix).toHaveBeenLastCalledWith('ver1', { findingIds: ['f1'] });
+    fireEvent.change(screen.getByLabelText('Note for the fix'), { target: { value: ' lebih besar ' } });
+    fireEvent.change(screen.getByLabelText('Only this shot'), { target: { value: 's02' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fix this: Too small.' }));
+    expect(p.onFix).toHaveBeenLastCalledWith('ver1', { findingIds: ['f1'], note: 'lebih besar', shotId: 's02' });
+    fireEvent.click(screen.getByRole('button', { name: 'Fix with this note' }));
+    expect(p.onFix).toHaveBeenLastCalledWith('ver1', { note: 'lebih besar', shotId: 's02' });
+    expect(screen.getByLabelText('Note for the fix')).toHaveValue('');
+  });
+
+  it('with nothing open to fix the must-fix button is off', () => {
+    render(<BuildPanel {...props({ version: makeGenVersion('ver1'), verdicts: [makeVerdict('TECHNICAL', 'PASS')] })} />);
+    expect(screen.getByRole('button', { name: 'Fix the must-fix items (0)' })).toBeDisabled();
+  });
+
   it('an accepted project says so instead of offering to accept', () => {
     render(<BuildPanel {...props({ project: makeGenProject('g1', { status: 'ACCEPTED' }), version: makeGenVersion('ver1'), verdicts: [makeVerdict('TECHNICAL', 'PASS')] })} />);
     expect(screen.getByRole('status')).toHaveTextContent('Accepted ✓');
@@ -141,6 +164,39 @@ describe('BuildPanel', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('The build stopped: chrome crashed. The scenes already written are kept.');
     rerender(<BuildPanel {...props({ version: makeGenVersion('ver1', { status: 'CANCELLED' }) })} />);
     expect(screen.getByText('The last build was cancelled.')).toBeInTheDocument();
+  });
+});
+
+describe('VersionHistory', () => {
+  const versions = [
+    makeGenVersion('ver2', { number: 2, planId: 'pl2', parentVersionId: 'ver1' }),
+    makeGenVersion('ver1', { number: 1, draftPath: null }),
+    makeGenVersion('ver0', { number: 0, status: 'FAILED' }),
+  ];
+  const hist = (over: Partial<React.ComponentProps<typeof VersionHistory>> = {}) => ({
+    versions, statuses: { ver2: { TECHNICAL: 'PASS', CREATIVE: 'REVIEW' }, ver1: { TECHNICAL: 'FAIL' } } as const, shownId: 'ver2', currentPlanId: 'pl2',
+    busy: false, onView: jest.fn(), onRestore: jest.fn(), ...over,
+  });
+
+  it('lists the versions with their verdicts; any built one can be viewed, or its plan restored', () => {
+    const p = hist();
+    render(<VersionHistory {...p} />);
+    expect(screen.getByText('built · fixed from version 1')).toBeInTheDocument();
+    expect(screen.getByText('technical PASS')).toBeInTheDocument();
+    expect(screen.getByText('creative REVIEW')).toBeInTheDocument();
+    expect(screen.getByText('video removed to save space')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View version 2' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Restore the plan of version 2' })).toHaveTextContent('Current plan');
+    expect(screen.getAllByRole('button')).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'View version 1' }));
+    expect(p.onView).toHaveBeenCalledWith('ver1');
+    fireEvent.click(screen.getByRole('button', { name: 'Restore the plan of version 1' }));
+    expect(p.onRestore).toHaveBeenCalledWith('ver1');
+  });
+
+  it('is hidden with a single version', () => {
+    render(<VersionHistory {...hist({ versions: [versions[0]!] })} />);
+    expect(screen.queryByRole('region', { name: 'Versions' })).not.toBeInTheDocument();
   });
 });
 
@@ -213,5 +269,28 @@ describe('GenerateWindow: building', () => {
     await open();
     fireEvent.click(await screen.findByRole('button', { name: 'Build a draft' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Approve the plan first');
+  });
+
+  it('fixing the must-fix items makes a new version; a fix that changes the words waits for approval; an older version can be viewed and its plan restored', async () => {
+    approvedProject({ versions: [makeGenVersion('ver1')] });
+    state.genVerdicts.ver1 = [makeVerdict('TECHNICAL', 'FAIL', [makeFinding('f1')]), makeVerdict('CREATIVE', 'PASS')];
+    await open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Fix the must-fix items (1)' }));
+    await waitFor(() => expect(state.genFixBodies).toEqual([{}]));
+    expect(await screen.findByText('Waiting in the queue…')).toBeInTheDocument();
+
+    const detail = state.genProjects[0]!;
+    detail.versions[0] = { ...detail.versions[0]!, status: 'BUILT', progress: 100, planId: 'pl2' };
+    detail.project.status = 'BUILT';
+    state.genVerdicts.ver2 = [makeVerdict('TECHNICAL', 'PASS'), makeVerdict('CREATIVE', 'PASS')];
+    fireEvent.click(await screen.findByRole('button', { name: 'View version 1' }));
+    expect(await screen.findByRole('button', { name: 'View version 1' })).toBeDisabled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore the plan of version 2' }));
+    await waitFor(() => expect(sent('POST', '/api/generate/versions/ver2/restore')).toHaveLength(1));
+
+    state.genNextFix = { needsApproval: true, summary: 'Judul diganti' };
+    fireEvent.change(screen.getByLabelText('Note for the fix'), { target: { value: 'ganti judul' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fix with this note' }));
+    expect(await screen.findByText(/Judul diganti. The plan's words or timing changed/)).toBeInTheDocument();
   });
 });

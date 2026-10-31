@@ -9,6 +9,8 @@ const BOOLEAN = new Set([
   "json", "help", "no-wait", "trim", "hook", "yt-captions", "auto-captions", "yes", "follow", "version",
   "on", "off", "reset", "draft", "override", "confirm-review", "narration", "edit", "no-stop", "no-watch",
 ]);
+// Options that may repeat: the values join with commas.
+const JOINED = new Set(["finding"]);
 const SHORT: Record<string, string> = { o: "out", f: "follow", h: "help", y: "yes", j: "json" };
 
 export class UsageError extends Error {}
@@ -41,7 +43,8 @@ export function parseArgs(argv: string[]): Args {
     } else {
       const v = argv[i + 1];
       if (v === undefined || v.startsWith("--")) throw new UsageError(`--${name} needs a value`);
-      flags[name] = v;
+      const before = flags[name];
+      flags[name] = JOINED.has(name) && typeof before === "string" ? `${before},${v}` : v;
       i++;
     }
   }

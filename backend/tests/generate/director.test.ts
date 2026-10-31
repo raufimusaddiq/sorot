@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
-import { Director, DirectorError, changedShots, shotsNamed } from "../../src/generate/director";
+import { Director, DirectorError, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { validatePlan, type Plan, type PlanContext } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
@@ -335,5 +335,68 @@ describe("director: scenes", () => {
     expect((await r.director.repair(input({ html: "x", findings: [] }))).holds).toEqual([]);
     const bad = rig([json({ html: "no" }), json({ holds: [] })]);
     await expect(bad.director.repair(input({ html: "x", findings: [] }))).rejects.toThrow("didn't pass the checks");
+  });
+});
+
+describe("director: fix", () => {
+  const plan = validatePlan(samplePlan(), planCtx).plan as Plan;
+  const findings = [
+    { id: "check-1", severity: "must-fix", shotId: "s02", fromSec: 4.2, toSec: 5, code: "text_below_floor", description: "Text is too small.", suggestedFix: "Make it 40 px." },
+    { id: "creative-1", severity: "should-fix", shotId: null, code: "creative.opening", description: "The opening is a plain title." },
+  ];
+  const ask = (r: ReturnType<typeof rig>, extra: Record<string, unknown> = {}) =>
+    r.director.fix({ project, step: step({ use: "author" }), plan, planCtx, findings, ...extra });
+  const edited = (over: (s: any, i: number) => any) => ({ ...samplePlan(), shots: samplePlan().shots.map(over) });
+
+  test("the plan, the chosen findings and the note go in; scene edits come out, with no approval needed", async () => {
+    const r = rig([json({ sceneEdits: [{ shotId: "s02", instruction: "Raise the title to 72 px." }], summary: "Bigger title in shot 2" })]);
+    const out = await ask(r, { note: "lebih besar", shotId: "s02" });
+    expect(out).toEqual({ plan: null, needsApproval: false, sceneEdits: [{ shotId: "s02", instruction: "Raise the title to 72 px." }], summary: "Bigger title in shot 2" });
+    const req = r.requests[0]!;
+    expect(req.tool_choice.function.name).toBe("submit_fix");
+    expect(req.tools[0].function.parameters.required).toEqual(["sceneEdits", "summary"]);
+    expect(userOf(req)).toMatchObject({ approvedPlan: { title: "Bunga berbunga" }, findings: [{ id: "check-1", code: "text_below_floor" }, { id: "creative-1" }], note: "lebih besar", onlyShot: "s02" });
+    expect(userOf(req).task).toContain("and do what the note asks, only in shot s02");
+    expect(systemOf(req)).toContain("Prefer sceneEdits");
+    expect(systemOf(req)).toContain("Revising");   // the revising guidance of story.md
+    expect(req.max_tokens).toBe(12000);
+  });
+
+  test("a plan edit that keeps the approved words and timing needs no new approval; one that changes them does", async () => {
+    const look = edited((s) => ({ ...s, motion: "slower" }));
+    const free = await ask(rig([json({ planEdits: look, sceneEdits: [], summary: "Slower motion" })]));
+    expect(free).toMatchObject({ needsApproval: false, plan: { shots: [{ motion: "slower" }, {}, {}] } });
+
+    const words = edited((s, i) => (i === 1 ? { ...s, text: [{ role: "title", value: "Judul baru" }] } : s));
+    expect((await ask(rig([json({ planEdits: words, sceneEdits: [{ shotId: "s02", instruction: "x" }], summary: "s" })]))).needsApproval).toBe(true);
+    const timing = edited((s, i) => ({ ...s, durationSec: [9, 11, 10][i] }));
+    expect((await ask(rig([json({ planEdits: timing, sceneEdits: [], summary: "s" })]))).needsApproval).toBe(true);
+  });
+
+  test("what the approval covers: title, message and each shot's id, words, length and narration", () => {
+    const same = validatePlan(samplePlan(), planCtx).plan as Plan;
+    expect(approvalChanges(plan, same)).toBe(false);
+    expect(approvalChanges(plan, { ...same, title: "Lain" })).toBe(true);
+    expect(approvalChanges(plan, { ...same, message: "Lain" })).toBe(true);
+    expect(approvalChanges(plan, { ...same, shots: same.shots.slice(1) })).toBe(true);
+    expect(approvalChanges(plan, { ...same, shots: same.shots.map((s, i) => (i === 0 ? { ...s, id: "x" } : s)) })).toBe(true);
+    expect(approvalChanges(plan, { ...same, shots: same.shots.map((s, i) => (i === 0 ? { ...s, narration: "kata" } : s)) })).toBe(true);
+    expect(approvalChanges(plan, { ...same, shots: same.shots.map((s) => ({ ...s, visual: { ...s.visual, description: "lain" } })) })).toBe(false);
+  });
+
+  test.each([
+    ["a shot that is not in the plan", { sceneEdits: [{ shotId: "s99", instruction: "x" }], summary: "s" }, "there is no shot s99 in the plan (the shots are s01, s02, s03)"],
+    ["nothing to change", { sceneEdits: [], summary: "s" }, "at least one scene edit, or a revised plan"],
+    ["edits without a shot or an instruction", { sceneEdits: [{ shotId: "s01" }, { instruction: "x" }, "junk"], summary: "s" }, "at least one scene edit"],
+    ["a plan that breaks the limits", { planEdits: { ...samplePlan(), shots: [] }, sceneEdits: [], summary: "s" }, "needs 1 to 20 shots"],
+  ])("%s is repaired once, then refused", async (_name, bad, message) => {
+    const r = rig([json(bad), json(bad)]);
+    await expect(ask(r)).rejects.toThrow(message);
+    expect(r.requests).toHaveLength(2);
+  });
+
+  test("a null plan edit means none; a missing summary is allowed", async () => {
+    const r = rig([json({ planEdits: null, sceneEdits: [{ shotId: "s01", instruction: "Zoom slower." }] })]);
+    expect(await ask(r)).toEqual({ plan: null, needsApproval: false, sceneEdits: [{ shotId: "s01", instruction: "Zoom slower." }], summary: "" });
   });
 });

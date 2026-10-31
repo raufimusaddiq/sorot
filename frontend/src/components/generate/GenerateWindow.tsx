@@ -14,6 +14,7 @@ import { BriefForm, type PendingFile } from './BriefForm';
 import { BuildPanel } from './BuildPanel';
 import { DirectorLog } from './DirectorLog';
 import { PlanEditor } from './PlanEditor';
+import { VersionHistory } from './VersionHistory';
 import { StorylineCards } from './StorylineCards';
 
 const WORKING = ['RUNNING', 'BUILDING'];
@@ -33,6 +34,8 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
   const [problem, setProblem] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<GenEstimate | null>(null);
   const [verdicts, setVerdicts] = useState<GenVerdict[]>([]);
+  const [viewId, setViewId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -82,7 +85,8 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
 
   // What a build will take, while a plan is approved and nothing is building.
   const projectId = detail?.project.id;
-  const buildable = !!detail?.plans[0]?.approvedAt && !WORKING.includes(detail.project.status);
+  const currentPlan = detail?.plans.find((x) => x.id === detail.project.currentPlanId) ?? detail?.plans[0];
+  const buildable = !!currentPlan?.approvedAt && !WORKING.includes(detail?.project.status ?? '');
   const versionCount = detail?.versions.length ?? 0;
   useEffect(() => {
     if (!projectId || !buildable) { setEstimate(null); return; }
@@ -91,15 +95,17 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
     return () => { live = false; };
   }, [api, projectId, buildable, versionCount]);
 
-  // The two verdicts of the newest build, once it is built.
-  const newest = detail?.versions[0] ?? null;
-  const newestId = newest?.status === 'BUILT' ? newest.id : null;
+  // The two verdicts of the version on screen (the newest, or the one chosen in the history), once it is built.
+  const newestId = detail?.versions[0]?.id ?? null;
+  useEffect(() => { setViewId(null); }, [newestId, projectId]);
+  const newest = detail?.versions.find((v) => v.id === viewId) ?? detail?.versions[0] ?? null;
+  const shownId = newest?.status === 'BUILT' ? newest.id : null;
   useEffect(() => {
-    if (!newestId) { setVerdicts([]); return; }
+    if (!shownId) { setVerdicts([]); return; }
     let live = true;
-    api.getGenerateVersion(newestId).then((r) => { if (live) setVerdicts(r.verdicts); }, (e) => { reportError(e, 'getGenerateVersion'); if (live) setProblem((e as Error).message); });
+    api.getGenerateVersion(shownId).then((r) => { if (live) setVerdicts(r.verdicts); }, (e) => { reportError(e, 'getGenerateVersion'); if (live) setProblem((e as Error).message); });
     return () => { live = false; };
-  }, [api, newestId]);
+  }, [api, shownId]);
 
   /** Runs one action, shows its error, and refreshes the open project. */
   const act = async (fn: () => Promise<unknown>) => {
@@ -138,8 +144,9 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
   }
 
   const p = detail?.project;
-  const plans = detail?.plans ?? [];
-  const approved = !!plans[0]?.approvedAt;
+  // The current plan first (a restore can make an older revision current), then the rest, newest first.
+  const plans = currentPlan ? [currentPlan, ...(detail?.plans ?? []).filter((x) => x !== currentPlan)] : [];
+  const approved = !!currentPlan?.approvedAt;
 
   return (
     <Window title="Generate" bar="bg-sun" right="ready">
@@ -199,11 +206,22 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
 
           {approved && <p className="text-sm font-semibold" role="status">Plan approved. It is locked: a change makes a new revision that needs approving again.</p>}
 
+          {notice && <p role="status" className="text-sm font-semibold">{notice}</p>}
+
           {approved && (
-            <BuildPanel api={api} project={p} version={newest} verdicts={verdicts} estimate={estimate} busy={busy}
+            <BuildPanel api={api} project={p} version={newest} verdicts={verdicts} estimate={estimate} busy={busy} shots={currentPlan?.plan.shots.map((s) => s.id) ?? []}
               onBuild={() => act(() => api.startGenerateBuild(p.id))}
               onCancel={(id) => act(() => api.cancelGenerateVersion(id))}
-              onAccept={(id) => act(() => api.acceptGenerateVersion(id))} />
+              onAccept={(id) => act(() => api.acceptGenerateVersion(id))}
+              onFix={(id, body) => act(async () => {
+                const r = await api.fixGenerateVersion(id, body);
+                setNotice(r.needsApproval ? `${r.summary}. The plan's words or timing changed, so it needs your approval again before anything is built.` : null);
+              })} />
+          )}
+
+          {approved && detail && (
+            <VersionHistory versions={detail.versions} statuses={detail.verdictStatuses} shownId={shownId} currentPlanId={p.currentPlanId} busy={busy}
+              onView={setViewId} onRestore={(id) => act(() => api.restoreGenerateVersion(id))} />
           )}
 
           {detail && detail.assets.length > 0 && (
