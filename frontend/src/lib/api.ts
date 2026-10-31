@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -270,6 +270,14 @@ export class ApiClient {
 
   async acceptGenerateVersion(id: string) {
     return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/accept`, { method: 'POST' });
+  }
+
+  async fixGenerateVersion(id: string, body: GenFixBody) {
+    return this.request<GenFixResult>(`/api/generate/versions/${id}/fix`, { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async restoreGenerateVersion(id: string) {
+    return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/restore`, { method: 'POST' });
   }
 
   /** The rendered video of a version, for a <video> element. */

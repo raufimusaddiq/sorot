@@ -90,6 +90,14 @@ const TOOLS = {
     decision: { type: "string", enum: ["pick", "approve", "reject"] },
     index: { type: "integer", description: "the storyline number, only for pick" }, reason: str("one clause"),
   }, ["decision", "reason"]),
+  fix: tool("submit_fix", "Submit what to change to fix the findings.", {
+    sceneEdits: {
+      type: "array", description: "how a shot's scene should change, one entry per shot that needs it",
+      items: { type: "object", required: ["shotId", "instruction"], properties: { shotId: str("the plan's shot id, like s02"), instruction: str("what to change, in a sentence or two") } },
+    },
+    planEdits: { type: "object", description: "the full revised plan, only when a finding can't be fixed without changing the plan (its text or timing)", properties: PLAN_PROPS, required: ["title", "message", "look", "shots"] },
+    summary: str("one sentence on what you changed"),
+  }, ["sceneEdits", "summary"]),
   judge: tool("submit_judgement", "Submit your judgement of the finished video.", {
     criteria: {
       type: "array", items: {
@@ -121,26 +129,45 @@ const TOOLS = {
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
   plan: "You are the director of a short 2D motion video. Turn the brief and the chosen storyline into a shot-by-shot plan the owner will approve before anything is built. Text on screen is in the project's language. Use only the fonts listed. Use only numbers from the brief; list any other number you need in assumptions.",
   revise: "You are the director of a short 2D motion video. Change the plan as the owner asks. Change only what the request names: every other shot keeps its text, timing and look exactly as it is.",
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
+  fix: "You are the director of a short 2D motion video. The video was built and judged; fix the findings the owner chose (and do what their note says). Prefer sceneEdits: they change how a shot looks and moves and cost little. Change the plan (planEdits) only when a finding cannot be fixed without it, because changing the plan's words or timing makes the owner approve again. Keep everything the findings don't touch exactly as it is.",
   judge: "You are a fresh judge of a finished 2D video. You did not make it and know nothing of how it was made. Judge only what the brief, the plan, and what was built (and the pictures, if any) show. Answer every criterion and every risk you are given, honestly: yes only when it clearly holds, no when it clearly doesn't, partly in between. A risk is flagged only when you can point at it. Point at the shot and the moment when you can, and say what to change.",
   scene: "You are the motion designer of a short 2D video. Write the scene file for the ONE shot you are given, exactly as the approved plan describes it, following the authoring contract below.",
   repair: "You are the motion designer of a short 2D video. Fix the scene file for the ONE shot you are given so that every finding listed is resolved, changing nothing else, following the authoring contract below. A warning that is intended may be kept: list it in holds with the reason.",
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1 };
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3 };
 /** Output budget by job, as a floor: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000 };
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000 };
 
 export interface JudgeAnswer {
   criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
   risks: Array<{ id: string; flagged: boolean; reason: string; shotId?: string; suggestedFix?: string }>;
+}
+
+export interface FixAnswer {
+  /** The revised plan, when the fix needs one. */
+  plan: Plan | null;
+  /** The plan's words, timing or title changed: the owner has to approve again. */
+  needsApproval: boolean;
+  sceneEdits: Array<{ shotId: string; instruction: string }>;
+  summary: string;
+}
+
+/** Did the plan change in the parts the owner approved: its title and message, and each shot's words and length? */
+export function approvalChanges(before: Plan, after: Plan): boolean {
+  if (before.title !== after.title || before.message !== after.message || before.shots.length !== after.shots.length) return true;
+  return before.shots.some((s, i) => {
+    const t = after.shots[i]!;
+    return s.id !== t.id || s.durationSec !== t.durationSec || JSON.stringify(s.text) !== JSON.stringify(t.text) || s.narration !== t.narration;
+  });
 }
 
 export interface SceneInput {
@@ -436,6 +463,41 @@ export class Director {
         return missing.length ? { errors: [`you didn't answer: ${missing.join(", ")}`] } : { value: { criteria, risks } };
       },
       input.images,
+    );
+  }
+
+  // ---- fix ------------------------------------------------------------------
+
+  /**
+   * A fix round: the findings the owner chose (and their note) in, what to change out. Scene edits
+   * are cheap; a plan edit that changes approved words or timing needs the owner's approval again.
+   */
+  async fix(input: {
+    project: GenProject; step: RecipeStep; plan: Plan; planCtx: PlanContext; note?: string; shotId?: string;
+    findings: Array<{ id: string; severity: string; shotId: string | null; fromSec?: number; toSec?: number; code: string; description: string; suggestedFix?: string }>;
+  }): Promise<FixAnswer> {
+    return this.ask<FixAnswer>(
+      input.project, "fix", input.step,
+      { approvedPlan: input.plan, findings: input.findings, note: input.note ?? null, onlyShot: input.shotId ?? null, fonts: input.planCtx.fonts },
+      `Say how to fix the findings${input.note ? " and do what the note asks" : ""}${input.shotId ? `, only in shot ${input.shotId}` : ""}: sceneEdits per shot, and planEdits only if the plan itself has to change.`,
+      (parsed) => {
+        const raw = parsed as { sceneEdits?: unknown; planEdits?: unknown; summary?: unknown };
+        const list = Array.isArray(raw.sceneEdits) ? raw.sceneEdits : [];
+        const sceneEdits = list.flatMap((e) => {
+          const o = (typeof e === "object" && e !== null ? e : {}) as Record<string, unknown>;
+          return clip(o.shotId, 20) && clip(o.instruction, 600) ? [{ shotId: clip(o.shotId, 20), instruction: clip(o.instruction, 600) }] : [];
+        });
+        const unknown = sceneEdits.filter((e) => !input.plan.shots.some((s) => s.id === e.shotId)).map((e) => e.shotId);
+        if (unknown.length) return { errors: [`there is no shot ${unknown.join(", ")} in the plan (the shots are ${input.plan.shots.map((s) => s.id).join(", ")})`] };
+        let plan: Plan | null = null;
+        if (raw.planEdits !== undefined && raw.planEdits !== null) {
+          const check = validatePlan(raw.planEdits, input.planCtx);
+          if (!check.ok) return { errors: check.errors };
+          plan = check.plan as Plan;
+        }
+        if (!sceneEdits.length && !plan) return { errors: ["answer with at least one scene edit, or a revised plan"] };
+        return { value: { plan, needsApproval: plan ? approvalChanges(input.plan, plan) : false, sceneEdits, summary: clip(raw.summary, 300) } };
+      },
     );
   }
 

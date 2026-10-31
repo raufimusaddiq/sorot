@@ -380,6 +380,13 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     return ok({ version: versionView(d.version), verdicts: d.verdicts.map(verdictView) });
   });
   router.on("POST", "/api/generate/versions/:id/cancel", (c) => ok({ version: versionView(generate.cancelVersion(c.params.id as string)) }));
+  router.on("POST", "/api/generate/versions/:id/fix", async (c) => {
+    const b = await c.body();
+    const ids = Array.isArray(b.findingIds) ? (b.findingIds as unknown[]).filter((x): x is string => typeof x === "string") : undefined;
+    const r = await generate.fixVersion(c.params.id as string, { findingIds: ids, note: strArg(b, "note") || undefined, shotId: strArg(b, "shotId") || undefined });
+    return ok({ version: r.version ? versionView(r.version) : null, plan: r.plan ? planView(r.plan) : null, needsApproval: r.needsApproval, summary: r.summary }, r.version ? 201 : 200);
+  });
+  router.on("POST", "/api/generate/versions/:id/restore", (c) => ok({ project: projectView(generate.restoreVersion(c.params.id as string)) }));
   router.on("POST", "/api/generate/versions/:id/accept", (c) => ok({ project: projectView(generate.acceptVersion(c.params.id as string)) }));
   router.on("GET", "/api/generate/versions/:id/draft", (c) => serveFile(c.req, generate.draftFile(c.params.id as string), { contentType: "video/mp4" }));
   router.on("GET", "/api/generate/versions/:id/sheets/:name", (c) =>

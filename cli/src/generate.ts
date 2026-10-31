@@ -288,9 +288,8 @@ async function followBuild(d: Deps, id: string): Promise<Json> {
   }
 }
 
-async function buildCmd(d: Deps, a: Args): Promise<number> {
-  const id = await projectId(d, need(a, 2, "project"));
-  const { version } = await d.api.post(`${BASE}/${id}/versions`);
+/** Follows a queued version to its end (or returns at once with --no-watch) and prints both verdicts. */
+async function watchBuild(d: Deps, a: Args, id: string, version: Json): Promise<number> {
   if (has(a, "no-watch")) {
     if (!json(d, a, version)) d.out(`Queued version ${version.number}: ${version.id}. Follow it with: sorot gen verdicts ${short(id)}`);
     return 0;
@@ -308,7 +307,39 @@ async function buildCmd(d: Deps, a: Args): Promise<number> {
   }
   d.out(`Built version ${v.number} (${v.id}) in ${Math.round(Number(v.buildMs ?? 0) / 1000)} s.`);
   printVerdicts(d, done.verdicts as Json[]);
-  d.out(`Accept it with: sorot gen accept ${short(id)}`);
+  d.out(`Accept it with: sorot gen accept ${short(id)}  ·  fix what is left: sorot gen fix ${short(id)}`);
+  return 0;
+}
+
+async function buildCmd(d: Deps, a: Args): Promise<number> {
+  const id = await projectId(d, need(a, 2, "project"));
+  const { version } = await d.api.post(`${BASE}/${id}/versions`);
+  return watchBuild(d, a, id, version);
+}
+
+/** A new version that fixes findings (the open must-fix ones, or --finding ids) or follows a --note, optionally on one --shot. */
+async function fixCmd(d: Deps, a: Args): Promise<number> {
+  const vid = await versionId(d, need(a, 2, "version or project"));
+  const body: Json = {};
+  if (str(a, "finding")) body.findingIds = str(a, "finding")!.split(",").filter(Boolean);
+  if (str(a, "note")) body.note = str(a, "note");
+  if (str(a, "shot")) body.shotId = str(a, "shot");
+  const r = await d.api.post(`${VERSIONS}/${vid}/fix`, body);
+  if (r.needsApproval) {
+    if (!json(d, a, r)) {
+      d.out(`${r.summary}`);
+      d.out(`The plan's words or timing changed, so it needs your approval before anything is built: sorot gen plan ${short(r.plan.projectId)}  ·  approve: sorot gen approve ${short(r.plan.projectId)}`);
+    }
+    return 0;
+  }
+  if (!has(a, "json")) d.out(`${r.summary}`);
+  return watchBuild(d, a, r.version.projectId, r.version);
+}
+
+/** Makes the plan a version was built from the current plan again. */
+async function restoreCmd(d: Deps, a: Args): Promise<number> {
+  const r = await d.api.post(`${VERSIONS}/${await versionId(d, need(a, 2, "version or project"))}/restore`);
+  if (!json(d, a, r)) d.out(`Restored. Build again with: sorot gen build ${short(r.project.id)}`);
   return 0;
 }
 
@@ -348,6 +379,8 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   verdicts: verdictsCmd,
   cancel: cancelCmd,
   accept: acceptCmd,
+  fix: fixCmd,
+  restore: restoreCmd,
 };
 
 export async function genCmd(d: Deps, a: Args): Promise<number> {

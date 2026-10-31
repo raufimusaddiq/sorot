@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { buildRoot, bundledFontFaces, checkScene, GSAP_FILE, shotFile, sizeFor, type FontFace, type SceneIssue } from "../composer";
+import { editApplied, markEditApplied, readFix } from "../fixes";
 import { saveFindings, type NewFinding } from "../findings";
 import { mapPool } from "../../pool";
 import { BUNDLED_FONTS } from "../planContext";
@@ -78,6 +79,7 @@ export const run: RunFn = async (ctx) => {
   const size = sizeFor(ctx.project.format, ctx.recipe.output);
   const assets = sceneAssets(ctx);
   let written = 0;
+  const edits = new Map((readFix(dir)?.edits ?? []).map((e) => [e.shotId, e]));
 
   // The scenes don't depend on each other, so a few can be written at once (the model is the slow part).
   const perShot = await mapPool(plan.shots.map((shot, i) => ({ shot, i })), Math.max(1, Number(ctx.settings.concurrency)), async ({ shot, i }) => {
@@ -87,15 +89,23 @@ export const run: RunFn = async (ctx) => {
     };
     let html = readScene(dir, i);
     let issues = html === null ? [] : checkScene(html, shot, i, { assets });
-    if (html === null || issues.length) {
+    // a fix round: this shot's scene (copied from the version being fixed) changes as the edit says
+    const edit = edits.get(shot.id);
+    const fixing = html !== null && edit !== undefined && !editApplied(dir, shot.id);
+    if (html === null || issues.length || fixing) {
       // a clean scene from an earlier try of this version is kept; anything else is written afresh
-      html = await ctx.director.scene(input);
+      if (fixing && edit) {
+        html = (await ctx.director.repair({
+          ...input, html: html as string, findings: [{ code: "fix_request", message: edit.instruction }, ...(edit.findings ?? []), ...issues],
+        })).html;
+      } else html = await ctx.director.scene(input);
       issues = checkScene(html, shot, i, { assets });
       for (let n = 0; issues.length && n < rounds; n++) {
         html = (await ctx.director.repair({ ...input, html, findings: issues })).html;
         issues = checkScene(html, shot, i, { assets });
       }
       writeFileSync(join(dir, shotFile(i)), html);
+      if (fixing) markEditApplied(dir, shot.id);
     }
     ctx.progress((++written / plan.shots.length) * 100);
     return sceneFindings(plan, i, issues);

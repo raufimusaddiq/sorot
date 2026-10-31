@@ -47,8 +47,11 @@ export interface FakeState {
   /** GET /api/generate/status. */
   generate: GenerateStatus;
   /** Generate projects as the backend would return them, and what its director answers next. */
-  genProjects: GenProjectDetail[];
+  genProjects: Array<Omit<GenProjectDetail, 'verdictStatuses'>>;
   genEstimate: GenEstimate;
+  /** What the next fix round answers, and the bodies sent to it. */
+  genNextFix: { needsApproval: boolean; summary: string };
+  genFixBodies: unknown[];
   /** Verdicts by version id (GET /api/generate/versions/:id). */
   genVerdicts: Record<string, GenVerdict[]>;
   genNext: { storylines: GenStoryline[]; plan: GenPlan; revised: { plan: GenPlan; summary: string }; events: GenEvent[] };
@@ -182,7 +185,7 @@ export function emptyState(): FakeState {
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
     settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
-    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
+    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
   };
 }
 
@@ -320,7 +323,7 @@ export function installFakeApi(state: FakeState) {
         p.currentPlanId = row.id;
         return row;
       };
-      if (method === 'GET' && rest === '') return ok(detail);
+      if (method === 'GET' && rest === '') return ok({ ...detail, verdictStatuses: Object.fromEntries(detail.versions.map((v) => [v.id, Object.fromEntries((state.genVerdicts[v.id] ?? []).map((x) => [x.kind, x.status]))])) });
       if (method === 'DELETE' && rest === '') { state.genProjects = state.genProjects.filter((d) => d !== detail); return ok({ deleted: true }); }
       if (method === 'POST' && rest === 'retry') { p.status = 'WAITING'; p.errorMessage = null; return ok({ project: p }); }
       if (method === 'POST' && rest === 'storylines') { p.storylines = state.genNext.storylines; p.pickedStoryline = null; return ok({ project: p }); }
@@ -355,11 +358,29 @@ export function installFakeApi(state: FakeState) {
       }
       if (method === 'GET' && rest.startsWith('events')) return ok({ events: state.genNext.events });
     }
-    if ((m = path.match(/^\/api\/generate\/versions\/([^/]+)(?:\/(cancel|accept))?$/))) {
+    if ((m = path.match(/^\/api\/generate\/versions\/([^/]+)(?:\/(cancel|accept|fix|restore))?$/))) {
       const version = state.genProjects.flatMap((d) => d.versions).find((v) => v.id === m![1]);
       if (!version) return { status: 'error', error: 'Version not found' };
       const owner = state.genProjects.find((d) => d.project.id === version.projectId)!;
       if (method === 'GET' && !m[2]) return ok({ version, verdicts: state.genVerdicts[version.id] ?? [] });
+      if (method === 'POST' && m[2] === 'fix') {
+        state.genFixBodies.push(body);
+        const next = state.genNextFix;
+        if (next.needsApproval) {
+          const row = makePlanRow(`pl${owner.plans.length + 1}`, owner.plans.length + 1, makeGenPlan({ title: 'Dengan judul baru' }), { projectId: owner.project.id, changeSummary: next.summary });
+          owner.plans.unshift(row);
+          owner.project.currentPlanId = row.id;
+          return ok({ version: null, plan: row, needsApproval: true, summary: next.summary });
+        }
+        const fresh = makeGenVersion(`ver${owner.versions.length + 1}`, { projectId: owner.project.id, number: owner.versions.length + 1, parentVersionId: version.id, status: 'QUEUED', progress: 0 });
+        owner.versions.unshift(fresh);
+        owner.project.status = 'BUILDING';
+        return ok({ version: fresh, plan: null, needsApproval: false, summary: next.summary });
+      }
+      if (method === 'POST' && m[2] === 'restore') {
+        owner.project.currentPlanId = version.planId;
+        return ok({ project: owner.project });
+      }
       if (method === 'POST' && m[2] === 'cancel') { version.status = 'CANCELLED'; owner.project.status = 'WAITING'; return ok({ version }); }
       if (method === 'POST' && m[2] === 'accept') {
         if ((state.genVerdicts[version.id] ?? []).some((v) => v.kind === 'TECHNICAL' && v.status === 'FAIL')) return { status: 'error', error: 'TECHNICAL failed: fix the must-fix findings before accepting' };

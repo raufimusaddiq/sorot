@@ -19,7 +19,7 @@ export function where(f: Pick<GenFinding, 'shotId' | 'fromSec' | 'toSec'>): stri
   return [f.shotId, time].filter(Boolean).join(' · ');
 }
 
-function Card({ kind, verdict }: { kind: GenVerdict['kind']; verdict?: GenVerdict }) {
+function Card({ kind, verdict, onFix }: { kind: GenVerdict['kind']; verdict?: GenVerdict; onFix?: (findingId: string) => void }) {
   const live = (verdict?.findings ?? []).filter((f) => f.state !== 'kept').sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
   const kept = (verdict?.findings ?? []).filter((f) => f.state === 'kept');
   return (
@@ -38,6 +38,7 @@ function Card({ kind, verdict }: { kind: GenVerdict['kind']; verdict?: GenVerdic
             {where(f) && <span className="text-xs text-subtle mr-1">{where(f)}</span>}
             <span>{f.description}</span>
             {f.suggestedFix && <span className="block text-xs text-subtle">Fix: {f.suggestedFix}</span>}
+            {onFix && <button className="btn ml-1" aria-label={`Fix this: ${f.description}`} onClick={() => onFix(f.id)}>Fix this</button>}
           </li>
         ))}
       </ul>
@@ -53,11 +54,11 @@ function Card({ kind, verdict }: { kind: GenVerdict['kind']; verdict?: GenVerdic
   );
 }
 
-export function VerdictPanel({ verdicts }: { verdicts: GenVerdict[] }) {
+export function VerdictPanel({ verdicts, onFix }: { verdicts: GenVerdict[]; /** Offered on each finding when given. */ onFix?: (findingId: string) => void }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <Card kind="TECHNICAL" verdict={verdicts.find((v) => v.kind === 'TECHNICAL')} />
-      <Card kind="CREATIVE" verdict={verdicts.find((v) => v.kind === 'CREATIVE')} />
+      <Card kind="TECHNICAL" verdict={verdicts.find((v) => v.kind === 'TECHNICAL')} onFix={onFix} />
+      <Card kind="CREATIVE" verdict={verdicts.find((v) => v.kind === 'CREATIVE')} onFix={onFix} />
     </div>
   );
 }
