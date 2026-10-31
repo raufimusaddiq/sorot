@@ -95,6 +95,8 @@ export interface SocialPost {
   lastSyncedAt: string | null;
   /** The Tebar workspace (profile) it was posted in; null = the default one. */
   profileId?: string | null;
+  /** What `clipId` holds: a clip, or a generated export. */
+  subjectKind: "clip" | "generated";
 }
 
 export interface ClipScore {

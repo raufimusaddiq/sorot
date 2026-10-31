@@ -185,3 +185,32 @@ describe("gen fix, restore", () => {
     expect(JSON.parse(h.out.at(-1)!).project.id).toBe(ID);
   });
 });
+
+describe("gen export", () => {
+  const EXP = "eeeeeeee-1111-2222-3333-444444444444";
+  const made = { id: EXP, title: "Bunga berbunga", durationSec: 30, format: "9:16" };
+  const exp = () => ({ [`POST ${VERSIONS}/${VID}/export`]: (b: unknown) => ({ export: { ...made, body: b } }) });
+
+  test("renders the finished video into the Library and says how to post it; the owner's title and description go along", async () => {
+    const h = harness(exp());
+    expect(await h.run("gen", "export", VID, "--title", "Judul saya", "--description", "Isi")).toBe(0);
+    expect(h.out).toEqual([`Exported "Bunga berbunga" (30 s, 9:16): ${EXP}`, `Post it with: sorot publish --generated ${EXP} --to <accounts>`]);
+    expect(h.requests.at(-1)!.body).toEqual({ title: "Judul saya", description: "Isi" });
+    const j = harness(exp());
+    expect(await j.run("gen", "export", VID, "--json")).toBe(0);
+    expect(JSON.parse(j.out[0]!).id).toBe(EXP);
+  });
+
+  test("--out also saves the video; a refusal (TECHNICAL failed) is an error", async () => {
+    const h = harness({ ...exp(), [`GET /api/generate/exports/${EXP}/file`]: new Response("mp4") });
+    expect(await h.run("gen", "export", VID, "-o", "out")).toBe(0);
+    expect(h.out.at(-2)).toMatch(/eeeeeeee\.mp4$/);
+    expect([...h.files.keys()].some((f) => f.endsWith("/eeeeeeee.mp4"))).toBeTrue();
+    const j = harness({ ...exp(), [`GET /api/generate/exports/${EXP}/file`]: new Response("mp4") });
+    await j.run("gen", "export", VID, "-o", "out", "--json");
+    expect(JSON.parse(j.out[0]!).savedTo).toMatch(/eeeeeeee\.mp4$/);
+    const refused = harness({ [`POST ${VERSIONS}/${VID}/export`]: new Fail(409, "TECHNICAL failed: fix the must-fix findings before exporting") });
+    expect(await refused.run("gen", "export", VID)).toBe(1);
+    expect(refused.err[0]).toContain("TECHNICAL failed");
+  });
+});

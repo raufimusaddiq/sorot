@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -72,6 +72,13 @@ export function makeGenVersion(id: string, over: Partial<GenVersion> = {}): GenV
     id, projectId: 'g1', planId: 'pl1', number: 1, parentVersionId: null, status: 'BUILT', step: null, progress: 100, renderKind: 'draft',
     draftPath: 'data/generate/g1/v1/draft.mp4', stepState: null, hyperframesVersion: '0.8.223', buildMs: 60000, errorMessage: null,
     createdAt: ts(), updatedAt: ts(), ...over,
+  };
+}
+
+export function makeGenExport(id: string, over: Partial<GenExport> = {}): GenExport {
+  return {
+    id, projectId: 'g1', versionId: 'ver1', path: `data/generate/g1/exports/${id}.mp4`, format: '9:16', durationSec: 30,
+    title: 'Bunga berbunga', description: 'Uang tumbuh sendiri.', createdAt: ts(), ...over,
   };
 }
 
@@ -358,7 +365,7 @@ export function installFakeApi(state: FakeState) {
       }
       if (method === 'GET' && rest.startsWith('events')) return ok({ events: state.genNext.events });
     }
-    if ((m = path.match(/^\/api\/generate\/versions\/([^/]+)(?:\/(cancel|accept|fix|restore))?$/))) {
+    if ((m = path.match(/^\/api\/generate\/versions\/([^/]+)(?:\/(cancel|accept|fix|restore|export))?$/))) {
       const version = state.genProjects.flatMap((d) => d.versions).find((v) => v.id === m![1]);
       if (!version) return { status: 'error', error: 'Version not found' };
       const owner = state.genProjects.find((d) => d.project.id === version.projectId)!;
@@ -376,6 +383,11 @@ export function installFakeApi(state: FakeState) {
         owner.versions.unshift(fresh);
         owner.project.status = 'BUILDING';
         return ok({ version: fresh, plan: null, needsApproval: false, summary: next.summary });
+      }
+      if (method === 'POST' && m[2] === 'export') {
+        const made = makeGenExport(`ex${state.genProjects.flatMap((d) => d.exports).length + 1}`, { projectId: owner.project.id, versionId: version.id, ...body });
+        owner.exports.unshift(made);
+        return ok({ export: made });
       }
       if (method === 'POST' && m[2] === 'restore') {
         owner.project.currentPlanId = version.planId;
@@ -407,16 +419,19 @@ export function installFakeApi(state: FakeState) {
     }
     if (method === 'POST' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar)\/test$/))) return ok(state.tests[m[1]!] ?? { ok: false, ms: 1, error: 'Not configured' });
     if (method === 'GET' && path === '/api/social/accounts') return ok({ enabled: state.settings.tebar.active, accounts: state.accounts });
-    if (method === 'POST' && (m = path.match(/^\/api\/clips\/([^/]+)\/publish\/draft$/))) {
+    if (method === 'GET' && path === '/api/generate/exports') {
+      return ok({ exports: state.genProjects.flatMap((d) => d.exports.map((e) => ({ ...e, projectTitle: d.project.title ?? 'Proyek' }))) });
+    }
+    if (method === 'POST' && (m = path.match(/^\/api\/(?:clips|generate\/exports)\/([^/]+)\/publish\/draft$/))) {
       return ok({ ...state.draft!, targets: state.draft!.targets.filter((t) => body.accountIds.includes(t.accountId)) });
     }
-    if (method === 'POST' && (m = path.match(/^\/api\/clips\/([^/]+)\/publish$/))) {
+    if (method === 'POST' && (m = path.match(/^\/api\/(?:clips|generate\/exports)\/([^/]+)\/publish$/))) {
       const post = makePost(`post${Object.values(state.posts).flat().length + 1}`, m[1]!,
         { status: body.scheduledAt ? 'SCHEDULED' : 'PUBLISHING', scheduledAt: body.scheduledAt ?? null });
       state.posts[m[1]!] = [post, ...(state.posts[m[1]!] ?? [])];
       return ok({ post });
     }
-    if (method === 'GET' && (m = path.match(/^\/api\/clips\/([^/]+)\/posts$/))) return ok({ posts: state.posts[m[1]!] ?? [] });
+    if (method === 'GET' && (m = path.match(/^\/api\/(?:clips|generate\/exports)\/([^/]+)\/posts$/))) return ok({ posts: state.posts[m[1]!] ?? [] });
     if (method === 'POST' && (m = path.match(/^\/api\/social\/posts\/([^/]+)\/refresh$/))) {
       const post = Object.values(state.posts).flat().find((p) => p.id === m![1])!;
       return ok({ post: { ...post, status: 'PUBLISHED', targets: JSON.stringify([{ platform: 'tiktok', status: 'published', permalink: 'https://tiktok.com/@x/video/1', errorCode: null }]) } });

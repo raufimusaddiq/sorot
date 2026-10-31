@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ApiClient } from '@/lib/api';
-import type { Clip, DraftTarget, PublishDraft, SocialAccount, SocialPost } from '@/types';
+import type { Clip, DraftTarget, GenExport, PublishDraft, SocialAccount, SocialPost } from '@/types';
 
 const GATE_BLOCK = 'Held back by the quality gate';
 const label = 'font-pixel text-xs text-fg block mb-1';
@@ -166,7 +166,10 @@ function TargetEditor({ t, choice, onChange }: { t: DraftTarget; choice: Choice;
   );
 }
 
-export function PublishPanel({ clip, api, onClose }: { clip: Clip; api: ApiClient; onClose: () => void }) {
+/** Publishes a clip, or (with `generated`) the export of a generated video: same choices, same protections. */
+export function PublishPanel({ clip, generated, api, onClose }: { clip?: Clip; generated?: GenExport; api: ApiClient; onClose: () => void }) {
+  const subjectId = (clip?.id ?? generated?.id) as string;
+  const kind = generated ? 'generated' : 'clip';
   const [accounts, setAccounts] = useState<SocialAccount[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -182,8 +185,8 @@ export function PublishPanel({ clip, api, onClose }: { clip: Clip; api: ApiClien
       setAccounts(r.accounts);
       setSelected(preselect(r.accounts));
     }, (e) => setError((e as Error).message));
-    api.clipPosts(clip.id).then((r) => setPosts(r.posts), () => {});
-  }, [api, clip.id]);
+    api.clipPosts(subjectId, kind).then((r) => setPosts(r.posts), () => {});
+  }, [api, subjectId, kind]);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -209,7 +212,7 @@ export function PublishPanel({ clip, api, onClose }: { clip: Clip; api: ApiClien
   });
 
   const writeCopy = () => run(async () => {
-    const d = await api.publishDraft(clip.id, [...selected]);
+    const d = await api.publishDraft(subjectId, [...selected], kind);
     setDraft(d);
     setConfirmed(false);
     setChoices(Object.fromEntries(d.targets.map((t): [string, Choice] =>
@@ -226,7 +229,7 @@ export function PublishPanel({ clip, api, onClose }: { clip: Clip; api: ApiClien
   const blocked = missing || (gate === 'REVIEW' && !confirmed);
 
   const publish = () => run(async () => {
-    const r = await api.publish(clip.id, {
+    const r = await api.publish(subjectId, {
       targets: draft!.targets.map((t) => {
         const { privacyLevel, ...c } = choices[t.accountId]!;   // a TikTok draft gets its privacy in the app
         return { accountId: t.accountId, ...c, ...(privacyLevel && c.postMode !== 'draft' ? { privacyLevel } : {}) };
@@ -234,18 +237,18 @@ export function PublishPanel({ clip, api, onClose }: { clip: Clip; api: ApiClien
       ...(schedule ? { scheduledAt: scheduleIso(schedule) } : {}),
       ...(gate === 'REVIEW' ? { confirmReview: true } : {}),
       ...(gate === 'FAIL' ? { override: true } : {}),
-    });
+    }, kind);
     setPosts((p) => [r.post, ...p]);
     setDraft(null);
   });
 
   return (
     <div className="fixed inset-0 bg-bg/80 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="win max-w-2xl w-full" role="dialog" aria-label="Publish clip">
+      <div className="win max-w-2xl w-full" role="dialog" aria-label={generated ? 'Publish video' : 'Publish clip'}>
         <div className="win-bar bg-mint">
           <button onClick={onClose} aria-label="Close" className="close grid place-items-center text-[9px] leading-none text-white">✕</button>
           <span className="stripes" aria-hidden />
-          <h3 className="heading text-base px-1">Publish #{clip.rankPos} via Tebar</h3>
+          <h3 className="heading text-base px-1">Publish {generated ? (generated.title ?? 'the video') : `#${clip!.rankPos}`} via Tebar</h3>
           <span className="stripes" aria-hidden />
         </div>
         <div className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
@@ -287,7 +290,7 @@ export function PublishPanel({ clip, api, onClose }: { clip: Clip; api: ApiClien
           {error && <p role="alert" className="text-error text-sm">{error}</p>}
           {posts.length > 0 && (
             <div>
-              <span className={label}>Posts of this clip</span>
+              <span className={label}>Posts of this {generated ? 'video' : 'clip'}</span>
               <ul className="space-y-2">
                 {posts.map((p) => (
                   <PostRow key={p.id} post={p} busy={busy} onAction={(a) => postAction(p.id, a)} />

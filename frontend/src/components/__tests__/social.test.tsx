@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ApiClient } from '@/lib/api';
 import { ConnectionsPanel } from '../ConnectionsPanel';
+import { GeneratedLibrary } from '../GeneratedLibrary';
 import { PublishPanel, SAVED_ACCOUNTS, scheduleIso } from '../PublishPanel';
-import { emptyState, installFakeApi, makeAccount, makeClip, makePost, type FakeState } from '../../../test/fakeApi';
+import { emptyState, installFakeApi, makeAccount, makeClip, makeGenExport, makeGenProject, makePost, type FakeState } from '../../../test/fakeApi';
 import type { DraftTarget } from '@/types';
 
 let state: FakeState;
@@ -214,5 +215,46 @@ describe('PublishPanel', () => {
     open();
     await act();
     expect(await screen.findByRole('alert')).toHaveTextContent(error);
+  });
+});
+
+describe('GeneratedLibrary', () => {
+  const seed = () => {
+    state.accounts = [makeAccount('tt', 'tiktok', 'budi.tt')];
+    state.draft = { clip: { id: 'ex1', title: 'Bunga berbunga', gateVerdict: 'PASS', gateReasons: [] }, copyCheckedBy: null, targets: [
+      { accountId: 'tt', platform: 'tiktok', name: 'budi.tt', content: 'Bunga berbunga', copyBy: 'template', needs: {}, warnings: [], blockers: [] }] };
+    state.genProjects = [{ project: makeGenProject('g1', { title: 'Bunga majemuk' }), plans: [], versions: [], assets: [], exports: [makeGenExport('ex1')] }];
+  };
+
+  it('lists the finished videos; they play, download and publish through the same panel as a clip', async () => {
+    seed();
+    render(<GeneratedLibrary api={api} />);
+    expect(await screen.findByText('Generated (1)')).toBeInTheDocument();
+    expect(screen.getByText('Bunga majemuk · 9:16 · 30 s')).toBeInTheDocument();
+    expect(screen.getByLabelText('Video Bunga berbunga')).toHaveAttribute('src', '/api/generate/exports/ex1/file');
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/api/generate/exports/ex1/file?download=1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    expect(await screen.findByRole('dialog', { name: 'Publish video' })).toBeInTheDocument();
+    expect(sent('GET', '/api/generate/exports/ex1/posts')).toHaveLength(1);
+    fireEvent.click(await screen.findByRole('checkbox', { name: /budi.tt/ }));
+    fireEvent.click(screen.getByRole('button', { name: /write copy/i }));
+    fireEvent.change(await screen.findByLabelText('Text for budi.tt'), { target: { value: 'Teks saya' } });
+    fireEvent.click(screen.getByLabelText('Send as a draft to the TikTok app'));
+    fireEvent.click(screen.getByRole('button', { name: 'Publish now' }));
+    await waitFor(() => expect(sent('POST', '/api/generate/exports/ex1/publish')).toEqual([{ targets: [{ accountId: 'tt', content: 'Teks saya', postMode: 'draft' }] }]));
+    expect(await screen.findByText('Posts of this video')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows nothing without exports (or when Generate is unreachable)', async () => {
+    const { container, rerender } = render(<GeneratedLibrary api={api} />);
+    await waitFor(() => expect(fake.calls.some((c) => c.path === '/api/generate/exports')).toBe(true));
+    expect(container).toBeEmptyDOMElement();
+    state.fail['GET /api/generate/exports'] = 'off';
+    rerender(<GeneratedLibrary api={new ApiClient('')} />);
+    await waitFor(() => expect(fake.calls.filter((c) => c.path === '/api/generate/exports')).toHaveLength(2));
+    expect(container).toBeEmptyDOMElement();
   });
 });

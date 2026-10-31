@@ -141,6 +141,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
     ...loadConfig({}),
     dataDir: join(dir, "data").replaceAll("\\", "/"),
     dbPath: ":memory:",
+    genDir: join(dir, "data", "generate").replaceAll("\\", "/"),
     staticDir: "",
     ffmpegPath: "ffmpeg",
     ytdlpPath: "yt-dlp",

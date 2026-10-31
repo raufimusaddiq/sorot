@@ -20,11 +20,30 @@ import type { VideoBrief } from "./director";
 import type { FeedbackService } from "./feedback";
 import { HttpError } from "./http";
 import { JevError, type Jev, type Question } from "./jev";
+import type { Plan } from "./generate/planSchema";
 import { LlmError, parseJson, type Llm } from "./llm";
 import { decodeOptions } from "./options";
 import { now, type Store } from "./store";
 import { TebarError, type PostMetrics, type Tebar, type TebarAccount, type TebarPost } from "./tebar";
 import type { Clip, Json, SocialPost } from "./types";
+
+/** What gets posted: a clip, or the export of a generated video. Both share the publishing flow (draft, choices, idempotent post). */
+export type SubjectKind = SocialPost["subjectKind"];
+
+interface Subject {
+  kind: SubjectKind;
+  id: string;
+  title: string | null;
+  description: string | null;
+  durationSec: number;
+  /** What the video says: a clip's transcript, a generated video's on-screen and spoken text. */
+  textContent: string;
+  /** The file to post, when it exists. */
+  file: string | null;
+  gate: { verdict: string | null; reasons: string[] };
+  brief: VideoBrief | null;
+  direction: string;
+}
 
 /** Tebar's documented limits for a single-video post (docs.tebar.app/batasan). */
 export const PLATFORMS: Record<string, { text: number; hashtags?: number; minSec?: number; maxSec?: number; title?: number }> = {
@@ -76,7 +95,7 @@ export interface DraftTarget {
 
 const plainTitle = (t: string) => t.replace(/#\S+/g, "").replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 
-function templateCopy(clip: Clip, platform: string): { content: string; title?: string } {
+function templateCopy(clip: Subject, platform: string): { content: string; title?: string } {
   const title = (clip.title ?? "").trim();
   const desc = (clip.description ?? "").trim();
   const limit = PLATFORMS[platform]?.text ?? 1000;
@@ -130,6 +149,31 @@ export class Publisher {
     if (!this.tebar.enabled) throw new HttpError(409, "Tebar is not connected: add your API key in Settings (or TEBAR_API_KEY)");
   }
 
+  /** Who is being posted: the clip, or a generated export (its verdict is the TECHNICAL one; there is no clip gate). */
+  private subject(id: string, kind: SubjectKind): Subject {
+    if (kind === "generated") {
+      const exp = this.store.getGenExport(id);
+      if (!exp) throw new HttpError(404, "Export not found");
+      const version = this.store.getGenVersion(exp.versionId);
+      const planRow = version ? this.store.getGenPlan(version.planId) : null;
+      const plan = planRow ? (JSON.parse(planRow.plan) as Plan) : null;
+      const technical = this.store.genVerdictsForVersion(exp.versionId).find((v) => v.kind === "TECHNICAL");
+      const findings = technical ? (JSON.parse(technical.findings) as Array<{ description: string; severity: string; state: string }>) : [];
+      return {
+        kind, id, title: exp.title, description: exp.description, durationSec: exp.durationSec ?? 0,
+        textContent: plan ? [plan.title, plan.message, ...plan.shots.flatMap((s) => [...s.text.map((t) => t.value), s.narration ?? ""])].filter(Boolean).join("\n") : "",
+        file: existsSync(exp.path) ? exp.path : null,
+        gate: { verdict: technical?.status ?? null, reasons: findings.filter((f) => f.state !== "kept" && f.severity !== "polish").map((f) => f.description).slice(0, 3) },
+        brief: null, direction: this.store.getGenProject(exp.projectId)?.styleNotes ?? "",
+      };
+    }
+    const clip = this.clip(id);
+    return {
+      kind, id, title: clip.title ?? null, description: clip.description ?? null, durationSec: clip.durationSec, textContent: clip.textContent ?? "",
+      file: this.clipFile(clip), gate: this.gateOf(clip), ...this.context(clip),
+    };
+  }
+
   /** The clip file to post: the finished export (captions + music), else the render. */
   private clipFile(clip: Clip): string | null {
     const path = clip.exportPath ?? clip.renderPath;
@@ -166,14 +210,14 @@ export class Publisher {
     return { brief, direction: decodeOptions(this.store.latestJobForVideo(clip.videoId)?.options).direction ?? "" };
   }
 
-  private async llmCopy(clip: Clip, platforms: string[]): Promise<Record<string, { text: string; title?: string }> | null> {
+  private async llmCopy(clip: Subject, platforms: string[]): Promise<Record<string, { text: string; title?: string }> | null> {
     if (!this.llm.enabled) return null;
-    const { brief, direction } = this.context(clip);
+    const { brief, direction } = clip;
     try {
       const msg = await this.llm.chat([
         { role: "system", content: COPY_SYSTEM },
         { role: "user", content: JSON.stringify({
-          platforms, transcript: (clip.textContent ?? "").slice(0, 2000), title: clip.title ?? "", description: clip.description ?? "",
+          platforms, transcript: clip.textContent.slice(0, 2000), title: clip.title ?? "", description: clip.description ?? "",
           ...(brief ? { brief: { summary: brief.summary, people: brief.people, audience: brief.audience } } : {}),
           ...(direction ? { direction } : {}),
           task: 'Write the post for each platform. Answer with JSON only: {"posts": {"<platform>": {"text", "title"}}}.',
@@ -195,7 +239,7 @@ export class Publisher {
   }
 
   /** One Jev request: does each platform's copy claim more than the clip says? Null without Jev. */
-  private async checkCopy(clip: Clip, copies: Record<string, string>): Promise<Record<string, number> | null> {
+  private async checkCopy(clip: Subject, copies: Record<string, string>): Promise<Record<string, number> | null> {
     if (!this.jev.enabled || !Object.keys(copies).length) return null;
     const ids = Object.keys(copies);
     const questions: Record<string, Question> = Object.fromEntries(ids.map((p, i) => [`overclaims_${i}`, {
@@ -207,7 +251,7 @@ export class Publisher {
       },
     }]));
     try {
-      const d = await this.jev.decide(jevState({ excerpt: (clip.textContent ?? "").slice(0, 3000), posts: copies }), questions);
+      const d = await this.jev.decide(jevState({ excerpt: clip.textContent.slice(0, 3000), posts: copies }), questions);
       return Object.fromEntries(ids.map((p, i) => [p, (d.answers[`overclaims_${i}`] as { noul: number }).noul]));
     } catch (e) {
       if (e instanceof JevError) return null;
@@ -215,9 +259,9 @@ export class Publisher {
     }
   }
 
-  async draft(clipId: string, accountIds: string[]): Promise<{ clip: Json; targets: DraftTarget[]; copyCheckedBy: string | null }> {
+  async draft(clipId: string, accountIds: string[], kind: SubjectKind = "clip"): Promise<{ clip: Json; targets: DraftTarget[]; copyCheckedBy: string | null }> {
     this.requireTebar();
-    const clip = this.clip(clipId);
+    const clip = this.subject(clipId, kind);
     if (!accountIds.length) throw new HttpError(400, "Pick at least one account");
     const all = await this.accounts();
     const chosen = accountIds.map((id) => {
@@ -228,11 +272,10 @@ export class Publisher {
     oneWorkspace(chosen);
     const platforms = [...new Set(chosen.map((a) => a.platform))];
     const llm = await this.llmCopy(clip, platforms);
-    const gate = this.gateOf(clip);
-    const file = this.clipFile(clip);
+    const { gate, file } = clip;
     const base: string[] = [];
-    if (!file) base.push("The clip has no rendered file yet: render it first");
-    else if (statSync(file).size > VIDEO_MAX_BYTES) base.push("The clip file is over Tebar's 300 MB limit");
+    if (!file) base.push(clip.kind === "clip" ? "The clip has no rendered file yet: render it first" : "The export has no video file");
+    else if (statSync(file).size > VIDEO_MAX_BYTES) base.push(`The ${clip.kind === "clip" ? "clip" : "video"} file is over Tebar's 300 MB limit`);
     if (gate.verdict === "FAIL") base.push(`Held back by the quality gate: ${gate.reasons[0] ?? "failed"}`);
 
     const targets: DraftTarget[] = [];
@@ -279,13 +322,12 @@ export class Publisher {
     };
   }
 
-  async publish(clipId: string, body: Json): Promise<SocialPost> {
+  async publish(clipId: string, body: Json, kind: SubjectKind = "clip"): Promise<SocialPost> {
     this.requireTebar();
-    const clip = this.clip(clipId);
-    const file = this.clipFile(clip);
-    if (!file) throw new HttpError(409, "The clip has no rendered file yet: render it first");
-    if (statSync(file).size > VIDEO_MAX_BYTES) throw new HttpError(400, "The clip file is over Tebar's 300 MB limit");
-    const gate = this.gateOf(clip);
+    const clip = this.subject(clipId, kind);
+    const { file, gate } = clip;
+    if (!file) throw new HttpError(409, kind === "clip" ? "The clip has no rendered file yet: render it first" : "The export has no video file");
+    if (statSync(file).size > VIDEO_MAX_BYTES) throw new HttpError(400, `The ${kind === "clip" ? "clip" : "video"} file is over Tebar's 300 MB limit`);
     if (gate.verdict === "FAIL" && body.override !== true) {
       throw new HttpError(409, `Held back by the quality gate (${gate.reasons[0] ?? "failed"}); send override: true to post it anyway`);
     }
@@ -312,7 +354,7 @@ export class Publisher {
     const post: SocialPost = {
       id: crypto.randomUUID(), clipId, provider: "tebar", providerPostId: null, status: "PUBLISHING", scheduledAt,
       idempotencyKey: crypto.randomUUID(), request: null, targets: null, errorMessage: null,
-      createdAt: now(), updatedAt: now(), lastSyncedAt: null, profileId,
+      createdAt: now(), updatedAt: now(), lastSyncedAt: null, profileId, subjectKind: kind,
     };
     this.store.saveSocialPost(post);
     try {
@@ -410,8 +452,8 @@ export class Publisher {
     }
   }
 
-  posts(clipId: string): SocialPost[] {
-    this.clip(clipId);
+  posts(clipId: string, kind: SubjectKind = "clip"): SocialPost[] {
+    this.subject(clipId, kind);
     return this.store.socialPostsForClip(clipId);
   }
 
@@ -434,6 +476,7 @@ export class Publisher {
         const m = await this.tebar.postInsights(row.providerPostId as string);
         if (!m) continue;
         const postedAt = published.map((t) => t.publishedAt).filter((x): x is string => !!x).sort()[0] ?? post.createdAt;
+        if (row.subjectKind === "generated") continue;   // only clips feed training
         const acc = perClip.get(row.clipId);
         if (!acc) perClip.set(row.clipId, { metrics: { ...m }, postedAt });
         else {
@@ -510,7 +553,7 @@ function oneWorkspace(accounts: TebarAccount[]): string | null {
 }
 
 /** One Tebar target from the user's final choices, checked against the platform's rules. */
-function buildTarget(t: Json, i: number, accounts: TebarAccount[], clip: Clip): { body: Json; account: TebarAccount } {
+function buildTarget(t: Json, i: number, accounts: TebarAccount[], clip: Subject): { body: Json; account: TebarAccount } {
   const id = typeof t.accountId === "string" ? t.accountId : "";
   const account = accounts.find((a) => a.id === id);
   if (!account) throw new HttpError(400, `targets[${i}]: unknown Tebar account ${id}`);

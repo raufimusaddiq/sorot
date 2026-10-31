@@ -5,7 +5,7 @@ import { GenerateWindow } from '../GenerateWindow';
 import { VerdictPanel, where } from '../VerdictPanel';
 import { VersionHistory } from '../VersionHistory';
 import {
-  emptyState, installFakeApi, makeFinding, makeGenPlan, makeGenProject, makeGenVersion, makePlanRow, makeStoryline, makeVerdict, type FakeState,
+  emptyState, installFakeApi, makeFinding, makeGenExport, makeGenPlan, makeGenProject, makeGenVersion, makePlanRow, makeStoryline, makeVerdict, type FakeState,
 } from '../../../../test/fakeApi';
 
 let state: FakeState;
@@ -77,7 +77,7 @@ describe('VerdictPanel', () => {
 describe('BuildPanel', () => {
   const props = (over: Partial<React.ComponentProps<typeof BuildPanel>> = {}) => ({
     api, project: makeGenProject('g1'), version: null, verdicts: [], estimate: { draftSec: 600, exportSec: 30 }, busy: false,
-    shots: ['s01', 's02'], onBuild: jest.fn(), onCancel: jest.fn(), onAccept: jest.fn(), onFix: jest.fn(), ...over,
+    shots: ['s01', 's02'], exported: null, onBuild: jest.fn(), onCancel: jest.fn(), onAccept: jest.fn(), onFix: jest.fn(), onExport: jest.fn(), ...over,
   });
 
   it('offers a build with its estimate; a finished one can be built again', () => {
@@ -151,6 +151,18 @@ describe('BuildPanel', () => {
   it('with nothing open to fix the must-fix button is off', () => {
     render(<BuildPanel {...props({ version: makeGenVersion('ver1'), verdicts: [makeVerdict('TECHNICAL', 'PASS')] })} />);
     expect(screen.getByRole('button', { name: 'Fix the must-fix items (0)' })).toBeDisabled();
+  });
+
+  it('an accepted project offers to export; once exported it says so with a download link', () => {
+    const accepted = { project: makeGenProject('g1', { status: 'ACCEPTED' }), version: makeGenVersion('ver1'), verdicts: [makeVerdict('TECHNICAL', 'PASS')] };
+    const p = props(accepted);
+    const { rerender } = render(<BuildPanel {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Export the video' }));
+    expect(p.onExport).toHaveBeenCalledWith('ver1');
+    rerender(<BuildPanel {...props({ ...accepted, exported: makeGenExport('ex1') })} />);
+    expect(screen.queryByRole('button', { name: 'Export the video' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Exported ✓/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/api/generate/exports/ex1/file?download=1');
   });
 
   it('an accepted project says so instead of offering to accept', () => {
@@ -236,6 +248,16 @@ describe('GenerateWindow: building', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Accept this version' }));
     expect(await screen.findByText('Accepted ✓')).toBeInTheDocument();
     expect(sent('POST', '/api/generate/versions/ver1/accept')).toHaveLength(1);
+  });
+
+  it('an accepted build is exported on request, and the export shows', async () => {
+    approvedProject({ versions: [makeGenVersion('ver1')] });
+    state.genProjects[0]!.project.status = 'ACCEPTED';
+    state.genVerdicts.ver1 = [makeVerdict('TECHNICAL', 'PASS'), makeVerdict('CREATIVE', 'PASS')];
+    await open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Export the video' }));
+    expect(await screen.findByText(/Exported ✓/)).toBeInTheDocument();
+    expect(sent('POST', '/api/generate/versions/ver1/export')).toHaveLength(1);
   });
 
   it('a build can be cancelled while it runs', async () => {
