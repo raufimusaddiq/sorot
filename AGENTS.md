@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**Sorot**: YouTube/local video → 9:16 short clips with auto-subtitles. Indonesian. Local-only, personal-use simple.
+**Sorot**: YouTube/local video → 9:16 short clips with auto-subtitles. Indonesian. Local-first, personal-use simple; host-ready (hosting planned once clipping hardware allows — principles in `.specify/memory/constitution.md`).
 
 **Stack**: Bun workspace — `backend/` Bun/TS (API, orchestration, scoring, discovery, LLM/Jev/Tebar; serves the UI) · `cli/` `sorot` (Bun) · `ai-pipeline/` Python 3, media/ML only · `frontend/` Next.js 14 static export · SQLite · Docker. Specs in `docs/` (design of the creative loop: `docs/creative-loop.md`; API: `docs/api-spec.md`); history in `docs/journal/`.
 
