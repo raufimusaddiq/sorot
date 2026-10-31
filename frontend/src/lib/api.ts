@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEvent, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -195,6 +195,65 @@ export class ApiClient {
 
   async getGenerateStatus() {
     return this.request<GenerateStatus>('/api/generate/status');
+  }
+
+  // ---- Generate ----
+
+  async listGenerateProjects() {
+    return this.request<{ projects: GenProject[] }>('/api/generate/projects');
+  }
+
+  async createGenerateProject(body: GenCreateBody) {
+    return this.request<{ project: GenProject }>('/api/generate/projects', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async getGenerateProject(id: string) {
+    return this.request<GenProjectDetail>(`/api/generate/projects/${id}`);
+  }
+
+  async deleteGenerateProject(id: string) {
+    return this.request<{ deleted: boolean }>(`/api/generate/projects/${id}`, { method: 'DELETE' });
+  }
+
+  async retryGenerateProject(id: string) {
+    return this.request<{ project: GenProject }>(`/api/generate/projects/${id}/retry`, { method: 'POST' });
+  }
+
+  async newStorylines(id: string, note?: string) {
+    return this.request<{ project: GenProject }>(`/api/generate/projects/${id}/storylines`, { method: 'POST', body: JSON.stringify({ note }) });
+  }
+
+  async pickStoryline(id: string, index: number, note?: string) {
+    return this.request<{ project: GenProject }>(`/api/generate/projects/${id}/storylines/${index}/pick`, { method: 'POST', body: JSON.stringify({ note }) });
+  }
+
+  async saveGeneratePlan(id: string, plan: GenPlan) {
+    return this.request<{ plan: GenPlanRow }>(`/api/generate/projects/${id}/plan`, { method: 'PUT', body: JSON.stringify({ plan }) });
+  }
+
+  async reviseGeneratePlan(id: string, request: string) {
+    return this.request<{ plan: GenPlanRow; changeSummary: string }>(`/api/generate/projects/${id}/plan/revise`, { method: 'POST', body: JSON.stringify({ request }) });
+  }
+
+  async approveGeneratePlan(id: string, planId: string) {
+    return this.request<{ project: GenProject }>(`/api/generate/projects/${id}/plan/approve`, { method: 'POST', body: JSON.stringify({ planId }) });
+  }
+
+  /** Multipart: the browser sets the content type (and its boundary). */
+  async uploadGenerateAsset(id: string, file: File, kind: string, shotId?: string) {
+    const form = new FormData();
+    form.set('file', file);
+    form.set('kind', kind);
+    if (shotId) form.set('shotId', shotId);
+    return this.request<{ asset: GenAsset }>(`/api/generate/projects/${id}/assets`, { method: 'POST', body: form, headers: {} });
+  }
+
+  async deleteGenerateAsset(assetId: string) {
+    return this.request<{ deleted: boolean }>(`/api/generate/assets/${assetId}`, { method: 'DELETE' });
+  }
+
+  async getGenerateEvents(id: string, limit = 100) {
+    return this.request<{ events: GenEvent[] }>(`/api/generate/projects/${id}/events?limit=${limit}`);
   }
 
   // ---- publishing (Tebar) ----

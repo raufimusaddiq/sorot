@@ -1,5 +1,6 @@
 import type { Store } from "../../store";
 import type { GenProject, GenVersion } from "../../types";
+import type { Director } from "../director";
 import type { DirectorLog } from "../events";
 import type { Recipe, RecipeStep } from "../recipe";
 
@@ -13,6 +14,11 @@ export interface StepContext {
   settings: Record<string, unknown>;
   store: Store;
   log: DirectorLog;
+  director: Director;
+  /** Is this connection (llm, jev, image, voice, vision) set up? */
+  connected: (connection: string) => boolean;
+  /** Names and tags of the HyperFrames registry blocks (empty when the CLI can't list them). */
+  catalog: () => Promise<Array<{ name: string; tags: string[] }>>;
   signal?: AbortSignal;
   /** Percent done of this step (shown on the version while it builds). */
   progress: (percent: number, label?: string) => void;

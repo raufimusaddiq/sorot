@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { now, type Store } from "../store";
+import type { GenProject } from "../types";
 import { checkObject, isObject, STEP_SPECS, STEP_TYPES, type Field, type Gate, type StepType } from "./steps/schema";
 
 // Recipe validation (contracts/recipe.md). A recipe is the user's pipeline: an ordered list of
@@ -193,6 +194,9 @@ function checkOrder(steps: RecipeStep[], err: (m: string) => void, warnings: str
 // ---- examples and frozen copies ---------------------------------------------------
 
 export class RecipeError extends Error {}
+
+/** The recipe a project was started with (its frozen copy). */
+export const parseRecipe = (p: GenProject) => JSON.parse(p.recipe) as Recipe;
 
 /** The example recipes shipped in generator/recipes/*.json (read-only; users copy them to edit). */
 export function loadExampleRecipes(dir: string): Recipe[] {

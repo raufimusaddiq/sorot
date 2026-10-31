@@ -40,7 +40,7 @@ describe("sorot gen status", () => {
   test("a missing or unknown gen command is a usage error", async () => {
     const h = harness();
     expect(await h.run("gen")).toBe(2);
-    expect(h.err[0]).toContain("Missing gen command (status)");
+    expect(h.err[0]).toContain("Missing gen command (status, new,");
     expect(await h.run("gen", "dance")).toBe(2);
     expect(h.err.at(-1)).toContain("Unknown gen command: dance");
   });

@@ -209,3 +209,50 @@ export type VideoGroup = {
 };
 
 export type TabKey = 'transcript' | 'clips';
+
+// ---- Generate: projects, storylines and plans (GET /api/generate/projects/:id) ----
+
+export type GenStoryline = {
+  title: string; pitch: string; opening: string; beats: string[]; look: string; sound: string;
+  bold: boolean; recommended: boolean; reason: string; note?: string;
+};
+
+export type GenShot = {
+  id: string; purpose: string; durationSec: number; text: Array<{ role: string; value: string }>;
+  visual: { description: string; block: string | null; generatedImage?: { prompt: string; style?: string }; fallbackVisual?: string };
+  motion: string; transition: string; audio: string; narration: string | null; hold: boolean;
+};
+
+export type GenPlan = {
+  title: string; message: string; format: string; totalSec: number; language: string;
+  look: { palette: string[]; fonts: string[]; pacing: string; notes: string };
+  sound: { music: string; narration: boolean }; narrationScript: string | null; blocks: string[]; assumptions: string[]; shots: GenShot[];
+};
+
+export type GenPlanRow = {
+  id: string; projectId: string; revision: number; plan: GenPlan; changeRequest: string | null; changeSummary: string | null;
+  approvedAt: string | null; createdAt: string;
+};
+
+export type GenStepState = { status: 'done' | 'waiting' | 'failed' | 'skipped'; inputHash: string; outputRef?: string; reason?: string };
+
+export type GenProject = {
+  id: string; title: string | null; brief: string; format: string; targetSec: number; language: string; styleNotes: string | null;
+  recipeId: string; stepIndex: number; stepState: Record<string, GenStepState> | null; narration: number;
+  storylines: GenStoryline[] | null; pickedStoryline: number | null;
+  /** RUNNING · WAITING · BUILDING · BUILT · ACCEPTED · EXPORTED · FAILED */
+  status: string; currentPlanId: string | null; errorMessage: string | null; createdAt: string; updatedAt: string;
+  recipe?: { steps: Array<{ use: string; id?: string; gate?: string }> };
+};
+
+export type GenAsset = { id: string; projectId: string; kind: string; origin: string; path: string; shotId: string | null; createdAt: string };
+
+export type GenEvent = {
+  id: string; kind: string; model: string | null; request: string | null; response: string | null; ok: number; ms: number | null; createdAt: string;
+};
+
+export type GenProjectDetail = { project: GenProject; plans: GenPlanRow[]; versions: unknown[]; assets: GenAsset[]; exports: unknown[] };
+
+export type GenCreateBody = {
+  brief: string; format?: string; targetSec?: number; language?: string; styleNotes?: string; recipeId?: string; narration?: boolean;
+};

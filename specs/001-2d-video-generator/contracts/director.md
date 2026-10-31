@@ -1,10 +1,18 @@
 # Director and Judge Call Contracts
 
-Every LLM call is one request and one JSON answer, parsed with `parseJson` (`llm.ts`) and
-validated in code. Every request ends with a `task` field that restates the job and the output
-format (Sorot's rule, because reasoning models ignore the system prompt). A failure raises
-`LlmError` → the project keeps its state and `error_message` is set (FR-016). Each call is
-logged in `gen_event`.
+Every LLM call is one request and one **tool call**: the model must call one function
+(`tool_choice` names it), and the function's arguments are the answer. That keeps a reasoning
+model from wrapping the answer in prose. The arguments are validated in code; if the model writes
+the JSON as text instead, that is read too. A validation failure goes back to the model as the
+function's result (`{accepted: false, problems}`) and it gets one more try. Every request ends
+with a `task` field that restates the job (Sorot's rule, because reasoning models ignore the
+system prompt). A failure raises `LlmError` -> the project keeps its state and `error_message` is
+set (FR-016). Each call is logged in `gen_event` (the arguments are the logged response). The
+output budget is the configured `LLM_MAX_TOKENS` or a per-job floor, whichever is larger, because
+a reasoning model's thinking counts against it.
+
+Functions: `submit_storylines`, `submit_plan`, `submit_revision` (`plan` + `changeSummary`) and
+`submit_decision` (`gate`). The other calls below follow the same pattern when their steps land.
 
 | Call | Input (user-message JSON) | Output JSON | Limits |
 |---|---|---|---|

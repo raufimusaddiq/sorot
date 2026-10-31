@@ -11,6 +11,7 @@ import { WebSearch } from "./webSearch";
 import { FeedbackService, ValidationError } from "./feedback";
 import { Hyperframes } from "./generate/hyperframes";
 import { GenerateService } from "./generate/service";
+import { planView, projectView } from "./generate/views";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
 import { ClipEditor } from "./editor";
 import { ConflictError, JobService } from "./jobs";
@@ -309,6 +310,75 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   // ---- generate ----
   router.on("GET", "/api/generate/status", async () => ok({ ...(await generate.status()) }));
+
+  router.on("GET", "/api/generate/projects", () => ok({ projects: generate.listProjects().map((p) => projectView(p)) }));
+  router.on("POST", "/api/generate/projects", async (c) => {
+    const b = await c.body();
+    const project = await generate.createProject({
+      brief: b.brief, recipeId: strArg(b, "recipeId") || undefined, format: strArg(b, "format") || undefined,
+      targetSec: typeof b.targetSec === "number" ? b.targetSec : undefined, language: strArg(b, "language") || undefined,
+      styleNotes: strArg(b, "styleNotes") || undefined, preset: strArg(b, "preset") || undefined,
+      narration: b.narration === true, buildWithoutStopping: b.buildWithoutStopping === true, ideaId: strArg(b, "ideaId") || undefined,
+    });
+    return ok({ project: projectView(project) }, 201);
+  });
+  router.on("GET", "/api/generate/projects/:id", (c) => {
+    const d = generate.getProject(c.params.id as string);
+    return ok({ ...d, project: projectView(d.project, { recipe: true }), plans: d.plans.map(planView) });
+  });
+  router.on("PATCH", "/api/generate/projects/:id", async (c) => {
+    const b = await c.body();
+    return ok({ project: projectView(generate.patchProject(c.params.id as string, b)) });
+  });
+  router.on("DELETE", "/api/generate/projects/:id", (c) => {
+    generate.deleteProject(c.params.id as string);
+    return ok({ deleted: true });
+  });
+  router.on("POST", "/api/generate/projects/:id/retry", (c) => ok({ project: projectView(generate.retry(c.params.id as string)) }));
+  router.on("POST", "/api/generate/projects/:id/storylines", async (c) => {
+    const b = await c.body();
+    return ok({ project: projectView(generate.newStorylines(c.params.id as string, strArg(b, "note"))) });
+  });
+  router.on("POST", "/api/generate/projects/:id/storylines/:index/pick", async (c) => {
+    const b = await c.body();
+    return ok({ project: projectView(generate.pick(c.params.id as string, Number(c.params.index), strArg(b, "note"))) });
+  });
+  router.on("PUT", "/api/generate/projects/:id/plan", async (c) => {
+    const b = await c.body();
+    return ok({ plan: planView(await generate.putPlan(c.params.id as string, b.plan)) });
+  });
+  router.on("POST", "/api/generate/projects/:id/plan/revise", async (c) => {
+    const b = await c.body();
+    const r = await generate.revisePlan(c.params.id as string, b.request);
+    return ok({ plan: planView(r.plan), changeSummary: r.changeSummary });
+  });
+  router.on("POST", "/api/generate/projects/:id/plan/approve", async (c) => {
+    const b = await c.body();
+    return ok({ project: projectView(generate.approvePlan(c.params.id as string, b.planId)) });
+  });
+  router.on("POST", "/api/generate/projects/:id/assets", async (c) => {
+    const id = c.params.id as string;
+    generate.getProject(id);
+    const form = await c.req.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!form || !(file instanceof File)) return fail(400, "Send the file as multipart form data in the field \"file\"");
+    const shotId = form.get("shotId");
+    const asset = generate.assets.upload(id, {
+      kind: String(form.get("kind") ?? ""), filename: file.name, data: new Uint8Array(await file.arrayBuffer()),
+      shotId: typeof shotId === "string" && shotId ? shotId : null,
+    });
+    return ok({ asset }, 201);
+  });
+  router.on("DELETE", "/api/generate/assets/:id", (c) => {
+    generate.assets.remove(c.params.id as string);
+    return ok({ deleted: true });
+  });
+  router.on("GET", "/api/generate/projects/:id/events", (c) => {
+    const limit = Number(c.url.searchParams.get("limit") ?? 200);
+    return ok({ events: generate.events(c.params.id as string, Number.isFinite(limit) ? limit : 200) });
+  });
+  router.on("GET", "/api/generate/projects/:id/files/:name", (c) =>
+    new Response(generate.file(c.params.id as string, c.params.name as string), { headers: { "Content-Type": "text/plain; charset=utf-8" } }));
 
   const allowedOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000", config.frontendUrl]);
 

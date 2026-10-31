@@ -39,6 +39,14 @@ export interface ToolDef {
   function: { name: string; description: string; parameters: Json };
 }
 
+export interface ChatOptions {
+  tools?: ToolDef[];
+  /** Name of the one function the model must call (otherwise it chooses). */
+  toolChoice?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export type ToolHandler = (args: Json) => unknown | Promise<unknown>;
 
 /** OpenAI `tools` entry: a function taking an object of `properties`. */
@@ -84,8 +92,13 @@ export class Llm {
     return this.config.llmModel;
   }
 
+  /** The configured output budget per call; it includes a reasoning model's thinking. */
+  get maxTokens(): number {
+    return this.config.llmMaxTokens ?? 4000;
+  }
+
   /** One chat completion; a transient failure (hosted gateways drop requests) is tried once more. */
-  async chat(messages: ChatMessage[], opts: { tools?: ToolDef[]; temperature?: number; maxTokens?: number } = {}): Promise<ChatMessage> {
+  async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatMessage> {
     try {
       return await this.chatOnce(messages, opts);
     } catch (e) {
@@ -95,14 +108,16 @@ export class Llm {
     }
   }
 
-  private async chatOnce(messages: ChatMessage[], opts: { tools?: ToolDef[]; temperature?: number; maxTokens?: number }): Promise<ChatMessage> {
+  private async chatOnce(messages: ChatMessage[], opts: ChatOptions): Promise<ChatMessage> {
     if (!this.enabled) throw new LlmError("No LLM configured (set LLM_BASE_URL and LLM_MODEL)");
     const base = this.config.llmBaseUrl.replace(/\/+$/, "");
     const body: Json = {
       model: this.config.llmModel, messages, temperature: opts.temperature ?? 0.4,
       max_tokens: opts.maxTokens ?? this.config.llmMaxTokens ?? 4000,
     };
-    if (opts.tools?.length) Object.assign(body, { tools: opts.tools, tool_choice: "auto" });
+    if (opts.tools?.length) {
+      Object.assign(body, { tools: opts.tools, tool_choice: opts.toolChoice ? { type: "function", function: { name: opts.toolChoice } } : "auto" });
+    }
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.config.llmApiKey) headers.Authorization = `Bearer ${this.config.llmApiKey}`;
     let res: Response;

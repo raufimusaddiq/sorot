@@ -1,15 +1,25 @@
+import { rmSync } from "node:fs";
 import type { AppConfig } from "../config";
+import { HttpError } from "../http";
 import type { Jev } from "../jev";
 import type { Llm } from "../llm";
-import type { Store } from "../store";
+import { now, type Store } from "../store";
+import type { GenPlan, GenProject } from "../types";
+import { Assets, projectDir } from "./assets";
+import { Director, type GateDecision as DirectorDecision } from "./director";
 import { DirectorLog } from "./events";
 import { Hyperframes, requiredOk } from "./hyperframes";
-import { seedRecipes, type Recipe, type RecipeStep } from "./recipe";
-import { Runner } from "./runner";
+import { mirrorProject, readMirror } from "./mirror";
+import { planContext } from "./planContext";
+import { validatePlan, type Plan } from "./planSchema";
+import { freezeRecipe, parseRecipe, seedRecipes, type Recipe, type RecipeStep } from "./recipe";
+import { Runner, parseStates, stepId, type GateDecision } from "./runner";
+import { STORYLINE_NOTE, chosenStoryline, parseStorylines, projectFlags } from "./steps/storylines";
 
-// Entry point of Generate for the routes: availability now; projects, versions and exports as the
-// stories land. Generate is an AI-only mode (constitution IV): without an LLM it shows as
-// unavailable with the reason, and clipping never depends on it.
+// Entry point of Generate for the routes: availability, projects, the storyline pick and the plan
+// (edit, revise, approve). Builds, versions and exports arrive with their stories. Generate is an
+// AI-only mode (constitution IV): without an LLM it shows as unavailable with the reason, and
+// clipping never depends on it.
 
 export interface ConnectionState {
   llm: boolean;
@@ -35,12 +45,32 @@ export interface GenerateStatus extends Availability {
   presets: string[];
 }
 
+export interface CreateProjectInput {
+  brief?: unknown;
+  recipeId?: string;
+  format?: string;
+  targetSec?: number;
+  language?: string;
+  styleNotes?: string;
+  preset?: string;
+  narration?: boolean;
+  buildWithoutStopping?: boolean;
+  ideaId?: string;
+}
+
 const DOCTOR_TTL_MS = 30_000;
+const FORMATS = ["9:16", "16:9", "1:1"];
+const MAX_BRIEF = 2000;
 
 export class GenerateService {
   readonly log: DirectorLog;
+  readonly director: Director;
   readonly runner: Runner;
+  readonly assets: Assets;
   private doctorCache: { at: number; result: { ok: boolean; reason?: string } } | null = null;
+  private catalogCache: Array<{ name: string; tags: string[] }> | null = null;
+  /** Work running in the background, by project. */
+  private readonly running = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly config: AppConfig,
@@ -50,9 +80,13 @@ export class GenerateService {
     private readonly jev: Jev,
   ) {
     this.log = new DirectorLog(store);
+    this.director = new Director(llm, this.log, config.generatorDir);
+    this.assets = new Assets(config, store);
     this.runner = new Runner(store, this.log, {
       connected: (c) => this.connected(c),
-      directorGate: async () => { throw new Error("The director gate isn't wired yet"); },
+      directorGate: (ctx, result) => this.decide(ctx.project, ctx.step, result.outputRef),
+      director: this.director,
+      catalog: () => this.catalog(),
     });
   }
 
@@ -61,6 +95,8 @@ export class GenerateService {
     seedRecipes(this.store, `${this.config.generatorDir}/recipes`);
     this.runner.recoverInterrupted();
   }
+
+  // ---- availability ---------------------------------------------------------
 
   get compute(): "cpu" | "gpu" { return this.config.whisperDevice === "cpu" ? "cpu" : "gpu"; }
 
@@ -135,4 +171,263 @@ export class GenerateService {
     }
     return { available: reasons.length === 0, reasons };
   }
+
+  /** Names and tags of the HyperFrames registry blocks; empty when the CLI can't list them. */
+  private async catalog(): Promise<Array<{ name: string; tags: string[] }>> {
+    if (this.catalogCache) return this.catalogCache;
+    try {
+      this.catalogCache = (await this.hyperframes.catalog()).map((b) => ({ name: b.name, tags: b.tags ?? [] }));
+      return this.catalogCache;
+    } catch {
+      return [];
+    }
+  }
+
+  // ---- background work ------------------------------------------------------
+
+  /** Runs `work` for a project without blocking the request; whatever it leaves is saved by the runner. */
+  private launch(projectId: string, work: () => Promise<unknown>): void {
+    const job = work()
+      .catch((e: Error) => this.store.updateGenProject(projectId, { status: "FAILED", errorMessage: e.message }))
+      .finally(() => {
+        this.running.delete(projectId);
+        mirrorProject(this.config, this.store, projectId);
+      });
+    this.running.set(projectId, job);
+  }
+
+  /** Resolves when no background work is running (tests, shutdown). */
+  async whenIdle(): Promise<void> {
+    while (this.running.size) await Promise.allSettled([...this.running.values()]);
+  }
+
+  private mustProject(id: string): GenProject {
+    const p = this.store.getGenProject(id);
+    if (!p) throw new HttpError(404, "Project not found");
+    return p;
+  }
+
+  private idle(id: string): GenProject {
+    const p = this.mustProject(id);
+    if (this.running.has(id) || p.status === "BUILDING") throw new HttpError(409, "The project is still working: wait for it to stop");
+    return p;
+  }
+
+  // ---- the director's gate --------------------------------------------------
+
+  /** A `gate: director` step: the director picks a storyline or approves the plan, and says why. */
+  private async decide(project: GenProject, step: RecipeStep, outputRef?: string): Promise<GateDecision> {
+    const fresh = this.mustProject(project.id);
+    if (step.use === "storylines") {
+      const d = await this.director.gate({ project: fresh, step, kind: "storylines", output: parseStorylines(fresh), rule: step.with?.pickRule as string | undefined });
+      this.store.updateGenProject(project.id, { pickedStoryline: d.index ?? 0 });
+      return { approve: true, reason: d.reason };
+    }
+    if (step.use === "plan") {
+      const row = this.store.getGenPlan(outputRef ?? fresh.currentPlanId ?? "");
+      const d: DirectorDecision = await this.director.gate({ project: fresh, step, kind: "plan", output: row ? JSON.parse(row.plan) : null });
+      if (d.decision === "approve" && row) this.store.updateGenPlan(row.id, { approvedAt: now() });
+      return { approve: d.decision === "approve", reason: d.reason };
+    }
+    return { approve: true, reason: "no director decision is needed for this step" };
+  }
+
+  // ---- projects -------------------------------------------------------------
+
+  async createProject(input: CreateProjectInput): Promise<GenProject> {
+    const brief = typeof input.brief === "string" ? input.brief.trim() : "";
+    if (!brief) throw new HttpError(400, "brief required");
+    if (brief.length > MAX_BRIEF) throw new HttpError(400, `The brief can be at most ${MAX_BRIEF} characters`);
+    const status = await this.status();
+    if (!status.available) throw new HttpError(503, `Generate is unavailable: ${status.reasons.join("; ")}`);
+
+    const recipeId = input.recipeId?.trim() || "quick";
+    if (!this.store.getGenRecipe(recipeId)) throw new HttpError(404, `Recipe not found: ${recipeId}`);
+    const frozen = freezeRecipe(this.store, recipeId);
+    const availability = this.recipeAvailability(frozen.recipe);
+    if (!availability.available) throw new HttpError(409, `The recipe ${recipeId} can't run here: ${availability.reasons.join("; ")}`);
+
+    const format = input.format ?? "9:16";
+    if (!FORMATS.includes(format)) throw new HttpError(400, `format must be one of ${FORMATS.join(", ")}`);
+    const language = input.language ?? frozen.recipe.language ?? "id";
+    if (language !== "id" && language !== "en") throw new HttpError(400, "language must be id or en");
+    const { minSec, maxSec } = frozen.recipe.output;
+    const targetSec = input.targetSec ?? Math.min(Math.max(30, minSec), maxSec);
+    if (!Number.isInteger(targetSec) || targetSec < minSec || targetSec > maxSec) {
+      throw new HttpError(400, `The length must be a whole number of seconds from ${minSec} to ${maxSec} for this recipe`);
+    }
+
+    const t = now();
+    const project = this.store.saveGenProject({
+      id: crypto.randomUUID(), title: null, brief, format, targetSec, language, styleNotes: input.styleNotes?.trim() || null,
+      preset: input.preset ?? null, recipeId, recipe: frozen.json, ideaId: input.ideaId ?? null,
+      briefFlags: input.buildWithoutStopping ? JSON.stringify({ buildWithoutStopping: true }) : null,
+      narrationScript: null, concept: null, stepIndex: 0, stepState: null, narration: input.narration ? 1 : 0, storylines: null,
+      pickedStoryline: null, status: "RUNNING", currentPlanId: null, acceptedVersionId: null, errorMessage: null, createdAt: t, updatedAt: t,
+    });
+    mirrorProject(this.config, this.store, project.id);
+    this.launch(project.id, () => this.runner.runProject(project.id));
+    return project;
+  }
+
+  listProjects() { return this.store.listGenProjects(); }
+
+  getProject(id: string) {
+    const project = this.mustProject(id);
+    return {
+      project, plans: this.store.genPlansForProject(id), versions: this.store.genVersionsForProject(id),
+      assets: this.store.genAssetsForProject(id), exports: this.store.genExportsForProject(id),
+    };
+  }
+
+  patchProject(id: string, patch: { title?: unknown; narration?: unknown; styleNotes?: unknown }): GenProject {
+    this.mustProject(id);
+    const fields: Partial<GenProject> = {};
+    if (typeof patch.title === "string") fields.title = patch.title.trim().slice(0, 120) || null;
+    if (typeof patch.narration === "boolean") fields.narration = patch.narration ? 1 : 0;
+    if (typeof patch.styleNotes === "string") fields.styleNotes = patch.styleNotes.trim().slice(0, 500) || null;
+    this.store.updateGenProject(id, fields);
+    mirrorProject(this.config, this.store, id);
+    return this.mustProject(id);
+  }
+
+  deleteProject(id: string): void {
+    this.idle(id);
+    this.store.deleteGenProject(id);
+    rmSync(projectDir(this.config, id), { recursive: true, force: true });
+  }
+
+  events(id: string, limit = 200) {
+    this.mustProject(id);
+    return this.store.genEventsForProject(id, Math.max(1, Math.min(limit, 1000)));
+  }
+
+  file(id: string, name: string): string {
+    this.mustProject(id);
+    const text = readMirror(this.config, id, name);
+    if (text === null) throw new HttpError(404, `${name} hasn't been written for this project`);
+    return text;
+  }
+
+  /** After a failure (FR-016): the failed step runs again; finished steps and all saved work are kept. */
+  retry(id: string): GenProject {
+    const p = this.idle(id);
+    if (p.status !== "FAILED") throw new HttpError(409, "Only a project that failed can be retried");
+    this.launch(id, () => this.runner.retry(id));
+    return this.mustProject(id);
+  }
+
+  // ---- storylines -----------------------------------------------------------
+
+  /** "Show me different ones": the storylines step runs again (with the owner's note), and the plan after it. */
+  newStorylines(id: string, note?: string): GenProject {
+    const p = this.idle(id);
+    const recipe = parseRecipe(p);
+    const step = recipe.steps.find((s) => s.use === "storylines");
+    if (!step) throw new HttpError(409, "This recipe has no storylines step");
+    const flags = projectFlags(p);
+    if (note?.trim()) flags[STORYLINE_NOTE] = note.trim().slice(0, 500);
+    else delete flags[STORYLINE_NOTE];
+    this.store.updateGenProject(id, { briefFlags: Object.keys(flags).length ? JSON.stringify(flags) : null, currentPlanId: null });
+    this.runner.resetFrom(id, stepId(step));
+    this.launch(id, () => this.runner.runProject(id));
+    return this.mustProject(id);
+  }
+
+  /** The owner picks a storyline (with an optional note); the plan is written from it. */
+  pick(id: string, index: number, note?: string): GenProject {
+    const p = this.idle(id);
+    const list = parseStorylines(p);
+    if (!Number.isInteger(index) || index < 0 || index >= list.length) throw new HttpError(400, `index must be from 0 to ${list.length - 1}`);
+    const recipe = parseRecipe(p);
+    const storylines = recipe.steps.find((s) => s.use === "storylines") as RecipeStep;
+    list[index] = { ...list[index]!, ...(note?.trim() ? { note: note.trim().slice(0, 500) } : {}) };
+    this.store.updateGenProject(id, { storylines: JSON.stringify(list), pickedStoryline: index });
+
+    if (parseStates(p.stepState)[stepId(storylines)]?.status === "waiting") this.runner.markApproved(id, stepId(storylines));
+    else {
+      // picking again after a plan exists: the plan is written again from the new pick
+      this.runner.resetFrom(id, stepId(recipe.steps.find((s) => s.use === "plan") as RecipeStep));
+      this.store.updateGenProject(id, { currentPlanId: null });
+    }
+    this.launch(id, () => this.runner.runProject(id));
+    return this.mustProject(id);
+  }
+
+  // ---- plan -----------------------------------------------------------------
+
+  private planOf(p: GenProject): GenPlan {
+    const row = p.currentPlanId ? this.store.getGenPlan(p.currentPlanId) : null;
+    if (!row) throw new HttpError(409, "There is no plan yet");
+    return row;
+  }
+
+  private async checkPlan(p: GenProject, raw: unknown) {
+    const catalog = (await this.catalog()).map((b) => b.name);
+    const check = validatePlan(raw, planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog }));
+    if (!check.ok) throw new HttpError(400, `The plan doesn't pass: ${check.errors.join("; ")}`);
+    return check.plan as Plan;
+  }
+
+  /** Saves a new plan revision and sends it back to the owner for approval. */
+  private savePlan(p: GenProject, plan: Plan, change: { request: string | null; summary: string | null }): GenPlan {
+    const revision = (this.store.genPlansForProject(p.id)[0]?.revision ?? 0) + 1;
+    const row = this.store.saveGenPlan({
+      id: crypto.randomUUID(), projectId: p.id, revision, plan: JSON.stringify(plan), changeRequest: change.request,
+      changeSummary: change.summary, approvedAt: null, createdAt: now(),
+    });
+    this.store.updateGenProject(p.id, { currentPlanId: row.id, title: plan.title });
+    const planStep = parseRecipe(p).steps.find((s) => s.use === "plan") as RecipeStep;
+    this.runner.markWaiting(p.id, stepId(planStep));
+    mirrorProject(this.config, this.store, p.id);
+    return row;
+  }
+
+  /** A direct edit of the plan: validated, saved as a new revision (an approved one is never changed). */
+  async putPlan(id: string, raw: unknown): Promise<GenPlan> {
+    const p = this.idle(id);
+    this.planOf(p);
+    return this.savePlan(p, await this.checkPlan(p, raw), { request: null, summary: "Edited by the owner" });
+  }
+
+  /** "Ask the director": a plain-words change, applied to the named shots only (FR-005). */
+  async revisePlan(id: string, request: unknown): Promise<{ plan: GenPlan; changeSummary: string }> {
+    const text = typeof request === "string" ? request.trim() : "";
+    if (!text) throw new HttpError(400, "request required");
+    const p = this.idle(id);
+    const current = this.planOf(p);
+    const recipe = parseRecipe(p);
+    const planStep = recipe.steps.find((s) => s.use === "plan") as RecipeStep;
+    const catalog = (await this.catalog()).map((b) => b.name);
+    const planCtx = planContext({ project: p, recipe, assets: this.store.genAssetsForProject(id), connected: (c) => this.connected(c), catalog });
+    const out = await this.director.revise({ project: p, step: planStep, current: JSON.parse(current.plan) as Plan, request: text, planCtx });
+    return { plan: this.savePlan(p, out.plan, { request: text, summary: out.changeSummary }), changeSummary: out.changeSummary };
+  }
+
+  /** The owner approves the current revision (FR-006); the rest of the project's steps then run. */
+  approvePlan(id: string, planId: unknown): GenProject {
+    const p = this.idle(id);
+    const current = this.planOf(p);
+    if (planId !== current.id) throw new HttpError(409, "That isn't the current plan: reload and approve the latest revision");
+    const planStep = parseRecipe(p).steps.find((s) => s.use === "plan") as RecipeStep;
+    if (parseStates(p.stepState)[stepId(planStep)]?.status !== "waiting") throw new HttpError(409, "The plan isn't waiting for approval");
+    this.store.updateGenPlan(current.id, { approvedAt: current.approvedAt ?? now() });
+    this.runner.markApproved(id, stepId(planStep));
+    this.launch(id, () => this.runner.runProject(id));
+    return this.mustProject(id);
+  }
+
+  /** Nothing is built from an unapproved plan (FR-006). Returns the plan a build would use. */
+  assertCanBuild(id: string): GenPlan {
+    const p = this.mustProject(id);
+    const row = p.currentPlanId ? this.store.getGenPlan(p.currentPlanId) : null;
+    const planStep = parseRecipe(p).steps.find((s) => s.use === "plan") as RecipeStep;
+    if (!row || !row.approvedAt || parseStates(p.stepState)[stepId(planStep)]?.status !== "done") {
+      throw new HttpError(409, "Approve the plan first: nothing is built from an unapproved plan");
+    }
+    return row;
+  }
+
+  /** The storyline the plan was built from (for the UI). */
+  storyline(id: string) { return chosenStoryline(this.mustProject(id)); }
 }
