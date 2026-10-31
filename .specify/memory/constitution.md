@@ -19,8 +19,10 @@ hardware is good enough for clipping (transcribe + render at a practical speed).
   secrets kept server-side; until those exist, hosted mode is not shipped.
 - Designs MUST still pick the simplest thing that works. Multi-tenant features (accounts,
   per-user data isolation, billing, quotas) are out of scope until this constitution is amended.
-- Pipeline work MUST respect the build order: Video -> Audio -> Transcribe -> Segment -> Score
-  -> Render -> Subtitle -> Variation -> Analytics -> Preview -> Export.
+- Clipping pipeline work MUST respect the build order: Video -> Audio -> Transcribe -> Segment
+  -> Score -> Render -> Subtitle -> Variation -> Analytics -> Preview -> Export. Generate runs the
+  steps of its recipe in the recipe's order and MUST keep its two fixed rules: an approved plan
+  before building, and both verdicts after rendering.
 
 Rationale: local use is what works now; keeping the code host-ready costs little and avoids a
 rewrite once suitable hardware is available, while scope stays small until hosting is real.
@@ -57,6 +59,12 @@ compact tests keep that gate cheap to maintain.
 
 - Jev, the LLM, and Tebar MUST each be optional. With any of them off or failing, the pipeline
   MUST still produce clips using rules (`ruleAnswers()`, rule hooks, rule copy).
+- **AI-only modes**: a mode whose core job cannot be done without AI (e.g. Generate, where an AI
+  director writes and judges the video) MAY require a configured AI connection, if: it is a
+  separate mode that clipping and every other feature never depend on; with no connection it
+  shows as unavailable with a link to Settings; on failure it keeps the user's work and allows a
+  retry; and its spec names it as AI-only. Optional extras inside a mode (generated images,
+  synthetic voice) MUST degrade gracefully when their provider is missing.
 - Every LLM path MUST fall back to rules on `LlmError`; Jev failures MUST fall back per clip.
 - When Jev is on it is the director and its verdicts are final; results MUST NOT be re-asked
   or averaged to chase stability.
@@ -64,7 +72,9 @@ compact tests keep that gate cheap to maintain.
   `.env.llm` or the SQLite `setting` table, MUST be masked wherever shown, and MUST NOT be
   committed.
 
-Rationale: AI services are useful but unreliable and paid; the tool must never depend on them.
+Rationale: AI services are useful but unreliable and paid; the clipping tool must never depend on
+them. A mode that only exists because of AI may need it, but must never take the rest of Sorot
+down with it.
 
 ### V. Stable Contracts
 
@@ -125,4 +135,4 @@ Rationale: posting is outward-facing and irreversible; mistakes there cost the o
 - Every review (`/review`, `/speckit-analyze`) MUST check compliance with these principles;
   added complexity MUST be justified against Principle I.
 
-**Version**: 2.0.0 | **Ratified**: 2026-10-31 | **Last Amended**: 2026-10-31
+**Version**: 2.2.0 | **Ratified**: 2026-10-31 | **Last Amended**: 2026-10-31

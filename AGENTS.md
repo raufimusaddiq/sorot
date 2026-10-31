@@ -4,7 +4,7 @@
 
 **Stack**: Bun workspace — `backend/` Bun/TS (API, orchestration, scoring, discovery, LLM/Jev/Tebar; serves the UI) · `cli/` `sorot` (Bun) · `ai-pipeline/` Python 3, media/ML only · `frontend/` Next.js 14 static export · SQLite · Docker. Specs in `docs/` (design of the creative loop: `docs/creative-loop.md`; API: `docs/api-spec.md`); history in `docs/journal/`.
 
-**Build order (strict)**: 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
+**Build order (strict, clipping)**: 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
 
 ## Commands
 ```
@@ -33,7 +33,7 @@ Tests are on point and compressed (the owner dislikes test bloat): one test per 
 - Prefer executable source over plan docs. Memory = pointers only; details go to the journal.
 
 **Jev, LLM, Tebar** (design + measurements: `docs/creative-loop.md`)
-- All optional; secrets (`LLM_API_KEY`, `JEV_API_KEY`, `TEBAR_API_KEY`) only in gitignored `.env.llm`. Also set in UI Settings / `sorot connect` → SQLite `setting` table, overrides env, read per call (no restart), keys always masked. CLI flag is `--base-url` (`--url` is the global server option).
+- All optional for clipping; only a separate AI-only mode (e.g. Generate) may require one, shown as unavailable without it (constitution IV). Secrets (`LLM_API_KEY`, `JEV_API_KEY`, `TEBAR_API_KEY`) only in gitignored `.env.llm`. Also set in UI Settings / `sorot connect` → SQLite `setting` table, overrides env, read per call (no restart), keys always masked. CLI flag is `--base-url` (`--url` is the global server option).
 - **Jev first** (`jevDirector.ts`, `JEV_DIRECTOR`, default on with Jev; wins over the LLM director/review): SEGMENT judges one window per sentence start (15-60 s; a sentence ends at `. ! ? …` or a ≥ 0.6 s pause) and adds the best 40 non-FAIL (`source: "jev"`), each re-cut to ~40/~55 s and asked again: the longest non-FAIL cut within 0.05 of the best wins (`growPicks`); SCORE asks the full gate questions per candidate (best 200 by rule score + every Jev pick) — `finalScore` = 0.5 Jev + 0.5 rules, verdict from the same answers; render-tier clips (≤ `MAX_RENDER_CLIPS`, else 40) get Jev's hook line and a title quoted from the clip. A teaser must beat the clip's own opening (opening ≥ 0.7 → none; else best non-ad line ≥ 0.7, or ≥ 0.5 when opening ≤ 0.3); Jev's "none" is final, the rules' hook only fills clips Jev had no line for. Jev failures → rules per clip.
 - Jev has no system prompt: build every state with `jevState()` (`clipGate.ts`; `context` = task, viewer, ASR text, the fields sent). Questions: one judgment each, name the state field, no counting/timing, risks as separate Nouls (`clipGate.test.ts` + `unknownFields` enforce; `bun run jev-eval` measures). Thresholds 0.7/0.3 uncalibrated for Indonesian. Answers move ~0.04 between runs, so borderline clips flip — accepted: trust Jev, no re-asks/averaging.
 - Gate (`clipGate.ts`, best ≤ 40 render-tier clips, pinned `jev-1.14.0`; `ruleAnswers()` when Jev is off/failing): verdict in code (`verdictFrom`); FAIL → SKIP, ranked last, loses overlaps; REVIEW = content risk, never auto-FAIL.
