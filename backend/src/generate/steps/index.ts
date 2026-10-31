@@ -12,7 +12,7 @@ import { run as idea } from "./idea";
 import { run as images } from "./images";
 import { run as look } from "./look";
 import { run as music } from "./music";
-import { run as plan } from "./plan";
+import { inputKey as planKey, run as plan } from "./plan";
 import { run as render } from "./render";
 import { run as script } from "./script";
 import { run as storylines } from "./storylines";
@@ -55,8 +55,10 @@ const RUNS: Record<StepType, RunFn> = {
   author, check, look, render, command, technical, creative, export: exportStep,
 };
 
+const INPUT_KEYS: Partial<Record<StepType, (ctx: StepContext) => string>> = { plan: planKey };
+
 export const STEPS: Record<StepType, StepModule> = Object.fromEntries(
-  STEP_TYPES.map((type) => [type, { type, spec: STEP_SPECS[type], defaults: DEFAULTS[type], run: RUNS[type] }]),
+  STEP_TYPES.map((type) => [type, { type, spec: STEP_SPECS[type], defaults: DEFAULTS[type], run: RUNS[type], inputKey: INPUT_KEYS[type] }]),
 ) as Record<StepType, StepModule>;
 
 /** A step's settings: the recipe's `with` over the step type's defaults. */

@@ -81,7 +81,7 @@ export function corsHeaders(req: Request, allowed: Set<string>): Record<string, 
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": req.headers.get("access-control-request-headers") ?? "*",
     Vary: "Origin",
   };

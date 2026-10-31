@@ -5,6 +5,7 @@ import { createApp, type App } from "../src/app";
 import { loadConfig, type AppConfig } from "../src/config";
 import { openDatabase } from "../src/db";
 import { Jev } from "../src/jev";
+import { Llm } from "../src/llm";
 import type { ExecFn, ProcResult, ScriptOptions, ScriptRunner } from "../src/runner";
 import type { Recipe } from "../src/generate/recipe";
 import type { Json } from "../src/types";
@@ -301,3 +302,73 @@ export const quickRecipe = (): Recipe => ({
     { use: "export", with: { mode: "rerender" } },
   ],
 });
+
+/** A raw plan as the director would return it: 3 shots of 10 s for a 30 s video. */
+export function samplePlan(over: Record<string, unknown> = {}): Record<string, any> {
+  const shot = (n: number, title: string, extra: Record<string, unknown> = {}) => ({
+    id: `s0${n}`, purpose: n === 1 ? "hook" : n === 3 ? "payoff" : "beat", durationSec: 10,
+    text: [{ role: "title", value: title }], visual: { description: `visual ${n}`, block: null },
+    motion: "slide in", transition: "cut", audio: "", narration: null, hold: false, ...extra,
+  });
+  return {
+    title: "Bunga berbunga", message: "Bunga majemuk membuat uang tumbuh sendiri",
+    look: { palette: ["#0B1020", "#FFD23F"], fonts: ["Plus Jakarta Sans"], pacing: "brisk", notes: "flat" },
+    sound: { music: "none", narration: false }, narrationScript: null, blocks: [], assumptions: [],
+    shots: [shot(1, "Bunga berbunga?"), shot(2, "Uang tumbuh sendiri"), shot(3, "Mulai dari sekarang")], ...over,
+  };
+}
+
+/** A reply the model writes as plain text instead of calling the function it was asked to. */
+export class AsText {
+  constructor(readonly text: string) {}
+}
+
+/**
+ * The model's answer. When the request forces a function (tool_choice), a JSON string reply is that function's
+ * arguments, as a real tool call would carry them; otherwise (or with AsText) it is the message text.
+ */
+function completion(body: any, reply: string | AsText): Response {
+  const forced = body.tool_choice?.function?.name as string | undefined;
+  if (forced && typeof reply === "string") {
+    const call = { id: "call_1", type: "function", function: { name: forced, arguments: reply } };
+    return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }] });
+  }
+  return Response.json({ choices: [{ message: { role: "assistant", content: reply instanceof AsText ? reply.text : reply }, finish_reason: "stop" }] });
+}
+
+/** An Llm whose replies come from `replies` in order (a string = the model's text; an Error = HTTP 500). `requests` logs each body. */
+export function fakeLlm(replies: Array<string | AsText | Error | ((body: any) => string)>) {
+  const requests: Array<{ messages: Array<{ role: string; content: string }>; [k: string]: any }> = [];
+  const queue = [...replies];
+  const fetchFn = (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    requests.push(body);
+    const next = queue.shift();
+    if (next === undefined) return new Response("no more fake replies", { status: 500 });
+    if (next instanceof Error) return new Response(next.message, { status: 400 });
+    return completion(body, typeof next === "function" ? next(body) : next);
+  }) as unknown as typeof fetch;
+  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5 }, fetchFn, 0);
+  return { llm, requests };
+}
+
+/**
+ * Answers the app's LLM calls from `replies`, in order (a string is the model's text, an Error an HTTP 400, a function
+ * gets the request body). `requests` logs every body. Needs the env made with `llmBaseUrl` and `llmModel`.
+ */
+export function scriptLlm(env: TestEnv, replies: Array<string | AsText | Error | ((body: any) => string)>) {
+  const requests: Array<{ messages: Array<{ role: string; content: string }>; [k: string]: any }> = [];
+  const queue = [...replies];
+  env.fetchHandler.fn = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    requests.push(body);
+    const next = queue.shift();
+    if (next === undefined) return new Response("no more scripted replies", { status: 400 });
+    if (next instanceof Error) return new Response(next.message, { status: 400 });
+    return completion(body, typeof next === "function" ? next(body) : next);
+  };
+  return { requests, left: () => queue.length };
+}
+
+/** The `kind` of a request to the director: its closing task field names the job. */
+export const userPayload = (req: { messages: Array<{ role: string; content: string }> }) => JSON.parse(req.messages.find((m) => m.role === "user")!.content);

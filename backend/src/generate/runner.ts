@@ -1,7 +1,8 @@
 import type { Store } from "../store";
 import type { GenProject, GenVersion } from "../types";
+import type { Director } from "./director";
 import type { DirectorLog } from "./events";
-import type { Recipe, RecipeStep } from "./recipe";
+import { parseRecipe, type Recipe, type RecipeStep } from "./recipe";
 import { STEPS, settingsOf, type StepModule } from "./steps";
 import type { StepType } from "./steps/schema";
 import type { StepContext, StepResult } from "./steps/types";
@@ -32,6 +33,8 @@ export interface RunnerDeps {
   /** Is this connection (llm, jev, image, voice, vision) set up? Steps with `when: "connection:x"` are skipped without it. */
   connected: (connection: string) => boolean;
   directorGate: DirectorGate;
+  director: Director;
+  catalog: StepContext["catalog"];
   /** The step library; tests pass stubs. */
   steps?: Record<StepType, StepModule>;
 }
@@ -46,7 +49,6 @@ const hash = (value: unknown): string => {
   return h.digest("hex").slice(0, 16);
 };
 
-export const parseRecipe = (p: GenProject) => JSON.parse(p.recipe) as Recipe;
 export const parseStates = (json: string | null): StepStates => (json ? (JSON.parse(json) as StepStates) : {});
 
 /** Index of `author`: the steps before it are the project segment, the rest the build segment. */
@@ -95,15 +97,33 @@ export class Runner {
     return this.mustProject(projectId);
   }
 
-  /** The owner approved a waiting step (a plan, a pick): mark it done and go on. */
-  async approveStep(projectId: string, id: string, signal?: AbortSignal): Promise<GenProject> {
+  /** Marks a waiting step approved (a plan, a pick) without running anything; the caller then continues the project. */
+  markApproved(projectId: string, id: string, reason = "approved by the owner"): GenProject {
     const project = this.mustProject(projectId);
     const states = parseStates(project.stepState);
     const state = states[id];
     if (!state || state.status !== "waiting") throw new RunnerError(`Step "${id}" isn't waiting for approval`);
-    states[id] = { ...state, status: "done", reason: state.reason ?? "approved by the owner" };
+    states[id] = { ...state, status: "done", reason: state.reason === "waiting for the owner" ? reason : (state.reason ?? reason) };
     this.store.updateGenProject(projectId, { stepState: JSON.stringify(states) });
+    return this.mustProject(projectId);
+  }
+
+  /** The owner approved a waiting step: mark it done and go on. */
+  async approveStep(projectId: string, id: string, signal?: AbortSignal): Promise<GenProject> {
+    this.markApproved(projectId, id);
     return this.runProject(projectId, signal);
+  }
+
+  /** A finished step's output was edited or revised: it needs the owner's approval again. */
+  markWaiting(projectId: string, id: string, reason = "waiting for the owner"): GenProject {
+    const project = this.mustProject(projectId);
+    const states = parseStates(project.stepState);
+    const state = states[id];
+    if (!state) throw new RunnerError(`Step "${id}" hasn't run yet`);
+    states[id] = { ...state, status: "waiting", reason };
+    const index = parseRecipe(project).steps.findIndex((s) => stepId(s) === id);
+    this.store.updateGenProject(projectId, { stepState: JSON.stringify(states), stepIndex: index, status: "WAITING" });
+    return this.mustProject(projectId);
   }
 
   /** Forgets the result of a step and everything after it (a revision, a new pick), so they run again. */
@@ -242,6 +262,7 @@ export class Runner {
   private context(project: GenProject, version: GenVersion | null, recipe: Recipe, step: RecipeStep, signal?: AbortSignal): StepContext {
     return {
       project, version, recipe, step, signal, store: this.store, log: this.log,
+      director: this.deps.director, connected: this.deps.connected, catalog: this.deps.catalog,
       settings: settingsOf(step.use, step.with),
       progress: (percent) => { if (version) this.store.updateGenVersion(version.id, { progress: Math.max(0, Math.min(100, Math.round(percent))) }); },
     };

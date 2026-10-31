@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Api, ApiError } from "./api";
 import { parseArgs, UsageError } from "./args";
 import { COMMANDS, type Deps } from "./commands";
@@ -135,6 +137,10 @@ export function realDeps(): Omit<Deps, "api"> {
       exists: existsSync,
       mkdir: (p) => mkdirSync(p, { recursive: true }),
       copy: copyFileSync,
+      read: (p) => new Uint8Array(readFileSync(p)),
+      readText: (p) => readFileSync(p, "utf8"),
+      writeText: (p, text) => writeFileSync(p, text),
+      tempPath: (name) => join(tmpdir(), `sorot-${process.pid}-${name}`),
       // Streamed by hand: Bun 1.3.12's Bun.write(path, response) never
       // finishes on the backend's file responses (spins at 100% CPU).
       write: async (p, res) => {
@@ -151,6 +157,7 @@ export function realDeps(): Omit<Deps, "api"> {
       },
     },
     isRoot: process.getuid?.() === 0,
+    editor: process.env.VISUAL || process.env.EDITOR || "",
     cwd: process.cwd(),
     pollMs: 2000,
   };

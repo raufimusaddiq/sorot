@@ -34,6 +34,19 @@ export class Api {
   get(path: string) { return this.request("GET", path); }
   post(path: string, body: unknown = {}) { return this.request("POST", path, body); }
   put(path: string, body: unknown = {}) { return this.request("PUT", path, body); }
+
+  /** Multipart upload (the content type and its boundary are set by fetch). */
+  async upload(path: string, form: FormData): Promise<Json> {
+    let res: Response;
+    try {
+      res = await this.fetchFn(`${this.baseUrl}${path}`, { method: "POST", body: form });
+    } catch (e) {
+      throw new ApiError(`Cannot reach ${this.baseUrl} (${(e as Error).message}). Is the app running? Try: sorot up`, 0);
+    }
+    const json = (await res.json().catch(() => ({ error: `HTTP ${res.status} (not JSON)` }))) as Json;
+    if (!res.ok || json.status === "error") throw new ApiError(json.error ?? `HTTP ${res.status}`, res.status);
+    return json.data as Json;
+  }
   delete(path: string) { return this.request("DELETE", path); }
 
   /** Raw response for file downloads; throws the envelope's error on failure. */

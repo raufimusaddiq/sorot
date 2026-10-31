@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
+import type { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import type { Recipe } from "../../src/generate/recipe";
 import { parseStates, Runner, RunnerError, type GateDecision } from "../../src/generate/runner";
@@ -36,7 +37,7 @@ function rig(): Rig {
   }])) as Record<StepType, StepModule>;
   const connections = new Set<string>(["llm"]);
   const gate: Rig["gate"] = { fn: async () => ({ approve: true, reason: "the bold one" }) };
-  const runner = new Runner(store, new DirectorLog(store), { connected: (c) => connections.has(c), directorGate: (ctx) => gate.fn(ctx), steps });
+  const runner = new Runner(store, new DirectorLog(store), { connected: (c) => connections.has(c), directorGate: (ctx) => gate.fn(ctx), director: {} as Director, catalog: async () => [], steps });
   return { store, runner, ran, on: (type, run) => { impl[type] = run; }, connections, gate, inputKeys };
 }
 

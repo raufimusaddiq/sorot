@@ -12,6 +12,7 @@ columns. Errors: 400 bad input, 404 unknown id, 409 wrong state, 503 Generate un
 | GET | `/api/generate/projects/:id` | | `{project, plans[], versions[], assets[], exports[]}` | the plan list is newest first |
 | PATCH | `/api/generate/projects/:id` | `{title?, narration?, styleNotes?}` | `{project}` | |
 | DELETE | `/api/generate/projects/:id` | | `{deleted:true}` | removes files; 409 while building |
+| POST | `/api/generate/projects/:id/retry` | | `{project}` | after a failure (FR-016): the failed step runs again, finished steps and saved work are kept; 409 unless the project failed |
 | POST | `/api/generate/projects/:id/storylines` | `{note?}` | `{project}` | asks for 3 new storylines |
 | POST | `/api/generate/projects/:id/storylines/:index/pick` | `{note?}` | `{plan}` | index 0 to 2 |
 | PUT | `/api/generate/projects/:id/plan` | `{plan}` | `{plan}` | direct edit → new revision, validated |

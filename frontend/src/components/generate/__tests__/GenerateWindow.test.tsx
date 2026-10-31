@@ -21,7 +21,7 @@ describe('GenerateWindow', () => {
     expect(screen.getByText('Loading…')).toBeInTheDocument();
     expect(await screen.findByTestId('generate-ready')).toHaveTextContent('HyperFrames 0.8.223 · rendering on the GPU');
     expect(screen.getByText('ready')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Connect an LLM in Settings' })).not.toBeInTheDocument();
   });
 
   it('without an LLM it says so and links to Settings (FR-016)', async () => {

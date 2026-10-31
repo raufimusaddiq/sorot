@@ -25,12 +25,20 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
     tty: false,
     answers: [] as string[],
     asked: [] as string[],
+    editor: "",
+    /** Runs when a process is started (an editor changing the file it was given). */
+    onRun: undefined as undefined | ((cmd: string[]) => void),
   };
+  const texts = new Map<string, string>();
+  const bytesOf = new Map<string, Uint8Array>();
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const raw = init?.body;
+    const body = raw instanceof FormData
+      ? { file: (raw.get("file") as File).name, size: (raw.get("file") as File).size, kind: raw.get("kind"), shotId: raw.get("shotId") ?? undefined }
+      : raw ? JSON.parse(String(raw)) : undefined;
     requests.push({ method, path: url.pathname + url.search, body });
     const route = routes[`${method} ${url.pathname}`];
     if (route === undefined) return Response.json({ status: "error", error: `no route ${method} ${url.pathname}` }, { status: 404 });
@@ -49,6 +57,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
     sleep: async () => {},
     run: async (cmd: string[], opts?: { cwd?: string }) => {
       runs.push({ cmd, cwd: opts?.cwd });
+      state.onRun?.(cmd);
       return state.runCode;
     },
     capture: async (cmd: string[]) => state.captures[cmd[0] as string] ?? { code: 127, stdout: "" },
@@ -62,6 +71,14 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
       exists: (p: string) => existing.has(p.replaceAll("\\", "/")),
       mkdir: () => {},
       copy: (a: string, b: string) => { copies.push([a.replaceAll("\\", "/"), b.replaceAll("\\", "/")]); },
+      read: (p: string) => {
+        const data = bytesOf.get(p.replaceAll("\\", "/"));
+        if (!data) throw new Error(`no such file ${p}`);
+        return data;
+      },
+      readText: (p: string) => texts.get(p.replaceAll("\\", "/")) ?? "",
+      writeText: (p: string, text: string) => { texts.set(p.replaceAll("\\", "/"), text); },
+      tempPath: (name: string) => `/tmp/sorot-${name}`,
       write: async (p: string, res: Response) => {
         const n = (await res.arrayBuffer()).byteLength;
         files.set(p.replaceAll("\\", "/"), n);
@@ -69,13 +86,14 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
       },
     },
     get isRoot() { return state.isRoot; },
+    get editor() { return state.editor; },
     cwd: "/home/u",
     pollMs: 1,
     fetchFn,
   };
 
   return {
-    out, err, runs, requests, files, copies, existing, state,
+    out, err, runs, requests, files, copies, existing, state, texts, bytesOf,
     run: (...argv: string[]) => main(argv, deps),
     text: () => out.join("\n"),
   };

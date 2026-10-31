@@ -28,8 +28,15 @@ export interface Deps {
     copy: (from: string, to: string) => void;
     /** Writes a response body to disk; resolves to bytes written. */
     write: (path: string, res: Response) => Promise<number>;
+    read: (path: string) => Uint8Array;
+    readText: (path: string) => string;
+    writeText: (path: string, text: string) => void;
+    /** A path in the temp folder for a scratch file. */
+    tempPath: (name: string) => string;
   };
   isRoot: boolean;
+  /** $VISUAL or $EDITOR: opened on a scratch file by `sorot gen plan --edit`. */
+  editor: string;
   cwd: string;
   pollMs: number;
 }

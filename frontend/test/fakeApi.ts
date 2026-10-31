@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEvent, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -46,6 +46,9 @@ export interface FakeState {
   posts: Record<string, SocialPost[]>;
   /** GET /api/generate/status. */
   generate: GenerateStatus;
+  /** Generate projects as the backend would return them, and what its director answers next. */
+  genProjects: GenProjectDetail[];
+  genNext: { storylines: GenStoryline[]; plan: GenPlan; revised: { plan: GenPlan; summary: string }; events: GenEvent[] };
 }
 
 /** Every connection off by default; `over` changes fields of single connections. */
@@ -54,6 +57,38 @@ export function makeConnections(over: { [K in keyof Connections]?: Partial<Conne
     llm: { active: false, enabled: true, saved: [], baseUrl: '', model: '', apiKey: '', apiKeySet: false, director: true, ...over.llm },
     jev: { active: false, enabled: true, saved: [], url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', apiKey: '', apiKeySet: false, director: true, ...over.jev },
     tebar: { active: false, enabled: true, saved: [], baseUrl: 'https://api.tebar.app/v1', apiKey: '', apiKeySet: false, ...over.tebar },
+  };
+}
+
+/** Generate fixtures. */
+export function makeStoryline(i: number, over: Partial<GenStoryline> = {}): GenStoryline {
+  return {
+    title: `Film ${i}`, pitch: `Pitch ${i}`, opening: `Opening ${i}`, beats: ['hook', 'isi', 'akhir'], look: 'flat', sound: 'tenang',
+    bold: false, recommended: i === 1, reason: 'karena', ...over,
+  };
+}
+
+export function makeGenPlan(over: Partial<GenPlan> = {}): GenPlan {
+  const shot = (n: number, title: string): GenShot => ({
+    id: `s0${n}`, purpose: n === 1 ? 'hook' : 'beat', durationSec: 10, text: [{ role: 'title', value: title }],
+    visual: { description: `Visual ${n}`, block: null }, motion: 'slide', transition: 'cut', audio: '', narration: null, hold: false,
+  });
+  return {
+    title: 'Bunga berbunga', message: 'Uang tumbuh sendiri', format: '9:16', totalSec: 30, language: 'id',
+    look: { palette: ['#0B1020'], fonts: ['Plus Jakarta Sans'], pacing: 'brisk', notes: '' }, sound: { music: 'none', narration: false },
+    narrationScript: null, blocks: [], assumptions: [], shots: [shot(1, 'Bunga berbunga?'), shot(2, 'Uang tumbuh'), shot(3, 'Mulai sekarang')], ...over,
+  };
+}
+
+export function makePlanRow(id: string, revision: number, plan: GenPlan, over: Partial<GenPlanRow> = {}): GenPlanRow {
+  return { id, projectId: 'g1', revision, plan, changeRequest: null, changeSummary: null, approvedAt: null, createdAt: ts(), ...over };
+}
+
+export function makeGenProject(id: string, over: Partial<GenProject> = {}): GenProject {
+  return {
+    id, title: null, brief: 'Jelaskan bunga majemuk', format: '9:16', targetSec: 30, language: 'id', styleNotes: null, recipeId: 'quick',
+    stepIndex: 0, stepState: null, narration: 0, storylines: null, pickedStoryline: null, status: 'WAITING', currentPlanId: null,
+    errorMessage: null, createdAt: ts(), updatedAt: ts(), ...over,
   };
 }
 
@@ -128,6 +163,7 @@ export function emptyState(): FakeState {
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
     settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
+    genProjects: [], genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
   };
 }
 
@@ -245,6 +281,58 @@ export function installFakeApi(state: FakeState) {
       return ok(state.autoRuns[0]);
     }
     if (method === 'GET' && path === '/api/generate/status') return ok(state.generate);
+    if (method === 'GET' && path === '/api/generate/projects') return ok({ projects: state.genProjects.map((d) => d.project) });
+    if (method === 'POST' && path === '/api/generate/projects') {
+      const project = makeGenProject(`g${state.genProjects.length + 1}`, {
+        brief: body.brief, format: body.format ?? '9:16', targetSec: body.targetSec ?? 30, language: body.language ?? 'id', styleNotes: body.styleNotes ?? null,
+        storylines: state.genNext.storylines, status: 'WAITING',
+      });
+      state.genProjects.push({ project, plans: [], versions: [], assets: [], exports: [] });
+      return ok({ project });
+    }
+    if ((m = path.match(/^\/api\/generate\/projects\/([^/]+)(?:\/(.*))?$/))) {
+      const detail = state.genProjects.find((d) => d.project.id === m![1]);
+      const rest = m[2] ?? '';
+      if (!detail) return { status: 'error', error: 'Project not found' };
+      const p = detail.project;
+      const addPlan = (plan: GenPlan, extra: Partial<GenPlanRow> = {}) => {
+        const row = makePlanRow(`pl${detail.plans.length + 1}`, detail.plans.length + 1, plan, { projectId: p.id, ...extra });
+        detail.plans.unshift(row);
+        p.currentPlanId = row.id;
+        return row;
+      };
+      if (method === 'GET' && rest === '') return ok(detail);
+      if (method === 'DELETE' && rest === '') { state.genProjects = state.genProjects.filter((d) => d !== detail); return ok({ deleted: true }); }
+      if (method === 'POST' && rest === 'retry') { p.status = 'WAITING'; p.errorMessage = null; return ok({ project: p }); }
+      if (method === 'POST' && rest === 'storylines') { p.storylines = state.genNext.storylines; p.pickedStoryline = null; return ok({ project: p }); }
+      if (method === 'POST' && /^storylines\/\d+\/pick$/.test(rest)) {
+        p.pickedStoryline = Number(rest.split('/')[1]);
+        addPlan(state.genNext.plan);
+        return ok({ project: p });
+      }
+      if (method === 'PUT' && rest === 'plan') return ok({ plan: addPlan(body.plan, { changeSummary: 'Edited by the owner' }) });
+      if (method === 'POST' && rest === 'plan/revise') {
+        const row = addPlan(state.genNext.revised.plan, { changeRequest: body.request, changeSummary: state.genNext.revised.summary });
+        return ok({ plan: row, changeSummary: state.genNext.revised.summary });
+      }
+      if (method === 'POST' && rest === 'plan/approve') {
+        const row = detail.plans.find((r) => r.id === body.planId);
+        if (!row || row.id !== p.currentPlanId) return { status: 'error', error: 'That isn\'t the current plan: reload and approve the latest revision' };
+        row.approvedAt = ts();
+        p.stepIndex = 2;
+        return ok({ project: p });
+      }
+      if (method === 'POST' && rest === 'assets') {
+        const asset: GenAsset = { id: `a${detail.assets.length + 1}`, projectId: p.id, kind: body.kind, origin: 'upload', path: `assets/12345678-${body.fileName}`, shotId: body.shotId ?? null, createdAt: ts() };
+        detail.assets.push(asset);
+        return ok({ asset });
+      }
+      if (method === 'GET' && rest.startsWith('events')) return ok({ events: state.genNext.events });
+    }
+    if (method === 'DELETE' && (m = path.match(/^\/api\/generate\/assets\/([^/]+)$/))) {
+      for (const d of state.genProjects) d.assets = d.assets.filter((a) => a.id !== m![1]);
+      return ok({ deleted: true });
+    }
     if (method === 'GET' && path === '/api/settings') return ok(state.settings);
     if (method === 'PUT' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar)$/))) {
       const kind = m[1] as keyof Connections;
@@ -299,7 +387,10 @@ export function installFakeApi(state: FakeState) {
   const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://localhost');
     const method = init?.method ?? 'GET';
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const raw = init?.body;
+    const body = raw instanceof FormData
+      ? { fileName: (raw.get('file') as File).name, kind: raw.get('kind'), shotId: raw.get('shotId') ?? undefined }
+      : raw ? JSON.parse(String(raw)) : undefined;
     calls.push({ method, path: url.pathname, body });
     if (method === 'GET' && /^\/api\/jobs\/[^/]+$/.test(url.pathname) && state.jobDelayMs > 0) {
       await new Promise(r => setTimeout(r, state.jobDelayMs));
