@@ -39,7 +39,7 @@ shared was used as the test case: it must be expressible as a recipe without cod
 **Language/Version**: TypeScript on Bun 1.3 (backend, CLI, frontend); Node.js 22+ only as the
 HyperFrames CLI runtime; Python 3.12 for the local Indonesian TTS (GPU installs only).
 
-**Primary Dependencies**: `@hyperframes/cli`, pinned (Apache-2.0; needs Chrome via
+**Primary Dependencies**: `hyperframes`, pinned (Apache-2.0; needs Chrome via
 `browser ensure`, plus FFmpeg); the existing `Llm` (OpenAI-compatible; optional vision model)
 and `Jev` clients; existing `webSearch.ts` for fetching fact sources; new optional `image`
 (OpenAI-compatible), `voice` (ElevenLabs, Fish Audio or OpenAI-compatible APIs on every
@@ -147,7 +147,7 @@ backend/src/
 backend/tests/generate/   # one file per module above, table-driven; fixtures/hyperframes/*.json
 
 generator/                # new workspace package (no Sorot logic)
-├── package.json          # pins @hyperframes/cli
+├── package.json          # pins hyperframes
 ├── recipes/              # example recipes (read-only; copied to edit): quick, narrated-explainer, story
 ├── prompts/authoring.md  # condensed HyperFrames authoring contract (attributed)
 ├── prompts/story.md      # storyline and plan guidance

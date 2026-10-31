@@ -1,0 +1,40 @@
+{
+  "ok": false,
+  "errorCount": 3,
+  "warningCount": 0,
+  "infoCount": 0,
+  "findings": [
+    {
+      "code": "missing_timeline_registry",
+      "severity": "error",
+      "message": "Missing `window.__timelines` registration.",
+      "fixHint": "Register each composition timeline on `window.__timelines[compositionId]`.",
+      "file": "<project>\\index.html"
+    },
+    {
+      "file": "<project>\\index.html",
+      "line": 57,
+      "column": 7,
+      "code": "non_deterministic_code",
+      "severity": "error",
+      "message": "Script contains `Date.now()` which produces non-deterministic output. Renders may differ between frames or runs.",
+      "fixHint": "Remove time-dependent code. Use GSAP timeline position instead of wall-clock time.",
+      "snippet": "const tl = gsap.timeline({ paused: true }); tl.fromTo(\"#title\", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: \"power4.out\" }, 0); Date.now(); tl.seek(0);"
+    },
+    {
+      "file": "<project>\\index.html",
+      "line": 55,
+      "column": 18,
+      "code": "gsap_timeline_not_registered",
+      "severity": "error",
+      "message": "GSAP timeline is created but never registered in window.__timelines. The runtime discovers timelines from this registry. Without registration, animations will not play during preview or render.",
+      "fixHint": "Add `window.__timelines = window.__timelines || {};` and `window.__timelines[\"root\"] = tl;` after creating the timeline (use the composition's data-composition-id as the key)."
+    }
+  ],
+  "filesScanned": 1,
+  "_meta": {
+    "version": "0.8.223",
+    "latestVersion": "0.8.223",
+    "updateAvailable": false
+  }
+}

@@ -179,6 +179,161 @@ CREATE TABLE IF NOT EXISTS social_post (
     profile_id TEXT
 );
 
+-- Generate (2D videos from a brief): see specs/001-2d-video-generator/data-model.md.
+-- JSON columns are TEXT, validated in code.
+CREATE TABLE IF NOT EXISTS gen_recipe (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    built_in INTEGER NOT NULL DEFAULT 0,
+    description TEXT,
+    recipe TEXT NOT NULL,
+    idea_cursor TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_idea (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    brief TEXT NOT NULL,
+    flags TEXT,
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'used', 'built', 'posted')),
+    project_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_project (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    brief TEXT NOT NULL CHECK (length(brief) <= 2000),
+    format TEXT NOT NULL DEFAULT '9:16' CHECK (format IN ('9:16', '16:9', '1:1')),
+    target_sec INTEGER NOT NULL CHECK (target_sec BETWEEN 5 AND 90),
+    language TEXT NOT NULL DEFAULT 'id' CHECK (language IN ('id', 'en')),
+    style_notes TEXT,
+    preset TEXT,
+    recipe_id TEXT NOT NULL,
+    recipe TEXT NOT NULL,
+    idea_id TEXT,
+    brief_flags TEXT,
+    narration_script TEXT,
+    concept TEXT,
+    step_index INTEGER NOT NULL DEFAULT 0,
+    step_state TEXT,
+    narration INTEGER NOT NULL DEFAULT 0,
+    storylines TEXT,
+    picked_storyline INTEGER,
+    status TEXT NOT NULL,
+    current_plan_id TEXT,
+    accepted_version_id TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_plan (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES gen_project(id),
+    revision INTEGER NOT NULL,
+    plan TEXT NOT NULL,
+    change_request TEXT,
+    change_summary TEXT,
+    approved_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_version (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES gen_project(id),
+    plan_id TEXT NOT NULL REFERENCES gen_plan(id),
+    number INTEGER NOT NULL,
+    parent_version_id TEXT,
+    status TEXT NOT NULL DEFAULT 'QUEUED' CHECK (status IN ('QUEUED', 'BUILDING', 'BUILT', 'FAILED', 'CANCELLED')),
+    step TEXT,
+    progress INTEGER,
+    project_dir TEXT,
+    render_kind TEXT NOT NULL DEFAULT 'draft' CHECK (render_kind IN ('draft', 'final')),
+    draft_path TEXT,
+    step_state TEXT,
+    hyperframes_version TEXT,
+    build_ms INTEGER,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_verdict (
+    id TEXT PRIMARY KEY,
+    version_id TEXT NOT NULL REFERENCES gen_version(id),
+    kind TEXT NOT NULL CHECK (kind IN ('TECHNICAL', 'CREATIVE')),
+    status TEXT NOT NULL CHECK (status IN ('PASS', 'REVIEW', 'FAIL')),
+    findings TEXT NOT NULL,
+    judged_by TEXT NOT NULL,
+    inputs TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(version_id, kind)
+);
+
+CREATE TABLE IF NOT EXISTS gen_asset (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES gen_project(id),
+    kind TEXT NOT NULL CHECK (kind IN ('logo', 'image', 'font', 'music', 'voiceover', 'captions')),
+    origin TEXT NOT NULL CHECK (origin IN ('upload', 'generated', 'bundled')),
+    path TEXT NOT NULL,
+    shot_id TEXT,
+    prompt_hash TEXT,
+    meta TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_export (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES gen_project(id),
+    version_id TEXT NOT NULL REFERENCES gen_version(id),
+    path TEXT NOT NULL,
+    format TEXT,
+    duration_sec REAL,
+    title TEXT,
+    description TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_fact (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    idea_id TEXT,
+    claim TEXT NOT NULL,
+    value TEXT,
+    source_url TEXT,
+    status TEXT NOT NULL DEFAULT 'unverified' CHECK (status IN ('unverified', 'verified', 'corrected', 'unverifiable')),
+    original_value TEXT,
+    evidence TEXT,
+    added_by TEXT NOT NULL CHECK (added_by IN ('owner', 'idea', 'director')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_event (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    version_id TEXT,
+    kind TEXT NOT NULL,
+    model TEXT,
+    request TEXT,
+    response TEXT,
+    ok INTEGER NOT NULL,
+    ms INTEGER,
+    tokens INTEGER,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_gen_plan_project ON gen_plan(project_id, revision);
+CREATE INDEX IF NOT EXISTS idx_gen_version_project ON gen_version(project_id, number);
+CREATE INDEX IF NOT EXISTS idx_gen_asset_project ON gen_asset(project_id);
+CREATE INDEX IF NOT EXISTS idx_gen_fact_project ON gen_fact(project_id);
+CREATE INDEX IF NOT EXISTS idx_gen_event_project ON gen_event(project_id, created_at);
+
 CREATE INDEX IF NOT EXISTS idx_job_video ON job(video_id);
 CREATE INDEX IF NOT EXISTS idx_job_status ON job(status);
 CREATE INDEX IF NOT EXISTS idx_clip_video ON clip(video_id);

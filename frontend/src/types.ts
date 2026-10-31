@@ -90,6 +90,20 @@ export type ConnectionView = {
 export type Connections = { llm: ConnectionView; jev: ConnectionView; tebar: ConnectionView };
 export type ConnectionKind = keyof Connections;
 
+/** GET /api/generate/status: whether Generate can run here, and why not. */
+export type GenerateStatus = {
+  available: boolean;
+  reasons: string[];
+  hyperframes: { ok: boolean; version: string; reason?: string };
+  llm: { configured: boolean };
+  jev: { configured: boolean };
+  image: { configured: boolean };
+  vision: { configured: boolean };
+  voice: { engines: string[]; localAvailable: boolean; localReason?: string };
+  compute: 'cpu' | 'gpu';
+  presets: string[];
+};
+
 export type ConnectionTest = { ok: boolean; ms: number; model?: string; detail?: string; error?: string };
 
 /** A Tebar account; profileId/profileName name its workspace (null with a single workspace). */

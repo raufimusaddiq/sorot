@@ -63,6 +63,9 @@ Publishing (Tebar)
   posts <clip> | posts refresh|retry|cancel <post>
   sync                          pull posted clips' numbers into learning
 
+Generate (2D videos from a brief)
+  gen status                    can Generate run here? (exit 1 and the reasons when not)
+
 App
   up | down | restart           start / stop the app (Docker or systemd)
   logs [-f]                     app logs

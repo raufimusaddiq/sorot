@@ -153,7 +153,7 @@ for the same reason as LangChain: `llm.ts` already handles this gateway).
 
 **Decision**:
 
-- Use the `hyperframes` CLI (npm `@hyperframes/cli`, Apache-2.0), pinned to an exact version in
+- Use the `hyperframes` CLI (npm `hyperframes`, Apache-2.0), pinned to an exact version in
   config (`HYPERFRAMES_VERSION`, like Jev's pinned model), installed as a dependency of a small
   new workspace package `generator/`. That gives the root lockfile a fixed version and lets Sorot
   call `node node_modules/.bin/hyperframes`.
@@ -171,12 +171,39 @@ for the same reason as LangChain: `llm.ts` already handles this gateway).
   abort signal and progress callback) are documented, but `check`, `lint`, `snapshot` and
   `audio` are CLI-only. To keep one integration style, use the CLI for everything.
 
-**Open (spike S1, first task)**: does the CLI run natively on Windows, not just in WSL? The docs
-show a Windows Studio app but don't say so for the CLI. If it doesn't, native Windows mode shows
-Generate as unavailable and points to Docker mode. Also capture the real `check --json` and
-`lint --json` finding fields; the docs confirm the top-level keys
-(`ok, lint, runtime, layout, motion, contrast, craft, audio, snapshots`) and that each finding
-has a selector, source file, bbox and sample time.
+**S1 result (2026-10-31, Windows 11, native, `hyperframes` 0.8.223, Node 24)**:
+
+- The CLI runs natively on Windows: `init`, `lint`, `check`, `snapshot`, `render` and `doctor`
+  all work with system Chrome (or the one `browser ensure` fetches). It also runs on Linux
+  (Ubuntu 24.04 container, Node 22 binary copied from `node:22-slim`, the apt libraries listed in
+  `backend/Dockerfile`, Chrome from `browser ensure`): `check` exits 0 and `render` works.
+- The npm name is `hyperframes`, not `@hyperframes/cli` (that name 404s).
+- `init <name> --non-interactive --skip-skills --resolution portrait --example blank` writes
+  `index.html`, `hyperframes.json`, `meta.json`, `package.json`, `AGENTS.md` and `CLAUDE.md`
+  (the last two are skill pointers; Sorot ignores them). Resolutions: `portrait` 1080x1920,
+  `landscape` 1920x1080, `square` 1080x1080.
+- `lint --json` exits 1 on errors. Shape: `{ok, errorCount, warningCount, infoCount, findings[],
+  filesScanned}`; a finding has `code`, `severity`, `message`, `fixHint`, `file`, and optional
+  `line`, `column`, `snippet`. Codes seen: `missing_timeline_registry`, `non_deterministic_code`.
+- `check --json` is `{ok, strict, browserSkipped, lint, runtime, layout, ...}`; each section is
+  `{ok, errorCount, warningCount, infoCount, findings[]}`. Layout findings carry `code`,
+  `severity`, `time`, `selector`, `sourceFile`, `bbox`, `message`, `fixHint`, `occurrences` and
+  `times[]`; the layout section also has `duration` and `samples[]`. A still scene gives the
+  warning `sweep_static`. Checking a 10 s project took about 6 s.
+- `snapshot --review --json` and `--at 1,3 --json` return `{ok, outputDir, frames[{path, time,
+  role, label}], ...}`; PNGs land under `.hyperframes/artifacts/snapshots/<id>/`.
+- `doctor --json` is `{ok, platform, arch, checks[{name, ok, detail, hint?}]}`. **Top-level `ok`
+  is false whenever an optional tool is missing** (whisper-cpp, Kokoro TTS, MusicGen), so T019
+  must judge availability from the required checks (`Node.js`, `FFmpeg`, `Chrome`), not `ok`.
+- **Render is not offline by default.** The compiler fetches Google Fonts and inlines the GSAP
+  CDN script (`cdn.jsdelivr.net`) on first use, then caches them, and the `init` template loads
+  GSAP from the CDN. The composer must write local `@font-face` rules for the bundled fonts and
+  a local GSAP file under `assets/`, so builds are deterministic and work offline.
+- `render --quality` accepts `draft | looks | delivery` (plus `standard`/`high` aliases); the
+  default is `looks`. The recipe's `standard` therefore maps to `looks`. Other flags used:
+  `-f/--fps`, `-w/--workers`, `--gpu`, `-o`, `--quiet`.
+- Fixtures: `backend/tests/fixtures/hyperframes/` (`doctor`, `lint-ok`, `lint-fail`, `check-ok`,
+  `snapshot-review`, `snapshot-at`), with local paths replaced by `<project>` and `<home>`.
 
 **Alternatives considered**: Remotion (React build step, licence limits for companies; the
 owner picked HyperFrames); writing a Bun-side HTML-to-video renderer (rejected: that is exactly
@@ -353,6 +380,16 @@ planning.
 **Open (spike S2)**: repeat on the RTX 4060 with `--gpu` and on CPU-only Docker, and measure
 draft quality. SC-002 (a 30 s draft in 10 min) looks safe from the numbers above; if it misses,
 the Quick draft preview drops to 540×960.
+
+**S2 result, first pass (2026-10-31, native Windows, RTX 4060, Ryzen 5 7500F)**: a 30 s
+1080×1920 composition (one animated title, 30 fps) rendered in **25 s at `draft`, 25 s at
+`delivery` and 24 s at `delivery --gpu`**, about **0.8 s of render per second of video**, so a
+30 s draft sits far inside SC-002. `--gpu` gave no gain on this light scene (the cost is Chrome
+frame capture, not encoding), so it stays optional. Heavier scenes (video, many elements) will
+be slower; the 6 to 10 s per second reference above stays the planning figure until S2 (final)
+measures a real 60 s narrated film. **CPU-only Docker** (Ubuntu 24.04, 12 threads, no GPU): the
+same sample took **19 s at `draft` and 17 s at `delivery`**, so the CPU image is not slower on a
+light scene. Both runs had network access (GSAP CDN inlined on first use).
 
 ## R12. Library and publishing
 

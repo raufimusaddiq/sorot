@@ -200,3 +200,158 @@ export type Stage = (typeof STAGES)[number];
 
 /** Loosely-typed JSON from the Python scripts' `data` envelope field. */
 export type Json = Record<string, unknown>;
+
+// ---- Generate (specs/001-2d-video-generator/data-model.md) ----
+// JSON columns are kept as TEXT here and parsed by the generate/ modules.
+
+export type GenProjectStatus =
+  | "RUNNING" | "WAITING" | "BUILDING" | "BUILT" | "ACCEPTED" | "EXPORTED" | "FAILED";
+
+export interface GenProject {
+  id: string;
+  title: string | null;
+  brief: string;
+  format: string;
+  targetSec: number;
+  language: string;
+  styleNotes: string | null;
+  preset: string | null;
+  recipeId: string;
+  /** Frozen JSON copy of the recipe at creation. */
+  recipe: string;
+  ideaId: string | null;
+  briefFlags: string | null;
+  narrationScript: string | null;
+  concept: string | null;
+  stepIndex: number;
+  stepState: string | null;
+  narration: number;
+  storylines: string | null;
+  pickedStoryline: number | null;
+  status: string;
+  currentPlanId: string | null;
+  acceptedVersionId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenPlan {
+  id: string;
+  projectId: string;
+  revision: number;
+  plan: string;
+  changeRequest: string | null;
+  changeSummary: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+}
+
+export type GenVersionStatus = "QUEUED" | "BUILDING" | "BUILT" | "FAILED" | "CANCELLED";
+
+export interface GenVersion {
+  id: string;
+  projectId: string;
+  planId: string;
+  number: number;
+  parentVersionId: string | null;
+  status: GenVersionStatus;
+  step: string | null;
+  progress: number | null;
+  projectDir: string | null;
+  renderKind: "draft" | "final";
+  draftPath: string | null;
+  stepState: string | null;
+  hyperframesVersion: string | null;
+  buildMs: number | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenVerdict {
+  id: string;
+  versionId: string;
+  kind: "TECHNICAL" | "CREATIVE";
+  status: "PASS" | "REVIEW" | "FAIL";
+  findings: string;
+  judgedBy: string;
+  inputs: string | null;
+  createdAt: string;
+}
+
+export interface GenAsset {
+  id: string;
+  projectId: string;
+  kind: "logo" | "image" | "font" | "music" | "voiceover" | "captions";
+  origin: "upload" | "generated" | "bundled";
+  path: string;
+  shotId: string | null;
+  promptHash: string | null;
+  meta: string | null;
+  createdAt: string;
+}
+
+export interface GenExport {
+  id: string;
+  projectId: string;
+  versionId: string;
+  path: string;
+  format: string | null;
+  durationSec: number | null;
+  title: string | null;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface GenEvent {
+  id: string;
+  projectId: string;
+  versionId: string | null;
+  kind: string;
+  model: string | null;
+  request: string | null;
+  response: string | null;
+  ok: number;
+  ms: number | null;
+  tokens: number | null;
+  createdAt: string;
+}
+
+export interface GenRecipeRow {
+  id: string;
+  name: string;
+  version: number;
+  builtIn: number;
+  description: string | null;
+  recipe: string;
+  ideaCursor: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenFact {
+  id: string;
+  projectId: string | null;
+  ideaId: string | null;
+  claim: string;
+  value: string | null;
+  sourceUrl: string | null;
+  status: "unverified" | "verified" | "corrected" | "unverifiable";
+  originalValue: string | null;
+  evidence: string | null;
+  addedBy: "owner" | "idea" | "director";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GenIdea {
+  id: string;
+  slug: string;
+  brief: string;
+  flags: string | null;
+  status: "new" | "used" | "built" | "posted";
+  projectId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

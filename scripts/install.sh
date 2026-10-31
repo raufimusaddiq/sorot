@@ -10,6 +10,7 @@
 set -euo pipefail
 
 BUN_VERSION=1.3.12
+NODE_VERSION=22.23.4   # HyperFrames (Generate) needs Node >= 22; same major as backend/Dockerfile
 CUDA_BASE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04   # GPU image base (backend/Dockerfile BASE_IMAGE)
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF_DIR=/etc/sorot
@@ -337,6 +338,34 @@ ensure_bun() {
   ok "Bun $(bun --version)"
 }
 
+# Generate (HyperFrames) needs Node >= 22. Optional: clipping works without it, so a failure only warns.
+ensure_node() {
+  if have node && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; then ok "Node $(node --version)"; return 0; fi
+  step "Installing Node $NODE_VERSION (the node binary only)"
+  local arch tmp
+  case "$(uname -m)" in x86_64|amd64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) warn "Unsupported CPU for Node: Generate stays unavailable"; return 1 ;; esac
+  tmp="$(mktemp -d)"
+  if curl -fsSL -o "$tmp/node.tar.xz" "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$arch.tar.xz"     && tar -xJf "$tmp/node.tar.xz" -C "$tmp" "node-v$NODE_VERSION-linux-$arch/bin/node"; then
+    $SUDO install -m 0755 "$tmp/node-v$NODE_VERSION-linux-$arch/bin/node" /usr/local/bin/node
+    rm -rf "$tmp"
+    ok "Node $(node --version)"
+    return 0
+  fi
+  rm -rf "$tmp"
+  warn "Node download failed: Generate stays unavailable (clipping is unaffected)"
+  return 1
+}
+
+# Chrome for HyperFrames renders (a system Chrome is used when present).
+ensure_render_browser() {
+  step "Browser for Generate (hyperframes browser ensure)"
+  if as_user node "$APP_DIR/node_modules/hyperframes/bin/hyperframes.mjs" browser ensure >/dev/null 2>&1; then
+    ok "render browser ready"
+  else
+    warn "browser ensure failed: Generate may be unavailable"
+  fi
+}
+
 python_venv() {
   local venv="$APP_DIR/ai-pipeline/.venv"
   step "Python environment (ai-pipeline/.venv)"
@@ -414,12 +443,17 @@ install_native() {
   os_release
   if gpu_present; then GPU=1; else GPU=0; warn "No NVIDIA GPU in use: transcription and encoding run on the CPU (slower: roughly 1 h per hour of video on 12 cores)"; fi
   step "System packages"
-  apt_install ffmpeg python3 python3-venv python3-pip curl ca-certificates unzip fonts-dejavu-core
+  apt_install ffmpeg python3 python3-venv python3-pip curl ca-certificates unzip xz-utils fonts-dejavu-core
+  # Chrome's system libraries (for Generate renders)
+  apt_install fonts-liberation libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libcairo2 libcups2t64     libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1     libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
   ok "ffmpeg $(ffmpeg -version | head -n1 | awk '{print $3}')"
   ensure_bun
+  HAS_NODE=0
+  ensure_node && HAS_NODE=1
   python_venv
   step "Web UI"
   (cd "$APP_DIR" && as_user bun install --frozen-lockfile >/dev/null && as_user bun run build >/dev/null)
+  if [ "$HAS_NODE" -eq 1 ]; then ensure_render_browser; fi
   ok "frontend/out"
   as_user mkdir -p "$APP_DIR/data/input" "$APP_DIR/data/music"
   if [ "$SKIP_MODEL" -eq 0 ]; then

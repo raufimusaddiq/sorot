@@ -3,6 +3,7 @@ import { Api, type Json } from "./api";
 import { has, num, str, UsageError, type Args } from "./args";
 import type { CliConfig } from "./config";
 import { clock, seconds, short, table, truncate, when } from "./format";
+import { genCmd } from "./generate";
 import { setupCmd } from "./social";
 
 export interface Deps {
@@ -441,4 +442,5 @@ export const COMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   channels: channelsCmd,
   options: optionsCmd,
   connect: connectCmd,
+  gen: genCmd,
 };

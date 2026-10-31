@@ -72,6 +72,19 @@ export interface AppConfig {
   tebarApiKey: string;
   /** Pull posted clips' metrics into feedback every N hours (0 = only on request). */
   tebarSyncHours: number;
+  /** Generate (HyperFrames): the CLI version pinned in generator/package.json, shown in status and saved with each build. */
+  hyperframesVersion: string;
+  /** Node ≥ 22 runs the HyperFrames CLI; "" bin = Generate off. */
+  nodePath: string;
+  hyperframesBin: string;
+  /** The generator/ package: example recipes, prompts, fonts. */
+  generatorDir: string;
+  /** Per-project files (HyperFrames project folders, drafts, exports). */
+  genDir: string;
+  /** Builds running at once (a build also waits while a clip job is in TRANSCRIBE or RENDER). */
+  genConcurrency: number;
+  /** Drafts kept per project; older ones are pruned, exports stay. */
+  genKeepVersions: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -147,5 +160,12 @@ export function loadConfig(env: Env = process.env): AppConfig {
     tebarBaseUrl: (env.TEBAR_BASE_URL ?? "").trim() || "https://api.tebar.app/v1",
     tebarApiKey: (env.TEBAR_API_KEY ?? "").trim(),
     tebarSyncHours: Math.max(0, int(env.TEBAR_SYNC_HOURS, 6)),
+    hyperframesVersion: (env.HYPERFRAMES_VERSION ?? "").trim() || "0.8.223",
+    nodePath: (env.NODE_BIN ?? "").trim() || "node",
+    hyperframesBin: (env.HYPERFRAMES_BIN ?? "").trim() || "../node_modules/hyperframes/bin/hyperframes.mjs",
+    generatorDir: (env.GENERATOR_DIR ?? "").trim() || "../generator",
+    genDir: `${dataDir}/generate`,
+    genConcurrency: Math.max(1, int(env.GEN_CONCURRENCY, 1)),
+    genKeepVersions: Math.max(1, int(env.GEN_KEEP_VERSIONS, 10)),
   };
 }

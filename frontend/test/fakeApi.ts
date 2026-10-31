@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -44,6 +44,8 @@ export interface FakeState {
   accounts: SocialAccount[];
   draft: PublishDraft | null;
   posts: Record<string, SocialPost[]>;
+  /** GET /api/generate/status. */
+  generate: GenerateStatus;
 }
 
 /** Every connection off by default; `over` changes fields of single connections. */
@@ -52,6 +54,14 @@ export function makeConnections(over: { [K in keyof Connections]?: Partial<Conne
     llm: { active: false, enabled: true, saved: [], baseUrl: '', model: '', apiKey: '', apiKeySet: false, director: true, ...over.llm },
     jev: { active: false, enabled: true, saved: [], url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', apiKey: '', apiKeySet: false, director: true, ...over.jev },
     tebar: { active: false, enabled: true, saved: [], baseUrl: 'https://api.tebar.app/v1', apiKey: '', apiKeySet: false, ...over.tebar },
+  };
+}
+
+/** Generate's status: ready by default; `over` changes fields. */
+export function makeGenerateStatus(over: Partial<GenerateStatus> = {}): GenerateStatus {
+  return {
+    available: true, reasons: [], hyperframes: { ok: true, version: '0.8.223' }, llm: { configured: true }, jev: { configured: false },
+    image: { configured: false }, vision: { configured: false }, voice: { engines: [], localAvailable: true }, compute: 'gpu', presets: [], ...over,
   };
 }
 
@@ -117,7 +127,7 @@ export function emptyState(): FakeState {
     results: [],
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
-    settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {},
+    settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
   };
 }
 
@@ -234,6 +244,7 @@ export function installFakeApi(state: FakeState) {
       if (state.autoRuns.length > 1) state.autoRuns.shift();
       return ok(state.autoRuns[0]);
     }
+    if (method === 'GET' && path === '/api/generate/status') return ok(state.generate);
     if (method === 'GET' && path === '/api/settings') return ok(state.settings);
     if (method === 'PUT' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar)$/))) {
       const kind = m[1] as keyof Connections;

@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "outputDir": "<project>\\.hyperframes\\artifacts\\snapshots\\2bb0c1c7-b5f8-4b3a-822e-725d44ad045a",
+  "frames": [
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\2bb0c1c7-b5f8-4b3a-822e-725d44ad045a\\frame-00-at-1s.png",
+      "time": 1
+    },
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\2bb0c1c7-b5f8-4b3a-822e-725d44ad045a\\frame-01-at-3s.png",
+      "time": 3
+    },
+    {
+      "path": "<project>\\.hyperframes\\artifacts\\snapshots\\2bb0c1c7-b5f8-4b3a-822e-725d44ad045a\\frame-02-at-9.75s.png",
+      "time": 9.75
+    }
+  ],
+  "contactSheets": [
+    "<project>\\.hyperframes\\artifacts\\snapshots\\2bb0c1c7-b5f8-4b3a-822e-725d44ad045a\\contact-sheet.jpg"
+  ],
+  "_meta": {
+    "version": "0.8.223",
+    "latestVersion": "0.8.223",
+    "updateAvailable": false
+  }
+}

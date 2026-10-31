@@ -17,11 +17,23 @@ COPY backend/package.json backend/
 COPY frontend/package.json frontend/
 # Every workspace in package.json must be present for the frozen install (the CLI isn't built here).
 COPY cli/package.json cli/
+COPY generator/package.json generator/
 RUN bun install --frozen-lockfile
 COPY frontend/ frontend/
 # NEXT_PUBLIC_API_URL stays unset → the UI calls /api on its own origin.
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd frontend && bun run build
+
+# ---- 1b. HyperFrames CLI (pinned in generator/package.json, locked in bun.lock) ----
+FROM node:22-slim AS gen
+COPY --from=oven/bun:1.3.12 /usr/local/bin/bun /usr/local/bin/bun
+WORKDIR /repo
+COPY package.json bun.lock bunfig.toml ./
+COPY backend/package.json backend/
+COPY frontend/package.json frontend/
+COPY cli/package.json cli/
+COPY generator/package.json generator/
+RUN bun install --frozen-lockfile --production --filter sorot-generator
 
 # ---- 2. Runtime ----
 FROM ${BASE_IMAGE}
@@ -35,6 +47,20 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     ffmpeg \
     curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Generate (HyperFrames): its CLI needs Node >= 22 and Chrome. Only the node binary is copied
+# (no npm); Chrome's system libraries come from apt, and the headless Chrome itself is fetched
+# below, at build time, so renders never download anything.
+COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    fonts-liberation libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libcairo2 libcups2t64 \
+    libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 \
+    libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=gen /repo/node_modules /app/node_modules
+COPY generator/ /app/generator/
+ENV HYPERFRAMES_AGENT=1
+RUN node /app/node_modules/hyperframes/bin/hyperframes.mjs browser ensure
 
 COPY --from=oven/bun:1.3.12 /usr/local/bin/bun /usr/local/bin/bun
 
