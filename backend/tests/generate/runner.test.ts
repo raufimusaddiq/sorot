@@ -37,7 +37,7 @@ function rig(): Rig {
   }])) as Record<StepType, StepModule>;
   const connections = new Set<string>(["llm"]);
   const gate: Rig["gate"] = { fn: async () => ({ approve: true, reason: "the bold one" }) };
-  const runner = new Runner(store, new DirectorLog(store), { connected: (c) => connections.has(c), directorGate: (ctx) => gate.fn(ctx), director: {} as Director, catalog: async () => [], steps });
+  const runner = new Runner(store, new DirectorLog(store), { connected: (c) => connections.has(c), directorGate: (ctx) => gate.fn(ctx), director: {} as Director, hyperframes: {} as never, jev: {} as never, exec: {} as never, config: {} as never, catalog: async () => [], steps });
   return { store, runner, ran, on: (type, run) => { impl[type] = run; }, connections, gate, inputKeys };
 }
 
@@ -184,16 +184,16 @@ describe("runner: build segment", () => {
     await expect(r.runner.runBuild("v1")).rejects.toThrow("plan isn't approved");
   });
 
-  test("author to export run in order and the version and project end BUILT", async () => {
+  test("author to creative run in order (not the export) and the version and project end BUILT", async () => {
     await approved(r);
     addVersion(r.store);
     r.ran.length = 0;
     const v = await r.runner.runBuild("v1");
-    expect(r.ran).toEqual(["author", "check", "render", "technical", "creative", "export"]);
+    expect(r.ran).toEqual(["author", "check", "render", "technical", "creative"]);
     expect(v).toMatchObject({ status: "BUILT", progress: 100, step: null, errorMessage: null });
     expect(v.buildMs).toBeGreaterThanOrEqual(0);
     expect(r.store.getGenProject("p1")!.status).toBe("BUILT");
-    expect(Object.keys(parseStates(v.stepState))).toEqual(["author", "check", "render", "technical", "creative", "export"]);
+    expect(Object.keys(parseStates(v.stepState))).toEqual(["author", "check", "render", "technical", "creative"]);
 
     r.ran.length = 0;
     await r.runner.runBuild("v1");
@@ -221,7 +221,7 @@ describe("runner: build segment", () => {
     r.on("render", async () => done);
     r.ran.length = 0;
     expect((await r.runner.runBuild("v1")).status).toBe("BUILT");
-    expect(r.ran).toEqual(["render", "technical", "creative", "export"]);
+    expect(r.ran).toEqual(["render", "technical", "creative"]);
   });
 
   test("cancelling ends the version CANCELLED and puts the project back", async () => {
@@ -240,7 +240,7 @@ describe("runner: build segment", () => {
     expect(r.store.getGenProject("p1")!.status).toBe("BUILT");
   });
 
-  test("an export that waits for the owner leaves the version BUILT", async () => {
+  test("an unattended run goes on to the export; one that waits for the owner leaves the version BUILT", async () => {
     const recipe = quickRecipe();
     recipe.steps[7]!.gate = "owner";
     addProject(r.store, recipe);
@@ -248,9 +248,10 @@ describe("runner: build segment", () => {
     await r.runner.approveStep("p1", "storylines");
     await r.runner.approveStep("p1", "plan");
     addVersion(r.store);
-    const v = await r.runner.runBuild("v1");
+    const v = await r.runner.runBuild("v1", undefined, { withExport: true });
     expect(v).toMatchObject({ status: "BUILT", progress: 100 });
     expect(parseStates(v.stepState).export).toMatchObject({ status: "waiting" });
+    expect(r.ran.at(-1)).toBe("export");
   });
 
   test("a restart fails what was in flight and keeps its work", () => {

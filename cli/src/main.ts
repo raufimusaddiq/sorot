@@ -67,6 +67,9 @@ Publishing (Tebar)
 
 Generate (2D videos from a brief)
   gen status                    can Generate run here? (exit 1 and the reasons when not)
+  gen new "<brief>" | list | show <p> | retry <p> | storylines <p> | pick <p> <1-3> | plan <p> [--edit]
+  gen revise <p> "<change>" | approve <p> | asset <p> <file>   a brief becomes storylines, then an approved plan
+  gen build <p> [--no-watch] | verdicts <p|v> | cancel <p|v> | accept <p|v>   build a draft, see both verdicts
 
 App
   up | down | restart           start / stop the app (Docker or systemd)

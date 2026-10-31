@@ -1,7 +1,11 @@
 import type { Store } from "../store";
 import type { GenProject, GenVersion } from "../types";
+import type { AppConfig } from "../config";
+import type { ExecFn } from "../runner";
+import type { Jev } from "../jev";
 import type { Director } from "./director";
 import type { DirectorLog } from "./events";
+import type { Hyperframes } from "./hyperframes";
 import { parseRecipe, type Recipe, type RecipeStep } from "./recipe";
 import { STEPS, settingsOf, type StepModule } from "./steps";
 import type { StepType } from "./steps/schema";
@@ -34,6 +38,10 @@ export interface RunnerDeps {
   connected: (connection: string) => boolean;
   directorGate: DirectorGate;
   director: Director;
+  hyperframes: Hyperframes;
+  jev: Jev;
+  exec: ExecFn;
+  config: AppConfig;
   catalog: StepContext["catalog"];
   /** The step library; tests pass stubs. */
   steps?: Record<StepType, StepModule>;
@@ -145,8 +153,12 @@ export class Runner {
 
   // ---- build segment --------------------------------------------------------------
 
-  /** Runs `author` ... `export` for one version. Cancelling (`signal`) ends it as CANCELLED. */
-  async runBuild(versionId: string, signal?: AbortSignal): Promise<GenVersion> {
+  /**
+   * Runs `author` ... `creative` for one version. The export is the owner's call after accepting a
+   * version, so it only runs here for an unattended run (`withExport`). Cancelling (`signal`) ends
+   * the version as CANCELLED.
+   */
+  async runBuild(versionId: string, signal?: AbortSignal, opts: { withExport?: boolean } = {}): Promise<GenVersion> {
     const version = this.mustVersion(versionId);
     const project = this.mustProject(version.projectId);
     const recipe = parseRecipe(project);
@@ -154,7 +166,7 @@ export class Runner {
     if (!planState || planState.status !== "done") throw new RunnerError("The plan isn't approved yet, so nothing can be built");
 
     const start = authorIndex(recipe);
-    const steps = recipe.steps.slice(start);
+    const steps = recipe.steps.slice(start).filter((s) => opts.withExport || s.use !== "export");
     const states = parseStates(version.stepState);
     const startedAt = Date.now();
     this.store.updateGenVersion(versionId, { status: "BUILDING", errorMessage: null });
@@ -176,7 +188,7 @@ export class Runner {
         const outcome = await this.runStep(ctx, key, states, (s) => this.store.updateGenVersion(versionId, { stepState: JSON.stringify(s) }));
         if (outcome.stop === "failed") throw new RunnerError(outcome.error ?? "step failed");
         if (outcome.stop === "waiting") {
-          // An export gate (owner): the version is built, the export waits for the owner.
+          // A step that waits for the owner (an export gate): the version is built, the rest waits.
           this.store.updateGenVersion(versionId, { status: "BUILT", progress: 100 });
           this.store.updateGenProject(project.id, { status: "BUILT" });
           return this.mustVersion(versionId);
@@ -262,7 +274,7 @@ export class Runner {
   private context(project: GenProject, version: GenVersion | null, recipe: Recipe, step: RecipeStep, signal?: AbortSignal): StepContext {
     return {
       project, version, recipe, step, signal, store: this.store, log: this.log,
-      director: this.deps.director, connected: this.deps.connected, catalog: this.deps.catalog,
+      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog,
       settings: settingsOf(step.use, step.with),
       progress: (percent) => { if (version) this.store.updateGenVersion(version.id, { progress: Math.max(0, Math.min(100, Math.round(percent))) }); },
     };

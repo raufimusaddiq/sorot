@@ -3,16 +3,18 @@ import type { AppConfig } from "../config";
 import { HttpError } from "../http";
 import type { Jev } from "../jev";
 import type { Llm } from "../llm";
+import type { ExecFn } from "../runner";
 import { now, type Store } from "../store";
-import type { GenPlan, GenProject } from "../types";
+import type { GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
 import { Assets, projectDir } from "./assets";
 import { Director, type GateDecision as DirectorDecision } from "./director";
 import { DirectorLog } from "./events";
 import { Hyperframes, requiredOk } from "./hyperframes";
-import { mirrorProject, readMirror } from "./mirror";
+import { mirrorProject, mirrorReview, readMirror } from "./mirror";
 import { planContext } from "./planContext";
 import { validatePlan, type Plan } from "./planSchema";
 import { freezeRecipe, parseRecipe, seedRecipes, type Recipe, type RecipeStep } from "./recipe";
+import { BuildQueue, clipJobBusy, estimateBuild } from "./queue";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
 import { STORYLINE_NOTE, chosenStoryline, parseStorylines, projectFlags } from "./steps/storylines";
 
@@ -67,6 +69,7 @@ export class GenerateService {
   readonly director: Director;
   readonly runner: Runner;
   readonly assets: Assets;
+  readonly queue: BuildQueue;
   private doctorCache: { at: number; result: { ok: boolean; reason?: string } } | null = null;
   private catalogCache: Array<{ name: string; tags: string[] }> | null = null;
   /** Work running in the background, by project. */
@@ -78,6 +81,7 @@ export class GenerateService {
     readonly hyperframes: Hyperframes,
     private readonly llm: Llm,
     private readonly jev: Jev,
+    exec: ExecFn,
   ) {
     this.log = new DirectorLog(store);
     this.director = new Director(llm, this.log, config.generatorDir);
@@ -86,7 +90,22 @@ export class GenerateService {
       connected: (c) => this.connected(c),
       directorGate: (ctx, result) => this.decide(ctx.project, ctx.step, result.outputRef),
       director: this.director,
+      hyperframes,
+      jev,
+      exec,
+      config,
       catalog: () => this.catalog(),
+    });
+    this.queue = new BuildQueue({
+      concurrency: config.genConcurrency, pollMs: 5000, blocked: () => clipJobBusy(store),
+      run: async (versionId, signal) => {
+        try {
+          await this.runner.runBuild(versionId, signal);
+        } finally {
+          mirrorReview(config, store, versionId);
+        }
+      },
+      cancelQueued: (versionId) => this.endQueued(versionId),
     });
   }
 
@@ -94,6 +113,7 @@ export class GenerateService {
   start() {
     seedRecipes(this.store, `${this.config.generatorDir}/recipes`);
     this.runner.recoverInterrupted();
+    for (const v of this.store.genVersionsByStatus("QUEUED")) this.queue.enqueue(v.id);
   }
 
   // ---- availability ---------------------------------------------------------
@@ -102,7 +122,7 @@ export class GenerateService {
 
   /** What is set up right now. Image, voice, vision, data and command connections arrive with their steps. */
   connections(): ConnectionState {
-    return { llm: this.llm.enabled, jev: this.jev.enabled, image: false, vision: false, voiceEngines: [], dataSources: [], commands: [] };
+    return { llm: this.llm.enabled, jev: this.jev.enabled, image: false, vision: this.llm.visionModel !== null, voiceEngines: [], dataSources: [], commands: [] };
   }
 
   connected(name: string): boolean {
@@ -198,7 +218,10 @@ export class GenerateService {
 
   /** Resolves when no background work is running (tests, shutdown). */
   async whenIdle(): Promise<void> {
-    while (this.running.size) await Promise.allSettled([...this.running.values()]);
+    do {
+      while (this.running.size) await Promise.allSettled([...this.running.values()]);
+      await this.queue.idle();
+    } while (this.running.size);
   }
 
   private mustProject(id: string): GenProject {
@@ -426,6 +449,78 @@ export class GenerateService {
       throw new HttpError(409, "Approve the plan first: nothing is built from an unapproved plan");
     }
     return row;
+  }
+
+  // ---- builds ---------------------------------------------------------------
+
+  private mustVersion(id: string): GenVersion {
+    const v = this.store.getGenVersion(id);
+    if (!v) throw new HttpError(404, "Version not found");
+    return v;
+  }
+
+  /** Queues a build of the approved plan as a new version; nothing is built from an unapproved plan (FR-006). */
+  startBuild(projectId: string): GenVersion {
+    const p = this.idle(projectId);
+    const plan = this.assertCanBuild(projectId);
+    const quality = parseRecipe(p).steps.find((s) => s.use === "render")?.with?.quality;
+    const number = (this.store.genVersionsForProject(projectId)[0]?.number ?? 0) + 1;
+    const t = now();
+    const version = this.store.saveGenVersion({
+      id: crypto.randomUUID(), projectId, planId: plan.id, number, parentVersionId: null, status: "QUEUED", step: null, progress: 0,
+      projectDir: `${projectDir(this.config, projectId)}/v${number}`, renderKind: quality === "delivery" ? "final" : "draft", draftPath: null,
+      stepState: null, hyperframesVersion: this.hyperframes.version, buildMs: null, errorMessage: null, createdAt: t, updatedAt: t,
+    });
+    this.store.updateGenProject(projectId, { status: "BUILDING", errorMessage: null });
+    this.queue.enqueue(version.id);
+    return version;
+  }
+
+  /** A build that never started: the version ends CANCELLED and the project goes back to what it was. */
+  private endQueued(versionId: string): void {
+    const v = this.mustVersion(versionId);
+    this.store.updateGenVersion(versionId, { status: "CANCELLED", errorMessage: null });
+    const built = this.store.genVersionsForProject(v.projectId).some((x) => x.status === "BUILT");
+    this.store.updateGenProject(v.projectId, { status: built ? "BUILT" : "WAITING" });
+  }
+
+  /** Stops a build: one still waiting never starts; a running one is killed with all it started. */
+  cancelVersion(versionId: string): GenVersion {
+    const v = this.mustVersion(versionId);
+    if (!this.queue.cancel(v.id)) throw new HttpError(409, "That build has already finished");
+    return this.mustVersion(versionId);
+  }
+
+  getVersion(versionId: string): { version: GenVersion; verdicts: GenVerdict[] } {
+    return { version: this.mustVersion(versionId), verdicts: this.store.genVerdictsForVersion(versionId) };
+  }
+
+  /** The owner accepts a built version. Export is blocked while TECHNICAL is FAIL (FR-014). */
+  acceptVersion(versionId: string): GenProject {
+    const v = this.mustVersion(versionId);
+    if (v.status !== "BUILT") throw new HttpError(409, "Only a finished build can be accepted");
+    const technical = this.store.genVerdictsForVersion(versionId).find((x) => x.kind === "TECHNICAL");
+    if (!technical) throw new HttpError(409, "This build has no TECHNICAL verdict yet");
+    if (technical.status === "FAIL") throw new HttpError(409, "TECHNICAL failed: fix the must-fix findings before accepting");
+    this.store.updateGenProject(v.projectId, { acceptedVersionId: v.id, status: "ACCEPTED" });
+    return this.mustProject(v.projectId);
+  }
+
+  /** What a build and an export will take, from the builds so far. */
+  estimate(projectId: string) { return estimateBuild(this.store, this.mustProject(projectId).targetSec); }
+
+  /** The rendered video of a version (the draft the verdicts judged), for the player. */
+  draftFile(versionId: string): string {
+    const path = this.mustVersion(versionId).draftPath;
+    if (!path) throw new HttpError(404, "This version has no video yet");
+    return path;
+  }
+
+  /** A review sheet (review-beats, review-phone) the CREATIVE judge looked at. */
+  sheetFile(versionId: string, name: string): string {
+    const v = this.mustVersion(versionId);
+    if (!["review-beats", "review-phone"].includes(name)) throw new HttpError(404, `No sheet called ${name}`);
+    return `${v.projectDir}/sheets/${name}.jpg`;
   }
 
   /** The storyline the plan was built from (for the UI). */

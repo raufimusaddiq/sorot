@@ -108,6 +108,21 @@ describe("recipe validation", () => {
     expect(validateRecipe(mutate(quick())).errors).toEqual([]);
   });
 
+  test("questions people write are linted against the design rules, as warnings: criteria and content rules", () => {
+    const check = validateRecipe({
+      ...(setStep("creative", { with: { criteria: [{ id: "good", question: "Does `opening` hold the eye?" }, { id: "vague", question: "Is it good?" }, { id: "timed", question: "Is `shots` longer than 30 seconds?" }] } })(quick()) as object),
+      rules: { content: [{ id: "tone", question: "Is the tone pushy" }] },
+    });
+    expect(check.ok).toBe(true);
+    expect(check.warnings).toEqual([
+      'step "creative" criterion "vague": name the thing it reads in backticks, for example `shots`, `opening` or `message`',
+      'step "creative" criterion "timed": leave counting and timing to the checks: ask about what can be seen, not how many or how long',
+      'content rule "tone": name the thing it reads in backticks, for example `shots`, `opening` or `message`',
+      'content rule "tone": end it with a question mark',
+    ]);
+    expect(validateRecipe(quick()).warnings).toEqual([]);
+  });
+
   test("a creative step without criteria only warns, and the errors name the step", () => {
     const check = validateRecipe(setStep("creative", { with: {} })(quick()));
     expect(check).toMatchObject({ ok: true, errors: [] });
@@ -131,7 +146,7 @@ describe("example recipes", () => {
   test("every shipped example is valid and has a neutral shape", () => {
     const examples = loadExampleRecipes(GENERATOR_RECIPES);
     expect(examples.map((r) => r.id)).toContain("quick");
-    for (const r of examples) expect(validateRecipe(r)).toMatchObject({ ok: true, errors: [] });
+    for (const r of examples) expect(validateRecipe(r)).toEqual({ ok: true, errors: [], warnings: [] });
     expect(JSON.stringify(examples)).not.toMatch(/api[_-]?key|elevenlabs|voice id/i);
   });
 

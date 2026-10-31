@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { now, type Store } from "../store";
 import type { GenProject } from "../types";
+import { lintQuestion } from "./creative";
 import { checkObject, isObject, STEP_SPECS, STEP_TYPES, type Field, type Gate, type StepType } from "./steps/schema";
 
 // Recipe validation (contracts/recipe.md). A recipe is the user's pipeline: an ordered list of
@@ -122,11 +123,11 @@ export function validateRecipe(input: unknown): RecipeCheck {
   });
   if (errors.length > 0 && steps.length !== input.steps.length) return { ok: false, errors, warnings };
 
-  checkOrder(steps, err, warnings);
+  checkOrder(steps, err, warnings, input.rules);
   return { ok: errors.length === 0, errors, warnings };
 }
 
-function checkOrder(steps: RecipeStep[], err: (m: string) => void, warnings: string[]) {
+function checkOrder(steps: RecipeStep[], err: (m: string) => void, warnings: string[], rules: unknown) {
   const first = (use: StepType) => steps.findIndex((s) => s.use === use);
   const last = (use: StepType) => steps.map((s) => s.use).lastIndexOf(use);
   const count = (use: StepType) => steps.filter((s) => s.use === use).length;
@@ -183,6 +184,16 @@ function checkOrder(steps: RecipeStep[], err: (m: string) => void, warnings: str
   const render = get("render");
   if (exp && exp.with?.mode === "copy" && render && (render.with?.quality ?? "draft") !== "delivery") {
     err(`${label("export")}.with.mode: copy needs render quality delivery (otherwise use rerender)`);
+  }
+
+  // The questions people write are held to the same design rules as Sorot's own: warnings, not errors.
+  const questions = [
+    ...(((get("creative")?.with?.criteria as Array<{ id: string; question: string }> | undefined) ?? []).map((c) => ["step \"creative\" criterion", c] as const)),
+    ...(((rules as { content?: Array<{ id: string; question: string }> } | undefined)?.content ?? []).map((c) => ["content rule", c] as const)),
+  ];
+  for (const [where, q] of questions) {
+    if (typeof q?.question !== "string") continue;   // already an error
+    for (const problem of lintQuestion(q.question)) warnings.push(`${where} "${q.id}": ${problem}`);
   }
 
   const creative = get("creative");

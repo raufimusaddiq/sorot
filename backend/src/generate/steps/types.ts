@@ -1,7 +1,11 @@
+import type { AppConfig } from "../../config";
+import type { ExecFn } from "../../runner";
+import type { Jev } from "../../jev";
 import type { Store } from "../../store";
 import type { GenProject, GenVersion } from "../../types";
 import type { Director } from "../director";
 import type { DirectorLog } from "../events";
+import type { Hyperframes } from "../hyperframes";
 import type { Recipe, RecipeStep } from "../recipe";
 
 /** What a step receives. `version` is set only for steps of the build segment (author ... export). */
@@ -15,6 +19,11 @@ export interface StepContext {
   store: Store;
   log: DirectorLog;
   director: Director;
+  hyperframes: Hyperframes;
+  jev: Jev;
+  /** Runs ffprobe and ffmpeg. */
+  exec: ExecFn;
+  config: AppConfig;
   /** Is this connection (llm, jev, image, voice, vision) set up? */
   connected: (connection: string) => boolean;
   /** Names and tags of the HyperFrames registry blocks (empty when the CLI can't list them). */

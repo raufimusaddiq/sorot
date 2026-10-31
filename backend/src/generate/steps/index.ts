@@ -40,7 +40,7 @@ const DEFAULTS: Record<StepType, Record<string, unknown>> = {
   concept: { mechanismTest: false, novelty: { lastN: 30 } },
   images: {},
   music: {},
-  author: { repairRounds: 3 },
+  author: { repairRounds: 3, concurrency: 1 },
   check: { warnings: "fix-or-hold", rounds: 3 },
   look: { rounds: 3, beatOffsetSec: 0.3, audit: true },
   render: { quality: "draft", workers: 2 },

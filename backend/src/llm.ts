@@ -26,6 +26,9 @@ export interface ToolCall {
   function: { name: string; arguments: string | Json };
 }
 
+/** A piece of a message that has pictures in it (vision models). */
+export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -39,7 +42,17 @@ export interface ToolDef {
   function: { name: string; description: string; parameters: Json };
 }
 
+/** What can be sent: text as before, or text and images. What comes back is always a ChatMessage with text. */
+export type ChatInput = Omit<ChatMessage, "content"> & { content: string | ContentPart[] };
+
+/** A message with a picture: the text, then each image as a data URL or a URL. */
+export const withImages = (text: string, ...urls: string[]): ChatInput => ({
+  role: "user", content: [{ type: "text", text }, ...urls.map((url): ContentPart => ({ type: "image_url", image_url: { url } }))],
+});
+
 export interface ChatOptions {
+  /** Overrides the configured model for this call (the vision model). */
+  model?: string;
   tools?: ToolDef[];
   /** Name of the one function the model must call (otherwise it chooses). */
   toolChoice?: string;
@@ -79,7 +92,7 @@ export function parseJson(text: string | null | undefined): unknown {
 export class Llm {
   constructor(
     private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec">
-      & { llmEnabled?: boolean; llmMaxTokens?: number },
+      & { llmEnabled?: boolean; llmMaxTokens?: number; llmVision?: boolean; llmVisionModel?: string },
     private readonly fetchFn: typeof fetch = fetch,
     private readonly retryWaitMs = 2000,
   ) {}
@@ -92,6 +105,11 @@ export class Llm {
     return this.config.llmModel;
   }
 
+  /** The model that looks at images: set, switched on, and the LLM itself on. */
+  get visionModel(): string | null {
+    return this.enabled && this.config.llmVision !== false && this.config.llmVisionModel ? this.config.llmVisionModel : null;
+  }
+
   /** The configured output budget per call; it includes a reasoning model's thinking. */
   get maxTokens(): number {
     return this.config.llmMaxTokens ?? 4000;
@@ -99,6 +117,17 @@ export class Llm {
 
   /** One chat completion; a transient failure (hosted gateways drop requests) is tried once more. */
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatMessage> {
+    return this.send(messages, opts);
+  }
+
+  /** A call with pictures in it, to the vision model (LlmError when none is set up). */
+  async see(messages: ChatInput[], opts: ChatOptions = {}): Promise<ChatMessage> {
+    const model = this.visionModel;
+    if (!model) throw new LlmError("No vision model configured (set LLM_VISION_MODEL)");
+    return this.send(messages, { ...opts, model: opts.model ?? model });
+  }
+
+  private async send(messages: ChatInput[], opts: ChatOptions): Promise<ChatMessage> {
     try {
       return await this.chatOnce(messages, opts);
     } catch (e) {
@@ -108,11 +137,11 @@ export class Llm {
     }
   }
 
-  private async chatOnce(messages: ChatMessage[], opts: ChatOptions): Promise<ChatMessage> {
+  private async chatOnce(messages: ChatInput[], opts: ChatOptions): Promise<ChatMessage> {
     if (!this.enabled) throw new LlmError("No LLM configured (set LLM_BASE_URL and LLM_MODEL)");
     const base = this.config.llmBaseUrl.replace(/\/+$/, "");
     const body: Json = {
-      model: this.config.llmModel, messages, temperature: opts.temperature ?? 0.4,
+      model: opts.model ?? this.config.llmModel, messages, temperature: opts.temperature ?? 0.4,
       max_tokens: opts.maxTokens ?? this.config.llmMaxTokens ?? 4000,
     };
     if (opts.tools?.length) {

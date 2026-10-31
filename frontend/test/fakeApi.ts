@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEvent, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -48,6 +48,9 @@ export interface FakeState {
   generate: GenerateStatus;
   /** Generate projects as the backend would return them, and what its director answers next. */
   genProjects: GenProjectDetail[];
+  genEstimate: GenEstimate;
+  /** Verdicts by version id (GET /api/generate/versions/:id). */
+  genVerdicts: Record<string, GenVerdict[]>;
   genNext: { storylines: GenStoryline[]; plan: GenPlan; revised: { plan: GenPlan; summary: string }; events: GenEvent[] };
 }
 
@@ -61,6 +64,22 @@ export function makeConnections(over: { [K in keyof Connections]?: Partial<Conne
 }
 
 /** Generate fixtures. */
+export function makeGenVersion(id: string, over: Partial<GenVersion> = {}): GenVersion {
+  return {
+    id, projectId: 'g1', planId: 'pl1', number: 1, parentVersionId: null, status: 'BUILT', step: null, progress: 100, renderKind: 'draft',
+    draftPath: 'data/generate/g1/v1/draft.mp4', stepState: null, hyperframesVersion: '0.8.223', buildMs: 60000, errorMessage: null,
+    createdAt: ts(), updatedAt: ts(), ...over,
+  };
+}
+
+export function makeFinding(id: string, over: Partial<GenFinding> = {}): GenFinding {
+  return { id, severity: 'must-fix', shotId: null, code: 'x', description: 'Something is wrong.', state: 'open', source: 'check', ...over };
+}
+
+export function makeVerdict(kind: 'TECHNICAL' | 'CREATIVE', status: GenVerdict['status'], findings: GenFinding[] = [], over: Partial<GenVerdict> = {}): GenVerdict {
+  return { id: `${kind}-${status}`, versionId: 'ver1', kind, status, findings, judgedBy: kind === 'TECHNICAL' ? 'code' : 'llm:m', inputs: null, createdAt: ts(), ...over };
+}
+
 export function makeStoryline(i: number, over: Partial<GenStoryline> = {}): GenStoryline {
   return {
     title: `Film ${i}`, pitch: `Pitch ${i}`, opening: `Opening ${i}`, beats: ['hook', 'isi', 'akhir'], look: 'flat', sound: 'tenang',
@@ -163,7 +182,7 @@ export function emptyState(): FakeState {
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
     settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
-    genProjects: [], genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
+    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
   };
 }
 
@@ -327,7 +346,26 @@ export function installFakeApi(state: FakeState) {
         detail.assets.push(asset);
         return ok({ asset });
       }
+      if (method === 'GET' && rest === 'estimate') return ok(state.genEstimate);
+      if (method === 'POST' && rest === 'versions') {
+        const version = makeGenVersion(`ver${detail.versions.length + 1}`, { projectId: p.id, number: detail.versions.length + 1, status: 'QUEUED', progress: 0 });
+        detail.versions.unshift(version);
+        p.status = 'BUILDING';
+        return ok({ version });
+      }
       if (method === 'GET' && rest.startsWith('events')) return ok({ events: state.genNext.events });
+    }
+    if ((m = path.match(/^\/api\/generate\/versions\/([^/]+)(?:\/(cancel|accept))?$/))) {
+      const version = state.genProjects.flatMap((d) => d.versions).find((v) => v.id === m![1]);
+      if (!version) return { status: 'error', error: 'Version not found' };
+      const owner = state.genProjects.find((d) => d.project.id === version.projectId)!;
+      if (method === 'GET' && !m[2]) return ok({ version, verdicts: state.genVerdicts[version.id] ?? [] });
+      if (method === 'POST' && m[2] === 'cancel') { version.status = 'CANCELLED'; owner.project.status = 'WAITING'; return ok({ version }); }
+      if (method === 'POST' && m[2] === 'accept') {
+        if ((state.genVerdicts[version.id] ?? []).some((v) => v.kind === 'TECHNICAL' && v.status === 'FAIL')) return { status: 'error', error: 'TECHNICAL failed: fix the must-fix findings before accepting' };
+        owner.project.status = 'ACCEPTED';
+        return ok({ project: owner.project });
+      }
     }
     if (method === 'DELETE' && (m = path.match(/^\/api\/generate\/assets\/([^/]+)$/))) {
       for (const d of state.genProjects) d.assets = d.assets.filter((a) => a.id !== m![1]);

@@ -251,8 +251,29 @@ export type GenEvent = {
   id: string; kind: string; model: string | null; request: string | null; response: string | null; ok: number; ms: number | null; createdAt: string;
 };
 
-export type GenProjectDetail = { project: GenProject; plans: GenPlanRow[]; versions: unknown[]; assets: GenAsset[]; exports: unknown[] };
+export type GenProjectDetail = { project: GenProject; plans: GenPlanRow[]; versions: GenVersion[]; assets: GenAsset[]; exports: unknown[] };
 
 export type GenCreateBody = {
   brief: string; format?: string; targetSec?: number; language?: string; styleNotes?: string; recipeId?: string; narration?: boolean;
 };
+
+// ---- Generate: builds and their two verdicts ----
+
+export type GenFinding = {
+  id: string; severity: 'must-fix' | 'should-fix' | 'polish'; shotId: string | null; fromSec?: number; toSec?: number;
+  code: string; description: string; suggestedFix?: string; state: 'open' | 'fixed' | 'kept'; keptReason?: string; source: string;
+};
+
+export type GenVerdict = {
+  id: string; versionId: string; kind: 'TECHNICAL' | 'CREATIVE'; status: 'PASS' | 'REVIEW' | 'FAIL';
+  findings: GenFinding[]; judgedBy: string; inputs: Record<string, unknown> | null; createdAt: string;
+};
+
+export type GenVersion = {
+  id: string; projectId: string; planId: string; number: number; parentVersionId: string | null;
+  status: 'QUEUED' | 'BUILDING' | 'BUILT' | 'FAILED' | 'CANCELLED'; step: string | null; progress: number | null;
+  renderKind: 'draft' | 'final'; draftPath: string | null; stepState: Record<string, GenStepState> | null;
+  hyperframesVersion: string | null; buildMs: number | null; errorMessage: string | null; createdAt: string; updatedAt: string;
+};
+
+export type GenEstimate = { draftSec: number; exportSec: number };

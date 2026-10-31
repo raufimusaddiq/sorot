@@ -11,7 +11,7 @@ import { WebSearch } from "./webSearch";
 import { FeedbackService, ValidationError } from "./feedback";
 import { Hyperframes } from "./generate/hyperframes";
 import { GenerateService } from "./generate/service";
-import { planView, projectView } from "./generate/views";
+import { planView, projectView, verdictView, versionView } from "./generate/views";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
 import { ClipEditor } from "./editor";
 import { ConflictError, JobService } from "./jobs";
@@ -69,7 +69,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const feedback = new FeedbackService(config, store);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
   const publisher = new Publisher(config, store, tebar, llm, jev, feedback);
-  const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev);
+  const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev, exec);
 
   const router = new Router();
 
@@ -324,7 +324,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   });
   router.on("GET", "/api/generate/projects/:id", (c) => {
     const d = generate.getProject(c.params.id as string);
-    return ok({ ...d, project: projectView(d.project, { recipe: true }), plans: d.plans.map(planView) });
+    return ok({ ...d, project: projectView(d.project, { recipe: true }), plans: d.plans.map(planView), versions: d.versions.map(versionView) });
   });
   router.on("PATCH", "/api/generate/projects/:id", async (c) => {
     const b = await c.body();
@@ -373,6 +373,17 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     generate.assets.remove(c.params.id as string);
     return ok({ deleted: true });
   });
+  router.on("POST", "/api/generate/projects/:id/versions", (c) => ok({ version: versionView(generate.startBuild(c.params.id as string)) }, 201));
+  router.on("GET", "/api/generate/projects/:id/estimate", (c) => ok(generate.estimate(c.params.id as string)));
+  router.on("GET", "/api/generate/versions/:id", (c) => {
+    const d = generate.getVersion(c.params.id as string);
+    return ok({ version: versionView(d.version), verdicts: d.verdicts.map(verdictView) });
+  });
+  router.on("POST", "/api/generate/versions/:id/cancel", (c) => ok({ version: versionView(generate.cancelVersion(c.params.id as string)) }));
+  router.on("POST", "/api/generate/versions/:id/accept", (c) => ok({ project: projectView(generate.acceptVersion(c.params.id as string)) }));
+  router.on("GET", "/api/generate/versions/:id/draft", (c) => serveFile(c.req, generate.draftFile(c.params.id as string), { contentType: "video/mp4" }));
+  router.on("GET", "/api/generate/versions/:id/sheets/:name", (c) =>
+    serveFile(c.req, generate.sheetFile(c.params.id as string, c.params.name as string), { contentType: "image/jpeg" }));
   router.on("GET", "/api/generate/projects/:id/events", (c) => {
     const limit = Number(c.url.searchParams.get("limit") ?? 200);
     return ok({ events: generate.events(c.params.id as string, Number.isFinite(limit) ? limit : 200) });
