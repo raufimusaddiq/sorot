@@ -8,9 +8,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ApiClient } from '@/lib/api';
 import { reportError } from '@/lib/errors';
-import type { GenCreateBody, GenPlan, GenProject, GenProjectDetail, GenerateStatus } from '@/types';
+import type { GenCreateBody, GenEstimate, GenPlan, GenProject, GenProjectDetail, GenVerdict, GenerateStatus } from '@/types';
 import { Window } from '../Window';
 import { BriefForm, type PendingFile } from './BriefForm';
+import { BuildPanel } from './BuildPanel';
 import { DirectorLog } from './DirectorLog';
 import { PlanEditor } from './PlanEditor';
 import { StorylineCards } from './StorylineCards';
@@ -30,6 +31,8 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
   const [detail, setDetail] = useState<GenProjectDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<GenEstimate | null>(null);
+  const [verdicts, setVerdicts] = useState<GenVerdict[]>([]);
 
   useEffect(() => {
     let live = true;
@@ -76,6 +79,27 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
     const t = setTimeout(() => load(detail.project.id), pollMs);
     return () => clearTimeout(t);
   }, [detail, pollMs, load]);
+
+  // What a build will take, while a plan is approved and nothing is building.
+  const projectId = detail?.project.id;
+  const buildable = !!detail?.plans[0]?.approvedAt && !WORKING.includes(detail.project.status);
+  const versionCount = detail?.versions.length ?? 0;
+  useEffect(() => {
+    if (!projectId || !buildable) { setEstimate(null); return; }
+    let live = true;
+    api.getGenerateEstimate(projectId).then((e) => { if (live) setEstimate(e); }, (e) => reportError(e, 'getGenerateEstimate'));
+    return () => { live = false; };
+  }, [api, projectId, buildable, versionCount]);
+
+  // The two verdicts of the newest build, once it is built.
+  const newest = detail?.versions[0] ?? null;
+  const newestId = newest?.status === 'BUILT' ? newest.id : null;
+  useEffect(() => {
+    if (!newestId) { setVerdicts([]); return; }
+    let live = true;
+    api.getGenerateVersion(newestId).then((r) => { if (live) setVerdicts(r.verdicts); }, (e) => { reportError(e, 'getGenerateVersion'); if (live) setProblem((e as Error).message); });
+    return () => { live = false; };
+  }, [api, newestId]);
 
   /** Runs one action, shows its error, and refreshes the open project. */
   const act = async (fn: () => Promise<unknown>) => {
@@ -174,6 +198,13 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
           )}
 
           {approved && <p className="text-sm font-semibold" role="status">Plan approved. It is locked: a change makes a new revision that needs approving again.</p>}
+
+          {approved && (
+            <BuildPanel api={api} project={p} version={newest} verdicts={verdicts} estimate={estimate} busy={busy}
+              onBuild={() => act(() => api.startGenerateBuild(p.id))}
+              onCancel={(id) => act(() => api.cancelGenerateVersion(id))}
+              onAccept={(id) => act(() => api.acceptGenerateVersion(id))} />
+          )}
 
           {detail && detail.assets.length > 0 && (
             <div>

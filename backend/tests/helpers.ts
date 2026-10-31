@@ -262,6 +262,7 @@ export function fakeHyperframes(handlers: Record<string, HfHandler> = {}) {
       const dir = args[1] as string;
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, "index.html"), "<!doctype html>");
+      writeFileSync(join(dir, "hyperframes.json"), "{}");
       return procOk();
     },
     add: () => procOk("{}"),
@@ -372,3 +373,26 @@ export function scriptLlm(env: TestEnv, replies: Array<string | AsText | Error |
 
 /** The `kind` of a request to the director: its closing task field names the job. */
 export const userPayload = (req: { messages: Array<{ role: string; content: string }> }) => JSON.parse(req.messages.find((m) => m.role === "user")!.content);
+
+/** A scene file that keeps every rule, for the shot at `index` (0-based) with `text` as its title. */
+export function sceneHtml(index: number, text = SAMPLE_TITLES[index] ?? "", extra = ""): string {
+  const id = `shot-0${index + 1}`;
+  return `<!doctype html>
+<html lang="id"><body>
+  <div data-composition-id="${id}" data-width="1080" data-height="1920">
+    <h1 class="title">${text}</h1>${extra}
+    <style>[data-composition-id="${id}"] .title { font-family: "Plus Jakarta Sans"; }</style>
+    <script>
+      (function () {
+        window.__timelines = window.__timelines || {};
+        const tl = gsap.timeline({ paused: true });
+        tl.fromTo('[data-composition-id="${id}"] .title', { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0);
+        window.__timelines["${id}"] = tl;
+      })();
+    </script>
+  </div>
+</body></html>`;
+}
+
+/** The titles of samplePlan's three shots. */
+export const SAMPLE_TITLES = ["Bunga berbunga?", "Uang tumbuh sendiri", "Mulai dari sekarang"];

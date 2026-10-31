@@ -56,6 +56,7 @@ function stepRig(replies: Parameters<typeof fakeLlm>[0], over: Partial<GenProjec
     return {
       project: store.getGenProject("p1")!, version: null, recipe, step, settings: settingsOf(use, step.with), store,
       log: new DirectorLog(store), director: new Director(llm, new DirectorLog(store), "../generator"),
+      hyperframes: {} as never, jev: {} as never, exec: {} as never, config: {} as never,
       connected: () => false, catalog: async () => [{ name: "data-chart", tags: ["chart"] }], progress: () => {},
     };
   };

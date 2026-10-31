@@ -233,6 +233,105 @@ async function assetCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
+// ---- builds and verdicts ---------------------------------------------------------------
+
+const VERSIONS = "/api/generate/versions";
+const BUILD_DONE = ["BUILT", "FAILED", "CANCELLED"];
+const STEP: Record<string, string> = {
+  author: "Writing the scenes", check: "Checking them", render: "Rendering the video", technical: "Measuring it", creative: "Judging it",
+};
+const SEVERITY = { "must-fix": 0, "should-fix": 1, polish: 2 } as const;
+
+/** A version id as given, or the newest version of the project the text starts. */
+async function versionId(d: Deps, ref: string): Promise<string> {
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(ref)) return ref;
+  const detail = await d.api.get(`${BASE}/${await projectId(d, ref)}`);
+  const newest = (detail.versions as Json[])[0];
+  if (!newest) throw new UsageError("This project has no build yet: sorot gen build <project>");
+  return newest.id;
+}
+
+const where = (f: Json) => [f.shotId, f.fromSec === undefined ? "" : f.toSec === undefined ? `${f.fromSec} s` : `${f.fromSec} to ${f.toSec} s`].filter(Boolean).join(" · ");
+
+/** Both verdicts: worst findings first, each with its shot, time and fix; warnings kept on purpose last. */
+function printVerdicts(d: Deps, verdicts: Json[]): void {
+  for (const kind of ["TECHNICAL", "CREATIVE"]) {
+    const v = verdicts.find((x) => x.kind === kind);
+    if (!v) {
+      d.out(`${kind}: not judged yet`);
+      continue;
+    }
+    const all = v.findings as Json[];
+    d.out(`${kind}: ${v.status}  (judged by ${v.judgedBy})`);
+    const live = all.filter((f) => f.state !== "kept").sort((a, b) => SEVERITY[a.severity as keyof typeof SEVERITY] - SEVERITY[b.severity as keyof typeof SEVERITY]);
+    if (!live.length) d.out("  nothing to fix");
+    for (const f of live) {
+      d.out(`  ${String(f.severity).padEnd(10)} ${where(f)}${where(f) ? "  " : ""}${f.code}  ${f.description}`);
+      if (f.suggestedFix) d.out(`  ${"".padEnd(10)} Fix: ${f.suggestedFix}`);
+    }
+    for (const f of all.filter((x) => x.state === "kept")) d.out(`  kept       ${f.code}${f.shotId ? ` (${f.shotId})` : ""}: ${f.keptReason ?? "no reason given"}`);
+  }
+}
+
+/** Follows a build, printing each step as it starts, until it ends. */
+async function followBuild(d: Deps, id: string): Promise<Json> {
+  let last = "";
+  const deadline = Date.now() + WAIT_MS * 2;
+  for (;;) {
+    const got = await d.api.get(`${VERSIONS}/${id}`);
+    const v = got.version as Json;
+    const line = v.status === "QUEUED" ? "Waiting in the queue…" : `${STEP[v.step] ?? "Building"}… ${v.progress ?? 0}%`;
+    if (!BUILD_DONE.includes(v.status) && line !== last) d.out(line);
+    last = line;
+    if (BUILD_DONE.includes(v.status) || Date.now() > deadline) return got;
+    await d.sleep(d.pollMs);
+  }
+}
+
+async function buildCmd(d: Deps, a: Args): Promise<number> {
+  const id = await projectId(d, need(a, 2, "project"));
+  const { version } = await d.api.post(`${BASE}/${id}/versions`);
+  if (has(a, "no-watch")) {
+    if (!json(d, a, version)) d.out(`Queued version ${version.number}: ${version.id}. Follow it with: sorot gen verdicts ${short(id)}`);
+    return 0;
+  }
+  const done = await followBuild(d, version.id);
+  if (json(d, a, done)) return done.version.status === "BUILT" ? 0 : 1;
+  const v = done.version as Json;
+  if (v.status === "FAILED") {
+    d.err(`The build failed: ${v.errorMessage}. The scenes already written are kept; build again to try once more.`);
+    return 1;
+  }
+  if (v.status === "CANCELLED") {
+    d.err("The build was cancelled.");
+    return 1;
+  }
+  d.out(`Built version ${v.number} (${v.id}) in ${Math.round(Number(v.buildMs ?? 0) / 1000)} s.`);
+  printVerdicts(d, done.verdicts as Json[]);
+  d.out(`Accept it with: sorot gen accept ${short(id)}`);
+  return 0;
+}
+
+async function verdictsCmd(d: Deps, a: Args): Promise<number> {
+  const got = await d.api.get(`${VERSIONS}/${await versionId(d, need(a, 2, "version or project"))}`);
+  if (json(d, a, got)) return 0;
+  d.out(`Version ${got.version.number}: ${got.version.status}`);
+  printVerdicts(d, got.verdicts as Json[]);
+  return 0;
+}
+
+async function cancelCmd(d: Deps, a: Args): Promise<number> {
+  const r = await d.api.post(`${VERSIONS}/${await versionId(d, need(a, 2, "version or project"))}/cancel`);
+  if (!json(d, a, r)) d.out(`Version ${r.version.number}: ${r.version.status}`);
+  return 0;
+}
+
+async function acceptCmd(d: Deps, a: Args): Promise<number> {
+  const r = await d.api.post(`${VERSIONS}/${await versionId(d, need(a, 2, "version or project"))}/accept`);
+  if (!json(d, a, r)) d.out(`Accepted. The project is now ${r.project.status}.`);
+  return 0;
+}
+
 const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   status: statusCmd,
   new: newCmd,
@@ -245,6 +344,10 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   revise: reviseCmd,
   approve: approveCmd,
   asset: assetCmd,
+  build: buildCmd,
+  verdicts: verdictsCmd,
+  cancel: cancelCmd,
+  accept: acceptCmd,
 };
 
 export async function genCmd(d: Deps, a: Args): Promise<number> {

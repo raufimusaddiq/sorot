@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseJson, tool, type ChatMessage, type Llm, type ToolDef } from "../llm";
+import { parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef } from "../llm";
 import type { GenAsset, GenProject, Json } from "../types";
 import type { DirectorLog } from "./events";
+import { shotFile, shotId } from "./composer";
 import { validatePlan, type Plan, type PlanContext } from "./planSchema";
 import type { RecipeStep } from "./recipe";
 
@@ -89,22 +90,82 @@ const TOOLS = {
     decision: { type: "string", enum: ["pick", "approve", "reject"] },
     index: { type: "integer", description: "the storyline number, only for pick" }, reason: str("one clause"),
   }, ["decision", "reason"]),
+  judge: tool("submit_judgement", "Submit your judgement of the finished video.", {
+    criteria: {
+      type: "array", items: {
+        type: "object", required: ["id", "answer", "reason"], properties: {
+          id: str("the criterion's id"), answer: { type: "string", enum: ["yes", "partly", "no"] }, reason: str("one sentence a person can act on"),
+          shotId: { type: "string", description: "the shot it is about, when one shot" }, fromSec: { type: "number" }, toSec: { type: "number" },
+          suggestedFix: str("what to change"),
+        },
+      },
+    },
+    risks: {
+      type: "array", items: {
+        type: "object", required: ["id", "flagged", "reason"], properties: {
+          id: str("the risk's id"), flagged: { type: "boolean" }, reason: str("one sentence"), shotId: { type: "string" }, suggestedFix: { type: "string" },
+        },
+      },
+    },
+  }),
+  scene: tool("submit_scene", "Submit the scene file for this one shot.", {
+    html: str("the complete compositions/shot-NN.html document"),
+  }),
+  repair: tool("submit_repair", "Submit the repaired scene file, and any warning you are keeping on purpose.", {
+    html: str("the complete repaired compositions/shot-NN.html document"),
+    holds: {
+      type: "array", description: "warnings kept on purpose, each with its reason",
+      items: { type: "object", required: ["code", "reason"], properties: { code: { type: "string" }, reason: { type: "string" } } },
+    },
+  }, ["html"]),
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
   plan: "You are the director of a short 2D motion video. Turn the brief and the chosen storyline into a shot-by-shot plan the owner will approve before anything is built. Text on screen is in the project's language. Use only the fonts listed. Use only numbers from the brief; list any other number you need in assumptions.",
   revise: "You are the director of a short 2D motion video. Change the plan as the owner asks. Change only what the request names: every other shot keeps its text, timing and look exactly as it is.",
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
+  judge: "You are a fresh judge of a finished 2D video. You did not make it and know nothing of how it was made. Judge only what the brief, the plan, and what was built (and the pictures, if any) show. Answer every criterion and every risk you are given, honestly: yes only when it clearly holds, no when it clearly doesn't, partly in between. A risk is flagged only when you can point at it. Point at the shot and the moment when you can, and say what to change.",
+  scene: "You are the motion designer of a short 2D video. Write the scene file for the ONE shot you are given, exactly as the approved plan describes it, following the authoring contract below.",
+  repair: "You are the motion designer of a short 2D video. Fix the scene file for the ONE shot you are given so that every finding listed is resolved, changing nothing else, following the authoring contract below. A warning that is intended may be kept: list it in holds with the reason.",
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1 };
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1 };
 /** Output budget by job, as a floor: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000 };
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000 };
+
+export interface JudgeAnswer {
+  criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
+  risks: Array<{ id: string; flagged: boolean; reason: string; shotId?: string; suggestedFix?: string }>;
+}
+
+export interface SceneInput {
+  project: GenProject;
+  step: RecipeStep;
+  plan: Plan;
+  /** 0-based position of the shot in the plan. */
+  index: number;
+  width: number;
+  height: number;
+  /** Paths of the files the scene may use (assets/...). */
+  assets: string[];
+  /** Installed registry blocks the shot uses: name -> its source, as examples to follow. */
+  blocks?: Record<string, string>;
+}
+
+/** The scene's HTML from a call's arguments; a model sometimes wraps it in a markdown fence. */
+function htmlOf(parsed: unknown): { value?: string; errors?: string[] } {
+  const raw = (parsed as { html?: unknown })?.html;
+  if (typeof raw !== "string") return { errors: ['"html" must be the scene file as text'] };
+  const html = raw.replace(/^\s*```(?:html)?\s*\n/i, "").replace(/\n```\s*$/, "").trim();
+  if (html.length < 40 || !html.includes("<")) return { errors: ['"html" must be a complete HTML document'] };
+  if (html.length > 200_000) return { errors: ['"html" is too long: keep the scene under 200 KB'] };
+  return { value: html };
+}
 
 /** Shot ids a plain-words request names ("s03", "shot 3", "shot ke-3", "scene 3"), or none. */
 export function shotsNamed(request: string, plan: Plan): Set<string> {
@@ -126,8 +187,22 @@ export function changedShots(before: Plan, after: Plan): string[] {
 
 export class Director {
   private guide: string | null = null;
+  private contract: string | null = null;
 
   constructor(private readonly llm: Llm, private readonly log: DirectorLog, private readonly generatorDir: string) {}
+
+  /** The model that answers, and the one that looks at pictures (null when none is set up). */
+  get model(): string { return this.llm.model; }
+  get visionModel(): string | null { return this.llm.visionModel; }
+
+  /** generator/prompts/authoring.md: the contract a scene must keep (read once). */
+  private authoring(): string {
+    if (this.contract === null) {
+      const path = join(this.generatorDir, "prompts", "authoring.md");
+      this.contract = existsSync(path) ? readFileSync(path, "utf-8").replace(/<!--[\s\S]*?-->/g, "").trim() : "";
+    }
+    return this.contract;
+  }
 
   /** The part of generator/prompts/story.md that applies to this job (the file is read once). */
   private guidance(kind: Kind): string {
@@ -135,6 +210,7 @@ export class Director {
       const path = join(this.generatorDir, "prompts", "story.md");
       this.guide = existsSync(path) ? readFileSync(path, "utf-8").replace(/<!--[\s\S]*?-->/g, "").trim() : "";
     }
+    if (kind === "scene" || kind === "repair") return this.authoring();
     // story.md has one top-level section per job: each call gets its own.
     const wanted = GUIDANCE_SECTIONS[kind];
     return this.guide.split(/^(?=# )/m).filter((sec) => wanted.some((w) => sec.startsWith(`# ${w}`))).join("\n\n").trim();
@@ -155,20 +231,23 @@ export class Director {
   private async ask<T>(
     project: GenProject, kind: Kind, step: RecipeStep, payload: Record<string, unknown>, task: string,
     validate: (parsed: unknown) => Validated<T>,
+    images: string[] = [],
   ): Promise<T> {
     const def = TOOLS[kind];
     const name = def.function.name;
-    const messages: ChatMessage[] = [
+    const brief = JSON.stringify({ ...payload, task });
+    const messages: ChatInput[] = [
       { role: "system", content: this.system(kind, step) },
-      { role: "user", content: JSON.stringify({ ...payload, task }) },
+      images.length ? withImages(brief, ...images) : { role: "user", content: brief },
     ];
     let problems: string[] = [];
     for (let attempt = 0; attempt < 2; attempt++) {
       let answer = "";
       const reply = await this.log.track(
-        { projectId: project.id, kind, model: this.llm.model, request: messages.map((m) => `${m.role}: ${m.content}`).join("\n\n") },
+        { projectId: project.id, kind, model: images.length ? (this.llm.visionModel ?? this.llm.model) : this.llm.model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
         async () => {
-          const r = await this.llm.chat(messages, { tools: [def], toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.maxTokens, MIN_TOKENS[kind]) });
+          const opts = { tools: [def], toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.maxTokens, MIN_TOKENS[kind]) };
+          const r = images.length ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], opts);
           const call = r.tool_calls?.find((c) => c.function?.name === name);
           const args = call?.function.arguments;
           answer = typeof args === "string" ? args : args ? JSON.stringify(args) : r.content;
@@ -280,6 +359,83 @@ export class Director {
         if (stray.length) return { errors: [`you changed ${stray.join(", ")}, which the request doesn't name; keep those shots exactly as they were`] };
         return { value: { plan: check.plan as Plan, changeSummary: clip(raw.changeSummary, 300), notes: check.notes } };
       },
+    );
+  }
+
+  // ---- scenes ---------------------------------------------------------------
+
+  /** What a scene call knows: the shot, the film around it, the size, the files and fonts it may use. */
+  private sceneBase(input: SceneInput) {
+    const { plan, index } = input;
+    return {
+      shot: plan.shots[index], compositionId: shotId(index), file: shotFile(index), size: { width: input.width, height: input.height },
+      film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, position: index + 1, of: plan.shots.length },
+      assets: input.assets, fonts: plan.look.fonts, blocks: input.blocks ?? {},
+    };
+  }
+
+  /** The scene file for one shot (compositions/shot-NN.html). The checks run in code afterwards. */
+  async scene(input: SceneInput): Promise<string> {
+    const id = shotId(input.index);
+    return this.ask<string>(
+      input.project, "scene", input.step, this.sceneBase(input),
+      `Write ${shotFile(input.index)} for shot ${input.index + 1} of ${input.plan.shots.length} as one complete HTML document, with data-composition-id="${id}".`,
+      (parsed) => htmlOf(parsed),
+    );
+  }
+
+  /** A scene that failed its checks goes back with its own findings; it may keep a warning with a reason. */
+  async repair(input: SceneInput & { html: string; findings: Array<{ code: string; message: string; hint?: string }> }): Promise<{ html: string; holds: Array<{ code: string; reason: string }> }> {
+    return this.ask<{ html: string; holds: Array<{ code: string; reason: string }> }>(
+      input.project, "repair", input.step, { ...this.sceneBase(input), currentHtml: input.html, findings: input.findings },
+      `Repair ${shotFile(input.index)} so that every finding is resolved. Change only what the findings need, and keep the planned text and timeline.`,
+      (parsed) => {
+        const out = htmlOf(parsed);
+        if (out.errors) return { errors: out.errors };
+        const raw = (parsed as { holds?: unknown }).holds;
+        const holds = (Array.isArray(raw) ? raw : []).flatMap((h) => {
+          const o = (typeof h === "object" && h !== null ? h : {}) as Record<string, unknown>;
+          return clip(o.code, 80) && clip(o.reason, 300) ? [{ code: clip(o.code, 80), reason: clip(o.reason, 300) }] : [];
+        });
+        return { value: { html: out.value as string, holds } };
+      },
+    );
+  }
+
+  // ---- judge ----------------------------------------------------------------
+
+  /**
+   * The CREATIVE judge when Jev is off or failing: a call with fresh messages (the brief, the plan
+   * and what was built, never the director's history), optionally with the review sheets as images.
+   * Every criterion and risk asked about must be answered.
+   */
+  async judge(input: {
+    project: GenProject; step: RecipeStep; facts: unknown; criteria: Array<{ id: string; question: string }>;
+    risks: Array<{ id: string; question: string }>; images?: string[];
+  }): Promise<JudgeAnswer> {
+    return this.ask<JudgeAnswer>(
+      input.project, "judge", input.step,
+      { facts: input.facts, criteria: input.criteria, risks: input.risks, pictures: (input.images ?? []).length },
+      "Judge the video: answer each criterion with yes, partly or no and a reason, and say for each risk whether it is flagged.",
+      (parsed) => {
+        const raw = parsed as { criteria?: unknown; risks?: unknown };
+        const list = (v: unknown) => (Array.isArray(v) ? v : []).filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null);
+        const criteria = list(raw.criteria).flatMap((c) => (
+          typeof c.id === "string" && (c.answer === "yes" || c.answer === "partly" || c.answer === "no")
+            ? [{
+              id: c.id, answer: c.answer as "yes" | "partly" | "no", reason: clip(c.reason, 300),
+              ...(clip(c.shotId, 20) ? { shotId: clip(c.shotId, 20) } : {}), ...(typeof c.fromSec === "number" ? { fromSec: c.fromSec } : {}),
+              ...(typeof c.toSec === "number" ? { toSec: c.toSec } : {}), ...(clip(c.suggestedFix, 300) ? { suggestedFix: clip(c.suggestedFix, 300) } : {}),
+            }] : []));
+        const risks = list(raw.risks).flatMap((r) => (typeof r.id === "string" && typeof r.flagged === "boolean"
+          ? [{ id: r.id, flagged: r.flagged, reason: clip(r.reason, 300), ...(clip(r.shotId, 20) ? { shotId: clip(r.shotId, 20) } : {}), ...(clip(r.suggestedFix, 300) ? { suggestedFix: clip(r.suggestedFix, 300) } : {}) }] : []));
+        const missing = [
+          ...input.criteria.filter((c) => !criteria.some((a) => a.id === c.id)).map((c) => c.id),
+          ...input.risks.filter((c) => !risks.some((a) => a.id === c.id)).map((c) => c.id),
+        ];
+        return missing.length ? { errors: [`you didn't answer: ${missing.join(", ")}`] } : { value: { criteria, risks } };
+      },
+      input.images,
     );
   }
 

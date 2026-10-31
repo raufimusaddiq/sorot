@@ -16,22 +16,31 @@ moves.
 ## File shape
 
 ```html
-<template id="shot-03-template">
-  <div data-composition-id="shot-03" data-width="1080" data-height="1920">
-    <!-- the shot's elements -->
-    <style>
-      /* all CSS scoped under [data-composition-id="shot-03"] */
-    </style>
-    <script>
-      window.__timelines = window.__timelines || {};
-      const tl = gsap.timeline({ paused: true });
-      // tweens go here, positioned in seconds from the START OF THIS SHOT
-      window.__timelines["shot-03"] = tl;
-    </script>
-  </div>
-</template>
+<!doctype html>
+<html lang="id">
+  <body>
+    <div data-composition-id="shot-03" data-width="1080" data-height="1920">
+      <!-- the shot's elements -->
+      <style>
+        [data-composition-id="shot-03"] { width: 1080px; height: 1920px; /* ... */ }
+        /* every rule is scoped under [data-composition-id="shot-03"] */
+      </style>
+      <script>
+        (function () {
+          window.__timelines = window.__timelines || {};
+          const tl = gsap.timeline({ paused: true });
+          // tweens go here, positioned in seconds from the START OF THIS SHOT
+          window.__timelines["shot-03"] = tl;
+        })();
+      </script>
+    </div>
+  </body>
+</html>
 ```
 
+- The file is a full HTML document with no `<head>`: GSAP and the fonts are already loaded by the
+  root, so never add `<script src>` or `<link>`. Select elements through the scoped
+  `[data-composition-id="shot-03"] ...` prefix so shots can't touch each other.
 - `data-composition-id` equals the file's shot id (`shot-NN`). `data-width` / `data-height` are
   the format size given in the request. Never change them.
 - **[Sorot]** Do NOT set `data-start` or `data-duration` on the composition root. Sorot sets them

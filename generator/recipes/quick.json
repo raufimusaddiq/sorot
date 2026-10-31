@@ -9,7 +9,7 @@
   "steps": [
     { "use": "storylines", "gate": "owner", "with": { "count": 3, "skipUnderSec": 15 } },
     { "use": "plan", "gate": "owner", "with": { "blocks": true } },
-    { "use": "author", "with": { "repairRounds": 3 } },
+    { "use": "author", "with": { "repairRounds": 3, "concurrency": 3 } },
     { "use": "check", "with": { "warnings": "fix-or-hold" } },
     { "use": "render", "with": { "quality": "draft" } },
     { "use": "technical" },
@@ -17,8 +17,8 @@
       "use": "creative",
       "with": {
         "criteria": [
-          { "id": "opening", "question": "Does the opening of the video hold a stranger's eye in the first 2 seconds?" },
-          { "id": "pace", "question": "Is the pace of the shots comfortable to follow for the length of the video?" }
+          { "id": "opening", "question": "Does `opening` hold a stranger's eye from the very first moment?" },
+          { "id": "pace", "question": "Is the pace of `shots` comfortable to follow?" }
         ]
       }
     },

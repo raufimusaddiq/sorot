@@ -59,6 +59,9 @@ export interface AppConfig {
   tebarEnabled: boolean;
   /** With an LLM: it also writes a video brief and picks its own clip moments (director.ts); false = review only. */
   llmDirector: boolean;
+  /** Vision: a model that can look at images (review frames), used through the same endpoint and key. */
+  llmVision: boolean;
+  llmVisionModel: string;
   /** Jev decision model (TypeSafe System One) as the clip quality gate; off without JEV_API_KEY. */
   jevUrl: string;
   jevModel: string;
@@ -79,6 +82,8 @@ export interface AppConfig {
   hyperframesBin: string;
   /** The generator/ package: example recipes, prompts, fonts. */
   generatorDir: string;
+  /** The vendored GSAP every build loads locally (never from a CDN). */
+  gsapFile: string;
   /** Per-project files (HyperFrames project folders, drafts, exports). */
   genDir: string;
   /** Builds running at once (a build also waits while a clip job is in TRANSCRIBE or RENDER). */
@@ -151,6 +156,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
     jevEnabled: true,
     tebarEnabled: true,
     llmDirector: !/^(0|false|no|off)$/i.test((env.LLM_DIRECTOR ?? "").trim()),
+    llmVision: !/^(0|false|no|off)$/i.test((env.LLM_VISION ?? "").trim()),
+    llmVisionModel: (env.LLM_VISION_MODEL ?? "").trim(),
     jevUrl: (env.JEV_URL ?? "").trim() || "https://api.typesafe.ai/v1/systemone",
     // A pinned version, not the jev-latest alias: the gate's thresholds were set against it.
     jevModel: (env.JEV_MODEL ?? "").trim() || "jev-1.14.0",
@@ -164,6 +171,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     nodePath: (env.NODE_BIN ?? "").trim() || "node",
     hyperframesBin: (env.HYPERFRAMES_BIN ?? "").trim() || "../node_modules/hyperframes/bin/hyperframes.mjs",
     generatorDir: (env.GENERATOR_DIR ?? "").trim() || "../generator",
+    gsapFile: (env.GSAP_FILE ?? "").trim() || "../node_modules/gsap/dist/gsap.min.js",
     genDir: `${dataDir}/generate`,
     genConcurrency: Math.max(1, int(env.GEN_CONCURRENCY, 1)),
     genKeepVersions: Math.max(1, int(env.GEN_KEEP_VERSIONS, 10)),

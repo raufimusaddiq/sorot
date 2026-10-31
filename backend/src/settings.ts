@@ -20,6 +20,7 @@ export const CONNECTIONS: Record<string, Record<string, Field>> = {
   llm: {
     enabled: ["llmEnabled", "bool"], baseUrl: ["llmBaseUrl", "url"], model: ["llmModel", "text"],
     apiKey: ["llmApiKey", "secret"], director: ["llmDirector", "bool"],
+    vision: ["llmVision", "bool"], visionModel: ["llmVisionModel", "text"],
   },
   jev: {
     enabled: ["jevEnabled", "bool"], url: ["jevUrl", "url"], model: ["jevModel", "text"], apiKey: ["jevApiKey", "secret"],

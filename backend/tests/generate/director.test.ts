@@ -275,3 +275,65 @@ describe("director: tool calling", () => {
     expect(seen[0].max_tokens).toBe(40000);
   });
 });
+
+describe("director: scenes", () => {
+  const plan = validatePlan(samplePlan(), planCtx).plan as Plan;
+  const HTML = '<!doctype html><html><body><div data-composition-id="shot-02" data-width="1080" data-height="1920"><h1>Uang tumbuh sendiri</h1></div></body></html>';
+  const input = <T extends object>(extra: T = {} as T) => ({
+    project, step: step({ use: "author" }), plan, index: 1, width: 1080, height: 1920, assets: ["assets/ab-logo.png"], ...extra,
+  });
+
+  test("scene: one call for one shot with the film around it, the authoring contract and the one function to call", async () => {
+    const r = rig([json({ html: HTML })]);
+    expect(await r.director.scene({ ...input(), blocks: { "data-chart": "<div>chart</div>" } })).toBe(HTML);
+    const req = r.requests[0]!;
+    expect(req.tool_choice).toEqual({ type: "function", function: { name: "submit_scene" } });
+    expect(req.tools[0].function.parameters.required).toEqual(["html"]);
+    expect(userOf(req)).toMatchObject({
+      compositionId: "shot-02", file: "compositions/shot-02.html", size: { width: 1080, height: 1920 },
+      shot: { id: "s02" }, film: { title: "Bunga berbunga", position: 2, of: 3 }, assets: ["assets/ab-logo.png"], fonts: ["Plus Jakarta Sans"],
+      blocks: { "data-chart": "<div>chart</div>" },
+    });
+    expect(userOf(req).task).toContain("Write compositions/shot-02.html for shot 2 of 3");
+    expect(systemOf(req)).toContain("Writing one scene");          // the authoring contract
+    expect(systemOf(req)).toContain("submit_scene");
+    expect(systemOf(req)).not.toContain("Offer N storylines");
+    expect(req.max_tokens).toBe(16000);
+  });
+
+  test("a markdown fence around the file is removed; a step prompt is appended; blocks default to none", async () => {
+    const r = rig(["{\"html\": " + JSON.stringify("```html\n" + HTML + "\n```") + "}"]);
+    expect(await r.director.scene(input({ step: step({ use: "author", prompt: { mode: "append", text: "Use big type." } }) }))).toBe(HTML);
+    expect(systemOf(r.requests[0]!)).toContain("Use big type.");
+    expect(userOf(r.requests[0]!).blocks).toEqual({});
+  });
+
+  test.each([
+    ["no html", { html: 5 }, '"html" must be the scene file as text'],
+    ["a stub", { html: "ok" }, "complete HTML document"],
+    ["a huge file", { html: "<div>" + "x".repeat(200_001) }, "under 200 KB"],
+  ])("scene: %s is repaired once, then refused", async (_name, bad, message) => {
+    const r = rig([json(bad), json(bad)]);
+    await expect(r.director.scene(input())).rejects.toThrow(message);
+    expect(r.requests).toHaveLength(2);
+  });
+
+  test("repair: the findings and the current file go in; the new file and the warnings kept on purpose come out", async () => {
+    const r = rig([json({ html: HTML, holds: [{ code: "sweep_static", reason: "a still title card" }, { code: "", reason: "x" }, { code: "no_reason" }, "junk"] })]);
+    const out = await r.director.repair(input({ html: "<div>old</div>", findings: [{ code: "scene_missing_text", message: "missing", hint: "add it" }, { code: "sweep_static", message: "still" }] }));
+    expect(out).toEqual({ html: HTML, holds: [{ code: "sweep_static", reason: "a still title card" }] });
+    const req = r.requests[0]!;
+    expect(req.tool_choice.function.name).toBe("submit_repair");
+    expect(req.tools[0].function.parameters.required).toEqual(["html"]);
+    expect(userOf(req)).toMatchObject({ currentHtml: "<div>old</div>", findings: [{ code: "scene_missing_text", hint: "add it" }, { code: "sweep_static" }] });
+    expect(userOf(req).task).toContain("Repair compositions/shot-02.html");
+    expect(systemOf(req)).toContain("list it in holds");
+  });
+
+  test("repair without holds, and an unusable file", async () => {
+    const r = rig([json({ html: HTML })]);
+    expect((await r.director.repair(input({ html: "x", findings: [] }))).holds).toEqual([]);
+    const bad = rig([json({ html: "no" }), json({ holds: [] })]);
+    await expect(bad.director.repair(input({ html: "x", findings: [] }))).rejects.toThrow("didn't pass the checks");
+  });
+});

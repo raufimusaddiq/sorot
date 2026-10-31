@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEvent, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -250,6 +250,31 @@ export class ApiClient {
 
   async deleteGenerateAsset(assetId: string) {
     return this.request<{ deleted: boolean }>(`/api/generate/assets/${assetId}`, { method: 'DELETE' });
+  }
+
+  async getGenerateEstimate(id: string) {
+    return this.request<GenEstimate>(`/api/generate/projects/${id}/estimate`);
+  }
+
+  async startGenerateBuild(id: string) {
+    return this.request<{ version: GenVersion }>(`/api/generate/projects/${id}/versions`, { method: 'POST' });
+  }
+
+  async getGenerateVersion(id: string) {
+    return this.request<{ version: GenVersion; verdicts: GenVerdict[] }>(`/api/generate/versions/${id}`);
+  }
+
+  async cancelGenerateVersion(id: string) {
+    return this.request<{ version: GenVersion }>(`/api/generate/versions/${id}/cancel`, { method: 'POST' });
+  }
+
+  async acceptGenerateVersion(id: string) {
+    return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/accept`, { method: 'POST' });
+  }
+
+  /** The rendered video of a version, for a <video> element. */
+  generateDraftUrl(versionId: string) {
+    return `${this.baseUrl}/api/generate/versions/${versionId}/draft`;
   }
 
   async getGenerateEvents(id: string, limit = 100) {

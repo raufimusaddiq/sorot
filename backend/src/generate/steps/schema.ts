@@ -74,7 +74,7 @@ export const STEP_SPECS: Record<StepType, StepSpec> = {
     novelty: { t: "obj", fields: { lastN: { t: "int", min: 1, max: 200 } } }, mechanismTest: { t: "bool" } } },
   images: { gates: none, fields: { style: { t: "str", max: 300 }, size: { t: "str", max: 20 } } },
   music: { gates: none, fields: { track: { t: "str", max: 200 }, duckUnderVoiceDb: { t: "num", min: -40, max: 0 } } },
-  author: { gates: none, fields: { require: { t: "strs", maxItems: 20, maxLen: 80 }, repairRounds: { t: "int", min: 0, max: 5 } } },
+  author: { gates: none, fields: { require: { t: "strs", maxItems: 20, maxLen: 80 }, repairRounds: { t: "int", min: 0, max: 5 }, concurrency: { t: "int", min: 1, max: 4 } } },
   check: { gates: none, fields: { warnings: { t: "enum", values: ["fix", "fix-or-hold", "report"] }, rounds: { t: "int", min: 0, max: 5 } } },
   look: { gates: none, fields: { rounds: { t: "int", min: 0, max: 5 }, beatOffsetSec: { t: "num", min: 0, max: 2 }, audit: { t: "bool" } } },
   render: { gates: none, fields: { quality: { t: "enum", values: QUALITIES }, fps: { t: "int", min: 12, max: 60 }, workers: { t: "int", min: 1, max: 16 } } },

@@ -419,6 +419,26 @@ title line, and beat shares. Each request ends with a `task` field restating the
 output format (Sorot's rule for reasoning models). The registry catalog is fetched once per
 pinned version (`catalog --json`), cached, and passed as a short list of block names and tags.
 
+**S4 result (2026-10-31, `deepseek-v4-1-flash` through kenari.id, real HyperFrames 0.8.223)**: the
+real `author` and `check` steps wrote 10 varied 3 s shots (a coin and sprout, a counting number, a
+progress ring, a coin stack, looping arrows, a line chart, two bars, a bracket, a clock, an ending).
+
+- **10 of 10 scenes passed** plan-lock, `lint` and `check` (target: at least 8 of 10 within 3
+  rounds). 8 were right on the first call; 2 repair calls fixed the rest; no call failed.
+- The rendered 30 s draft is exactly 30.000 s. The review sheet shows the planned text in each shot
+  and an animation that matches each shot's description (checked by eye on `review-beats-1.jpg`).
+- The only finding left was HyperFrames' `film_silent` warning (no sound bed). The check step now
+  treats it as the plan's own doing when the plan has no sound, so no repair call is spent on it.
+- `snapshot --review` writes `review-beats-N.jpg`, `review-phone-N.jpg` and `review-seam-NN.jpg`
+  (not a `contact-sheet.jpg`, which is what `--at` makes); the creative step uses page 1 of the
+  first two and keeps them as `sheets/review-beats.jpg` and `review-phone.jpg`.
+- **Speed is the weak point.** Writing the 10 scenes took 1,170 s (about 2 min of reasoning-model
+  time per shot, more with a repair); `check` 36 s; the draft render 36 s. A 10-shot 30 s video
+  therefore takes about 20 min, over SC-002's 10 min. Scenes don't depend on each other, so
+  `author.concurrency` (1 to 4; the `quick` example asks for 3) writes several at once; the unit
+  test shows three in flight. Fewer, longer shots, or a faster non-reasoning scene model, are the
+  other levers. To re-measure with concurrency 3 once a build is run in the UI.
+
 ---
 
 # Part 2: Custom pipelines
