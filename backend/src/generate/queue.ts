@@ -74,6 +74,8 @@ export class BuildQueue {
         if (id === undefined) break;   // cancelled while it waited
         this.start(id);
       }
+    } catch {
+      // `blocked` could not look (the database is closed: shutdown); stop waiting rather than throw from a timer
     } finally {
       this.pumping = false;
     }

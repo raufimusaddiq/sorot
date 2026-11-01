@@ -57,6 +57,13 @@ describe("build queue", () => {
     await r.queue.idle();
   });
 
+  test("a queue whose blocked check throws (the database closed under it) stops waiting quietly", async () => {
+    const r = rig({ blocked: () => { throw new Error("Cannot use a closed database"); } });
+    r.queue.enqueue("a");
+    await sleep(5);
+    expect(r.log).toEqual([]);
+  });
+
   test("a build waits while a clip job is in a GPU stage", async () => {
     let busy = true;
     const r = rig({ blocked: () => busy });
