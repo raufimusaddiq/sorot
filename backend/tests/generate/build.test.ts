@@ -54,7 +54,7 @@ function rig(replies: Parameters<typeof fakeLlm>[0], handlers: Record<string, Hf
   const fake = fakeHyperframes(handlers);
   const { llm, requests } = fakeLlm(replies);
   const progress: number[] = [];
-  const ctxFor = (use: "author" | "check" | "render", settings: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
+  const ctxFor = (use: "author" | "check" | "render" | "export", settings: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => {
     const step = { ...recipe.steps.find((s) => s.use === use)!, with: { ...recipe.steps.find((s) => s.use === use)!.with, ...settings } };
     return {
       project: store.getGenProject("p1")!, version: store.getGenVersion("v1")!, recipe, step, settings: settingsOf(use, step.with), store,
@@ -423,5 +423,77 @@ describe("render step", () => {
     const failed = rig([], { render: () => ({ exitCode: 1, stdout: "", stderr: "chrome crashed", timedOut: false, aborted: false }) });
     await expect(STEPS.render.run(failed.ctxFor("render"))).rejects.toThrow("chrome crashed");
     expect(failed.store.getGenVersion("v1")!.draftPath).toBeNull();
+  });
+});
+
+describe("export step", () => {
+  const verdict = (r: ReturnType<typeof rig>, status: "PASS" | "REVIEW" | "FAIL") =>
+    r.store.saveGenVerdict({ id: "vd1", versionId: "v1", kind: "TECHNICAL", status, findings: "[]", judgedBy: "code", inputs: null, createdAt: T });
+  const exported = (r: ReturnType<typeof rig>) => join(r.config.genDir, "p1", "exports", "v1.mp4");
+  const COPY = json({ title: "Bunga berbunga", description: "Uang tumbuh sendiri, mulai sekarang." });
+
+  test("a rerender writes the video to the project's exports folder and a row with the director's title and description", async () => {
+    const r = rig([COPY]);
+    mkdirSync(r.dir, { recursive: true });
+    verdict(r, "PASS");
+    const result = await STEPS.export.run(r.ctxFor("export"));
+    const row = r.store.getGenExportForVersion("v1")!;
+    expect(result).toEqual({ status: "done", outputRef: row.id });
+    expect(rendered(r)).toEqual(["render", r.dir, "-o", exported(r), "-q", "delivery", "-f", "30", "--quiet", "-w", "2", "--gpu"]);
+    expect(row).toMatchObject({ projectId: "p1", versionId: "v1", path: exported(r), format: "9:16", durationSec: 30, title: "Bunga berbunga", description: "Uang tumbuh sendiri, mulai sekarang." });
+    expect(readFileSync(exported(r), "utf-8")).toBe("mp4-bytes");
+  });
+  const rendered = (r: ReturnType<typeof rig>) => r.fake.calls.find((c) => c[0] === "render")!;
+
+  test("mode copy reuses a delivery render without rendering again; a draft render is rendered anew", async () => {
+    const r = rig([COPY, COPY]);
+    mkdirSync(r.dir, { recursive: true });
+    verdict(r, "REVIEW");
+    writeFileSync(join(r.dir, "final.mp4"), "final-bytes");
+    r.store.updateGenVersion("v1", { renderKind: "final", draftPath: join(r.dir, "final.mp4") });
+    await STEPS.export.run(r.ctxFor("export", { mode: "copy" }));
+    expect(r.fake.calls.some((c) => c[0] === "render")).toBeFalse();
+    expect(readFileSync(exported(r), "utf-8")).toBe("final-bytes");
+    r.store.updateGenVersion("v1", { renderKind: "draft" });
+    await STEPS.export.run(r.ctxFor("export", { mode: "copy" }));
+    expect(rendered(r)).toBeDefined();
+  });
+
+  test("the owner's title and description are used as typed (no director call); exporting again updates the same row", async () => {
+    const r = rig([]);
+    mkdirSync(r.dir, { recursive: true });
+    verdict(r, "PASS");
+    const first = await STEPS.export.run(r.ctxFor("export", { title: " Judul saya ", description: "Isi saya" }));
+    const again = await STEPS.export.run(r.ctxFor("export", { title: "Judul baru", description: "Isi saya" }));
+    expect(again.outputRef).toBe(first.outputRef);
+    expect(r.store.listGenExports()).toHaveLength(1);
+    expect(r.store.getGenExportForVersion("v1")).toMatchObject({ title: "Judul baru", description: "Isi saya" });
+    expect(r.requests).toHaveLength(0);
+  });
+
+  test("copy the director can't write falls back to the plan's title and message", async () => {
+    const r = rig([json({ title: "", description: "" }), json({ title: "", description: "" })]);
+    mkdirSync(r.dir, { recursive: true });
+    verdict(r, "PASS");
+    await STEPS.export.run(r.ctxFor("export"));
+    expect(r.store.getGenExportForVersion("v1")).toMatchObject({ title: r.plan.title, description: r.plan.message });
+  });
+
+  test.each([
+    ["a TECHNICAL FAIL", "FAIL", "TECHNICAL failed"],
+    ["no TECHNICAL verdict yet", null, "no TECHNICAL verdict"],
+  ] as const)("%s refuses to export", async (_name, status, message) => {
+    const r = rig([]);
+    mkdirSync(r.dir, { recursive: true });
+    if (status) verdict(r, status);
+    await expect(STEPS.export.run(r.ctxFor("export"))).rejects.toThrow(message);
+    expect(r.store.listGenExports()).toHaveLength(0);
+  });
+
+  test("a render that leaves no video is an error", async () => {
+    const r = rig([], { render: () => procOk() });
+    mkdirSync(r.dir, { recursive: true });
+    verdict(r, "PASS");
+    await expect(STEPS.export.run(r.ctxFor("export"))).rejects.toThrow("left no video");
   });
 });

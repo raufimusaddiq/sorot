@@ -209,10 +209,11 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
           {notice && <p role="status" className="text-sm font-semibold">{notice}</p>}
 
           {approved && (
-            <BuildPanel api={api} project={p} version={newest} verdicts={verdicts} estimate={estimate} busy={busy} shots={currentPlan?.plan.shots.map((s) => s.id) ?? []}
+            <BuildPanel api={api} project={p} version={newest} verdicts={verdicts} estimate={estimate} busy={busy} exported={detail?.exports.find((x) => x.versionId === newest?.id) ?? null} shots={currentPlan?.plan.shots.map((s) => s.id) ?? []}
               onBuild={() => act(() => api.startGenerateBuild(p.id))}
               onCancel={(id) => act(() => api.cancelGenerateVersion(id))}
               onAccept={(id) => act(() => api.acceptGenerateVersion(id))}
+              onExport={(id) => act(async () => { await api.exportGenerateVersion(id); })}
               onFix={(id, body) => act(async () => {
                 const r = await api.fixGenerateVersion(id, body);
                 setNotice(r.needsApproval ? `${r.summary}. The plan's words or timing changed, so it needs your approval again before anything is built.` : null);

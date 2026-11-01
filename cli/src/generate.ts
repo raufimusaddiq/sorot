@@ -1,7 +1,7 @@
 // `sorot gen`: 2D videos from a brief (Generate). Same API as the studio's Generate window.
 // Every command takes --json, so outside agents and schedulers can drive it.
 
-import { basename } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { Json } from "./api";
 import { has, num, str, UsageError, type Args } from "./args";
 import { json, need, type Deps } from "./commands";
@@ -336,6 +336,27 @@ async function fixCmd(d: Deps, a: Args): Promise<number> {
   return watchBuild(d, a, r.version.projectId, r.version);
 }
 
+/** The finished video of a version: rendered at full quality into the Library, and saved to --out when given. */
+async function exportCmd(d: Deps, a: Args): Promise<number> {
+  const vid = await versionId(d, need(a, 2, "version or project"));
+  const body: Json = {};
+  if (str(a, "title")) body.title = str(a, "title");
+  if (str(a, "description")) body.description = str(a, "description");
+  const { export: made } = await d.api.post(`${VERSIONS}/${vid}/export`, body);
+  const dir = str(a, "out") ? resolve(d.cwd, str(a, "out")!) : null;
+  let saved: string | null = null;
+  if (dir) {
+    d.fs.mkdir(dir);
+    saved = join(dir, `${short(made.id)}.mp4`);
+    await d.fs.write(saved, await d.api.raw(`/api/generate/exports/${made.id}/file?download=1`));
+  }
+  if (json(d, a, { ...made, ...(saved ? { savedTo: saved } : {}) })) return 0;
+  d.out(`Exported "${made.title}" (${made.durationSec} s, ${made.format}): ${made.id}`);
+  if (saved) d.out(saved);
+  d.out(`Post it with: sorot publish --generated ${made.id} --to <accounts>`);
+  return 0;
+}
+
 /** Makes the plan a version was built from the current plan again. */
 async function restoreCmd(d: Deps, a: Args): Promise<number> {
   const r = await d.api.post(`${VERSIONS}/${await versionId(d, need(a, 2, "version or project"))}/restore`);
@@ -381,6 +402,7 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   accept: acceptCmd,
   fix: fixCmd,
   restore: restoreCmd,
+  export: exportCmd,
 };
 
 export async function genCmd(d: Deps, a: Args): Promise<number> {

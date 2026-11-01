@@ -176,7 +176,8 @@ CREATE TABLE IF NOT EXISTS social_post (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_synced_at TEXT,
-    profile_id TEXT
+    profile_id TEXT,
+    subject_kind TEXT NOT NULL DEFAULT 'clip'
 );
 
 -- Generate (2D videos from a brief): see specs/001-2d-video-generator/data-model.md.
@@ -398,6 +399,8 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["clip", "gate", "TEXT"],
   // Tebar workspaces (2026-10-28): the profile a post was made in (null = the default)
   ["social_post", "profile_id", "TEXT"],
+  // Generate (2026-11): what clip_id holds, a clip or a generated export
+  ["social_post", "subject_kind", "TEXT NOT NULL DEFAULT 'clip'"],
 ];
 
 // Fills a column just added to an old database, where the value can be recovered.

@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import type { ApiClient } from '@/lib/api';
-import type { GenEstimate, GenFixBody, GenProject, GenVerdict, GenVersion } from '@/types';
+import type { GenEstimate, GenExport, GenFixBody, GenProject, GenVerdict, GenVersion } from '@/types';
 import { VerdictPanel } from './VerdictPanel';
 
 const STEP: Record<string, string> = {
@@ -17,7 +17,7 @@ export const aboutTime = (sec: number) => `about ${sec < 90 ? `${sec} s` : `${Ma
 
 const field = 'field w-full px-2 py-1.5';
 
-export function BuildPanel({ api, project, version, verdicts, estimate, busy, shots, onBuild, onCancel, onAccept, onFix }: {
+export function BuildPanel({ api, project, version, verdicts, estimate, busy, shots, exported, onBuild, onCancel, onAccept, onFix, onExport }: {
   api: ApiClient;
   project: GenProject;
   /** The newest version, if any. */
@@ -27,11 +27,15 @@ export function BuildPanel({ api, project, version, verdicts, estimate, busy, sh
   busy: boolean;
   /** The plan's shot ids, for aiming a note at one shot. */
   shots: string[];
+  /** The export of this version, once made. */
+  exported: GenExport | null;
   onBuild: () => void;
   onCancel: (versionId: string) => void;
   onAccept: (versionId: string) => void;
   /** Ask the director to fix findings, or to change something, in a new version. */
   onFix: (versionId: string, body: GenFixBody) => void;
+  /** Render the finished video for the Library. */
+  onExport: (versionId: string) => void;
 }) {
   const [note, setNote] = useState('');
   const [shot, setShot] = useState('');
@@ -91,9 +95,16 @@ export function BuildPanel({ api, project, version, verdicts, estimate, busy, sh
               <button className="btn" disabled={busy || !note.trim()} onClick={() => { onFix(version.id, { note: note.trim(), ...(shot ? { shotId: shot } : {}) }); setNote(''); }}>Fix with this note</button>
             </div>
           </div>
-          {accepted ? (
-            <p className="text-sm font-semibold" role="status">Accepted ✓</p>
+          {accepted && <p className="text-sm font-semibold" role="status">Accepted ✓</p>}
+          {accepted && (exported ? (
+            <p className="text-sm" role="status">Exported ✓ <a className="underline" href={api.generateExportUrl(exported.id, true)} download>Download</a> · find it in Library → Generated to publish it.</p>
           ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button className="btn btn-primary" disabled={busy || technicalFails} onClick={() => onExport(version.id)}>Export the video</button>
+              <span className="text-xs text-subtle">Renders it at full quality; this can take a few minutes.</span>
+            </div>
+          ))}
+          {accepted ? null : (
             <div className="flex flex-wrap items-center gap-2">
               <button className="btn btn-primary" disabled={busy || technicalFails} onClick={() => onAccept(version.id)}>Accept this version</button>
               {technicalFails && <span className="text-xs text-error">TECHNICAL failed: fix the must-fix findings first.</span>}

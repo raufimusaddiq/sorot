@@ -388,6 +388,21 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   });
   router.on("POST", "/api/generate/versions/:id/restore", (c) => ok({ project: projectView(generate.restoreVersion(c.params.id as string)) }));
   router.on("POST", "/api/generate/versions/:id/accept", (c) => ok({ project: projectView(generate.acceptVersion(c.params.id as string)) }));
+  router.on("POST", "/api/generate/versions/:id/export", async (c) => {
+    const b = await c.body();
+    return ok({ export: await generate.exportVersion(c.params.id as string, { title: strArg(b, "title") || undefined, description: strArg(b, "description") || undefined }) }, 201);
+  });
+  router.on("GET", "/api/generate/exports", () => ok({
+    exports: generate.listExports(),
+  }));
+  router.on("GET", "/api/generate/exports/:id/file", (c) =>
+    serveFile(c.req, generate.exportFile(c.params.id as string), c.url.searchParams.get("download") === "1" ? { contentType: "application/octet-stream", attachment: true } : { contentType: "video/mp4" }));
+  router.on("POST", "/api/generate/exports/:id/publish/draft", async (c) => {
+    const { accountIds: ids } = await c.body();
+    return ok(await publisher.draft(c.params.id as string, Array.isArray(ids) ? ids.map(String) : [], "generated"));
+  });
+  router.on("POST", "/api/generate/exports/:id/publish", async (c) => ok({ post: await publisher.publish(c.params.id as string, await c.body(), "generated") }));
+  router.on("GET", "/api/generate/exports/:id/posts", (c) => ok({ posts: publisher.posts(c.params.id as string, "generated") }));
   router.on("GET", "/api/generate/versions/:id/draft", (c) => serveFile(c.req, generate.draftFile(c.params.id as string), { contentType: "video/mp4" }));
   router.on("GET", "/api/generate/versions/:id/sheets/:name", (c) =>
     serveFile(c.req, generate.sheetFile(c.params.id as string, c.params.name as string), { contentType: "image/jpeg" }));

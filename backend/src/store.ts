@@ -51,7 +51,7 @@ const COLUMNS = {
   ],
   social_post: [
     "id", "clip_id", "provider", "provider_post_id", "status", "scheduled_at", "idempotency_key",
-    "request", "targets", "error_message", "created_at", "updated_at", "last_synced_at", "profile_id",
+    "request", "targets", "error_message", "created_at", "updated_at", "last_synced_at", "profile_id", "subject_kind",
   ],
 } as Record<Table, string[]>;
 
@@ -349,6 +349,7 @@ export class Store {
   deleteGenAsset(id: string) { this.db.query("DELETE FROM gen_asset WHERE id = ?").run(id); }
 
   saveGenExport(e: GenExport) { return this.upsert("gen_export", e); }
+  getGenExportForVersion(versionId: string) { return this.one<GenExport>("SELECT * FROM gen_export WHERE version_id = ?", versionId); }
   getGenExport(id: string) { return this.one<GenExport>("SELECT * FROM gen_export WHERE id = ?", id); }
   genExportsForProject(projectId: string) {
     return this.all<GenExport>("SELECT * FROM gen_export WHERE project_id = ? ORDER BY created_at DESC", projectId);

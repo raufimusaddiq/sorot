@@ -89,12 +89,16 @@ async function privacy(d: Deps, a: Args, t: Json): Promise<string> {
   return options[n - 1]!;
 }
 
+/** Where a clip's, or (--generated) a generated export's, publishing routes live. */
+const subjectPath = (a: Args, id: string) => (has(a, "generated") ? `/api/generate/exports/${id}` : `/api/clips/${id}`);
+
 /**
- * sorot publish <clip> [--to …]: pick accounts (asked on a terminal), get the
+ * sorot publish <clip> | --generated <export> [--to …]: pick accounts (asked on a terminal), get the
  * copy drafted and checked, make the owner's choices, confirm, post.
  */
 async function publishCmd(d: Deps, a: Args): Promise<number> {
-  const clipId = need(a, 1, "clip id");
+  const clipId = str(a, "generated") ?? need(a, 1, "clip id");
+  const base = subjectPath(a, clipId);
   const accounts = await tebarAccounts(d);
   const to = str(a, "to");
   if (!to && !d.isTTY) throw new UsageError("Pick accounts with --to <id|name,…> (sorot accounts lists them)");
@@ -102,7 +106,7 @@ async function publishCmd(d: Deps, a: Args): Promise<number> {
   if (workspaces(chosen).length > 1) throw new UsageError("Pick accounts from one Tebar workspace: a post goes to one workspace at a time");
 
   d.out("Writing the copy…");
-  const draft = await d.api.post(`/api/clips/${clipId}/publish/draft`, { accountIds: chosen.map((x) => x.id) });
+  const draft = await d.api.post(`${base}/publish/draft`, { accountIds: chosen.map((x) => x.id) });
   const targets = draft.targets as Json[];
   for (const t of targets) {
     d.out(`\n${t.name} · ${t.platform}${t.title ? ` · "${t.title}"` : ""}  (copy by ${t.copyBy === "llm" ? "the LLM" : "template"})`);
@@ -142,9 +146,9 @@ async function publishCmd(d: Deps, a: Args): Promise<number> {
       return 1;
     }
   }
-  const { post } = await d.api.post(`/api/clips/${clipId}/publish`, body);
+  const { post } = await d.api.post(`${base}/publish`, body);
   if (json(d, a, post)) return 0;
-  d.out(`\n${post.status}: post ${post.id}\nFollow it: sorot posts ${clipId}`);
+  d.out(`\n${post.status}: post ${post.id}\nFollow it: sorot posts ${has(a, "generated") ? "--generated " : ""}${clipId}`);
   return 0;
 }
 
@@ -167,7 +171,7 @@ async function postsCmd(d: Deps, a: Args): Promise<number> {
     if (!json(d, a, post)) printPosts(d, [post]);
     return 0;
   }
-  const { posts } = await d.api.get(`/api/clips/${need(a, 1, "clip id")}/posts`);
+  const { posts } = await d.api.get(`${subjectPath(a, str(a, "generated") ?? need(a, 1, "clip id"))}/posts`);
   if (!json(d, a, posts)) printPosts(d, posts as Json[]);
   return 0;
 }

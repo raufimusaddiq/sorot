@@ -41,6 +41,23 @@ describe("accounts", () => {
   });
 });
 
+describe("publish a generated video", () => {
+  test("--generated posts an export through its own routes; its posts are listed the same way", async () => {
+    const h = harness({
+      "GET /api/social/accounts": { enabled: true, accounts: ACCOUNTS },
+      "POST /api/generate/exports/ex1/publish/draft": (b: any) => ({ clip: { id: "ex1", gateVerdict: "PASS", gateReasons: [] }, copyCheckedBy: null,
+        targets: b.accountIds.map((id: string) => target(id, "tiktok")) }),
+      "POST /api/generate/exports/ex1/publish": (b: any) => ({ post: { id: "post-7", status: "PUBLISHING", body: b } }),
+      "GET /api/generate/exports/ex1/posts": { posts: [{ id: "post-7", status: "PUBLISHED", createdAt: "2026-10-28T10:00:00.000Z", targets: "[]" }] },
+    });
+    expect(await h.run("publish", "--generated", "ex1", "--to", "tt", "--draft", "--yes")).toBe(0);
+    expect(h.requests.findLast((r) => r.path === "/api/generate/exports/ex1/publish")!.body).toMatchObject({ targets: [{ accountId: "tt", postMode: "draft" }] });
+    expect(h.text()).toContain("Follow it: sorot posts --generated ex1");
+    expect(await h.run("posts", "--generated", "ex1")).toBe(0);
+    expect(h.out.at(-1)).toContain("post-7");
+  });
+});
+
 describe("publish in a script (flags)", () => {
   test("every choice from flags: exact body, never a default for privacy or made-for-kids", async () => {
     const h = tebar();

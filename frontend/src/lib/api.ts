@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -280,6 +280,19 @@ export class ApiClient {
     return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/restore`, { method: 'POST' });
   }
 
+  async exportGenerateVersion(versionId: string, body: { title?: string; description?: string } = {}) {
+    return this.request<{ export: GenExport }>(`/api/generate/versions/${versionId}/export`, { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async generateExports() {
+    return this.request<{ exports: GenExport[] }>('/api/generate/exports');
+  }
+
+  /** An exported video, for a <video> element or (download) a link. */
+  generateExportUrl(exportId: string, download = false) {
+    return `${this.baseUrl}/api/generate/exports/${exportId}/file${download ? '?download=1' : ''}`;
+  }
+
   /** The rendered video of a version, for a <video> element. */
   generateDraftUrl(versionId: string) {
     return `${this.baseUrl}/api/generate/versions/${versionId}/draft`;
@@ -295,8 +308,13 @@ export class ApiClient {
     return this.request<{ enabled: boolean; accounts: SocialAccount[] }>('/api/social/accounts');
   }
 
-  async publishDraft(clipId: string, accountIds: string[]) {
-    return this.request<PublishDraft>(`/api/clips/${clipId}/publish/draft`, { method: 'POST', body: JSON.stringify({ accountIds }) });
+  /** Where a clip's or a generated export's publishing routes live. */
+  private subjectPath(id: string, kind: 'clip' | 'generated') {
+    return kind === 'clip' ? `/api/clips/${id}` : `/api/generate/exports/${id}`;
+  }
+
+  async publishDraft(clipId: string, accountIds: string[], kind: 'clip' | 'generated' = 'clip') {
+    return this.request<PublishDraft>(`${this.subjectPath(clipId, kind)}/publish/draft`, { method: 'POST', body: JSON.stringify({ accountIds }) });
   }
 
   async publish(clipId: string, body: {
@@ -304,12 +322,12 @@ export class ApiClient {
       accountId: string; content: string; title?: string; madeForKids?: boolean; privacyLevel?: string; postMode?: 'direct' | 'draft';
     }>;
     scheduledAt?: string; confirmReview?: boolean; override?: boolean;
-  }) {
-    return this.request<{ post: SocialPost }>(`/api/clips/${clipId}/publish`, { method: 'POST', body: JSON.stringify(body) });
+  }, kind: 'clip' | 'generated' = 'clip') {
+    return this.request<{ post: SocialPost }>(`${this.subjectPath(clipId, kind)}/publish`, { method: 'POST', body: JSON.stringify(body) });
   }
 
-  async clipPosts(clipId: string) {
-    return this.request<{ posts: SocialPost[] }>(`/api/clips/${clipId}/posts`);
+  async clipPosts(clipId: string, kind: 'clip' | 'generated' = 'clip') {
+    return this.request<{ posts: SocialPost[] }>(`${this.subjectPath(clipId, kind)}/posts`);
   }
 
   async refreshPost(postId: string) {
