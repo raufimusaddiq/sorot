@@ -5,6 +5,7 @@
 // once — no restart. API keys are never sent back: only whether one is set
 // and its last four characters.
 
+import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import type { AppConfig } from "./config";
 import { HttpError } from "./http";
@@ -16,7 +17,7 @@ import type { Store } from "./store";
 import type { Tebar } from "./tebar";
 import type { Json } from "./types";
 
-type Kind = "url" | "text" | "secret" | "bool" | "engine" | "voices" | "commands";
+type Kind = "url" | "text" | "secret" | "bool" | "engine" | "voices" | "commands" | "sources";
 type Field = [configKey: keyof AppConfig, kind: Kind];
 
 export const CONNECTIONS: Record<string, Record<string, Field>> = {
@@ -40,6 +41,7 @@ export const CONNECTIONS: Record<string, Record<string, Field>> = {
     apiKey: ["voiceApiKey", "secret"], voices: ["voiceVoices", "voices"],
   },
   commands: { commands: ["commands", "commands"] },
+  data: { sources: ["dataSources", "sources"] },
 };
 
 export const mask = (key: string) => (key ? `••••${key.length >= 8 ? key.slice(-4) : ""}` : "");
@@ -94,6 +96,7 @@ export class ConnectionSettings {
       image: c.imageEnabled && !!c.imageBaseUrl && !!c.imageModel && !!c.imageApiKey,
       voice: (this.clients.narrator?.engines.length ?? 0) > 0,
       commands: c.commandsEnabled && c.commands.length > 0,
+      data: c.dataSources.length > 0,
     };
     return Object.fromEntries(Object.entries(CONNECTIONS).map(([conn, fields]) => {
       const out: Json = { active: active[conn], saved: [] as string[] };
@@ -154,6 +157,7 @@ export class ConnectionSettings {
         if (!this.clients.narrator?.engines.length) return done({ ok: false, error: "Not configured: pick an engine and add its key or URL" });
         return done({ ok: true, detail: await this.clients.narrator.ping(join(this.config.dataDir, "voice-test")) });
       }
+      if (conn === "data") return done(testSources(this.config.dataSources));
       if (conn === "commands") {
         const n = this.config.commands.length;
         return !this.config.commandsEnabled ? done({ ok: false, error: "Custom commands are off on this install" }) : n ? done({ ok: true, detail: `${n} command${n > 1 ? "s" : ""}` }) : done({ ok: false, error: "No commands registered" });
@@ -170,7 +174,37 @@ export class ConnectionSettings {
 
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 
+/** Opens every source read-only and counts its tables, so a wrong path shows up here and not in the middle of a research run. */
+function testSources(sources: AppConfig["dataSources"]): Omit<TestResult, "ms"> {
+  if (!sources.length) return { ok: false, error: "No data sources registered" };
+  const lines: string[] = [];
+  for (const s of sources) {
+    try {
+      const db = new Database(s.path, { readonly: true });
+      const n = (db.query("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'").get() as { n: number }).n;
+      db.close();
+      lines.push(`${s.name}: ${n} table${n === 1 ? "" : "s"}`);
+    } catch (e) {
+      return { ok: false, error: `${s.name} can't be opened: ${(e as Error).message}` };
+    }
+  }
+  return { ok: true, detail: lines.join(", ") };
+}
+
 function validate(kind: Kind, value: unknown, name: string): unknown {
+  if (kind === "sources") {
+    if (!Array.isArray(value) || value.length > 20) throw new HttpError(400, `${name} must be a list of at most 20 data sources`);
+    const names = new Set<string>();
+    return value.map((s, i) => {
+      const o = (typeof s === "object" && s !== null ? s : {}) as Record<string, unknown>;
+      if (typeof o.name !== "string" || !SLUG.test(o.name)) throw new HttpError(400, `sources[${i}].name: lowercase letters, digits, dashes and underscores`);
+      if (names.has(o.name)) throw new HttpError(400, `sources[${i}].name: ${o.name} is listed twice`);
+      names.add(o.name);
+      if (o.kind !== "sqlite") throw new HttpError(400, `sources[${i}].kind: only "sqlite" is supported`);
+      if (typeof o.path !== "string" || !o.path.trim() || o.path.length > 500) throw new HttpError(400, `sources[${i}].path: give the path of the SQLite file`);
+      return { name: o.name, kind: "sqlite", path: o.path.trim() };
+    });
+  }
   if (kind === "voices") {
     if (typeof value !== "object" || value === null || Array.isArray(value)) throw new HttpError(400, `${name} must map a language to a voice id`);
     const entries = Object.entries(value as Record<string, unknown>);

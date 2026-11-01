@@ -10,11 +10,13 @@ import { readFindings, saveFindings, type NewFinding } from "../../src/generate/
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import {
-  audioFindings, fpsOf, outputFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, verdictOf, type Probe,
+  audioFindings, contentFindings, forbiddenNumberFindings, fpsOf, outputFindings, sourcedNumberFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, verdictOf, type Probe,
 } from "../../src/generate/technical";
 import type { ExecFn } from "../../src/runner";
 import { Store } from "../../src/store";
-import { fakeLlm, procOk, quickRecipe, samplePlan } from "../helpers";
+import { JevError } from "../../src/jev";
+import { Llm } from "../../src/llm";
+import { fakeJev, fakeLlm, noulA, procOk, quickRecipe, samplePlan } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const plan = (over: Record<string, unknown> = {}) => validatePlan(samplePlan(over), {
@@ -255,5 +257,98 @@ describe("technical step", () => {
     await STEPS.technical.run(r.ctx);
     expect(r.store.genVerdictsForVersion("v1")).toHaveLength(1);
     expect(r.verdict().status).toBe("FAIL");
+  });
+
+  // ---- numbers and content rules ----
+
+  const withTexts = (...titles: string[]) => plan({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, text: [{ role: "title", value: titles[i] ?? s.text[0].value }] })) });
+  const codes = (found: NewFinding[]) => found.map((f) => [f.code, f.shotId]);
+
+  test("sourcedNumbers: a number the brief or a verified fact does not state is must-fix, in any spelling", () => {
+    const p = withTexts("Bunga 5,75% per tahun", "Naik 2 kali lipat", "Mulai dari sekarang");
+    const allowed = ["Jelaskan bunga", "Bunga acuan lima koma tujuh lima persen"];
+    expect(codes(sourcedNumberFindings(p, allowed))).toEqual([["number_unsourced", "s02"]]);
+    expect(sourcedNumberFindings(p, allowed)[0]).toMatchObject({ severity: "must-fix", description: 'Shot s02 shows "2", which no verified fact states.' });
+    expect(sourcedNumberFindings(p, [...allowed, "dua kali"])).toEqual([]);
+  });
+
+  test("forbiddenNumbers: without the flag nothing is checked; `true` allows only the brief's own numbers; a list forbids exactly those", () => {
+    const p = withTexts("Bunga 5,75% dan 30 detik", "Kurs 16.000", "Selesai");
+    expect(forbiddenNumberFindings(p, undefined, "30 detik")).toEqual([]);
+    expect(forbiddenNumberFindings(p, false, "30 detik")).toEqual([]);
+    expect(forbiddenNumberFindings(p, null, "30 detik")).toEqual([]);
+    expect(codes(forbiddenNumberFindings(p, true, "tentang 30 detik"))).toEqual([["number_forbidden", "s01"], ["number_forbidden", "s02"]]);
+    expect(forbiddenNumberFindings(p, true, "tentang 30 detik")[0]!.description).toContain('"5,75%"');
+    const listed = forbiddenNumberFindings(p, ["16.000", "lima koma tujuh lima persen", 3], "x");
+    expect(codes(listed)).toEqual([["number_forbidden", "s01"], ["number_forbidden", "s02"]]);
+    expect(listed[1]!.description).toContain("must not appear");
+  });
+
+  test("a flagged blocking content rule is must-fix; clear ones are nothing", () => {
+    const found = contentFindings([
+      { id: "advice", question: "Does `shots` give investment advice?", flagged: true, reason: "tells viewers to buy", shotId: "s02", suggestedFix: "Say what happened, not what to do." },
+      { id: "kids", question: "Is `shots` aimed at children?", flagged: false },
+      { id: "bare", question: "Does `shots` name a person?", flagged: true },
+    ]);
+    expect(found).toMatchObject([
+      { severity: "must-fix", code: "content.advice", shotId: "s02", description: "tells viewers to buy", suggestedFix: "Say what happened, not what to do.", rule: "advice" },
+      { severity: "must-fix", code: "content.bare", shotId: null, description: "A content rule is broken: Does shots name a person?" },
+    ]);
+  });
+
+  const rules = { content: [{ id: "advice", question: "Does `shots` give investment advice?", blocking: true }, { id: "soft", question: "Is `shots` dull?" }] };
+
+  test("the technical step judges the blocking rules with Jev; a flagged one fails the build, the non-blocking one is left to CREATIVE", async () => {
+    const r = rig({ rules });
+    const jev = fakeJev((_s, id) => noulA(id === "advice" ? 0.9 : 0.05));
+    r.ctx.jev = jev.jev as never;
+    await STEPS.technical.run(r.ctx);
+    expect(r.verdict().status).toBe("FAIL");
+    expect(readFindings(r.dir).map((f) => f.code)).toEqual(["content.advice"]);
+    expect(Object.keys(jev.requests[0]!.questions)).toEqual(["advice"]);
+    const calm = rig({ rules });
+    calm.ctx.jev = fakeJev(() => noulA(0.1)).jev as never;
+    await STEPS.technical.run(calm.ctx);
+    expect(calm.verdict().status).toBe("PASS");
+  });
+
+  test("when Jev is off or fails the LLM judges; when nobody can, the rule is a should-fix, never silently passed", async () => {
+    const llm = rig({ rules });
+    const risks = (flagged: boolean) => JSON.stringify({ criteria: [], risks: [{ id: "advice", flagged, reason: flagged ? "tells viewers to buy" : "", shotId: flagged ? "s02" : undefined }] });
+    llm.ctx.jev = { enabled: false } as never;
+    llm.ctx.director = new Director(fakeLlm([risks(true)]).llm, new DirectorLog(llm.store), "../generator");
+    await STEPS.technical.run(llm.ctx);
+    expect(readFindings(llm.dir)).toMatchObject([{ code: "content.advice", severity: "must-fix", shotId: "s02", description: "tells viewers to buy" }]);
+
+    const down = rig({ rules });
+    down.ctx.jev = { enabled: true, decide: async () => { throw new JevError("Jev down"); } } as never;
+    down.ctx.director = new Director(fakeLlm([risks(false)]).llm, new DirectorLog(down.store), "../generator");
+    await STEPS.technical.run(down.ctx);
+    expect(down.verdict().status).toBe("PASS");
+
+    const nobody = rig({ rules });
+    nobody.ctx.jev = { enabled: false } as never;
+    nobody.ctx.director = new Director(new Llm({ llmBaseUrl: "", llmModel: "" } as never), new DirectorLog(nobody.store), "../generator");
+    await STEPS.technical.run(nobody.ctx);
+    expect(readFindings(nobody.dir)).toMatchObject([{ code: "content_unjudged.advice", severity: "should-fix" }]);
+    expect(nobody.verdict().status).toBe("REVIEW");
+  });
+
+  test("the step applies sourcedNumbers when asked and forbiddenNumbers whenever the brief has the flag", async () => {
+    const loud = { shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, text: [{ role: "title", value: "Bunga 5,75% per tahun" }] } : s)) };
+    const asked = rig({ planOver: loud, measures: { sourcedNumbers: true } });
+    await STEPS.technical.run(asked.ctx);
+    expect(readFindings(asked.dir).map((f) => f.code)).toEqual(["number_unsourced"]);
+    expect(JSON.parse(asked.verdict().inputs!).measures).toContain("sourcedNumbers");
+    asked.store.saveGenFact({ id: "f1", projectId: "p1", ideaId: null, claim: "Bunga acuan 5,75 persen", value: "5,75%", sourceUrl: "https://bi.go.id", status: "verified", originalValue: null, evidence: "q", addedBy: "owner", createdAt: T, updatedAt: T });
+    await STEPS.technical.run(asked.ctx);
+    expect(readFindings(asked.dir)).toEqual([]);
+
+    const flagged = rig({ planOver: loud });
+    flagged.store.updateGenProject("p1", { briefFlags: JSON.stringify({ forbiddenNumbers: true }) });
+    flagged.ctx.project = flagged.store.getGenProject("p1")!;
+    await STEPS.technical.run(flagged.ctx);
+    expect(readFindings(flagged.dir).map((f) => f.code)).toEqual(["number_forbidden"]);
+    expect(flagged.verdict().status).toBe("FAIL");
   });
 });

@@ -106,6 +106,8 @@ async function newCmd(d: Deps, a: Args): Promise<number> {
   if (str(a, "preset")) body.preset = str(a, "preset");
   if (has(a, "narration")) body.narration = true;
   if (has(a, "no-stop")) body.buildWithoutStopping = true;
+  if (has(a, "no-numbers")) body.forbiddenNumbers = true;
+  if (str(a, "facts")) body.facts = readFactsFile(d, str(a, "facts") as string);
   const { project } = await d.api.post(BASE, body);
   if (has(a, "no-wait")) {
     if (!json(d, a, project)) d.out(`Started ${project.id}. Follow it with: sorot gen show ${short(project.id)}`);
@@ -384,6 +386,67 @@ async function acceptCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
+// ---- facts -------------------------------------------------------------------------
+
+/** One fact per line: `claim | value | https://address` (the value is optional). Headings and blank lines are skipped; a leading "- " is fine. */
+export function parseFacts(text: string, from: string): Json[] {
+  return text.split("\n").map((l) => l.trim().replace(/^[-*]\s+/, "")).filter((l) => l && !l.startsWith("#")).map((line) => {
+    const parts = line.split("|").map((x) => x.trim());
+    const sourceUrl = parts.at(-1) ?? "";
+    if (parts.length < 2 || !parts[0] || !/^https?:\/\//i.test(sourceUrl)) throw new UsageError(`${from}: "${line.slice(0, 50)}" is not  claim | value | https://address`);
+    return { claim: parts[0], ...(parts.length > 2 && parts[1] ? { value: parts[1] } : {}), sourceUrl };
+  });
+}
+
+function readFactsFile(d: Deps, file: string): Json[] {
+  const path = resolve(d.cwd, file);
+  if (!d.fs.exists(path)) throw new UsageError(`No such file: ${file}`);
+  return parseFacts(d.fs.readText(path), file);
+}
+
+function printFacts(d: Deps, facts: Json[]): void {
+  if (!facts.length) return d.out("No facts yet. Add one: sorot gen facts add <project> \"claim\" --source https://…");
+  d.out(table(["ID", "STATUS", "CLAIM", "VALUE", "SOURCE"], facts.map((f) => [short(f.id), f.status, truncate(f.claim, 44), f.value ?? "-", truncate(f.sourceUrl ?? "-", 40)])));
+  for (const f of facts.filter((x) => x.originalValue)) d.out(`  ${short(f.id)} was ${f.originalValue}: ${f.evidence ?? ""}`);
+  for (const f of facts.filter((x) => x.status === "unverifiable" && x.evidence)) d.out(`  ${short(f.id)} not verifiable: ${f.evidence}`);
+}
+
+/** A fact by the start of its id, in this project. */
+async function factId(d: Deps, project: string, ref: string): Promise<string> {
+  const { facts } = await d.api.get(`${BASE}/${project}/facts`);
+  const hits = (facts as Json[]).filter((f) => String(f.id).startsWith(ref));
+  if (hits.length !== 1) throw new UsageError(hits.length ? `More than one fact starts with ${ref}` : `No fact starts with ${ref} (sorot gen facts <project>)`);
+  return hits[0]!.id;
+}
+
+/** sorot gen facts <project> | add <project> "claim" --source URL [--value V] | rm <project> <fact> | verify <project> */
+async function factsCmd(d: Deps, a: Args): Promise<number> {
+  const sub = a.positionals[2];
+  const known = sub === "add" || sub === "rm" || sub === "verify";
+  const project = await projectId(d, need(a, known ? 3 : 2, "project"));
+  if (sub === "verify") {
+    d.out("Checking the facts against their sources…");
+    const { facts } = await d.api.post(`${BASE}/${project}/facts/verify`);
+    if (!json(d, a, facts)) printFacts(d, facts as Json[]);
+    return (facts as Json[]).some((f) => f.status === "unverifiable") ? 1 : 0;
+  }
+  if (sub === "add") {
+    const source = str(a, "source");
+    if (!source) throw new UsageError("Give the page that states it: --source https://…");
+    const { fact } = await d.api.post(`${BASE}/${project}/facts`, { claim: need(a, 4, "claim"), sourceUrl: source, ...(str(a, "value") ? { value: str(a, "value") } : {}) });
+    if (!json(d, a, fact)) d.out(`Added ${short(fact.id)}. Check it with: sorot gen facts verify ${short(project)}`);
+    return 0;
+  }
+  if (sub === "rm") {
+    await d.api.delete(`/api/generate/facts/${await factId(d, project, need(a, 4, "fact"))}`);
+    if (!json(d, a, { deleted: true })) d.out("Deleted.");
+    return 0;
+  }
+  const { facts } = await d.api.get(`${BASE}/${project}/facts`);
+  if (!json(d, a, facts)) printFacts(d, facts as Json[]);
+  return 0;
+}
+
 // ---- recipes -----------------------------------------------------------------------
 
 const RECIPES = "/api/generate/recipes";
@@ -526,6 +589,7 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   fix: fixCmd,
   restore: restoreCmd,
   export: exportCmd,
+  facts: factsCmd,
   steps: stepsCmd,
   recipes: recipesCmd,
   recipe: recipeCmd,

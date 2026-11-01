@@ -107,7 +107,12 @@ export interface AppConfig {
   /** Local check commands recipes may name; off on hosted installs unless GEN_COMMANDS=1. */
   commandsEnabled: boolean;
   commands: GenCommand[];
+  /** Read-only data the facts step may query (SELECT only). */
+  dataSources: GenDataSource[];
 }
+
+/** A read-only SQLite file facts research may query by name. */
+export interface GenDataSource { name: string; kind: "sqlite"; path: string }
 
 /** A command the owner registered in Settings; a recipe's `command` step only names it. */
 export interface GenCommand { name: string; cmd: string; args: string[]; timeoutSec: number }
@@ -209,5 +214,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
     voiceVoices: {},
     commandsEnabled: !bool(env.SOROT_HOSTED) || bool(env.GEN_COMMANDS),
     commands: [],
+    dataSources: [],
   };
 }

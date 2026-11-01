@@ -1,6 +1,7 @@
 import { now } from "../../store";
 import { planContext } from "../planContext";
 import { parseRecipe } from "../recipe";
+import { requiresSourcedNumbers, unsourcedIn } from "../facts";
 import type { Concept } from "../novelty";
 import { readVoice, snapToVoice } from "../voice";
 import { chosenStoryline } from "./storylines";
@@ -22,6 +23,11 @@ export const run: RunFn = async (ctx) => {
     ...(project.concept ? { concept: JSON.parse(project.concept) as Concept } : {}),
   });
   // `timingFrom: voice`: the plan runs as long as the voice does.
+  // A factual recipe never finishes a plan that shows a number nothing has verified.
+  if (requiresSourcedNumbers(ctx.recipe)) {
+    const bad = unsourcedIn(generated.plan.shots.flatMap((s) => [...s.text.map((t) => t.value), s.narration ?? ""]), project.brief, store.genFactsForProject(project.id));
+    if (bad.length) throw new Error(`The plan shows numbers without a verified fact: ${bad.join(", ")}. Add them as facts with a source and verify them, or take them out.`);
+  }
   const plan = voice && ctx.settings.timingFrom === "voice" ? snapToVoice(generated.plan, voice.lines) : generated.plan;
   const revision = (store.genPlansForProject(project.id)[0]?.revision ?? 0) + 1;
   const id = crypto.randomUUID();

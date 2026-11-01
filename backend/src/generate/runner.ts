@@ -2,6 +2,7 @@ import type { Store } from "../store";
 import type { GenExport, GenProject, GenVersion } from "../types";
 import type { AppConfig } from "../config";
 import type { ExecFn, ScriptRunner } from "../runner";
+import type { FactWeb } from "./facts";
 import type { ImageClient } from "./images";
 import type { Narrator } from "./narration";
 import type { Jev } from "../jev";
@@ -46,6 +47,7 @@ export interface RunnerDeps {
   runScript?: ScriptRunner;
   narrator?: Narrator;
   images?: ImageClient;
+  web?: FactWeb;
   config: AppConfig;
   catalog: StepContext["catalog"];
   /** The step library; tests pass stubs. */
@@ -216,6 +218,19 @@ export class Runner {
     return this.mustVersion(versionId);
   }
 
+  // ---- facts ----------------------------------------------------------------------
+
+  /** The recipe's `facts` step (or a plain verify when the recipe has none) run on demand. */
+  async runFacts(projectId: string, signal?: AbortSignal): Promise<void> {
+    const project = this.mustProject(projectId);
+    const recipe = parseRecipe(project);
+    const step = recipe.steps.find((s) => s.use === "facts") ?? { use: "facts" as const, with: { mode: "verify" } };
+    const ctx = this.context(project, null, recipe, step, signal);
+    // an explicit re-check never researches again: it checks what is on the list
+    ctx.settings = { ...ctx.settings, mode: "verify" };
+    await this.steps.facts.run(ctx);
+  }
+
   // ---- export ---------------------------------------------------------------------
 
   /**
@@ -296,7 +311,7 @@ export class Runner {
   private context(project: GenProject, version: GenVersion | null, recipe: Recipe, step: RecipeStep, signal?: AbortSignal): StepContext {
     return {
       project, version, recipe, step, signal, store: this.store, log: this.log,
-      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, runScript: this.deps.runScript, narrator: this.deps.narrator, images: this.deps.images, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog,
+      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, runScript: this.deps.runScript, narrator: this.deps.narrator, images: this.deps.images, web: this.deps.web, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog,
       settings: settingsOf(step.use, step.with),
       progress: (percent) => { if (version) this.store.updateGenVersion(version.id, { progress: Math.max(0, Math.min(100, Math.round(percent))) }); },
     };

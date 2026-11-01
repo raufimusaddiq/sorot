@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -278,6 +278,26 @@ export class ApiClient {
 
   async restoreGenerateVersion(id: string) {
     return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/restore`, { method: 'POST' });
+  }
+
+  async listGenerateFacts(projectId: string) {
+    return this.request<{ facts: GenFact[] }>(`/api/generate/projects/${projectId}/facts`);
+  }
+
+  async addGenerateFact(projectId: string, body: { claim: string; value?: string; sourceUrl: string }) {
+    return this.request<{ fact: GenFact }>(`/api/generate/projects/${projectId}/facts`, { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async updateGenerateFact(id: string, body: { claim?: string; value?: string; sourceUrl?: string }) {
+    return this.request<{ fact: GenFact }>(`/api/generate/facts/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }
+
+  async deleteGenerateFact(id: string) {
+    return this.request<{ deleted: boolean }>(`/api/generate/facts/${id}`, { method: 'DELETE' });
+  }
+
+  async verifyGenerateFacts(projectId: string) {
+    return this.request<{ facts: GenFact[] }>(`/api/generate/projects/${projectId}/facts/verify`, { method: 'POST' });
   }
 
   async getGenerateSteps() {
