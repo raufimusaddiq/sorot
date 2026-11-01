@@ -59,3 +59,23 @@ REVIEW with should-fix only, PASS otherwise. Every check is code (HyperFrames JS
 local Whisper speech match, fact matching), except the recipe's **blocking** `judge` content
 rules (for example `education_not_advice`), which Jev answers (or the LLM when Jev is off). A
 flagged blocking rule is a must-fix.
+
+## Additions for any look, any director (2026-11-01)
+
+- **Capability description**: every call's user JSON carries `capabilities`
+  ([kit.md](kit.md#the-capability-description-every-director-call)), generated per call. Prompts
+  never list parts by hand.
+- **`submit_shot_kit`** (kit level): input is the shot spec, its look, the film's look, size,
+  assets, and `capabilities` with `kitDetail`; output `{shotId, layers: [{part, settings, fromSec,
+  toSec, layer?}], text}`; checked against the kit, then Sorot writes the scene.
+- **`scene` / `repair` at `compose` and `free`**: as above, plus `capabilities` and the level's
+  rules; kit calls in the HTML are checked like plan-lock.
+- **Malformed answers**: the repair message names the parser error and quotes about 80 characters
+  around its position (FR-045).
+- **Plans in parts**: every numeric plan (and, once the model record exists, any plan from a model
+  whose record shows malformed answers) is asked as `submit_plan_outline` (title, message, look, shots with
+  durations and text; Sorot counts the frames from the lengths) then `submit_shot_specs` for four
+  shots at a time, each batch validated in place and repaired with only its own problems.
+- **Judge**: Sorot always adds the criteria `finished` ("Do the things in `shots` read as what they
+  are, and look finished and intended?") and `motion` ("Does the motion in `shots` move smoothly and
+  with weight?").

@@ -7,11 +7,12 @@ import { makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, SAMPLE_TITLES, type 
 const json = JSON.stringify;
 const story = (i: number) => ({ title: `Film ${i}`, pitch: "satu", opening: "benih", beats: ["hook", "isi", "akhir"], look: "flat", sound: "tenang", bold: false, recommended: i === 1, reason: "k" });
 const STORIES = json({ storylines: [story(1), story(2), story(3)] });
-const PLAN = json(samplePlan());
+/** A plan with three effects, so the always-checked effects floor passes. */
+const PLAN = json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: ["cut", "fade", "flash"][i], ...(i === 0 ? { effects: { glowPx: 20, reason: "the hook shines" } } : {}) })) }));
 const SCENES = [0, 1, 2].map((i) => json({ html: sceneHtml(i) }));
 const JUDGE = json({
   criteria: ["opening", "pace", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })),
-  risks: [{ id: "misleading_claim", flagged: false, reason: "" }],
+  risks: ["misleading_claim", "flat_film"].map((id) => ({ id, flagged: false, reason: "" })),
 });
 const CLEAN = json({ ok: true, lint: { findings: [] }, runtime: { findings: [] }, layout: { findings: [] } });
 const TOO_SMALL = json({ ok: true, lint: { findings: [] }, runtime: { findings: [] }, layout: { findings: [
@@ -148,7 +149,7 @@ describe("a fix round", () => {
 });
 
 describe("a fix that changes the plan", () => {
-  const edited = (over: (s: any, i: number) => any) => ({ ...samplePlan(), shots: samplePlan().shots.map(over) });
+  const edited = (over: (s: any, i: number) => any) => { const p = JSON.parse(PLAN); return { ...p, shots: p.shots.map(over) }; };
 
   test("new words need the owner's approval again: nothing is built, the plan waits, and approving lets a normal build follow", async () => {
     const { id, v1 } = await failedBuild();
@@ -276,7 +277,7 @@ describe("automatic fix rounds", () => {
     const a = await approved({ recipe: (r) => { r.steps.find((s: any) => s.use === "creative").with = { ...r.steps.find((s: any) => s.use === "creative").with, autoFixRounds: 1 }; } });
     const failJudge = json({
       criteria: [{ id: "opening", answer: "no", reason: "plain title", shotId: "s01" }, { id: "pace", answer: "yes", reason: "" }, { id: "main_message", answer: "no", reason: "unclear" }],
-      risks: [{ id: "misleading_claim", flagged: false, reason: "" }],
+      risks: ["misleading_claim", "flat_film"].map((id) => ({ id, flagged: false, reason: "" })),
     });
     const llm = scriptLlm(env, [...SCENES, failJudge, fix([{ shotId: "s01", instruction: "Start with the coin." }]), json({ html: sceneHtml(0) }), JUDGE]);
     gen().startBuild(a.id);

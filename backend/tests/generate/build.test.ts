@@ -15,7 +15,7 @@ import { STEPS, settingsOf } from "../../src/generate/steps";
 import { Store } from "../../src/store";
 import type { GenAsset } from "../../src/types";
 import { writeVoice } from "../../src/generate/voice";
-import { fakeHyperframes, fakeLlm, hfFixture, procOk, quickRecipe, samplePlan, sceneHtml, SAMPLE_TITLES, type HfHandler } from "../helpers";
+import { ThoughtTooLong, gatewayDown, fakeHyperframes, fakeLlm, hfFixture, procOk, quickRecipe, samplePlan, sceneHtml, SAMPLE_TITLES, type HfHandler } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const json = (v: unknown) => JSON.stringify(v);
@@ -114,6 +114,21 @@ describe("author step", () => {
     expect(JSON.parse(r.requests[2]!.messages[1]!.content)).toMatchObject({ compositionId: "shot-03", shot: { id: "s03" }, size: { width: 1080, height: 1920 } });
     expect(readFindings(r.dir)).toEqual([]);
     expect(r.progress).toEqual([33, 67, 100]);
+  });
+
+  test("a scene call the gateway drops doesn't stop the others: it gets one more try at the end; a second drop, or a lasting error, fails the step", async () => {
+    const down = () => [gatewayDown(), gatewayDown(), gatewayDown()];   // the client's own three tries
+    const r = rig([...down(), html(1), html(2), html(0)]);
+    await STEPS.author.run(r.ctxFor("author"));
+    expect(r.requests.map((q) => JSON.parse(q.messages[1]!.content).compositionId)).toEqual(["shot-01", "shot-01", "shot-01", "shot-02", "shot-03", "shot-01"]);
+    expect(scenes(r.dir).map((s) => s.includes("<h1"))).toEqual([true, true, true]);
+    const twice = rig([...down(), html(1), html(2), ...down()]);
+    await expect(STEPS.author.run(twice.ctxFor("author"))).rejects.toThrow("upstream unavailable");
+    const thought = rig([new ThoughtTooLong(), html(1), html(2), html(0)]);   // thought past its budget: asked again once, later
+    await STEPS.author.run(thought.ctxFor("author"));
+    expect(scenes(thought.dir).map((s) => s.includes("<h1"))).toEqual([true, true, true]);
+    const spent = rig([new Error("quota exceeded"), html(1), html(2)]);   // not transient: no second pass
+    await expect(STEPS.author.run(spent.ctxFor("author"))).rejects.toThrow("quota exceeded");
   });
 
   test("a scene that breaks the plan goes back with its findings; what is fixed is not reported", async () => {
@@ -278,18 +293,19 @@ describe("check step", () => {
     expect(readFindings(r.dir)).toEqual([]);
   });
 
-  test("findings are mapped to shots by file, selector or time; the ones that can't be mapped stay with the video", async () => {
+  test("findings are mapped to shots by file, selector or time; the ones that can't be mapped stay with the video; repeats are one with a count", async () => {
     const r = await built({ check: answers(check([
       finding("text_below_floor", "error", { selector: '[data-composition-id="shot-03"] .title' }),
       finding("line_unread", "warning", { time: 12.5, sourceFile: "index.html" }),
       finding("first_frame_empty", "error", { time: 99 }),
+      finding("line_unread", "warning", { time: 11, sourceFile: "index.html" }),
     ])) }, [json({ html: sceneHtml(2) }), json({ html: sceneHtml(1) })]);
     await STEPS.check.run(r.ctxFor("check", { rounds: 1 }));
     const asked = r.requests.map((q) => JSON.parse(q.messages[1]!.content).compositionId);
     expect(asked).toEqual(["shot-03", "shot-02"]);   // shot 3 by selector, shot 2 by time (10 to 20 s)
     const found = readFindings(r.dir);
-    expect(found.map((f) => [f.code, f.shotId, f.severity, f.fromSec])).toEqual([
-      ["text_below_floor", "s03", "must-fix", undefined], ["line_unread", "s02", "should-fix", 12.5], ["first_frame_empty", null, "must-fix", 99],
+    expect(found.map((f) => [f.code, f.shotId, f.severity, f.fromSec, f.count])).toEqual([
+      ["text_below_floor", "s03", "must-fix", undefined, undefined], ["line_unread", "s02", "should-fix", 11, 2], ["first_frame_empty", null, "must-fix", 99, undefined],
     ]);
   });
 

@@ -110,6 +110,18 @@ and 2, never prompts when unattended). Keeping commands in code makes them fakea
 UI and CLI. Writing timing in code keeps FR-008/FR-009 (matches the plan, reproducible) out of
 the model's hands.
 
+**Update (phase 12, 2026-11-01)**: a real narrated build looked flat (every seam a cut, little
+light or blur), so the owner asked for the director to be given the effects as tools. The plan step
+now ends with a bounded **effects pass** through `Llm.runTools` (`Director.effects`): `search_catalog`,
+`set_transition`, `add_block`, `set_look`, each checked in code, at most `effects.maxSteps` (12) calls
+and `effects.tokenBudget` (60000) tokens. Its choices and reasons are kept in `plan.effectNotes` and
+approved with the plan; a failed pass leaves the plan as written. Scene writing stays one fixed call
+per shot. HyperFrames' shader transition blocks (`light-leak`, `flash-through-white`, ...) turned
+out to be self-contained demo compositions that capture their own two scenes, so they cannot be
+wired between Sorot's shot hosts: Sorot writes eight seam kinds itself (`transitions.ts`: cut, fade,
+blur, flash, light-leak, wipe, zoom, iris) as GSAP tweens on the root timeline, half in each shot,
+checked with `hyperframes lint`/`check`/`snapshot` 0.8.223 on a scratch project (all eight render).
+
 **Alternatives considered**: tool-calling with `Llm.runTools` so the model calls `add_block`,
 `write_scene` and `check` itself (rejected for v1: it needs a gateway with dependable function
 calling, it is harder to bound, and it isn't needed when each step's next action is fixed;
@@ -655,5 +667,206 @@ keys or the user's own pipeline** (the code paths are tested with fakes only):
 - **Quickstart run** (T100): scenarios 1 to 10 need a running server with an LLM, a voice key and
   HyperFrames; the same flows are covered by the backend, CLI and frontend tests against fakes.
 
+### Real run, 2026-11-01 (phase 12)
+
+The first real narrated build ("Gunung Koin", 20 s, recipe with `plan` before `script`/`voice`/`align`)
+on the RTX 4060 Docker app: Fish Audio with the model header `s2.1-pro-free` and no voice id (Fish's
+default voice; the redacted request is `backend/tests/fixtures/voice/fish-tts.json`), Whisper
+alignment on the GPU, 7 scenes, **467 s** from build start to verdicts. What it found, and the fixes:
+
+- A build could start after a failed voice step: now refused until the project is retried.
+- Every retry re-ran the plan (revisions 2 to 4, each asking for approval): the plan's input key
+  read `narrationScript`, which a script step **after** the plan changes. It now reads only what
+  earlier steps made.
+- One `console_warning` was listed 45 times: `check` findings are grouped by code, shot and message
+  with a count.
+- Reasoning calls were dropped by the gateway and a scene ran out of `LLM_MAX_TOKENS` (4000 in
+  Docker): transient failures are tried 3 times and Generate has its own budget (`GEN_LLM_MAX_TOKENS`, 32000).
+- The same forbidden number in a shot's title and text was two findings: now one.
+- The film looked flat: transitions, the effects pass, the `effects_few` TECHNICAL measure and the
+  CREATIVE "flat film" risk (above, R3).
+
+This closes the Fish half of S3 (T067) and is the first data point for S2 final (T096); the 60 s
+delivery render is still to do.
+
+**T114, the same brief rebuilt with the effects pass** (same recipe, same storyline idea, Phase 12
+image on the RTX 4060 Docker, LLM `deepseek-v4-flash`, Jev judging):
+
+| | Flat build | With effects |
+|---|---|---|
+| Effects (blocks / non-cut seams / shots with light, blur, depth or glow) | 0 / 0 / 0 | 6 / 4 (wipe, wipe, flash, light-leak) / 7 |
+| TECHNICAL | REVIEW: 3 open `clip_ends_past_root_duration`, 1 `dead_stretch`, 45 copies of one kept console warning | PASS (one kept `film_silent`) |
+| CREATIVE (Jev) | REVIEW: `misleading_claim` | REVIEW: `misleading_claim`; `flat_film` not flagged |
+| Effects pass | none | 67 s, 18 notes approved with the plan |
+| Build | 467 s | 570 s |
+
+Frames: the seams are visible (wipes, light leak, glow on the final sphere, blurred depth), but the
+director chose an almost white palette, so the flash and the pale wipe band hardly read against it:
+the effects pass does not yet weigh a transition's colour against the palette. Both films invent
+Rp amounts the brief does not state (the CREATIVE `misleading_claim`). Found on the way: the director
+answered `sound.narration: false` although the owner turned narration on, so the recorded voice was
+left out of this build (hence `film_silent`); narration now follows the project (`validatePlan`).
+Contact sheet: `data/generate/t114-compare.png` (not in the repo).
+
 Known limit: an export runs inside its HTTP request (server idle timeout 255 s); a long delivery
 re-render may need the request moved to a background job.
+
+# Part 3: Any look, any director (2026-11-01)
+
+Covers spec User Story 9 and FR-038 to FR-047. The first real builds were correct but flat, and
+the director models on one install ranged from 1.9 repair rounds per scene (deepseek-v4-flash) to
+0.3 but 4× slower with dropped calls and malformed 12,000-character plans (deepseek-v4-1-flash).
+HyperFrames plays whatever the scenes draw (DOM + GSAP, canvas, WebGL, Three.js, Lottie, all
+driven from timeline time), so the looks and the floor of quality are Sorot's to provide.
+
+## R22. The kit: parts as browser modules, loaded by the root
+
+**Decision**: a **kit part** is a folder with a `part.json` manifest and one browser script (no
+build step). Built-in parts ship in `generator/kit/<name>/` (pinned with the generator package);
+user parts live in `data/kit/<name>/`. The manifest says what the part does, its settings (the
+same field schema recipes use, `steps/schema.ts`), a short example, its runtime (`dom`, `canvas`,
+`webgl`) and what it needs (`gpu: preferred`). The script registers
+`window.SorotKit["<name>"] = { mount(host, settings, ctx) }`, where `ctx` gives the scene's GSAP
+timeline, the shot's start and length, the fps, a seeded random source, and the film's look
+(palette, key light) so every part is lit and coloured the same way. A part draws into `host` and
+adds its motion to the timeline, or registers a `render(t)` for canvas/WebGL; it never reads the
+clock, the network or `Math.random` (the same determinism rules as scenes).
+
+The composer copies the parts a version uses into `assets/kit/` and loads them from the root
+`index.html`, like GSAP. Scenes never load scripts themselves, so the plan-lock rule against
+`<script src>` in a scene stays as it is.
+
+The first built-in parts are general building blocks, not a catalogue of looks: shading and light
+for any shape (gradient lighting from the key light, highlight, rim), shadows (soft, contact),
+depth layers and parallax, a camera (pan, zoom, dolly, any projection, isometric being a setting),
+motion tokens (eases by role, precomputed springs, paths, stagger), text reveal, seeded particles,
+image placement (a generated or uploaded image as a lit card or cut-out with a shadow), and a
+`three` runtime part (pinned Three.js, offline) for real 3D. More parts are added by users or later
+releases.
+
+**Rationale**: browser modules are what HyperFrames runs; a manifest with settings makes a part
+usable at the kit level (the model fills settings) and describable to the director (FR-047).
+Copying into the project keeps renders offline and the same every time.
+
+**Alternatives considered**: registry blocks from HyperFrames (demo compositions, not composable
+parts; the shader transitions proved this in phase 12); a Sorot DSL compiled to HTML (a new
+language to learn and maintain, and a strong model gains nothing from it); npm packages per part
+(network at install time, versions per project harder to pin).
+
+## R23. User parts: added locally, named by recipes, checked before use
+
+**Decision**: users add parts with `sorot gen kit add <folder|.zip>` or the UI; they can be
+exported and imported like recipes (FR-039). A recipe may only **name** parts (in the `author`
+step's `require` list or a shot's look); it never carries part code, so importing a recipe can't
+bring in scripts. On add, Sorot validates the manifest and renders the part's example twice in a
+throwaway project: it must pass `lint`/`check` and give the same frames both times, or it is
+refused with the findings. A recipe naming a missing part shows as unavailable (FR-025).
+
+**Rationale**: the same trust model as custom commands (R14): code reaches an install only by the
+owner's own action, and every part is proven deterministic before a director can use it.
+
+## R24. Director levels and how scenes are made at each
+
+**Decision**: three levels, per shot (FR-042):
+
+| Level | The model writes | Sorot does |
+|---|---|---|
+| `kit` | a forced tool call `submit_shot_kit`: the parts, their settings, layers and timing for the shot | validates against the capability description and writes `compositions/shot-NN.html` in code |
+| `compose` | the scene HTML, using kit parts through `SorotKit[...].mount` plus its own GSAP | plan-lock, kit-call check, lint/check, repairs |
+| `free` | any scene within the contract, including its own canvas, WebGL or Three.js code | the same checks, plus a frame-time budget |
+
+The `author` step gets `level: auto | kit | compose | free` (default `auto`) and `maxLevel`
+(default `free`, a recipe or a CPU install may lower it). The plan shows each shot's level
+(FR-042, US9 scenario 5).
+
+**Rationale**: the kit level needs no code from the model, so a small local model can make a
+finished film; the higher levels only raise the ceiling.
+
+## R25. Choosing the level: the model record
+
+**Decision**: a new table `gen_model_record` keeps, per model and level, the counts that matter:
+scenes asked, passed first time, passed after repair, dropped a level, malformed answers, and time
+spent. Updated by the author and plan steps after each call. `auto` picks the highest level the
+recipe allows where the model has passed first time in at least 60% of at least 8 shots and sent
+malformed answers in at most 10%; a model with no record starts at `kit` unless calibrated. The
+owner can run **Calibrate** (Settings → LLM, or `sorot gen calibrate`): three sample shots at each
+level, about 5 minutes, which fills the record at once. A pin per recipe or per model overrides
+`auto` (FR-043). The thresholds are first guesses, checked in spike S7.
+
+**Rationale**: the director log already shows the differences (today's two models); a record per
+install measures the model the user actually runs, through the gateway they actually use.
+
+**Alternatives considered**: a list of model names and levels (stale at once, and the same model
+behaves differently behind different gateways); always starting high and falling back (costs a
+full repair cycle per shot on a weak model).
+
+## R26. Falling back one level
+
+**Decision**: in the `author` and `check` steps, a shot that still fails after its repair rounds
+at its level, or whose frames take longer than the budget to draw, is rebuilt one level down with
+the same shot spec (FR-044). A `level_drop` finding (should-fix) names the shot, the levels and the
+reason, and the model record counts it. Only a failure at `kit` fails the build. The frame-time
+budget comes from the render estimate (R11) per machine; a heavy shot is measured with one
+`snapshot` of its busiest moment.
+
+## R27. The capability description
+
+**Decision**: `capabilities.ts` builds one description per call from what is installed and
+connected (FR-047): the kit parts (name, what it does, settings, example) from their manifests;
+the level of the call and what it may do; the renderer (HyperFrames version, which runtimes this
+machine can draw and on what, the frame-time budget); the connections that are on. Calls get the
+parts in summary (name and one line) at plan time, and the full settings of the parts a shot uses
+at scene time, so a small model's context stays small. Plans and scenes are checked against it:
+an unknown part, an unknown setting, or a runtime the level doesn't allow is a validation error
+that goes back to the director (FR-045). Nothing in `generator/prompts/` lists parts by hand.
+
+## R28. Measuring smooth motion
+
+**Decision**: a new always-on TECHNICAL measure `motion` (FR-040), from the rendered video in
+code: ffmpeg's per-frame difference inside each shot (seams excluded) flags **jumps** (a frame
+whose change is far above its neighbours') and **stalls** (a moving shot that freezes for a few
+frames, then moves again), with the shot and time. HyperFrames' own motion-blur findings are added
+as they are. Kit motion parts use eased tweens and precomputed springs, and the root turns on
+HyperFrames motion blur (`data-motion-blur`) for shots the plan marks as fast unless the recipe's
+`render.motionBlur` says `off`. Thresholds are measured in spike S7.
+
+**Alternatives considered**: optical flow (heavier, and a dependency for one number); judging
+smoothness only by the CREATIVE judge (not repeatable).
+
+## R29. Structured answers: where the error is, and smaller pieces
+
+**Decision**: a malformed answer's repair call carries the parser's message and about 80
+characters around the position (FR-045); Sorot finds the position itself, since Bun's JSON.parse
+reports none. Every numeric plan is asked in two parts (and, once the model record exists, any plan
+from a model whose record shows malformed answers): first the film (title, message, look, the shot
+list with durations and text; Sorot counts the frames from the lengths), then the shots' motion
+detail in batches of four, each validated in place and repaired with only its own problems.
+
+**Rationale**: the two malformed numeric plans of 2026-11-01 each lost one closing brace about
+9,000 characters in; the message "not valid JSON" gave the model nothing to fix.
+
+## R30. Looks in the plan, and the CREATIVE question
+
+**Decision**: each shot gets a `look` object stated in whatever terms the shot needs (FR-041),
+with exact values where it has them (colours, angles, sizes, timings) and, optionally, the kit
+parts and settings it will use. Only the part references are checked against the kit; the rest is
+the director's to say. The CREATIVE judge always asks one more criterion, `finished`: "Do the
+things in `shots` read as what they are, and look finished and intended?" plus the motion question
+"Does the motion in `shots` move smoothly and with weight?" (FR-046).
+
+## R31. The authoring contract follows HyperFrames' own rules
+
+**Decision**: `generator/prompts/authoring.md` is corrected to HyperFrames 0.8.223's contract
+(skill review of 2026-11-01): never tween `visibility` on a clip, animate transforms rather than
+`width`/`height`, `fromTo` rather than `from`, no CSS transform on a tweened element, `data-hold`
+for deliberate stillness, contrast 4.5:1 for text, eases by role, no idle loops. Story guidance
+gains the vertical safe band, title scale, openings and the transition rules ("at most a third of
+seams are cuts", reversing the phase 12 text).
+
+## Spike S7 (before phase 13 builds)
+
+| Question | Done when |
+|---|---|
+| Cost of motion blur and of WebGL/Three.js scenes on the RTX 4060 and on CPU | Render seconds per video second recorded; `maxLevel` default for CPU installs chosen |
+| Thresholds for `motion` (jump, stall) on today's builds | No finding on the smooth builds, a finding on a planted jump |
+| Level thresholds (R25) | Calibration of both deepseek models and one small local model recorded; their levels look right |

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { afterEach, describe, expect, test } from "bun:test";
 import { HttpError } from "../../src/http";
 import { parseStates } from "../../src/generate/runner";
-import { makeEnv, quickRecipe, samplePlan, scriptLlm, userPayload, type TestEnv } from "../helpers";
+import { EFFECTS_DONE, makeEnv, quickRecipe, samplePlan, scriptLlm, userPayload, type TestEnv } from "../helpers";
 
 const LLM = { llmBaseUrl: "http://llm/v1", llmModel: "m" };
 const story = (i: number, extra: Record<string, unknown> = {}) => ({
@@ -32,7 +32,7 @@ async function created(replies: Parameters<typeof scriptLlm>[1], input: Record<s
 
 describe("brief to approved plan", () => {
   test("storylines, a pick, direct edits, a revision, then the owner's approval; every revision is kept", async () => {
-    const { id, llm } = await created([STORIES, PLAN, JSON.stringify({ plan: editedPlan("Judul revisi"), changeSummary: "Judul shot 2 diganti" })]);
+    const { id, llm } = await created([STORIES, PLAN, EFFECTS_DONE, JSON.stringify({ plan: editedPlan("Judul revisi"), changeSummary: "Judul shot 2 diganti" })]);
 
     // after create: three storylines, waiting at the owner's gate
     let p = project(id);
@@ -76,7 +76,7 @@ describe("brief to approved plan", () => {
     expect(gen().assertCanBuild(id).id).toBe(revised.plan.id);
 
     // the director log and the mirrored files
-    expect(gen().events(id).map((e) => e.kind).reverse()).toEqual(["storylines", "plan", "revise"]);
+    expect(gen().events(id).map((e) => e.kind).reverse()).toEqual(["storylines", "plan", "effects", "revise"]);
     const dir = `${env.config.genDir}/${id}`;
     expect(readFileSync(`${dir}/SPEC.md`, "utf-8")).toContain("approved");
     expect(readFileSync(`${dir}/SPEC.md`, "utf-8")).toContain("Judul revisi");
@@ -87,11 +87,21 @@ describe("brief to approved plan", () => {
   test("a short video skips storylines and goes straight to the plan", async () => {
     const short = JSON.stringify(samplePlan({ shots: samplePlan().shots.map((x: any) => ({ ...x, durationSec: 4 })) }));
     const { id, llm } = await created([short], { targetSec: 12 });
-    expect(llm.requests).toHaveLength(1);
+    expect(llm.requests).toHaveLength(2);   // the plan, then the effects pass (no reply left: the plan stands)
     expect(userPayload(llm.requests[0]!).storyline).toBeNull();
     expect(parseStates(project(id).stepState).storylines).toMatchObject({ status: "skipped" });
     expect(project(id)).toMatchObject({ status: "WAITING", stepIndex: 1, storylines: null });
     expect(project(id).currentPlanId).not.toBeNull();
+  });
+
+  test("passing the plan's gate as a step approves the plan itself, so it can be built", async () => {
+    const { id } = await created([STORIES, PLAN, EFFECTS_DONE]);
+    gen().pick(id, 0);
+    await gen().whenIdle();
+    gen().approveStep(id, "plan");
+    await gen().whenIdle();
+    expect(store().getGenPlan(project(id).currentPlanId!)!.approvedAt).not.toBeNull();
+    expect(gen().assertCanBuild(id).id).toBe(project(id).currentPlanId!);
   });
 
   test("a new set of storylines (with a note) replaces the old ones and forgets the plan", async () => {
@@ -133,7 +143,7 @@ describe("the director's gates", () => {
     env = makeEnv(LLM);
     env.app.start();
     addAuto();
-    scriptLlm(env, [STORIES, decision({ decision: "pick", index: 2, reason: "paling jelas" }), PLAN, decision({ decision: "approve", reason: "siap dibangun" })]);
+    scriptLlm(env, [STORIES, decision({ decision: "pick", index: 2, reason: "paling jelas" }), PLAN, EFFECTS_DONE, decision({ decision: "approve", reason: "siap dibangun" })]);
     const { id } = await gen().createProject({ brief: "Jelaskan bunga majemuk", recipeId: "auto" });
     await gen().whenIdle();
     const p = project(id);
@@ -146,7 +156,7 @@ describe("the director's gates", () => {
     env = makeEnv(LLM);
     env.app.start();
     addAuto();
-    scriptLlm(env, [STORIES, decision({ decision: "pick", index: 0, reason: "x" }), PLAN, decision({ decision: "reject", reason: "terlalu ramai" })]);
+    scriptLlm(env, [STORIES, decision({ decision: "pick", index: 0, reason: "x" }), PLAN, EFFECTS_DONE, decision({ decision: "reject", reason: "terlalu ramai" })]);
     const { id } = await gen().createProject({ brief: "Jelaskan bunga majemuk", recipeId: "auto" });
     await gen().whenIdle();
     expect(parseStates(project(id).stepState).plan).toMatchObject({ status: "waiting", reason: "terlalu ramai" });
@@ -177,7 +187,7 @@ describe("failures", () => {
     const again = scriptLlm(env, [PLAN]);
     gen().retry(id);
     await gen().whenIdle();
-    expect(again.requests).toHaveLength(1);
+    expect(again.requests).toHaveLength(2);
     expect(project(id)).toMatchObject({ status: "WAITING", errorMessage: null });
     expect(project(id).currentPlanId).not.toBeNull();
     expect(llm.requests).toHaveLength(2);
@@ -268,6 +278,14 @@ describe("refusals", () => {
 });
 
 describe("project housekeeping", () => {
+  test("a recipe built around a voice speaks unless the owner says otherwise; one without stays silent", async () => {
+    env = makeEnv({ ...LLM, voiceEngine: "openai", voiceApiKey: "k", voiceEnabled: true });
+    env.app.start();   // seeds the example recipes
+    const mk = async (input: Record<string, unknown>) => (await gen().createProject({ brief: "Jelaskan bunga majemuk", ...input })).narration;
+    expect([await mk({ recipeId: "story" }), await mk({ recipeId: "story", narration: false }), await mk({})]).toEqual([1, 0, 0]);
+    await gen().whenIdle();   // their first steps run in the background: let them end before the database closes
+  });
+
   test("patch, detail, list, delete with its files", async () => {
     const { id } = await created([STORIES]);
     expect(gen().patchProject(id, { title: "  Judul saya ", narration: true, styleNotes: " tenang " })).toMatchObject({ title: "Judul saya", narration: 1, styleNotes: "tenang" });

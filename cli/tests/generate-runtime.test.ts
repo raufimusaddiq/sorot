@@ -13,6 +13,8 @@ test("real file helpers: write and read text and bytes, and a scratch path in th
     d.fs.writeText(file, '{"a":1}\n');
     expect(d.fs.readText(file)).toBe('{"a":1}\n');
     expect(Array.from(d.fs.read(file).slice(0, 2))).toEqual([123, 34]);
+    d.fs.writeText(file, '﻿{"a":1}');   // a byte-order mark, as Notepad or PowerShell 5.1 may save it
+    expect(JSON.parse(d.fs.readText(file))).toEqual({ a: 1 });
     const scratch = d.fs.tempPath("plan-abc.json");
     expect(scratch.startsWith(tmpdir())).toBe(true);
     expect(scratch.endsWith("plan-abc.json")).toBe(true);

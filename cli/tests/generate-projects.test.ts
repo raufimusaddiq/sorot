@@ -6,7 +6,7 @@ const story = (i: number, extra: object = {}) => ({
   title: `Film ${i}`, pitch: `Pitch ${i}`, opening: `Opening ${i}`, beats: ["hook", "isi", "akhir"], recommended: i === 1, bold: false, ...extra,
 });
 const plan = (title = "Bunga berbunga") => ({
-  title, message: "Uang tumbuh sendiri", totalSec: 30, assumptions: ["Angka 5 ditambah"],
+  title, message: "Uang tumbuh sendiri", totalSec: 30, assumptions: ["Angka 5 ditambah"], effectNotes: ["s02 enters with flash: the number lands"],
   shots: [1, 2, 3].map((n) => ({ id: `s0${n}`, durationSec: 10, purpose: n === 1 ? "hook" : "beat", text: [{ role: "title", value: `Judul ${n}` }], visual: { description: `Visual ${n}` } })),
 });
 const row = (revision: number, over: object = {}) => ({ id: `plan-${revision}`, revision, plan: plan(), approvedAt: null, changeSummary: null, ...over });
@@ -89,6 +89,7 @@ describe("gen new", () => {
     expect(h.text()).toContain("Judul 2");
     expect(h.text()).toContain("Total 30 s of 30 s");
     expect(h.text()).toContain("Assumed: Angka 5 ditambah");
+    expect(h.text()).toContain("Effect: s02 enters with flash: the number lands");
   });
 });
 

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createApp, type App } from "../src/app";
@@ -261,6 +261,8 @@ export function fakeHyperframes(handlers: Record<string, HfHandler> = {}) {
   const base: Record<string, HfHandler> = {
     init: (args) => {
       const dir = args[1] as string;
+      // like the real CLI: a folder that already has files in it is refused
+      if (existsSync(dir) && readdirSync(dir).length) return { ...procOk("", `Directory already exists and is not empty: ${dir}`), exitCode: 1 };
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, "index.html"), "<!doctype html>");
       writeFileSync(join(dir, "hyperframes.json"), "{}");
@@ -297,7 +299,8 @@ export const quickRecipe = (): Recipe => ({
   output: { width: 1080, height: 1920, fps: 30, minSec: 5, maxSec: 90 },
   steps: [
     { use: "storylines", with: { count: 3, skipUnderSec: 15 }, gate: "owner" },
-    { use: "plan", gate: "owner", with: { blocks: true } },
+    // no effects pass and no effects floor: the sample plan is all cuts (both are tested on their own)
+    { use: "plan", gate: "owner", with: { blocks: true, minEffects: 0, effects: false } },
     { use: "author" }, { use: "check" },
     { use: "render", with: { quality: "draft" } },
     { use: "technical" }, { use: "creative", with: { criteria: [{ id: "hook", question: "Does `opening` hold the eye?" }] } },
@@ -325,11 +328,27 @@ export class AsText {
   constructor(readonly text: string) {}
 }
 
+/** A reasoning model that spent its whole budget thinking: no text, no tool call, stopped by the length. */
+export class ThoughtTooLong {}
+
+/** A reply that calls tools the model chose itself (a tool loop), each with its arguments. */
+export class Calls {
+  constructor(readonly calls: Array<[name: string, args: Record<string, unknown>]>) {}
+}
+
+/** The effects pass's answer when the director keeps the plan's effects as they are: no tool call ends the loop. */
+export const EFFECTS_DONE = new AsText("The plan's effects stand as written.");
+
 /**
  * The model's answer. When the request forces a function (tool_choice), a JSON string reply is that function's
  * arguments, as a real tool call would carry them; otherwise (or with AsText) it is the message text.
  */
-function completion(body: any, reply: string | AsText): Response {
+function completion(body: any, reply: string | AsText | Calls | ThoughtTooLong): Response {
+  if (reply instanceof ThoughtTooLong) return Response.json({ choices: [{ message: { role: "assistant", content: null }, finish_reason: "length" }] });
+  if (reply instanceof Calls) {
+    const tool_calls = reply.calls.map(([name, args], i) => ({ id: `call_${i + 1}`, type: "function", function: { name, arguments: JSON.stringify(args) } }));
+    return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls }, finish_reason: "tool_calls" }] });
+  }
   const forced = body.tool_choice?.function?.name as string | undefined;
   if (forced && typeof reply === "string") {
     const call = { id: "call_1", type: "function", function: { name: forced, arguments: reply } };
@@ -338,8 +357,11 @@ function completion(body: any, reply: string | AsText): Response {
   return Response.json({ choices: [{ message: { role: "assistant", content: reply instanceof AsText ? reply.text : reply }, finish_reason: "stop" }] });
 }
 
-/** An Llm whose replies come from `replies` in order (a string = the model's text; an Error = HTTP 500). `requests` logs each body. */
-export function fakeLlm(replies: Array<string | AsText | Error | ((body: any) => string)>) {
+/** A gateway that is down: HTTP 503, a transient failure the client tries 3 times (so give it 3 in a row to fail a call). */
+export const gatewayDown = () => Object.assign(new Error("upstream unavailable"), { status: 503 });
+
+/** An Llm whose replies come from `replies` in order (a string = the model's text; an Error = HTTP 400, or its `status`). `requests` logs each body. */
+export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>) {
   const requests: Array<{ messages: Array<{ role: string; content: string }>; [k: string]: any }> = [];
   const queue = [...replies];
   const fetchFn = (async (_url: string, init?: RequestInit) => {
@@ -347,10 +369,10 @@ export function fakeLlm(replies: Array<string | AsText | Error | ((body: any) =>
     requests.push(body);
     const next = queue.shift();
     if (next === undefined) return new Response("no more fake replies", { status: 500 });
-    if (next instanceof Error) return new Response(next.message, { status: 400 });
+    if (next instanceof Error) return new Response(next.message, { status: (next as Error & { status?: number }).status ?? 400 });
     return completion(body, typeof next === "function" ? next(body) : next);
   }) as unknown as typeof fetch;
-  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5 }, fetchFn, 0);
+  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, genLlmMaxTokens: 4000 }, fetchFn, 0);
   return { llm, requests };
 }
 
@@ -358,7 +380,7 @@ export function fakeLlm(replies: Array<string | AsText | Error | ((body: any) =>
  * Answers the app's LLM calls from `replies`, in order (a string is the model's text, an Error an HTTP 400, a function
  * gets the request body). `requests` logs every body. Needs the env made with `llmBaseUrl` and `llmModel`.
  */
-export function scriptLlm(env: TestEnv, replies: Array<string | AsText | Error | ((body: any) => string)>) {
+export function scriptLlm(env: TestEnv, replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>) {
   const requests: Array<{ messages: Array<{ role: string; content: string }>; [k: string]: any }> = [];
   const queue = [...replies];
   env.fetchHandler.fn = async (_url, init) => {
@@ -366,7 +388,7 @@ export function scriptLlm(env: TestEnv, replies: Array<string | AsText | Error |
     requests.push(body);
     const next = queue.shift();
     if (next === undefined) return new Response("no more scripted replies", { status: 400 });
-    if (next instanceof Error) return new Response(next.message, { status: 400 });
+    if (next instanceof Error) return new Response(next.message, { status: (next as Error & { status?: number }).status ?? 400 });
     return completion(body, typeof next === "function" ? next(body) : next);
   };
   return { requests, left: () => queue.length };

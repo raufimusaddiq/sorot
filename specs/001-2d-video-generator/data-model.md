@@ -293,3 +293,87 @@ Rules enforced by the runner (all from FR-006, FR-014, FR-016, FR-035):
 - On restart, a `BUILDING` version becomes `FAILED` ("interrupted"), the same as the clip job
   sweep.
 - A version rendered at `delivery` is exported by copying the file (no second render).
+
+## Additions for any look, any director (2026-11-01, FR-038 to FR-047)
+
+All additive: new tables, new nullable columns, new optional JSON fields. Old databases open
+unchanged and old plans stay valid.
+
+### gen_kit_part (the installed kit)
+
+| Column | Type | Notes |
+|---|---|---|
+| name | TEXT PK | lowercase slug, unique across built-in and user parts |
+| source | TEXT | `builtIn` or `user` |
+| version | TEXT | from `part.json` |
+| manifest | TEXT | the `part.json` as validated ([contracts/kit.md](contracts/kit.md)) |
+| path | TEXT | folder holding the part (`generator/kit/...` or `data/kit/...`) |
+| checkedAt | TEXT | when its example last passed `lint`/`check` and rendered the same twice |
+| createdAt, updatedAt | TEXT | |
+
+Built-in parts are synced from `generator/kit/` at start; a user part with a built-in's name is
+refused.
+
+### gen_model_record (how each model fares on this install)
+
+| Column | Type | Notes |
+|---|---|---|
+| model | TEXT | as sent to the LLM endpoint |
+| level | TEXT | `kit`, `compose`, `free`, or `plan` for plan calls |
+| asked | INTEGER | answers requested |
+| firstPass | INTEGER | passed their checks with no repair |
+| repaired | INTEGER | passed after repair |
+| dropped | INTEGER | shots rebuilt one level down |
+| malformed | INTEGER | answers that weren't valid JSON / the asked shape |
+| ms | INTEGER | total time spent |
+| calibratedAt | TEXT NULL | set by Calibrate |
+| updatedAt | TEXT | |
+
+Primary key (model, level). The level choice reads it (research R25).
+
+### Changes to existing tables
+
+- `gen_version.kit` TEXT NULL: JSON `{ "version": "...", "parts": ["shade", "camera"] }`, what the
+  build used.
+- `gen_version.shotLevels` TEXT NULL: JSON `{ "s01": { "planned": "compose", "built": "kit", "reason": "..." } }`.
+- `gen_recipe` / frozen recipe: the `author` step's `level`, `maxLevel` and `require` (part names),
+  the `render` step's `motionBlur` ([contracts/recipe.md](contracts/recipe.md)).
+
+### Plan JSON additions
+
+```json
+{
+  "shots": [{
+    "id": "s02",
+    "level": "compose",
+    "look": {
+      "description": "a heavy coin rolls down a snowy slope, lit from the upper left",
+      "values": { "lightAngleDeg": 300, "camera": "isometric", "speed": "fast" },
+      "parts": [{ "part": "shade", "settings": { "material": "metal" } }, { "part": "camera", "settings": { "projection": "isometric", "move": "dolly-in" } }]
+    }
+  }]
+}
+```
+
+`look.description` and `look.values` are the director's own terms (FR-041); only `parts` is
+checked against the kit (unknown part or setting → repair). `level` is what the plan expects; the
+build records what it actually used in `gen_version.shotLevels`.
+
+### Kit-level shot JSON (`submit_shot_kit`)
+
+```json
+{ "shotId": "s02", "layers": [
+  { "part": "camera", "settings": { "projection": "isometric" }, "fromSec": 0, "toSec": 3 },
+  { "part": "image-place", "settings": { "asset": "assets/img-s02.png", "shadow": "contact" }, "fromSec": 0, "toSec": 3 }
+], "text": [{ "role": "title", "value": "Bola salju uang" }] }
+```
+
+Validated against the capability description; Sorot writes the scene from it.
+
+### New finding codes
+
+`level_drop` (should-fix: a shot rebuilt one level down, with the reason), `motion_jump` and
+`motion_stall` (from the `motion` measure; must-fix above the hard threshold, should-fix
+otherwise), `kit_unknown_part` and `kit_bad_setting` (plan or scene named something not
+installed; a validation error during the build, a must-fix if left), `frame_budget` (a shot too
+heavy to draw in time on this machine).

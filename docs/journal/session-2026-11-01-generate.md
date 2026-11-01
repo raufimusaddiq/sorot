@@ -25,3 +25,31 @@ Design and measurements: [generate.md](../generate.md); decisions: `research.md`
 - S3 (listening test, recorded ElevenLabs/Fish fixtures), S6 (rebuild a real agent pipeline from
   `docs/examples/recipes/agent-explainer.json`, timed), S2 final and S5 (60 s narrated delivery render,
   vision look model). Real HyperFrames, vision, image and data-source paths were exercised with fakes.
+
+## Phase 12, phase 13 and the first real runs (2026-11-01 to 11-02)
+
+Real builds on the RTX 4060 Docker app (kenari.id, deepseek-v4-flash then deepseek-v4-1-flash; Fish;
+Jev). Measurements and decisions: `research.md` (T114, Part 3 R22 to R31, spike S7).
+
+- **Phase 12**: per-shot transitions written by Sorot on the root timeline, the director's effects
+  pass (tools), the `effects_few` measure and the `flat_film` risk, grouped check findings, a plan
+  that a retry keeps, Generate's own token budget.
+- **Phase 13**: the authoring contract follows HyperFrames' rules (`fromTo`, transforms only,
+  `data-hold`, contrast, vertical safe band, motion craft); openings and look rules in the story
+  guidance; malformed JSON sent back with where it broke; numeric plans asked in parts; seams that
+  wouldn't show on the ground refused.
+- **Found by real runs and fixed**: the gateway cut every non-streamed request at 180 s (answers are
+  now streamed); the plan's input key read a later step's script (re-plans on retry); voice overran
+  the film (script words capped by length at 1.8 words/s); narration switched off by the director;
+  no image prompts (no guidance); motion frames counted from the shot; `=` counted as a word;
+  unsourced numbers with no repair call; fix rounds failed on `init`; approving a plan step didn't
+  approve the plan; old effect notes contradicted the pass; spoken numbers in digits failed the
+  speech check; a scene that thought past its budget wasn't retried.
+- **Not yet solved**: deepseek-v4-1-flash sometimes thinks through all 32,000 tokens on one scene
+  and answers nothing, twice in a row (Gunung Koin rebuild of 11-02). Next: a larger budget or a
+  different model, then the kit and director levels (phases 14 to 16) so a scene needs less code.
+- **Spec**: User Story 9 and FR-038 to FR-047 (any look, an open kit, director levels from small to
+  strong models, a capability description per call); plan Part 3 and tasks T115 to T151.
+
+**Verify (before commit)**: backend 1124 pass, 0 fail, 98.0% functions / 99.4% lines, typecheck
+clean; CLI 134 pass, 97.0% / 99.7%; frontend 227 pass, 98.3% functions / 99.1% lines. No skips.

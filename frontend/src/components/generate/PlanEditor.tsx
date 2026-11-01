@@ -93,6 +93,13 @@ export function PlanEditor({ plans, targetSec, busy, onSave, onRevise, onApprove
         </div>
       )}
 
+      {(draft.effectNotes?.length ?? 0) > 0 && (
+        <div>
+          <p className={label}>Effects the director chose</p>
+          <ul className="list-disc pl-5 text-sm">{draft.effectNotes!.map((n) => <li key={n}>{n}</li>)}</ul>
+        </div>
+      )}
+
       {!approved && (
         <>
           <div className="flex flex-wrap gap-2">

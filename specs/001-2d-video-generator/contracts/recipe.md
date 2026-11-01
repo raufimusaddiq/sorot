@@ -79,7 +79,7 @@ and the closing `task` field stay Sorot's, so a custom prompt can't break parsin
 | `voice` | voices the script (engine and voice from Settings, per language) | `engine?: elevenlabs \| fish \| openai \| local` and `voice?` (overrides; examples never set them), `failClosed: true`, `speed` | |
 | `align` | word timings: the engine's timestamps if it returns them, else local Whisper on the voiceover | `source: auto \| engine \| whisper`, `model?` | |
 | `storylines` | N different films in words | `count: 1..5`, `skipUnderSec` (go straight to a plan at or under this length), `requireBold`, `pickRule` | **owner / director** |
-| `plan` | shot-by-shot plan | `numeric`, `motionPlan`, `timingFrom: plan \| voice`, `blocks: true \| false`, `templates`, `maxShots` | **required: owner / director** |
+| `plan` | shot-by-shot plan, then the director's effects pass | `numeric`, `motionPlan`, `timingFrom: plan \| voice`, `blocks: true \| false`, `templates`, `maxShots`, `effects: true \| false \| {maxSteps, tokenBudget}` (on unless false; 12 steps, 60000 tokens), `minEffects` (the TECHNICAL effects floor; 3 for 15 s or longer when unset) | **required: owner / director** |
 | `concept` | names the visual mechanism, checks novelty | `novelty: {lastN}`, `mechanismTest` | |
 | `images` | generated images for marked shots | `style`, `size` | |
 | `music` | picks or uses a music bed | `track?`, `duckUnderVoiceDb` | |
@@ -181,3 +181,16 @@ From the database, for people and outside agents to read (read-only mirrors), in
 `STORYLINES.md`, `SPEC.md`, `MOTION_PLAN.md`, `CONCEPT.txt`, `v{n}/` (the HyperFrames project) and
 `MOTION_REVIEW.md` (both verdicts, findings, kept warnings and their reasons). A file is written
 only when the step that produces it is in the recipe.
+
+### Additions for any look, any director (2026-11-01)
+
+| Step | New settings | Default |
+|---|---|---|
+| `author` | `level: auto \| kit \| compose \| free`, `maxLevel: kit \| compose \| free`, `require` may name kit parts | `auto`, `free` (a CPU install may lower `maxLevel`) |
+| `render` | `motionBlur: auto \| on \| off` (`auto`: on for shots the plan marks fast) | `auto` |
+| `technical` | the always-on measure `motion` (jumps and stalls inside shots), tunable thresholds | on |
+| `creative` | Sorot always adds the criteria `finished` and `motion` | |
+
+New settings have no schema defaults that join a step's input hash; their defaults live in code,
+so existing projects don't re-run. A recipe naming a kit part the install lacks is unavailable
+with the reason "kit part <name> isn't installed".

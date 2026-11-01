@@ -19,7 +19,22 @@ const HOLD_CODES = new Set(["sweep_static", "dead_stretch"]);
 /** HyperFrames says a film has no sound bed; a plan without sound meant that. */
 const SILENT_CODE = "film_silent";
 
-interface Found { shot: number | null; code: string; severity: "error" | "warning"; message: string; hint?: string; time?: number }
+interface Found { shot: number | null; code: string; severity: "error" | "warning"; message: string; hint?: string; time?: number; count?: number }
+
+/** The same code, shot and message is one finding with a count (a real build listed one console warning 45 times), at its first moment. */
+export function grouped<T extends Found>(found: T[]): T[] {
+  const out = new Map<string, T>();
+  for (const f of found) {
+    const key = JSON.stringify([f.code, f.shot, f.message]);
+    const seen = out.get(key);
+    if (!seen) out.set(key, { ...f });
+    else {
+      seen.count = (seen.count ?? 1) + 1;
+      if (typeof f.time === "number" && !(typeof seen.time === "number" && seen.time <= f.time)) seen.time = f.time;
+    }
+  }
+  return [...out.values()];
+}
 
 /** lint first (cheap); `check` (it opens a browser) only once lint has no errors. */
 async function collect(ctx: Parameters<RunFn>[0], dir: string, starts: number[], durations: number[]): Promise<Found[]> {
@@ -64,7 +79,7 @@ export const run: RunFn = async (ctx) => {
 
   let found: Found[] = [];
   for (let round = 0; ; round++) {
-    found = await collect(ctx, dir, starts, durations);
+    found = grouped(await collect(ctx, dir, starts, durations));
     // the plan's own rules count too: a scene that lost its text is repaired with the lint findings
     const planLock = plan.shots.flatMap((shot, i) => checkScene(readScene(dir, i) ?? "", shot, i, { assets }).map((c): Found => ({ shot: i, code: c.code, severity: "error", message: c.message, hint: c.hint })));
     const todo = [...repairs(found), ...planLock];
@@ -88,7 +103,7 @@ export const run: RunFn = async (ctx) => {
     const hold = planned(f) ?? (f.shot !== null ? held.get(`${f.shot}:${f.code}`) : undefined);
     return {
       severity: severity(f), shotId: f.shot === null ? null : plan.shots[f.shot]!.id, ...(typeof f.time === "number" ? { fromSec: f.time } : {}),
-      code: f.code, description: f.message, ...(f.hint ? { suggestedFix: f.hint } : {}), state: hold ? "kept" : "open", ...(hold ? { keptReason: hold } : {}), rule: "check",
+      code: f.code, description: f.message, ...(f.count ? { count: f.count } : {}), ...(f.hint ? { suggestedFix: f.hint } : {}), state: hold ? "kept" : "open", ...(hold ? { keptReason: hold } : {}), rule: "check",
     };
   });
   saveFindings(dir, "check", report);

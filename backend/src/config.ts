@@ -51,6 +51,10 @@ export interface AppConfig {
   llmTimeoutSec: number;
   /** Output budget per LLM call. Reasoning models (e.g. Kimi, DeepSeek-R1) spend it thinking before they answer. */
   llmMaxTokens: number;
+  /** Output budget per Generate director call: a scene file is long, so it has its own (Settings → LLM). */
+  genLlmMaxTokens: number;
+  /** Ask for streamed answers (default on): a gateway cut non-streamed requests at 180 s. LLM_STREAM=0 turns it off. */
+  llmStream: boolean;
   /** Web search for the discovery agent: "bing" (key-free HTML), a SearXNG URL, or "off". */
   webSearch: string;
   /** On/off switches for the three connections (UI / CLI settings); each still needs its URL, model or key. */
@@ -176,6 +180,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),
     llmTimeoutSec: int(env.LLM_TIMEOUT, 120),
     llmMaxTokens: Math.max(256, int(env.LLM_MAX_TOKENS, 4000)),
+    genLlmMaxTokens: Math.max(256, int(env.GEN_LLM_MAX_TOKENS, 32000)),
+    llmStream: !/^(0|false|no|off)$/i.test((env.LLM_STREAM ?? "").trim()),
     webSearch: (env.WEB_SEARCH ?? "").trim() || "bing",
     llmEnabled: true,
     jevEnabled: true,

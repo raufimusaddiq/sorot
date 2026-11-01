@@ -8,7 +8,7 @@ import { LlmError } from "../../src/llm";
 import { Store } from "../../src/store";
 import type { GenProject } from "../../src/types";
 import { Llm } from "../../src/llm";
-import { AsText, fakeLlm, samplePlan } from "../helpers";
+import { AsText, Calls, fakeLlm, samplePlan } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const project: GenProject = {
@@ -46,7 +46,7 @@ describe("director: storylines", () => {
     expect(userOf(req)).toMatchObject({ brief: "Jelaskan bunga majemuk", format: "9:16", targetSec: 30, count: 3, note: "lebih tenang" });
     expect(userOf(req).task).toContain("Write 3 different storylines");
     expect(systemOf(req)).toContain("different films");          // Sorot's instructions
-    expect(systemOf(req)).toContain("hook frame is never black"); // generator/prompts/story.md
+    expect(systemOf(req)).toContain("Frame 0 is the thumbnail");  // generator/prompts/story.md
     expect(systemOf(req)).not.toContain("<!--");
     expect(systemOf(req)).toContain("calling the function submit_storylines");   // what to call
   });
@@ -115,6 +115,8 @@ describe("director: plan", () => {
     expect(u.task).toContain("30-second 9:16");
     expect(systemOf(r.requests[0]!)).toContain("submit_plan");
     expect(systemOf(r.requests[0]!)).toContain("Beats and pace");          // the plan section of story.md
+    expect(systemOf(r.requests[0]!)).toContain("between 168 and 1330 px");  // its look and layout rules
+    expect(systemOf(r.requests[0]!)).toContain("at most a third of the seams are plain cuts");   // and the Effects section
     expect(systemOf(r.requests[0]!)).not.toContain("Offer N storylines");   // not the storylines section
   });
 
@@ -134,8 +136,96 @@ describe("director: plan", () => {
   });
 });
 
-describe("director: revise", () => {
-  const current = validatePlan(samplePlan(), planCtx).plan as Plan;
+describe("director: a numeric plan in parts", () => {
+  const ctx: PlanContext = { ...planCtx, numeric: true, motionPlan: true, fps: 30 };
+  const outline = {
+    ...samplePlan(), look: { palette: ["#0B1020", "#FFD23F"], fonts: ["Plus Jakarta Sans"], pacing: "brisk" },
+    numeric: { typography: { title: { font: "Plus Jakarta Sans", weight: 700, px: 96, tracking: -0.02 } }, shadow: "none", easing: { enter: "power3.out" }, durationsFrames: { hold: 60 }, staggerFrames: {} },
+    shots: Array.from({ length: 6 }, (_, i) => ({ id: `s0${i + 1}`, purpose: "beat", durationSec: 5, text: [{ role: "title", value: `Judul ${i + 1}` }], visual: { description: `visual ${i + 1}` }, motion: "", transition: "cut" })),
+  };
+  // detail of some shots; motion frames may count from the start of the shot
+  const specs = (ids: number[], token = (_i: number) => "enter") => json({ shots: ids.map((i) => ({ id: `s0${i}`, heroMove: `gerak ${i}`, reads: `baca ${i}`, handoff: `lanjut ${i}`, motionPlan: [{ token: token(i), fromFrame: 0, toFrame: 18 }] })) });
+
+  test("the film and its shot list first, frames counted in code; then the detail four shots at a time, each batch repaired on its own", async () => {
+    const r = rig([json(outline), specs([1, 2, 3, 4], (i) => (i === 2 ? "wobble" : "enter")), specs([1, 2, 3, 4]), specs([5, 6])]);
+    const { plan } = await r.director.plan({ project, step: step({ use: "plan" }), settings: {}, assets: [], storyline: null, planCtx: ctx, catalog: [] });
+    expect(r.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_plan_outline", "submit_shot_specs", "submit_shot_specs", "submit_shot_specs"]);
+    expect(userOf(r.requests[1]!).shots.map((s: any) => [s.id, s.frames])).toEqual([["s01", [0, 150]], ["s02", [150, 300]], ["s03", [300, 450]], ["s04", [450, 600]]]);
+    const problems = JSON.parse(r.requests[2]!.messages.at(-1)!.content).problems as string[];
+    expect(problems[0]).toContain('shot 2 (s02): motionPlan[0] uses "wobble"');
+    expect(problems.every((m) => m.includes('(s02)'))).toBe(true);   // only the bad shot's own problems
+    expect(plan.shots.map((s) => [s.heroMove, s.motionPlan![0]!.fromFrame])).toEqual([1, 2, 3, 4, 5, 6].map((i) => [`gerak ${i}`, (i - 1) * 150]));
+    expect(plan.numeric!.totalFrames).toBe(900);
+  });
+
+  test("a batch that stays wrong fails the plan", async () => {
+    const r = rig([json(outline), specs([1, 2, 3]), specs([1, 2, 3])]);
+    await expect(r.director.plan({ project, step: step({ use: "plan" }), settings: {}, assets: [], storyline: null, planCtx: ctx, catalog: [] })).rejects.toThrow("give the detail of s04");
+  });
+});
+describe("director: effects", () => {
+  const catalog = [{ name: "data-chart", tags: ["chart"], type: "block", description: "an animated bar chart" }, { name: "glow-orb", tags: ["light", "glow"], type: "component", description: "a soft glowing orb" }];
+  const plan = () => validatePlan(samplePlan(), planCtx).plan as Plan;
+  const run = (r: ReturnType<typeof rig>, ctx: PlanContext = { ...planCtx, blocks: catalog.map((b) => b.name) }, maxSteps = 6) =>
+    r.director.effects({ project, step: step({ use: "plan" }), plan: plan(), planCtx: ctx, catalog, maxSteps, tokenBudget: 50_000 });
+
+  test("the director chooses effects with tools; each choice is checked and kept with its reason; a bad one goes back as an error", async () => {
+    const r = rig([
+      new Calls([["search_catalog", { query: "light", kind: "any" }], ["set_transition", { shotId: "s01", name: "flash", reason: "x" }]]),
+      new Calls([
+        ["set_transition", { shotId: "s02", name: "flash", reason: "the number lands" }], ["add_block", { shotId: "s03", name: "data-chart", reason: "the growth" }],
+        ["set_look", { shotId: "s01", glowPx: 24, reason: "the coin shines" }], ["set_look", { shotId: "s02", blurPx: 99, reason: "x" }],
+        ["add_block", { shotId: "s02", name: "nope", reason: "y" }], ["set_transition", { shotId: "s03", name: "light-leak" }],
+      ]),
+      new AsText("A flash where the number lands, a chart and a glow."),
+    ]);
+    const out = await run(r);
+    expect(out.plan.shots.map((s) => [s.transition, s.visual.block, s.effects ?? null])).toEqual([
+      ["cut", null, { glowPx: 24, reason: "the coin shines" }], ["flash", null, null], ["cut", "data-chart", null],
+    ]);
+    expect(out.plan.blocks).toEqual(["data-chart"]);
+    expect(out.plan.effectNotes).toEqual(["s02 enters with flash: the number lands", "s03 uses the block data-chart: the growth", "s01 look (glowPx): the coin shines"]);
+    expect(out.notes.at(-1)).toBe("A flash where the number lands, a chart and a glow.");
+    const results = r.requests[1]!.messages.filter((m: any) => m.role === "tool").map((m: any) => JSON.parse(m.content));
+    expect(results[0].map((x: any) => x.name)).toEqual(["light-leak", "glow-orb"]);   // the search finds a transition and a component
+    expect(results[1].error).toContain("the first shot has nothing before it");
+    const errors = r.requests[2]!.messages.filter((m: any) => m.role === "tool").slice(-6).map((m: any) => JSON.parse(m.content).error).filter(Boolean);
+    expect(errors).toEqual(["s02 effects.blurPx is a number from 0 to 40", "nope isn't in the catalog: use a name search_catalog returned", "give the reason: what on screen causes this effect"]);
+    expect(r.events().map((e) => e.kind)).toEqual(["effects"]);
+  });
+
+  test("the pass has the last word on a shot it changed: the plan's own notes about that shot go, others stay", async () => {
+    const own = { ...plan(), effectNotes: ["s01 -> s02 wipe: the plan's own choice", "warm light all through the film"] };
+    const r = rig([new Calls([["set_transition", { shotId: "s02", name: "zoom", reason: "going deeper" }]]), new AsText("A zoom.")]);
+    const out = await r.director.effects({ project, step: step({ use: "plan" }), plan: own, planCtx, catalog, maxSteps: 2, tokenBudget: 50_000 });
+    expect(out.plan.effectNotes).toEqual(["warm light all through the film", "s02 enters with zoom: going deeper"]);
+  });
+  test("a seam that paints a colour must show on the ground: no white flash or pale wipe on a pale film", async () => {
+    const pale = validatePlan({ ...samplePlan(), look: { palette: ["#F4F6F8", "#E3E8EC"], fonts: ["Plus Jakarta Sans"], pacing: "calm" } }, planCtx).plan as Plan;
+    const r = rig([
+      new Calls([["set_transition", { shotId: "s02", name: "flash", reason: "x" }], ["set_transition", { shotId: "s02", name: "wipe", reason: "x" }], ["set_transition", { shotId: "s02", name: "zoom", reason: "deeper" }]]),
+      new AsText("A zoom."),
+    ]);
+    const out = await r.director.effects({ project, step: step({ use: "plan" }), plan: pale, planCtx, catalog, maxSteps: 3, tokenBudget: 50_000 });
+    const errors = r.requests[1]!.messages.filter((m: any) => m.role === "tool").map((m: any) => JSON.parse(m.content).error);
+    expect(errors).toEqual([
+      "a flash won't show on this film's ground #F4F6F8 (contrast 1.08:1); pick a transition that moves or veils the shots instead",
+      "a wipe won't show on this film's ground #F4F6F8 (contrast 1.14:1); pick a transition that moves or veils the shots instead",
+      undefined,
+    ]);
+    expect(out.plan.shots[1]!.transition).toBe("zoom");
+  });
+  test("it is bounded by steps; without blocks there is no block tool and the search finds only transitions", async () => {
+    const r = rig([new Calls([["search_catalog", { query: "chart wipe" }]]), new AsText("Only a wipe.")]);
+    const out = await run(r, { ...planCtx, blocksAllowed: false }, 1);
+    expect(r.requests[0]!.tools.map((t: any) => t.function.name)).toEqual(["search_catalog", "set_transition", "set_look"]);
+    expect(r.requests[1]!.tools).toBeUndefined();   // the final prompt has no tools
+    expect(JSON.parse(r.requests[1]!.messages.find((m: any) => m.role === "tool")!.content).map((x: any) => x.name)).toEqual(["wipe"]);
+    expect(out.plan.effectNotes).toBeUndefined();
+  });
+});
+
+describe("director: revise", () => {  const current = validatePlan(samplePlan(), planCtx).plan as Plan;
   const ask = (r: ReturnType<typeof rig>, request: string) => r.director.revise({ project, step: step({ use: "plan" }), current, request, planCtx });
   const edited = (id: string, title: string) => ({
     ...samplePlan(), shots: samplePlan().shots.map((s: any) => (s.id === id ? { ...s, text: [{ role: "title", value: title }] } : s)),
@@ -253,10 +343,10 @@ describe("director: tool calling", () => {
   test("unreadable arguments are reported as such", async () => {
     const r = rig(["{ not json", json({ decision: "approve", reason: "ok" })]);
     await r.director.gate({ project, step: step(), kind: "plan", output: samplePlan() });
-    expect(JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems[0]).toBe("the function arguments were not valid JSON");
+    expect(JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems[0]).toBe("the function arguments were not valid JSON: expected a quoted string at character 2, near «{ not json»; send the whole answer again with that fixed");
   });
 
-  test("the answer budget is at least the job's floor, and a larger configured one wins (a reasoning model thinks first)", async () => {
+  test("the answer budget is at least the job's floor, and a larger Generate budget wins (a reasoning model thinks first)", async () => {
     const small = rig([json({ decision: "approve", reason: "ok" })]);
     await small.director.gate({ project, step: step(), kind: "plan", output: samplePlan() });
     expect(small.requests[0]!.max_tokens).toBe(4000);   // the default budget is already above the gate's floor
@@ -269,7 +359,7 @@ describe("director: tool calling", () => {
       seen.push(JSON.parse(String(init?.body)));
       return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "c", type: "function", function: { name: "submit_decision", arguments: json({ decision: "approve", reason: "ok" }) } }] } }] });
     }) as unknown as typeof fetch;
-    const big = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, llmMaxTokens: 40000 }, fetchFn, 0);
+    const big = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, llmMaxTokens: 1000, genLlmMaxTokens: 40000 }, fetchFn, 0);   // the clipping budget is not used
     const store = new Store(openDatabase(":memory:"));
     await new Director(big, new DirectorLog(store), "../generator").gate({ project, step: step(), kind: "plan", output: samplePlan() });
     expect(seen[0].max_tokens).toBe(40000);
@@ -293,8 +383,14 @@ describe("director: scenes", () => {
       compositionId: "shot-02", file: "compositions/shot-02.html", size: { width: 1080, height: 1920 },
       shot: { id: "s02" }, film: { title: "Bunga berbunga", position: 2, of: 3 }, assets: ["assets/ab-logo.png"], fonts: ["Plus Jakarta Sans"],
       blocks: { "data-chart": "<div>chart</div>" },
+      // the seams on either side and the neighbours, so the hero can carry across
+      effects: null, enters: "cut", leaves: "cut",
+      before: { id: "s01", purpose: "hook", lastText: "Bunga berbunga?", handoff: null }, after: { id: "s03", purpose: "payoff", firstText: "Mulai dari sekarang", opens: "visual 3" },
     });
     expect(userOf(req).task).toContain("Write compositions/shot-02.html for shot 2 of 3");
+    expect(systemOf(req)).toContain("Sorot draws the transitions between shots");   // the Effects section of the contract
+    expect(systemOf(req)).toContain("never `from`");   // HyperFrames' own contract: fromTo only, transforms not width/height
+    expect(systemOf(req)).toContain("## Motion craft");
     expect(systemOf(req)).toContain("Writing one scene");          // the authoring contract
     expect(systemOf(req)).toContain("submit_scene");
     expect(systemOf(req)).not.toContain("Offer N storylines");

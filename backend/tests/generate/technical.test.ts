@@ -10,7 +10,7 @@ import { readFindings, saveFindings, type NewFinding } from "../../src/generate/
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import {
-  audioFindings, contentFindings, forbiddenNumberFindings, fpsOf, outputFindings, sourcedNumberFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, verdictOf, type Probe,
+  audioFindings, contentFindings, effectFindings, effectsUsed, forbiddenNumberFindings, fpsOf, minEffectsFor, outputFindings, sourcedNumberFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, verdictOf, type Probe,
 } from "../../src/generate/technical";
 import type { ExecFn } from "../../src/runner";
 import { Store } from "../../src/store";
@@ -20,7 +20,8 @@ import { fakeJev, fakeLlm, noulA, procOk, quickRecipe, samplePlan } from "../hel
 
 const T = "2026-01-01T00:00:00.000Z";
 const plan = (over: Record<string, unknown> = {}) => validatePlan(samplePlan(over), {
-  brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: true,
+  brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false,
+  narration: (over.sound as { narration?: boolean } | undefined)?.narration === true,   // a voice exactly when the plan asks for one
 }).plan as Plan;
 
 const probeOf = (over: Partial<{ width: number; height: number; fps: string; duration: string; audio: boolean; video: boolean }> = {}): Probe => ({
@@ -34,6 +35,17 @@ const want = { width: 1080, height: 1920, fps: 30, durationSec: 30, minSec: 5, m
 const tol = { fpsTolerance: 0.5, lengthToleranceSec: 0.1 };
 const codes = (f: NewFinding[]) => f.map((x) => x.code);
 
+describe("effects", () => {
+  test("blocks, seams that aren't cuts and shots with light, blur, depth or glow count; too few is a should-fix", () => {
+    const flat = plan();
+    expect(effectsUsed(flat)).toEqual({ blocks: 0, transitions: 0, looks: 0, total: 0 });
+    expect(effectFindings(flat, minEffectsFor(flat, undefined))).toMatchObject([{ code: "effects_few", severity: "should-fix", description: expect.stringContaining("uses 0 effects (0 blocks, 0 transitions, 0 shots with light, blur, depth or glow); the recipe asks for at least 3") }]);
+    const rich = plan({ blocks: ["data-chart"], shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: i ? "flash" : "wipe", ...(i === 2 ? { effects: { blurPx: 8 }, visual: { ...s.visual, block: "data-chart" } } : {}) })) });
+    expect(effectsUsed(rich)).toEqual({ blocks: 1, transitions: 2, looks: 1, total: 4 });   // the first shot's transition never counts
+    expect(effectFindings(rich, 3)).toEqual([]);
+    expect([minEffectsFor(flat, 0), minEffectsFor({ ...flat, totalSec: 10 }, undefined)]).toEqual([0, 0]);   // the recipe's own floor; a short film may be plain
+  });
+});
 describe("verdict rule", () => {
   const f = (severity: NewFinding["severity"], state: NewFinding["state"] = "open") => ({ severity, state });
   test.each([
@@ -180,7 +192,7 @@ describe("technical step", () => {
     const r = rig();
     expect(await STEPS.technical.run(r.ctx)).toEqual({ status: "done", outputRef: "PASS" });
     expect(r.verdict()).toMatchObject({ kind: "TECHNICAL", status: "PASS", judgedBy: "code", findings: "[]" });
-    expect(JSON.parse(r.verdict().inputs!)).toMatchObject({ render: { kind: "draft" }, shots: 3, measures: ["output", "planText", "layout", "readability", "firstFrame"] });
+    expect(JSON.parse(r.verdict().inputs!)).toMatchObject({ render: { kind: "draft" }, shots: 3, measures: ["output", "planText", "layout", "readability", "firstFrame", "effects"] });
     expect(r.calls[0]![0]).toBe("/usr/bin/ffprobe");
     expect(r.calls).toHaveLength(1);   // the plan has no sound: no volume measurement
   });
@@ -282,6 +294,7 @@ describe("technical step", () => {
     const listed = forbiddenNumberFindings(p, ["16.000", "lima koma tujuh lima persen", 3], "x");
     expect(codes(listed)).toEqual([["number_forbidden", "s01"], ["number_forbidden", "s02"]]);
     expect(listed[1]!.description).toContain("must not appear");
+    expect(forbiddenNumberFindings(withTexts("Dua kamar", "Selesai", "Dua kamar"), true, "x")).toHaveLength(2);   // same word in two shots: one finding each
   });
 
   test("a flagged blocking content rule is must-fix; clear ones are nothing", () => {

@@ -85,6 +85,8 @@ export type ConnectionView = {
   apiKey: string;
   apiKeySet: boolean;
   director?: boolean;
+  /** LLM only: the output budget of each Generate director call. */
+  genMaxTokens?: number;
 };
 
 /** A command registered in Settings; recipes only name it. */
@@ -241,6 +243,8 @@ export type GenPlan = {
   title: string; message: string; format: string; totalSec: number; language: string;
   look: { palette: string[]; fonts: string[]; pacing: string; notes: string };
   sound: { music: string; narration: boolean }; narrationScript: string | null; blocks: string[]; assumptions: string[]; shots: GenShot[];
+  /** The effects the director chose with its tools, and why: approved with the plan. */
+  effectNotes?: string[];
 };
 
 export type GenPlanRow = {
@@ -333,6 +337,8 @@ export type GenFact = {
 export type GenFinding = {
   id: string; severity: 'must-fix' | 'should-fix' | 'polish'; shotId: string | null; fromSec?: number; toSec?: number;
   code: string; description: string; suggestedFix?: string; state: 'open' | 'fixed' | 'kept'; keptReason?: string; source: string;
+  /** Found this many times (one code, shot and message). */
+  count?: number;
 };
 
 export type GenVerdict = {

@@ -199,14 +199,15 @@ describe('PlanEditor', () => {
     expect(history).toHaveTextContent('Judul diganti');
   });
 
-  it('an approved plan is read-only and shows the director\'s assumptions', () => {
-    editor([makePlanRow('pl1', 1, makeGenPlan({ assumptions: ['Angka 5 ditambah'] }), { approvedAt: '2026-01-01' })]);
+  it('an approved plan is read-only and shows the director\'s assumptions and the effects it chose', () => {
+    editor([makePlanRow('pl1', 1, makeGenPlan({ assumptions: ['Angka 5 ditambah'], effectNotes: ['s02 enters with flash: the number lands'] }), { approvedAt: '2026-01-01' })]);
     expect(screen.getByText('approved')).toBeInTheDocument();
     expect(screen.getByLabelText('Plan title')).toBeDisabled();
     expect(screen.getByLabelText('Shot 1 seconds')).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Approve this plan' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Ask the director')).not.toBeInTheDocument();
     expect(screen.getByText('Angka 5 ditambah')).toBeInTheDocument();
+    expect(screen.getByText('s02 enters with flash: the number lands')).toBeInTheDocument();
   });
 });
 

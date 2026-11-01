@@ -19,6 +19,19 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 - Idea bank and unattended runs: `sorot gen run --recipe R` takes the next idea to an exported video;
   `sorot gen import-history` brings in past work. Guides: `docs/generate.md`,
   `docs/generate-recipes.md`, `docs/generate-porting.md`.
+- Effects: the director picks transitions (fade, blur, flash, light leak, wipe, zoom, iris), blocks and
+  each shot's light, blur, depth and glow with tools, shown with the plan for approval; a film with too
+  few effects is flagged by both verdicts.
+- Fixes from the first real run: a retry keeps the approved plan, a build waits for a failed voice to
+  be retried, repeated check warnings are listed once with a count, Fish works without a voice id,
+  and Generate has its own LLM token budget (Settings → LLM, `GEN_LLM_MAX_TOKENS`).
+- LLM answers are streamed, so long director calls are no longer cut by gateways that end plain
+  requests after a few minutes (`LLM_STREAM=0` turns it off).
+- Better director output: scenes follow HyperFrames' own animation rules, plans follow its layout
+  and opening rules, a broken answer is sent back with where it broke, large numeric plans are asked
+  in parts, and transitions that wouldn't show on the film's colours are refused.
+- Fixes: passing a plan's gate as a step approves the plan; the speech check reads spelled-out and
+  digit numbers alike; old effect notes no longer contradict the director's final choice.
 
 ## [1.0.0] — 2026-10-29
 

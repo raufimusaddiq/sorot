@@ -98,5 +98,23 @@ cancel) is unchanged (Principle VI).
 - `data`: `{sources: [{name, kind: "sqlite", path}]}`, read-only data sources for facts research
 - `commands`: `{commands: [{name, cmd, args[], timeoutSec}]}`, local check commands that recipes may name (off in hosted installs unless the admin enables them)
 - `llm.vision`: bool, `llm.visionModel`: text (empty = the main model)
+- `llm.genMaxTokens`: whole number 256 to 200000, the output budget of each Generate director call (env `GEN_LLM_MAX_TOKENS`, default 32000; a form may send it as text)
 
 `image` and `voice` get `/api/settings/:kind/test`, like `llm`, `jev` and `tebar`.
+
+### Kit and director levels (FR-038 to FR-047, [kit.md](kit.md))
+
+| Method | Path | Body | Returns | Notes |
+|---|---|---|---|---|
+| GET | `/api/generate/kit` | | `{parts[]}` | built-in and user parts with manifest and `checkedAt` |
+| GET | `/api/generate/kit/:name` | | `{part}` | |
+| POST | `/api/generate/kit` | multipart `file` (.zip of a part folder) | `{part}` | validates, renders the example twice; 400 with the findings if it fails |
+| DELETE | `/api/generate/kit/:name` | | `{ok}` | user parts only; 409 for a built-in |
+| GET | `/api/generate/kit/:name/export` | | .zip | |
+| GET | `/api/generate/capabilities` | `?level=` | `{capabilities}` | what a director call would be told right now |
+| GET | `/api/generate/models` | | `{records[]}` | `gen_model_record` per model and level, with the level `auto` would pick |
+| POST | `/api/generate/models/calibrate` | `{model?}` | `{run}` | three sample shots per level; progress like a build |
+| PUT | `/api/generate/models/:model/level` | `{level \| null}` | `{record}` | pin or unpin a model's level |
+
+Versions gain `kit` and `shotLevels` (camelCase of the new columns); plans gain `shots[].level`
+and `shots[].look`. All additive.

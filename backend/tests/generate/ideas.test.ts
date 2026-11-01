@@ -6,7 +6,7 @@ import { earlierConcepts } from "../../src/generate/novelty";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import { Store } from "../../src/store";
 import type { GenProject } from "../../src/types";
-import { makeEnv, procOk, quickRecipe, samplePlan, sceneHtml, scriptLlm, type TestEnv } from "../helpers";
+import { EFFECTS_DONE, makeEnv, procOk, quickRecipe, samplePlan, sceneHtml, scriptLlm, type TestEnv } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const json = JSON.stringify;
@@ -192,12 +192,12 @@ const STORIES = json({ storylines: [story(1), story(2), story(3)] });
 const PICK = json({ decision: "pick", index: 0, reason: "paling jelas" });
 const APPROVE = json({ decision: "approve", reason: "siap" });
 const SCENES = [0, 1, 2].map((i) => json({ html: sceneHtml(i) }));
-const JUDGE = json({ criteria: ["hook", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })), risks: [{ id: "misleading_claim", flagged: false, reason: "" }] });
+const JUDGE = json({ criteria: ["hook", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })), risks: ["misleading_claim", "flat_film"].map((id) => ({ id, flagged: false, reason: "" })) });
 const COPY = json({ title: "Bunga berbunga", description: "Uang tumbuh sendiri." });
 const probe = json({ streams: [{ codec_type: "video", width: 1080, height: 1920, avg_frame_rate: "30/1", duration: "30.0" }], format: { duration: "30.0" } });
 
 /** An app whose recipe lets the director make every decision, so a run never waits for anyone. */
-async function unattended(replies: string[]) {
+async function unattended(replies: Parameters<typeof scriptLlm>[1]) {
   env = makeEnv({ llmBaseUrl: "http://llm/v1", llmModel: "m" });
   env.app.start();
   const llm = scriptLlm(env, replies);
@@ -268,7 +268,7 @@ describe("the files of a project", () => {
 describe("unattended runs", () => {
   test("a run takes the next idea and carries it to an exported video; the next run takes the next idea; resuming by name does not move the cursor", async () => {
     // idea 1: storylines pick, plan, gate approve, three scenes, judge, export copy
-    const llm = await unattended([STORIES, PICK, json(samplePlan()), APPROVE, ...SCENES, JUDGE, COPY]);
+    const llm = await unattended([STORIES, PICK, json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: ["cut", "fade", "flash"][i], ...(i === 0 ? { effects: { glowPx: 20, reason: "the hook shines" } } : {}) })) })), EFFECTS_DONE, APPROVE, ...SCENES, JUDGE, COPY]);
     await env!.json("POST", `${base}/ideas`, { id: "IDEA-1", slug: "satu", brief: "Jelaskan bunga majemuk", flags: { language: "id", targetSec: 30, market_data: false }, facts: [{ claim: "Bunga 5,75 persen", value: "5,75%", sourceUrl: "https://bi.go.id/a" }] });
     await env!.json("POST", `${base}/ideas`, { id: "IDEA-2", slug: "dua", brief: "Jelaskan inflasi" });
     const run = await env!.json("POST", `${base}/run`, { recipeId: "auto" });
@@ -285,7 +285,7 @@ describe("unattended runs", () => {
     expect(exports[0]).toMatchObject({ title: "Bunga berbunga", description: "Uang tumbuh sendiri." });
     expect(existsSync(exports[0]!.path)).toBeTrue();
     expect(env!.app.store.getGenProject(id)!.acceptedVersionId).toBeTruthy();
-    expect(llm.requests).toHaveLength(9);
+    expect(llm.requests).toHaveLength(10);
     expect(env!.app.generate.ideas.get("IDEA-1")).toMatchObject({ status: "built", projectId: id });
     expect(env!.app.store.getGenRecipe("auto")!.ideaCursor).toBe("IDEA-1");
 
@@ -320,7 +320,7 @@ describe("unattended runs", () => {
     await env!.app.generate.whenIdle();
     const id = run.body.data.project.id as string;
     expect(env!.app.store.getGenProject(id)!.status).toBe("FAILED");
-    scriptLlm(env!, [STORIES, PICK, json(samplePlan()), APPROVE, ...SCENES, JUDGE, COPY]);
+    scriptLlm(env!, [STORIES, PICK, json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: ["cut", "fade", "flash"][i], ...(i === 0 ? { effects: { glowPx: 20, reason: "the hook shines" } } : {}) })) })), EFFECTS_DONE, APPROVE, ...SCENES, JUDGE, COPY]);
     const retried = await env!.json("POST", `${base}/run`, { recipeId: "auto", ideaId: "IDEA-1" });
     expect(retried.body.data.project.id).toBe(id);
     await env!.app.generate.whenIdle();

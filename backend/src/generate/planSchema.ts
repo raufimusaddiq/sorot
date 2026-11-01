@@ -2,6 +2,8 @@
 // as untrusted JSON; what leaves is a plan that fits the limits, or a list of what to fix.
 // All limits come from the project's frozen recipe; the defaults below are the Quick example's.
 
+import { TRANSITION_NAMES, transitionKind } from "./transitions";
+
 export interface PlanText { role: string; value: string }
 
 export interface PlanVisual {
@@ -18,6 +20,7 @@ export interface Shot {
   text: PlanText[];
   visual: PlanVisual;
   motion: string;
+  /** How the shot enters from the one before: one of TRANSITIONS (the first shot's is always cut). */
   transition: string;
   audio: string;
   narration: string | null;
@@ -29,6 +32,21 @@ export interface Shot {
   handoff?: string;
   /** `motionPlan`: what moves when, in spec tokens and frames. */
   motionPlan?: MotionStep[];
+  /** Light, blur, depth and glow as exact values, chosen by the director for this shot. */
+  effects?: ShotEffects;
+}
+
+export interface ShotEffects {
+  /** A key light: where it comes from (degrees, 0 = from the top, clockwise), how strong (0 to 1), its colour. */
+  light?: { angleDeg: number; intensity: number; color?: string };
+  /** Background blur in px (depth of field). */
+  blurPx?: number;
+  /** Layers at different depths that move apart (parallax), 2 to 5. */
+  depthLayers?: number;
+  /** Glow around the hero element in px. */
+  glowPx?: number;
+  /** Why the shot needs them. */
+  reason?: string;
 }
 
 export interface MotionStep { token: string; fromFrame: number; toFrame: number; target: string }
@@ -57,6 +75,8 @@ export interface Plan {
   assumptions: string[];
   shots: Shot[];
   numeric?: NumericSpec;
+  /** What the director chose from the effects (transitions, blocks, light...) and why, one line each. */
+  effectNotes?: string[];
 }
 
 export interface PlanLimits {
@@ -94,6 +114,8 @@ export interface PlanContext {
   motionPlan?: boolean;
   /** The recipe's frame rate, to count frames in. */
   fps?: number;
+  /** A factual recipe (`sourcedNumbers`): the numbers in these texts that no verified fact or the brief states. */
+  unsourced?: (texts: string[]) => string[];
 }
 
 export interface PlanCheck {
@@ -108,7 +130,8 @@ export interface PlanCheck {
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter(Boolean) : []);
-const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
+/** Words, not symbols: "=", "→" or "&" between words are not read as one. */
+const words = (s: string) => s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const EASING = /^(?:none|linear|(?:power[1-4]|sine|expo|circ|back|elastic|bounce)\.(?:in|out|inOut)|cubic-bezier\(\s*-?\d*\.?\d+(?:\s*,\s*-?\d*\.?\d+){3}\s*\))$/;
@@ -137,9 +160,12 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
   if (unknownFonts.length) errors.push(`fonts must be bundled or uploaded; not available: ${unknownFonts.join(", ")} (available: ${ctx.fonts.join(", ")})`);
 
   const sound = isObj(raw.sound) ? raw.sound : {};
+  // Narration is the owner's choice for the project: the director can't switch it on without a voice, or off with one
+  // (a real plan said narration: false while the voice was recorded for it).
   const wantsNarration = sound.narration === true;
   if (wantsNarration && !ctx.narration) notes.push("narration was removed: it is off or no voice engine is available");
-  const narrationOn = wantsNarration && ctx.narration;
+  if (!wantsNarration && ctx.narration) notes.push("narration stays on: the project asks for a voice");
+  const narrationOn = ctx.narration;
 
   const blocks = strs(raw.blocks);
   if (blocks.length && ctx.blocksAllowed === false) errors.push("this recipe doesn't allow registry blocks: leave blocks empty and draw everything");
@@ -181,9 +207,13 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
       }
     }
     const narration = narrationOn ? (str(o.narration) || null) : null;
+    const transition = i === 0 ? "cut" : transitionKind(str(o.transition));
+    if (transition === null) errors.push(`${at} (${id}): transition "${str(o.transition)}" isn't one Sorot can build; use one of ${TRANSITION_NAMES.join(", ")}`);
+    const effects = o.effects === undefined || o.effects === null ? undefined : checkEffects(o.effects, `${at} (${id}): effects`, errors);
     return {
       id, purpose: str(o.purpose) || "beat", durationSec: round1(durationSec), text, visual, motion: str(o.motion),
-      transition: str(o.transition) || "cut", audio: str(o.audio), narration, hold: o.hold === true,
+      transition: transition ?? "cut", audio: str(o.audio), narration, hold: o.hold === true,
+      ...(effects ? { effects } : {}),
     };
   });
 
@@ -205,6 +235,10 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     }
   }
 
+  // A factual recipe shows only numbers it can source: an error here gets the director's repair call.
+  const unsourced = ctx.unsourced?.(shots.flatMap((s) => [...s.text.map((t) => t.value), s.narration ?? ""])) ?? [];
+  if (unsourced.length) errors.push(`these numbers have no verified fact: ${unsourced.join(", ")}; show only numbers from the brief or the verified facts, or none`);
+
   const numeric = ctx.numeric ? checkNumeric(raw, shots, total, look, ctx, errors) : undefined;
 
   if (errors.length) return { ok: false, plan: null, errors, notes };
@@ -215,8 +249,44 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     narrationScript: narrationOn ? (str(raw.narrationScript) || null) : null,
     blocks, assumptions, shots,
     ...(numeric ? { numeric } : {}),
+    ...(strs(raw.effectNotes).length ? { effectNotes: strs(raw.effectNotes).slice(0, 40) } : {}),
   };
   return { ok: true, plan, errors, notes };
+}
+
+/** A shot's effects, each an exact value in range; anything else is an error to fix. */
+export function checkEffects(raw: unknown, at: string, errors: string[]): ShotEffects | undefined {
+  if (!isObj(raw)) {
+    errors.push(`${at} must be an object`);
+    return undefined;
+  }
+  const out: ShotEffects = {};
+  const num = (key: string, v: unknown, min: number, max: number): number | undefined => {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) {
+      errors.push(`${at}.${key} is a number from ${min} to ${max}`);
+      return undefined;
+    }
+    return v;
+  };
+  if (raw.light !== undefined && raw.light !== null) {
+    const l = record(raw.light);
+    const angleDeg = num("light.angleDeg", l.angleDeg, 0, 360);
+    const intensity = num("light.intensity", l.intensity, 0, 1);
+    const color = str(l.color);
+    if (color && !HEX.test(color)) errors.push(`${at}.light.color is a hex colour like #FFD580`);
+    if (angleDeg === undefined || intensity === undefined) errors.push(`${at}.light needs angleDeg and intensity`);
+    else out.light = { angleDeg, intensity, ...(color && HEX.test(color) ? { color } : {}) };
+  }
+  const blurPx = num("blurPx", raw.blurPx, 0, 40);
+  const depthLayers = num("depthLayers", raw.depthLayers, 2, 5);
+  const glowPx = num("glowPx", raw.glowPx, 0, 80);
+  if (depthLayers !== undefined && !Number.isInteger(depthLayers)) errors.push(`${at}.depthLayers is a whole number`);
+  if (blurPx !== undefined) out.blurPx = blurPx;
+  if (depthLayers !== undefined && Number.isInteger(depthLayers)) out.depthLayers = depthLayers;
+  if (glowPx !== undefined) out.glowPx = glowPx;
+  if (str(raw.reason)) out.reason = str(raw.reason).slice(0, 200);
+  return Object.keys(out).filter((k) => k !== "reason").length ? out : undefined;
 }
 
 /**
@@ -293,6 +363,13 @@ function checkNumeric(raw: Record<string, unknown>, shots: Shot[], totalSec: num
       const steps: MotionStep[] = [];
       for (const [k, m] of (Array.isArray(o.motionPlan) ? o.motionPlan : []).entries()) {
         const s = record(m);
+        // Frames count from the start of the film; a director that counted from the start of the shot is read that way
+        // when only that reading fits (a real numeric plan wrote every shot's motion from 0).
+        if (shot.frames && int(s.fromFrame) && int(s.toFrame) && (s.fromFrame < shot.frames[0] || s.toFrame > shot.frames[1])
+          && s.fromFrame >= 0 && s.toFrame <= shot.frames[1] - shot.frames[0]) {
+          s.fromFrame += shot.frames[0];
+          s.toFrame += shot.frames[0];
+        }
         const token = str(s.token);
         if (!tokens.has(token)) errors.push(`${label}: motionPlan[${k}] uses "${token}", which isn't in the spec (${[...tokens].join(", ") || "no tokens"})`);
         else if (!int(s.fromFrame) || !int(s.toFrame) || s.toFrame <= s.fromFrame) errors.push(`${label}: motionPlan[${k}] needs whole fromFrame < toFrame`);

@@ -12,7 +12,7 @@ import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import { speechFindings, voiceRouteFindings } from "../../src/generate/technical";
-import { alignWords, placeLines, readVoice, snapToVoice, wordErrorRate, wordsOf, writeVoice, type VoiceLine } from "../../src/generate/voice";
+import { alignWords, placeLines, readVoice, snapToVoice, wordErrorRate, wordsOf, writeVoice, type VoiceLine, speechWords } from "../../src/generate/voice";
 import type { ExecFn } from "../../src/runner";
 import { Store } from "../../src/store";
 import { fakeLlm, procOk, quickRecipe, samplePlan } from "../helpers";
@@ -65,7 +65,8 @@ describe("script step", () => {
     const r = rig([scriptJson()]);
     expect(await STEPS.script.run(r.ctxFor("script"))).toEqual({ status: "done", outputRef: "script" });
     expect(json(JSON.parse(r.store.getGenProject("p1")!.narrationScript!))).toBe(scriptJson());
-    expect(body(r.requests[0]!)).toMatchObject({ spellNumbers: true, maxWords: 160, targetSec: 30, language: "id" });
+    // the recipe allows 160 words, but 30 s of voice holds 54 (1.8 words a second): the length wins
+    expect(body(r.requests[0]!)).toMatchObject({ spellNumbers: true, maxWords: 54, targetSec: 30, language: "id" });
     expect(body(r.requests[0]!).task).toContain("Write every number out in words");
   });
 
@@ -215,6 +216,14 @@ describe("voice helpers", () => {
     const snapped = snapToVoice(p, lines);
     expect(snapped.shots.map((s) => s.durationSec)).toEqual([5.6, 10, 10]);
     expect(snapped.totalSec).toBe(25.6);
+    // a numeric plan: the frames are laid end to end again and the motion moves with its shot (cut at a shorter end)
+    const numeric: Plan = {
+      ...p, numeric: { fps: 30, totalFrames: 900, typography: {}, shadow: "none", easing: {}, durationsFrames: {}, staggerFrames: {} },
+      shots: p.shots.map((s, i) => ({ ...s, frames: [i * 300, i * 300 + 300] as [number, number], motionPlan: [{ token: "enter", fromFrame: i * 300, toFrame: i * 300 + (i ? 18 : 290), target: "title" }] })),
+    };
+    const reframed = snapToVoice(numeric, lines);
+    expect(reframed.shots.map((s) => [s.frames, s.motionPlan![0]!.fromFrame, s.motionPlan![0]!.toFrame])).toEqual([[[0, 168], 0, 168], [[168, 468], 168, 186], [[468, 768], 468, 486]]);
+    expect(reframed.numeric!.totalFrames).toBe(768);
   });
 
   test("word error rate, and a script's words given the times Whisper heard", () => {
@@ -241,6 +250,10 @@ describe("TECHNICAL: the voice", () => {
 
   test("a film that says the script passes", () => {
     expect(speechFindings(spoken, [...say("Bunga majemuk membuat uang tumbuh", 0), ...say("Mulai dari sekarang", 4)], 0.25)).toEqual([]);
+    // numbers count by value: a spelled-out height that Whisper heard as digits (split in two) was said
+    const height = [{ id: "l1", text: "Setinggi delapan ribu delapan ratus empat puluh delapan meter, lima persen", start: 0, durationSec: 4, firstWordAt: 0 }];
+    expect(speechFindings(height, say("Setinggi 8 ,848 meter, 5%", 0), 0.25)).toEqual([]);
+    expect(speechWords("dua koma lima persen dari 1.000")).toEqual(["n2p5pct", "dari", "n1000"]);
   });
 
   test("a line that is not heard is named with its time; so is a film that says something else", () => {

@@ -69,7 +69,10 @@ export const STEP_SPECS: Record<StepType, StepSpec> = {
     count: { t: "int", min: 1, max: 5 }, skipUnderSec: { t: "int", min: 0, max: 90 }, requireBold: { t: "bool" }, pickRule: { t: "str", max: 500 } } },
   plan: { gates: ["owner", "director"], fields: {
     numeric: { t: "bool" }, motionPlan: { t: "bool" }, timingFrom: { t: "enum", values: ["plan", "voice"] }, blocks: { t: "bool" },
-    templates: { t: "bool" }, maxShots: { t: "int", min: 1, max: 20 } } },
+    templates: { t: "bool" }, maxShots: { t: "int", min: 1, max: 20 },
+    // No defaults (a default joins every step's hash): effects on, minEffects 3 from 15 s, both in code.
+    minEffects: { t: "int", min: 0, max: 20 },
+    effects: { t: "flag", fields: { maxSteps: { t: "int", min: 1, max: 30 }, tokenBudget: { t: "int", min: 1000, max: 500_000 } } } } },
   concept: { gates: optionalGate, fields: {
     novelty: { t: "obj", fields: { lastN: { t: "int", min: 1, max: 200 } } }, mechanismTest: { t: "bool" } } },
   images: { gates: none, fields: { style: { t: "str", max: 300 }, size: { t: "str", max: 20 } } },

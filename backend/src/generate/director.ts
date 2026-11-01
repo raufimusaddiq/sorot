@@ -1,13 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef, type ToolHandler } from "../llm";
+import { jsonError, parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef, type ToolHandler } from "../llm";
 import { isOnPage, headlineOnly, MIN_QUOTE } from "./facts";
 import { findPreset, presetBrief } from "./presets";
 import { numbersOf, sameNumber } from "./numbers";
 import type { GenAsset, GenProject, Json } from "../types";
 import type { DirectorLog } from "./events";
 import { shotFile, shotId } from "./composer";
-import { validatePlan, type Plan, type PlanContext } from "./planSchema";
+import { checkEffects, validatePlan, type Plan, type PlanContext } from "./planSchema";
+import { contrastOf, SEAM_MIN_CONTRAST, seamColour, TRANSITIONS, TRANSITION_NAMES, transitionKind } from "./transitions";
 import type { RecipeStep } from "./recipe";
 
 // The bounded LLM director (contracts/director.md). Every call is one request and one TOOL CALL:
@@ -38,6 +39,12 @@ export interface GateDecision { decision: string; index?: number; reason: string
 
 interface Validated<T> { value?: T; errors?: string[] }
 
+/** What is wrong with arguments that aren't JSON, and where, so the repair call can fix that spot (FR-045). */
+const malformed = (answer: string): string => {
+  const e = jsonError(answer);
+  return e ? `the function arguments were not valid JSON: ${e.message} at character ${e.at}, near «${e.excerpt}»; send the whole answer again with that fixed` : "the function arguments were not valid JSON";
+};
+
 const MAX_REASON = 240;
 const clip = (s: unknown, max: number) => (typeof s === "string" ? s.trim().slice(0, max) : "");
 
@@ -55,6 +62,7 @@ const PLAN_PROPS: Json = {
   narrationScript: { type: ["string", "null"] },
   blocks: { type: "array", items: str("a registry block name") },
   assumptions: { type: "array", items: str("anything you added that the brief did not say") },
+  effectNotes: { type: "array", items: str("an effect you chose and why, one line each") },
   numeric: {
     type: "object", description: "only when the recipe asks for a numeric plan: every adjective as a number", properties: {
       typography: { type: "object", description: "per text role (title, body...): {font, weight 100-900, px, tracking in em}" },
@@ -75,12 +83,19 @@ const PLAN_PROPS: Json = {
             generatedImage: { type: "object", properties: { prompt: { type: "string" }, style: { type: "string" } } }, fallbackVisual: { type: "string" },
           },
         },
-        motion: str("how it moves"), transition: str("cut, wipe..."), audio: { type: "string" }, narration: { type: ["string", "null"] }, hold: { type: "boolean" },
+        motion: str("how it moves"), transition: { type: "string", enum: TRANSITION_NAMES, description: `how this shot enters from the one before (the first shot's is ignored): ${TRANSITIONS.map((x) => `${x.name} = ${x.description}`).join("; ")}` },
+        effects: {
+          type: "object", description: "light, blur, depth and glow for this shot as exact values, only with a reason", properties: {
+            light: { type: "object", properties: { angleDeg: { type: "number", description: "0 = from the top, clockwise" }, intensity: { type: "number", description: "0 to 1" }, color: str("#hex") } },
+            blurPx: { type: "number", description: "background blur, 0 to 40" }, depthLayers: { type: "integer", description: "2 to 5 layers that move apart" }, glowPx: { type: "number", description: "0 to 80" }, reason: { type: "string" },
+          },
+        },
+        audio: { type: "string" }, narration: { type: ["string", "null"] }, hold: { type: "boolean" },
         frames: { type: "array", items: { type: "integer" }, description: "numeric plans: [from, to) in frames; the first starts at 0 and each starts where the one before ends" },
         heroMove: str("numeric plans: the one thing that moves most"), reads: str("numeric plans: what a stranger reads in this shot"), handoff: str("numeric plans: what carries into the next shot"),
         motionPlan: {
           type: "array", description: "when asked: what moves when, using only spec tokens", items: {
-            type: "object", required: ["token", "fromFrame", "toFrame"], properties: { token: str("an easing, durationsFrames or staggerFrames name"), fromFrame: { type: "integer" }, toFrame: { type: "integer" }, target: { type: "string" } },
+            type: "object", required: ["token", "fromFrame", "toFrame"], properties: { token: str("an easing, durationsFrames or staggerFrames name"), fromFrame: { type: "integer", description: "counted from the start of the film, inside the shot's frames" }, toFrame: { type: "integer", description: "counted from the start of the film" }, target: { type: "string" } },
           },
         },
       },
@@ -101,6 +116,22 @@ const TOOLS = {
     },
   }),
   plan: tool("submit_plan", "Submit the shot-by-shot plan.", PLAN_PROPS, ["title", "message", "look", "shots"]),
+  outline: tool("submit_plan_outline", "Submit the film and its shot list; each shot's motion detail (heroMove, reads, handoff, motionPlan) comes in a later call. Frames are counted by Sorot from the durations.", PLAN_PROPS, ["title", "message", "look", "shots"]),
+  specs: tool("submit_shot_specs", "Submit the motion detail of the shots you were given.", {
+    shots: {
+      type: "array", items: {
+        type: "object", required: ["id", "heroMove", "reads", "handoff", "motionPlan"], properties: {
+          id: str("the shot's id, as given"), heroMove: str("the one thing that moves most"), reads: str("what a stranger reads in this shot"),
+          handoff: str("what carries into the next shot"),
+          motionPlan: {
+            type: "array", description: "what moves when, using only spec tokens; frames count from the start of the film, inside the shot's frames", items: {
+              type: "object", required: ["token", "fromFrame", "toFrame"], properties: { token: str("an easing, durationsFrames or staggerFrames name"), fromFrame: { type: "integer" }, toFrame: { type: "integer" }, target: { type: "string" } },
+            },
+          },
+        },
+      },
+    },
+  }),
   revise: tool("submit_revision", "Submit the full revised plan and a one-sentence summary of the change.", {
     plan: { type: "object", description: "the full revised plan", properties: PLAN_PROPS, required: ["title", "message", "look", "shots"] },
     changeSummary: str("one sentence on what changed"),
@@ -184,10 +215,12 @@ const TOOLS = {
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [], verify: [] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS | "effects", string[]> = { effects: ["Effects"], outline: ["Plan", "Effects"], specs: ["Plan"], storylines: ["Storylines"], plan: ["Plan", "Effects"], revise: ["Plan", "Effects", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [], verify: [] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
+  outline: "You are the director of a short 2D motion video. Turn the brief and the chosen storyline into a plan the owner will approve, in two parts: now the film (title, message, the numeric look) and its shot list (each shot's purpose, length, text, visual, narration, transition). Each shot's motion detail comes in a later call. Text on screen is in the project's language. Use only the fonts listed. Use only numbers from the brief; list any other number you need in assumptions.",
+  specs: "You are the director of a short 2D motion video. The film's plan is written; now give the motion detail of the shots you are given: the one thing that moves most, what a stranger reads, what carries into the next shot, and the motion plan, using only the spec's easing, duration and stagger names, inside each shot's frames.",
   plan: "You are the director of a short 2D motion video. Turn the brief and the chosen storyline into a shot-by-shot plan the owner will approve before anything is built. Text on screen is in the project's language. Use only the fonts listed. Use only numbers from the brief; list any other number you need in assumptions.",
   revise: "You are the director of a short 2D motion video. Change the plan as the owner asks. Change only what the request names: every other shot keeps its text, timing and look exactly as it is.",
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
@@ -199,14 +232,20 @@ const INSTRUCTIONS = {
   script: "You write the narration of a short 2D motion video: what a voice says over it. Plain spoken language in the project's language, short sentences, one idea per line, no stage directions, nothing a voice cannot say. Use only facts and numbers from the brief.",
   copy: "You write the post text for a finished 2D motion video: a title and a short description a viewer would read before watching. Say only what the video says. Do not invent numbers, names or promises.",
   judge: "You are a fresh judge of a finished 2D video. You did not make it and know nothing of how it was made. Judge only what the brief, the plan, and what was built (and the pictures, if any) show. Answer every criterion and every risk you are given, honestly: yes only when it clearly holds, no when it clearly doesn't, partly in between. A risk is flagged only when you can point at it. Point at the shot and the moment when you can, and say what to change.",
+  effects: "You are the director of a short 2D motion video. The plan is written; now choose its effects with the tools, as a film editor would: a transition only where something on screen causes it, light, blur, depth or glow only where a shot needs it, and a registry block only when it shows the shot's idea better than drawing it. Every choice needs a reason. A few strong effects beat many weak ones; a film with none looks flat.",
   scene: "You are the motion designer of a short 2D video. Write the scene file for the ONE shot you are given, exactly as the approved plan describes it, following the authoring contract below.",
   repair: "You are the motion designer of a short 2D video. Fix the scene file for the ONE shot you are given so that every finding listed is resolved, changing nothing else, following the authoring contract below. A warning that is intended may be kept: list it in holds with the reason.",
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
-/** Output budget by job, as a floor: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000, verify: 4000 };
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, outline: 0.4, specs: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
+/** Words a voice says per second, pauses between lines included: Fish in Indonesian measured 1.7 to 2.0 (2026-11-01). */
+const WORDS_PER_SEC = 1.8;
+
+/** The setting a director call's budget comes from, named when a reasoning model runs out of it. */
+export const GEN_BUDGET = "the Generate token budget (Settings → LLM, GEN_LLM_MAX_TOKENS)";
+/** Output budget by job, as a floor under GEN_LLM_MAX_TOKENS: a reasoning model thinks before it writes the arguments. */
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, outline: 12000, specs: 8000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000, verify: 4000 };
 
 export interface JudgeAnswer {
   criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
@@ -276,6 +315,26 @@ export function changedShots(before: Plan, after: Plan): string[] {
   return [...new Set([...was.keys(), ...now.keys()])].filter((id) => was.get(id) !== now.get(id));
 }
 
+/**
+ * An outline with the parts Sorot owns filled in: each shot's frames, counted from the lengths, and
+ * placeholders for the motion detail that is asked for later, valid so the usual check can run.
+ */
+export function withPlaceholders(parsed: unknown, fps: number): Record<string, unknown> {
+  const raw = (typeof parsed === "object" && parsed !== null ? structuredClone(parsed) : {}) as Record<string, unknown>;
+  const numeric = (typeof raw.numeric === "object" && raw.numeric !== null ? raw.numeric : {}) as Record<string, Record<string, unknown>>;
+  const token = Object.keys({ ...numeric.easing, ...numeric.durationsFrames, ...numeric.staggerFrames })[0] ?? "";
+  let at = 0;
+  raw.shots = (Array.isArray(raw.shots) ? raw.shots : []).map((s) => {
+    const shot = (typeof s === "object" && s !== null ? s : {}) as Record<string, unknown>;
+    const length = typeof shot.durationSec === "number" ? Math.round(shot.durationSec * fps) : 0;
+    const frames = [at, at + length];
+    at += length;
+    return { ...shot, frames, heroMove: "(later)", reads: "(later)", handoff: "(later)", motionPlan: [{ token, fromFrame: frames[0], toFrame: Math.max(frames[0]! + 1, frames[1]!) }] };
+  });
+  raw.numeric = { ...numeric, totalFrames: at };
+  return raw;
+}
+
 export class Director {
   private guide: string | null = null;
   private contract: string | null = null;
@@ -296,7 +355,7 @@ export class Director {
   }
 
   /** The part of generator/prompts/story.md that applies to this job (the file is read once). */
-  private guidance(kind: Kind): string {
+  private guidance(kind: Kind | "effects"): string {
     if (this.guide === null) {
       const path = join(this.generatorDir, "prompts", "story.md");
       this.guide = existsSync(path) ? readFileSync(path, "utf-8").replace(/<!--[\s\S]*?-->/g, "").trim() : "";
@@ -337,7 +396,7 @@ export class Director {
       const reply = await this.log.track(
         { projectId: project.id, kind, model: images.length ? (this.llm.visionModel ?? this.llm.model) : this.llm.model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
         async () => {
-          const opts = { tools: [def], toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.maxTokens, MIN_TOKENS[kind]) };
+          const opts = { tools: [def], toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
           const r = images.length ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], opts);
           const call = r.tool_calls?.find((c) => c.function?.name === name);
           const args = call?.function.arguments;
@@ -348,7 +407,7 @@ export class Director {
       );
       const parsed = answer ? parseJson(answer) : null;
       const result: Validated<T> = parsed === null
-        ? { errors: [reply.call ? "the function arguments were not valid JSON" : `you didn't call ${name}`] }
+        ? { errors: [reply.call ? malformed(answer) : `you didn't call ${name}`] }
         : validate(parsed);
       if (result.value !== undefined) return result.value;
       problems = result.errors ?? [];
@@ -426,12 +485,13 @@ export class Director {
     concept?: { mechanism: string; concept: string } | null;
   }): Promise<{ plan: Plan; notes: string[] }> {
     const { planCtx } = input;
+    if (planCtx.numeric) return this.planInParts(input);
     return this.ask(
       input.project, "plan", input.step,
       {
         ...this.base(input.project, input.assets), storyline: input.storyline,
         fonts: planCtx.fonts, maxShots: planCtx.limits?.maxShots ?? 20,
-        blocks: planCtx.blocksAllowed === false ? [] : input.catalog,
+        blocks: planCtx.blocksAllowed === false ? [] : input.catalog.map((b) => ({ name: b.name, tags: b.tags })),
         connections: { image: planCtx.imageConnected, narration: planCtx.narration },
         ...(input.voice?.length ? { voiceLines: input.voice } : {}),
         ...(input.concept ? { concept: input.concept } : {}),
@@ -442,6 +502,67 @@ export class Director {
         return check.ok ? { value: { plan: check.plan as Plan, notes: check.notes } } : { errors: check.errors };
       },
     );
+  }
+
+  /**
+   * A numeric plan in parts (FR-045): its answers are large, and one lost brace in 12,000 characters
+   * failed a whole plan twice. First the film and its shot list, with every shot's frames counted in
+   * code from its length and its motion detail filled with valid placeholders, so the usual check
+   * holds the outline. Then the motion detail four shots at a time, each batch checked in place and
+   * sent back with only its own problems.
+   */
+  private async planInParts(input: Parameters<Director["plan"]>[0]): Promise<{ plan: Plan; notes: string[] }> {
+    const { planCtx } = input;
+    const fps = planCtx.fps ?? 30;
+    const payload = {
+      ...this.base(input.project, input.assets), storyline: input.storyline,
+      fonts: planCtx.fonts, maxShots: planCtx.limits?.maxShots ?? 20,
+      blocks: planCtx.blocksAllowed === false ? [] : input.catalog.map((b) => ({ name: b.name, tags: b.tags })),
+      connections: { image: planCtx.imageConnected, narration: planCtx.narration },
+      ...(input.voice?.length ? { voiceLines: input.voice } : {}),
+      ...(input.concept ? { concept: input.concept } : {}),
+    };
+    let draft: Record<string, unknown> = {};
+    await this.ask(
+      input.project, "outline", input.step, payload,
+      `Write the film and its shot list for this ${input.project.targetSec}-second ${input.project.format} video: the shot durations add up to ${input.project.targetSec} seconds. Leave out each shot's heroMove, reads, handoff and motionPlan: they come next.`,
+      (parsed) => {
+        draft = withPlaceholders(parsed, fps);
+        const check = validatePlan(draft, planCtx);
+        return check.ok ? { value: true } : { errors: check.errors };
+      },
+    );
+    const shots = draft.shots as Array<Record<string, unknown>>;
+    const tokens = Object.keys({ ...(draft.numeric as { easing?: object }).easing, ...(draft.numeric as { durationsFrames?: object }).durationsFrames, ...(draft.numeric as { staggerFrames?: object }).staggerFrames });
+    for (let at = 0; at < shots.length; at += 4) {
+      const batch = shots.slice(at, at + 4);
+      const ids = batch.map((s) => String(s.id));
+      await this.ask(
+        input.project, "specs", input.step,
+        {
+          film: { title: draft.title, message: draft.message, look: draft.look, numeric: draft.numeric },
+          shots: batch.map((s) => ({ id: s.id, purpose: s.purpose, frames: s.frames, text: s.text, visual: s.visual, narration: s.narration ?? null })),
+          tokens, next: shots[at + 4] ? { id: shots[at + 4]!.id, purpose: shots[at + 4]!.purpose } : null,
+        },
+        `Give the motion detail of ${ids.join(", ")}: heroMove, reads, handoff and a motionPlan using only ${tokens.join(", ")}, inside each shot's frames.`,
+        (parsed) => {
+          const list = (Array.isArray((parsed as { shots?: unknown }).shots) ? (parsed as { shots: unknown[] }).shots : []) as Array<Record<string, unknown>>;
+          const missing = ids.filter((id) => !list.some((s) => s?.id === id));
+          if (missing.length) return { errors: [`give the detail of ${missing.join(", ")}`] };
+          const before = batch.map((s) => ({ ...s }));
+          for (const spec of list) {
+            const shot = batch.find((s) => s.id === spec.id);
+            if (shot) Object.assign(shot, { heroMove: spec.heroMove, reads: spec.reads, handoff: spec.handoff, motionPlan: spec.motionPlan });
+          }
+          const mine = validatePlan(draft, planCtx).errors.filter((e) => ids.some((id) => e.includes(`(${id})`)));
+          if (mine.length) batch.forEach((s, k) => Object.assign(s, before[k]));   // put the placeholders back for the retry
+          return mine.length ? { errors: mine } : { value: true };
+        },
+      );
+    }
+    const check = validatePlan(draft, planCtx);
+    if (!check.ok) throw new DirectorError(`The director's plan didn't pass the checks: ${check.errors.join("; ")}`);
+    return { plan: check.plan as Plan, notes: check.notes };
   }
 
   // ---- revise ---------------------------------------------------------------
@@ -465,13 +586,129 @@ export class Director {
     );
   }
 
+  // ---- effects --------------------------------------------------------------
+
+  /**
+   * The director chooses the film's effects itself: it searches HyperFrames' catalog and Sorot's
+   * transitions, and sets a transition, a block or a shot's light, blur, depth and glow, one tool
+   * call at a time, each checked here. Bounded by steps and a token budget; every choice and its
+   * reason is kept in the plan's effectNotes, so the owner approves them with the plan.
+   */
+  async effects(input: {
+    project: GenProject; step: RecipeStep; plan: Plan; planCtx: PlanContext; maxSteps: number; tokenBudget: number;
+    catalog: Array<{ name: string; tags: string[]; type?: string; description?: string }>;
+  }): Promise<{ plan: Plan; notes: string[] }> {
+    const plan: Plan = JSON.parse(JSON.stringify(input.plan));
+    const notes: string[] = [];
+    const blocksOn = input.planCtx.blocksAllowed !== false;
+    const known = new Set(input.planCtx.blocks ?? input.catalog.map((b) => b.name));
+    const shot = (id: unknown) => {
+      const s = plan.shots.find((x) => x.id === id);
+      if (!s) throw new Error(`there is no shot ${String(id)}; the shots are ${plan.shots.map((x) => x.id).join(", ")}`);
+      return s;
+    };
+    const why = (a: Json) => {
+      const r = clip(a.reason, 200);
+      if (!r) throw new Error("give the reason: what on screen causes this effect");
+      return r;
+    };
+    const tools = [
+      tool("search_catalog", "Search the effects: Sorot's transitions and, when allowed, HyperFrames' registry blocks and components.", {
+        query: str("words to match in names, tags and descriptions, e.g. light, glow, chart, wipe"),
+        kind: { type: "string", enum: ["transition", "block", "any"] },
+      }, ["query"]),
+      tool("set_transition", "How a shot enters from the one before.", { shotId: str("s02, s03... (not the first shot)"), name: { type: "string", enum: TRANSITION_NAMES }, reason: str("what on screen causes it") }),
+      ...(blocksOn ? [tool("add_block", "Use a registry block or component in a shot.", { shotId: str("the shot"), name: str("a name search_catalog returned"), reason: str("why this shot needs it") })] : []),
+      tool("set_look", "Give a shot light, blur, depth or glow, as exact values.", {
+        shotId: str("the shot"), light: { type: "object", properties: { angleDeg: { type: "number" }, intensity: { type: "number" }, color: str("#hex") } },
+        blurPx: { type: "number" }, depthLayers: { type: "integer" }, glowPx: { type: "number" }, reason: str("why this shot needs it"),
+      }, ["shotId", "reason"]),
+    ];
+    const handlers: Record<string, ToolHandler> = {
+      search_catalog: (a) => {
+        const words = String(a.query ?? "").toLowerCase().split(/\W+/).filter(Boolean);
+        const hit = (text: string) => !words.length || words.some((w) => text.toLowerCase().includes(w));
+        const transitions = a.kind === "block" ? [] : TRANSITIONS.filter((x) => hit(`${x.name} ${x.description}`)).map((x) => ({ name: x.name, kind: "transition", description: x.description }));
+        const blocks = a.kind === "transition" || !blocksOn ? [] : input.catalog.filter((b) => known.has(b.name) && hit(`${b.name} ${b.tags.join(" ")} ${b.description ?? ""}`))
+          .slice(0, 12).map((b) => ({ name: b.name, kind: b.type ?? "block", tags: b.tags, description: clip(b.description, 140) }));
+        return [...transitions, ...blocks];
+      },
+      set_transition: (a) => {
+        const s = shot(a.shotId);
+        if (s === plan.shots[0]) throw new Error("the first shot has nothing before it: set the transition of a later shot");
+        const kind = transitionKind(String(a.name ?? ""));
+        if (!kind) throw new Error(`use one of ${TRANSITION_NAMES.join(", ")}`);
+        // a seam that paints a colour must show on the film's ground (a white flash vanished on a white film)
+        const ground = plan.look.palette.find((c) => contrastOf(c, c) !== null);
+        const paint = seamColour(kind, plan.look.palette);
+        const ratio = ground && paint ? contrastOf(paint, ground) : null;
+        if (ratio !== null && ratio < SEAM_MIN_CONTRAST) throw new Error(`a ${kind} won't show on this film's ground ${ground} (contrast ${ratio}:1); pick a transition that moves or veils the shots instead`);
+        const reason = why(a);
+        s.transition = kind;
+        notes.push(`${s.id} enters with ${kind}: ${reason}`);
+        return { ok: true };
+      },
+      add_block: (a) => {
+        const s = shot(a.shotId);
+        const name = String(a.name ?? "");
+        if (!known.has(name)) throw new Error(`${name} isn't in the catalog: use a name search_catalog returned`);
+        const reason = why(a);
+        s.visual.block = name;
+        if (!plan.blocks.includes(name)) plan.blocks.push(name);
+        notes.push(`${s.id} uses the block ${name}: ${reason}`);
+        return { ok: true };
+      },
+      set_look: (a) => {
+        const s = shot(a.shotId);
+        const reason = why(a);
+        const errors: string[] = [];
+        const effects = checkEffects({ ...s.effects, ...a, reason }, `${s.id} effects`, errors);
+        if (errors.length || !effects) throw new Error(errors.join("; ") || "give at least one of light, blurPx, depthLayers, glowPx");
+        s.effects = effects;
+        notes.push(`${s.id} look (${Object.keys(effects).filter((k) => k !== "reason").join(", ")}): ${reason}`);
+        return { ok: true };
+      },
+    };
+    const system = `${INSTRUCTIONS.effects}\n\n${this.guidance("effects")}`.trim();
+    const brief = JSON.stringify({
+      plan: { title: plan.title, message: plan.message, look: plan.look, shots: plan.shots.map((s) => ({ id: s.id, purpose: s.purpose, seconds: s.durationSec, text: s.text.map((t) => t.value), visual: s.visual.description, motion: s.motion, transition: s.transition, hold: s.hold })) },
+      blocksAllowed: blocksOn,
+      task: "Choose this film's effects with the tools: a few seams with a transition that has a cause, and light, blur, depth or glow where a shot needs it. Search first, then set. When you are done, answer with one sentence on what you chose.",
+    });
+    const summary = await this.log.track(
+      { projectId: input.project.id, kind: "effects", model: this.llm.model, request: brief },
+      () => this.llm.runTools([{ role: "system", content: system }, { role: "user", content: brief }], tools, handlers, {
+        maxSteps: input.maxSteps, tokenBudget: input.tokenBudget, temperature: TEMPERATURE.plan, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET,
+        finalPrompt: "Stop choosing. Answer with one sentence on the effects you chose.",
+      }),
+      (out) => ({ response: { choices: notes, summary: out } }),
+    );
+    // The pass has the last word on a shot it changed: the plan's own notes about that shot go, or the
+    // plan says two things at once (a real gate refused "s06 -> s07 wipe" next to "s07 enters with zoom").
+    const changed = new Set(notes.map((n) => n.split(" ")[0]!));
+    const kept = (plan.effectNotes ?? []).filter((n) => ![...changed].some((id) => new RegExp(`\\b${id}\\b`).test(n)));
+    const check = validatePlan({ ...plan, effectNotes: [...kept, ...notes] }, input.planCtx);
+    if (!check.ok) throw new DirectorError(`The effects the director chose broke the plan: ${check.errors.join("; ")}`);
+    return { plan: check.plan as Plan, notes: [...notes, ...(clip(summary, 300) ? [clip(summary, 300)] : [])] };
+  }
+
   // ---- scenes ---------------------------------------------------------------
 
-  /** What a scene call knows: the shot, the film around it, the size, the files and fonts it may use. */
+  /**
+   * What a scene call knows: the shot with its effects and the transitions on either side, what the
+   * shot before hands on and how the next one opens, the film around it, the size, the files and fonts.
+   */
   private sceneBase(input: SceneInput) {
     const { plan, index } = input;
+    const prev = plan.shots[index - 1];
+    const next = plan.shots[index + 1];
+    const shot = plan.shots[index]!;
     return {
-      shot: plan.shots[index], compositionId: shotId(index), file: shotFile(index), size: { width: input.width, height: input.height },
+      shot, effects: shot.effects ?? null,
+      enters: index === 0 ? "the film opens on this shot" : shot.transition, leaves: next ? next.transition : "the film ends on this shot",
+      before: prev ? { id: prev.id, purpose: prev.purpose, lastText: prev.text.at(-1)?.value ?? null, handoff: prev.handoff ?? null } : null,
+      after: next ? { id: next.id, purpose: next.purpose, firstText: next.text[0]?.value ?? null, opens: next.visual.description } : null,
+      compositionId: shotId(index), file: shotFile(index), size: { width: input.width, height: input.height },
       film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, position: index + 1, of: plan.shots.length },
       assets: input.assets, fonts: plan.look.fonts, blocks: input.blocks ?? {},
     };
@@ -596,7 +833,7 @@ export class Director {
     const messages: ChatMessage[] = [{ role: "system", content: system }, { role: "user", content: brief }];
     const text = await this.log.track(
       { projectId: input.project.id, kind: "research", model: this.llm.model, request: brief },
-      () => this.llm.runTools(messages, tools, input.handlers, { maxSteps: input.maxSteps, temperature: 0.2, finalPrompt: "Stop researching. Answer now with the JSON of the facts you found, each with its source." }),
+      () => this.llm.runTools(messages, tools, input.handlers, { maxSteps: input.maxSteps, temperature: 0.2, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET, finalPrompt: "Stop researching. Answer now with the JSON of the facts you found, each with its source." }),
       (out) => ({ response: out }),
     );
     const list = (parseJson(text) as { facts?: unknown } | null)?.facts;
@@ -673,9 +910,13 @@ export class Director {
   /** The narration, line by line: spoken words only, as long as the video allows. */
   async script(input: {
     project: GenProject; step: RecipeStep; settings: Record<string, unknown>; assets: GenAsset[];
+    /** A factual recipe: the numbers in these lines that nothing verified states (an error to repair). */
+    unsourced?: (texts: string[]) => string[];
   }): Promise<Array<{ id: string; text: string }>> {
     const { settings, project } = input;
-    const maxWords = typeof settings.maxWords === "number" ? settings.maxWords : Math.round(project.targetSec * 2.6);
+    // The voice must fit the video: a recipe's maxWords is a ceiling, the length is the budget (a 60 s film once got 80 s of voice).
+    const fits = Math.max(10, Math.floor(project.targetSec * WORDS_PER_SEC));
+    const maxWords = Math.min(typeof settings.maxWords === "number" ? settings.maxWords : fits, fits);
     const spell = settings.spellNumbers === true;
     return this.ask(
       project, "script", input.step,
@@ -694,6 +935,8 @@ export class Director {
         const words = lines.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
         if (words > maxWords) errors.push(`the script has ${words} words; the most allowed is ${maxWords}`);
         if (spell && lines.some((l) => /\d/.test(l.text))) errors.push("write numbers out in words (no digits): a voice reads them aloud");
+        const unsourced = input.unsourced?.(lines.map((l) => l.text)) ?? [];
+        if (unsourced.length) errors.push(`these numbers have no verified fact: ${unsourced.join(", ")}; say only numbers from the brief or the verified facts, or none`);
         return errors.length ? { errors } : { value: lines };
       },
     );

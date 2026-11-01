@@ -140,6 +140,11 @@ describe("Narrator", () => {
     expect(headers(r.calls[0]!)).toMatchObject({ model: "s1", Authorization: "Bearer key" });
     expect(body(r.calls[0]!)).toEqual({ text: "Halo", reference_id: "v-default", format: "mp3" });
     expect(s.words).toBeNull();
+    // no voice id: Fish speaks with its default voice, as in the request that worked on the real run (fixture)
+    const real = JSON.parse(readFileSync(join(import.meta.dir, "../fixtures/voice/fish-tts.json"), "utf-8"));
+    const plain = rig({ voiceEngine: "fish", voiceVoices: {}, voiceModel: real.headers.model });
+    await plain.narrator.speak({ text: "Halo", language: "id", dir: tmp });
+    expect([plain.calls[0]!.url, headers(plain.calls[0]!).model, body(plain.calls[0]!)]).toEqual([real.url, real.headers.model, real.body]);
     const broke = rig({ voiceEngine: "fish" }, async () => new Response("pay", { status: 402 }));
     await expect(broke.narrator.speak({ text: "Halo", language: "id", dir: tmp })).rejects.toBeInstanceOf(VoiceUnavailable);
   });

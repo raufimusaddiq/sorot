@@ -185,6 +185,29 @@ Using the `narrated-explainer` example, or a copy:
    30 minutes to set up, needed no code, and its TECHNICAL numbers match that pipeline's own
    checks.
 
+## 11. Any look, any director (US9, FR-038 to FR-047)
+
+Contracts: [kit.md](contracts/kit.md). Run with one small local model and one strong hosted model.
+
+1. **What the director is told**: `sorot gen capabilities --level kit` lists the installed parts,
+   the level's rules, the renderer and the connections. Add a part (`sorot gen kit add ./my-part`):
+   it is rendered twice and checked, then appears in `sorot gen capabilities` with no restart.
+   Add a part whose script calls `Math.random()`: refused with the finding.
+2. **Calibrate**: `sorot gen calibrate` for each model, then `sorot gen models`. Expected: the small
+   model's `auto` level is `kit`, the strong one's is higher.
+3. **Same brief, two models**: build the same brief and recipe with each. Expected: both pass
+   TECHNICAL with no `motion` must-fix; the plan shows each shot's look and level; the small model's
+   scenes come from `submit_shot_kit` calls (director log), with no scene HTML from the model.
+4. **Fallback**: pin the small model to `free` (`sorot gen models pin <model> free`) and build.
+   Expected: shots that fail their repair rounds are rebuilt one level down with `level_drop`
+   findings, and the build finishes.
+5. **Unknown part**: edit a plan so a shot names a part that isn't installed. Expected: the plan
+   is refused with "kit part <name> isn't installed"; a recipe requiring it shows unavailable.
+6. **Smoothness**: plant a jump (a scene that moves an element 400 px in one frame) and build.
+   Expected: TECHNICAL lists `motion_jump` with the shot and time.
+7. **Malformed answer**: point the LLM at a fake that returns a plan with one missing brace.
+   Expected: the repair call quotes the text around the error; with a malformed record the next
+   plan is asked in parts.
 ## 10. Gates
 
 ```bash

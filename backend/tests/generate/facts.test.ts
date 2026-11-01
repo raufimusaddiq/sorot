@@ -348,8 +348,9 @@ describe("plans and scripts refuse numbers nothing has verified", () => {
     return recipe;
   };
 
-  test("the plan step refuses to finish while a number lacks a verified fact", async () => {
-    const r = rig([json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, text: [{ role: "title", value: "Bunga 5,75% per tahun" }] } : s)) }))]);
+  test("the plan step refuses to finish while a number lacks a verified fact: the director gets one repair call first", async () => {
+    const unsourced = json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, text: [{ role: "title", value: "Bunga 5,75% per tahun" }] } : s)) }));
+    const r = rig([unsourced, unsourced]);
     const recipe = factual();
     const ctx = r.ctxFor();
     ctx.recipe = recipe;
@@ -357,7 +358,7 @@ describe("plans and scripts refuse numbers nothing has verified", () => {
     ctx.settings = settingsOf("plan", undefined);
     ctx.connected = () => false;
     ctx.catalog = async () => [];
-    await expect(STEPS.plan.run(ctx)).rejects.toThrow("numbers without a verified fact: 5,75%");
+    await expect(STEPS.plan.run(ctx)).rejects.toThrow("these numbers have no verified fact: 5,75%");
     expect(r.store.genPlansForProject("p1")).toHaveLength(0);
 
     r.fact("f1", { status: "verified", claim: "Bunga acuan 5,75 persen", value: "5,75%" });
@@ -373,7 +374,7 @@ describe("plans and scripts refuse numbers nothing has verified", () => {
     expect(again.store.genPlansForProject("p1")).toHaveLength(1);
   });
 
-  test("the script step refuses the same way; a recipe that does not ask for sourced numbers is not held to it", async () => {
+  test("the script step refuses the same way, after a repair call; a recipe that does not ask for sourced numbers is not held to it", async () => {
     const line = json({ lines: [{ id: "l1", text: "Bunga acuan lima koma tujuh lima persen." }] });
     const r = rig([line, line]);
     r.store.updateGenProject("p1", { narration: 1 });
@@ -382,7 +383,7 @@ describe("plans and scripts refuse numbers nothing has verified", () => {
     ctx.recipe = factual();
     ctx.step = { use: "script" };
     ctx.settings = settingsOf("script", { spellNumbers: false });
-    await expect(STEPS.script.run(ctx)).rejects.toThrow("script says numbers without a verified fact: lima koma tujuh lima persen");
+    await expect(STEPS.script.run(ctx)).rejects.toThrow("these numbers have no verified fact: lima koma tujuh lima persen");   // after one repair call
     const free = rig([line]);
     free.store.updateGenProject("p1", { narration: 1 });
     const c2 = free.ctxFor();

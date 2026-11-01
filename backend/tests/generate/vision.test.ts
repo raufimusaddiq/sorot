@@ -76,5 +76,9 @@ describe("vision in the connection settings", () => {
     const reset = await env.json("PUT", "/api/settings/llm", { visionModel: null, vision: null });
     expect(reset.body.data.llm).toMatchObject({ visionModel: "", vision: true });
     expect((await env.json("PUT", "/api/settings/llm", { vision: "yes" })).status).toBe(400);
+    // Generate's own token budget: a whole number (a form sends text), read by the director per call
+    expect((await env.json("PUT", "/api/settings/llm", { genMaxTokens: "48000" })).body.data.llm.genMaxTokens).toBe(48000);
+    expect(env.app.llm.genMaxTokens).toBe(48000);
+    for (const bad of [100, 1.5, "lots"]) expect((await env.json("PUT", "/api/settings/llm", { genMaxTokens: bad })).status).toBe(400);
   });
 });

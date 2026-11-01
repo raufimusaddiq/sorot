@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { loadConfig } from "../../src/config";
 import { openDatabase } from "../../src/db";
 import {
-  builtFacts, creativeState, creativeVerdict, fromJev, fromLlm, jevQuestions, lintQuestion, MAIN_MESSAGE, questionsFor, type Criterion, type Judgement,
+  builtFacts, creativeState, creativeVerdict, fromJev, fromLlm, jevQuestions, lintQuestion, MAIN_MESSAGE, FLAT_FILM, questionsFor, type Criterion, type Judgement,
 } from "../../src/generate/creative";
 import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
@@ -42,14 +42,14 @@ describe("what is asked", () => {
       defaultsAudit: ["everything centred", "three cards in a row"],
       content: [{ id: "tone", question: "Is the tone of `shots` pushy?" }, { id: "advice", question: "Does `shots` give advice?", blocking: true }],
     });
-    expect(risks.map((r) => r.id)).toEqual(["misleading_claim", "default_1", "default_2", "tone"]);
-    expect(risks[1]!.question).toBe("Does `shots` show this common default: everything centred?");
-    expect(questionsFor({}, undefined).risks.map((r) => r.id)).toEqual(["misleading_claim"]);
+    expect(risks.map((r) => r.id)).toEqual(["misleading_claim", "flat_film", "default_1", "default_2", "tone"]);
+    expect(risks[2]!.question).toBe("Does `shots` show this common default: everything centred?");
+    expect(questionsFor({}, undefined).risks.map((r) => r.id)).toEqual(["misleading_claim", "flat_film"]);
   });
 
   test("question lint: one judgment, naming what it reads, leaving counting and timing to code", () => {
     expect(lintQuestion("Does `opening` hold the eye in the first moments?")).toEqual([]);
-    expect(lintQuestion(MAIN_MESSAGE.question)).toEqual([]);
+    expect([MAIN_MESSAGE, FLAT_FILM].flatMap((c) => lintQuestion(c.question))).toEqual([]);
     expect(lintQuestion("Is it good?")).toEqual(["name the thing it reads in backticks, for example `shots`, `opening` or `message`"]);
     expect(lintQuestion("Does `opening` hold the eye.")).toEqual(["end it with a question mark"]);
     expect(lintQuestion(`Does \`opening\` ${"hold the eye ".repeat(12)}?`).join()).toContain("under 140 characters");
@@ -215,23 +215,23 @@ describe("creative step", () => {
 
   const LLM_PASS = json({
     criteria: ["opening", "pace", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })),
-    risks: ["misleading_claim", "default_1"].map((id) => ({ id, flagged: false, reason: "" })),
+    risks: ["misleading_claim", "flat_film", "default_1"].map((id) => ({ id, flagged: false, reason: "" })),
   });
 
   test("Jev answers the recipe's questions and the verdict follows its answers; the state carries the facts and context", async () => {
     const asked: any[] = [];
-    const { jev, requests } = fakeJev((state, id) => { asked.push([id, state]); return noulA(id === "pace" ? 0.5 : id === "default_1" || id === "misleading_claim" ? 0.1 : 0.9); });
+    const { jev, requests } = fakeJev((state, id) => { asked.push([id, state]); return noulA(id === "pace" ? 0.5 : id === "default_1" || id === "misleading_claim" || id === "flat_film" ? 0.1 : 0.9); });
     const r = rig({ jev, criteria: [crit("opening"), crit("pace", "Is the pace of `shots` comfortable?")] });
     expect(await STEPS.creative.run(r.ctx)).toEqual({ status: "done", outputRef: "REVIEW" });
     expect(r.verdict()).toMatchObject({ kind: "CREATIVE", status: "REVIEW", judgedBy: "jev:jev-1.14.0" });
     const body = requests[0]!;
-    expect(Object.keys(body.questions)).toEqual(["opening", "pace", "main_message", "misleading_claim", "default_1"]);
+    expect(Object.keys(body.questions)).toEqual(["opening", "pace", "main_message", "misleading_claim", "flat_film", "default_1"]);
     expect(body.state.brief).toBe("Jelaskan bunga majemuk");
     expect(body.state.shots).toHaveLength(3);
     expect(body.state.context.fields.shots).toContain("every shot in order");
     expect(JSON.parse(r.verdict().findings)).toEqual([expect.objectContaining({ code: "creative.pace", severity: "polish", source: "creative", state: "open" })]);
     expect(readFindings(r.dir).map((f) => f.source)).toEqual(["creative"]);
-    expect(JSON.parse(r.verdict().inputs!)).toEqual({ criteria: ["opening", "pace", "main_message"], risks: ["misleading_claim", "default_1"], pictures: 0, shots: 3 });
+    expect(JSON.parse(r.verdict().inputs!)).toEqual({ criteria: ["opening", "pace", "main_message"], risks: ["misleading_claim", "flat_film", "default_1"], pictures: 0, shots: 3 });
     expect(r.events()[0]).toMatchObject({ kind: "judge", model: "jev-1.14.0", ok: 1 });
     expect(JSON.parse(r.events()[0]!.response!)).toMatchObject({ opening: 0.9, pace: 0.5 });
   });
@@ -256,7 +256,7 @@ describe("creative step", () => {
     const sent = JSON.parse(req.messages[1].content);
     expect(sent.criteria.map((c: any) => c.id)).toEqual(["opening", "pace", "main_message"]);
     expect(sent.criteria[0].question).not.toContain("`");
-    expect(sent.risks.map((c: any) => c.id)).toEqual(["misleading_claim", "default_1"]);
+    expect(sent.risks.map((c: any) => c.id)).toEqual(["misleading_claim", "flat_film", "default_1"]);
     expect(sent.facts.shots[0].onScreen).toBe("Bunga berbunga?");
     expect(req.messages[0].content).toContain("fresh judge");
   });
@@ -267,7 +267,7 @@ describe("creative step", () => {
         { id: "opening", answer: "no", reason: "the first shot is a plain title", shotId: "s01", fromSec: 0, toSec: 3, suggestedFix: "start with the coin" },
         { id: "pace", answer: "partly", reason: "shot 2 drags" }, { id: "main_message", answer: "yes", reason: "" },
       ],
-      risks: [{ id: "misleading_claim", flagged: true, reason: "the rate is not in the brief", shotId: "s02" }, { id: "default_1", flagged: false, reason: "" }],
+      risks: [{ id: "misleading_claim", flagged: true, reason: "the rate is not in the brief", shotId: "s02" }, { id: "flat_film", flagged: false, reason: "" }, { id: "default_1", flagged: false, reason: "" }],
     })] });
     await STEPS.creative.run(r.ctx);
     expect(r.verdict().status).toBe("REVIEW");
@@ -278,11 +278,11 @@ describe("creative step", () => {
 
   test("a judge that skips a question is told which, and asked again once", async () => {
     const r = rig({ replies: [json({ criteria: [{ id: "main_message", answer: "yes", reason: "" }], risks: [] }), json({
-      criteria: [{ id: "main_message", answer: "yes", reason: "" }], risks: ["misleading_claim", "default_1"].map((id) => ({ id, flagged: false, reason: "" })),
+      criteria: [{ id: "main_message", answer: "yes", reason: "" }], risks: ["misleading_claim", "flat_film", "default_1"].map((id) => ({ id, flagged: false, reason: "" })),
     })] });
     await STEPS.creative.run(r.ctx);
     expect(r.verdict().status).toBe("PASS");
-    expect(JSON.parse(r.requests[1].messages.at(-1).content).problems[0]).toContain("you didn't answer: misleading_claim, default_1");
+    expect(JSON.parse(r.requests[1].messages.at(-1).content).problems[0]).toContain("you didn't answer: misleading_claim, flat_film, default_1");
     const stubborn = rig({ replies: [json({ criteria: [], risks: [] }), json({ criteria: [], risks: [] })] });
     await expect(STEPS.creative.run(stubborn.ctx)).rejects.toThrow("didn't pass the checks");
   });
@@ -347,7 +347,7 @@ describe("creative step", () => {
   });
 
   test("the verdict is replaced when the step runs again", async () => {
-    const { jev } = fakeJev((_s, id) => noulA(id === "misleading_claim" || id.startsWith("default") ? 0.1 : 0.9));
+    const { jev } = fakeJev((_s, id) => noulA(id === "misleading_claim" || id === "flat_film" || id.startsWith("default") ? 0.1 : 0.9));
     const r = rig({ jev });
     await STEPS.creative.run(r.ctx);
     await STEPS.creative.run(r.ctx);

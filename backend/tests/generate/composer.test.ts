@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildRoot, bundledFontFaces, checkScene, shotFile, shotId, shotStarts, visibleText } from "../../src/generate/composer";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
+import { contrastOf, luminance, seamColour, seams, TRANSITION_NAMES } from "../../src/generate/transitions";
 import { samplePlan, sceneHtml as scene } from "../helpers";
 
 const planOf = (over: Record<string, unknown> = {}): Plan =>
@@ -22,6 +23,28 @@ describe("root composition", () => {
     expect(html).toContain("background: #0B1020;");
     expect(html).not.toMatch(/https?:\/\//);
     expect(html).not.toContain("<audio");
+  });
+
+  test("the seams the plan names are written on the root timeline, each half inside its own shot; cuts add nothing", () => {
+    const plan = planOf({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: ["flash", "cut", "wipe"][i] })) });
+    expect(buildRoot({ plan: { ...plan, shots: plan.shots.map((s) => ({ ...s, transition: "cut" })) }, width: 1080, height: 1920, fonts: [] })).not.toContain("seam");
+    const html = buildRoot({ plan, width: 1080, height: 1920, fonts: [] });
+    expect(html).toContain('<div id="seam-03" class="seam" aria-hidden="true" style="position:absolute;inset:0;pointer-events:none;z-index:50;opacity:0;background:#FFD23F;');
+    expect(html).toContain('tl.fromTo("#seam-03", { clipPath: "inset(0% 100% 0% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: 0.4, ease: "power3.in", immediateRender: false }, 19.6);');
+    expect(html).toContain('tl.to("#seam-03", { clipPath: "inset(0% 0% 0% 100%)", duration: 0.4, ease: "power3.out" }, 20);');
+    expect(html).not.toContain("seam-01");   // the first shot has nothing before it
+  });
+
+  test("seam colours and WCAG contrast: black on white is 21:1, a colour on itself 1:1; only hex colours count", () => {
+    expect([contrastOf("#000", "#ffffff"), contrastOf("#0B1020", "#0B1020"), contrastOf("red", "#fff"), luminance("#ffffff80")]).toEqual([21, 1, null, 1]);
+    expect(["flash", "wipe", "light-leak", "zoom"].map((k) => seamColour(k, ["#0B1020", "red", "#FFD23F"]))).toEqual(["#ffffff", "#FFD23F", "#ffc890", null]);
+  });
+  test.each(TRANSITION_NAMES.filter((k) => k !== "cut"))("every kind of seam is built from tweens inside the two shots: %s", (kind) => {
+    const s = seams({ transitions: ["cut", kind], starts: [0, 3], durations: [3, 1], ground: "#000000", accent: "#ffffff", host: (i) => `host-0${i + 1}` });
+    expect(s.used).toEqual([{ index: 1, kind }]);
+    const times = s.tweens.map((t) => Number(/, ([\d.]+)\);$/.exec(t)![1]));
+    expect([Math.min(...times) >= 2.8, Math.max(...times)]).toEqual([true, 3]);   // half a seam is a fifth of the shorter shot (1 s)
+    expect(s.overlays.length).toBe(["blur", "zoom"].includes(kind) ? 0 : 1);   // blur and zoom move the shots themselves
   });
 
   test("uneven durations add up exactly; a wide format is landscape; a bad colour falls back to black", () => {
