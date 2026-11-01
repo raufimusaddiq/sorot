@@ -354,6 +354,15 @@ offline. Keying it to the existing GPU switch avoids a second "is this machine s
 **Open (spike S3)**: on the RTX 4060, listen-test local candidates for Indonesian (MMS-TTS first)
 for quality and speed. Record ElevenLabs and Fish request/response fixtures.
 
+**Decision (owner, 2026-11-01)**: the local engine is **KittenTTS 2** (`kittenml`, Apache-2.0,
+https://github.com/KittenML/KittenTTS), not MMS-TTS. Its docs list 20 languages and Indonesian is
+not one of them: English uses a built-in voice (Bruno by default), the nine languages with their own
+voice use it, and any other language (Indonesian included) needs the Settings voice for that language
+to be a reference recording, which the model clones. Without one, `tts.py` fails with that
+explanation rather than speaking Indonesian with an English voice. Whether a cloned Indonesian
+reference sounds good enough is still for the listening test (S3) to say; the online engines remain
+the dependable Indonesian route.
+
 ## R10. Fonts, look and determinism
 
 **Decision**: bundle a small set of open fonts with Indonesian glyph coverage (for example

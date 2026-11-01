@@ -243,11 +243,11 @@ drive it through the CLI and API.
 **Independent Test**: two ideas; a run takes the first and moves the cursor; the next run takes
 the second; resuming the first by name doesn't move the cursor (quickstart §9).
 
-- [ ] T088 [US8] Implement the idea bank and the `idea` step (next `new` idea per recipe cursor → `used`; a named idea resumes its project without moving the cursor; statuses `built`/`posted` updated from versions and posts) in `backend/src/generate/ideas.ts` and `backend/src/generate/steps/idea.ts`, with tests in `backend/tests/generate/ideas.test.ts`
-- [ ] T089 [US8] Add `import-history` for the documented JSON shape (past concepts → novelty history, past ideas → bank) in `backend/src/generate/ideas.ts`, with the shape documented in `docs/generate.md` and tests in `backend/tests/generate/ideas.test.ts`
-- [ ] T090 [US8] Add routes `GET/POST /api/generate/ideas`, `PATCH/DELETE /ideas/:id` and `POST /api/generate/run` (`{recipeId, ideaId?}`) in `backend/src/app.ts`, with tests in `backend/tests/generate/api.test.ts`
-- [ ] T091 [P] [US8] Build `IdeaBank.tsx` (ideas with status, run, resume) in `frontend/src/components/generate/IdeaBank.tsx`, with tests in `frontend/src/components/generate/__tests__/ideas.test.tsx`
-- [ ] T092 [P] [US8] Add `sorot gen idea add|ideas|idea show`, `sorot gen run --recipe <id> [--idea <ID>] [--json]`, `sorot gen files` and `sorot gen import-history <file.json>` in `cli/src/generate.ts`, with tests in `cli/tests/generate.test.ts`
+- [X] T088 [US8] Implement the idea bank and the `idea` step (next `new` idea per recipe cursor → `used`; a named idea resumes its project without moving the cursor; statuses `built`/`posted` updated from versions and posts) in `backend/src/generate/ideas.ts` and `backend/src/generate/steps/idea.ts`, with tests in `backend/tests/generate/ideas.test.ts`
+- [X] T089 [US8] Add `import-history` for the documented JSON shape (past concepts → novelty history, past ideas → bank) in `backend/src/generate/ideas.ts`, with the shape documented in `docs/generate.md` and tests in `backend/tests/generate/ideas.test.ts`
+- [X] T090 [US8] Add routes `GET/POST /api/generate/ideas`, `PATCH/DELETE /ideas/:id` and `POST /api/generate/run` (`{recipeId, ideaId?}`) in `backend/src/app.ts`, with tests in `backend/tests/generate/api.test.ts`
+- [X] T091 [P] [US8] Build `IdeaBank.tsx` (ideas with status, run, resume) in `frontend/src/components/generate/IdeaBank.tsx`, with tests in `frontend/src/components/generate/__tests__/ideas.test.tsx`
+- [X] T092 [P] [US8] Add `sorot gen idea add|ideas|idea show`, `sorot gen run --recipe <id> [--idea <ID>] [--json]`, `sorot gen files` and `sorot gen import-history <file.json>` in `cli/src/generate.ts`, with tests in `cli/tests/generate.test.ts`
 
 **Checkpoint**: unattended runs work and outside agents can drive Sorot.
 

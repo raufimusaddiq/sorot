@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -278,6 +278,23 @@ export class ApiClient {
 
   async restoreGenerateVersion(id: string) {
     return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/restore`, { method: 'POST' });
+  }
+
+  async listGenerateIdeas() {
+    return this.request<{ ideas: GenIdea[] }>('/api/generate/ideas');
+  }
+
+  async addGenerateIdea(body: { slug: string; brief: string }) {
+    return this.request<{ idea: GenIdea }>('/api/generate/ideas', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async deleteGenerateIdea(id: string) {
+    return this.request<{ deleted: boolean }>(`/api/generate/ideas/${id}`, { method: 'DELETE' });
+  }
+
+  /** One unattended run: the recipe's next new idea, or the named one (started or resumed). */
+  async runGenerateIdea(body: { recipeId?: string; ideaId?: string }) {
+    return this.request<{ project: GenProject }>('/api/generate/run', { method: 'POST', body: JSON.stringify(body) });
   }
 
   async listGenerateFacts(projectId: string) {

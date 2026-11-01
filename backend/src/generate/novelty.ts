@@ -33,9 +33,16 @@ export const conceptText = (c: Concept) => `${c.mechanism}\n${c.concept}`;
 
 /** The concepts of this recipe's other videos, newest first, at most `lastN`. */
 export function earlierConcepts(store: Store, project: GenProject, lastN: number): string[] {
-  return store.listGenProjects()
+  const made = store.listGenProjects()
     .filter((p) => p.id !== project.id && p.recipeId === project.recipeId && p.concept)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((p) => ({ at: p.createdAt, c: JSON.parse(p.concept as string) as Concept }));
+  // concepts imported from elsewhere (past work) count too
+  let imported: Array<Concept & { date: string }> = [];
+  try {
+    imported = JSON.parse(store.settings()[`gen.history.${project.recipeId}`] ?? "[]") as Array<Concept & { date: string }>;
+  } catch { /* unreadable history: ignored */ }
+  return [...made, ...imported.map((c) => ({ at: c.date, c }))]
+    .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, lastN)
-    .map((p) => conceptText(JSON.parse(p.concept as string) as Concept));
+    .map((x) => conceptText(x.c));
 }

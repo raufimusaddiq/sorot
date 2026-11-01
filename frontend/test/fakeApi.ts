@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -55,6 +55,8 @@ export interface FakeState {
   genRecipes: GenRecipeItem[];
   /** The facts of each project, and what a check against the sources makes of an unchecked one. */
   genFacts: Record<string, GenFact[]>;
+  /** The idea bank, and the project the next run makes. */
+  genIdeas: GenIdea[];
   genSteps: GenStepSpec[];
   genValidation: { ok: boolean; errors: string[]; warnings: string[] };
   genFixBodies: unknown[];
@@ -87,6 +89,10 @@ export function makeGenRecipe(id: string, builtIn = false, over: Partial<GenReci
     steps: [{ use: 'author' }, { use: 'render', with: { quality: 'draft' } }, { use: 'export' }], ...over,
   };
   return { id, name: recipe.name, version: 1, builtIn, description: null, recipe, available: true, reasons: [] };
+}
+
+export function makeGenIdea(id: string, over: Partial<GenIdea> = {}): GenIdea {
+  return { id, slug: `idea-${id}`, brief: `Brief ${id}`, flags: null, status: 'new', projectId: null, createdAt: ts(), updatedAt: ts(), ...over };
 }
 
 export function makeGenFact(id: string, over: Partial<GenFact> = {}): GenFact {
@@ -213,7 +219,7 @@ export function emptyState(): FakeState {
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
     settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
-    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genRecipes: [makeGenRecipe('quick', true)], genFacts: {}, genSteps: [{ type: 'author', gates: ['none'], fields: { repairRounds: { t: 'int', min: 0, max: 5 }, require: { t: 'strs', maxItems: 20 } }, required: [], defaults: {} }, { type: 'render', gates: ['none'], fields: { quality: { t: 'enum', values: ['draft', 'delivery'] } }, required: [], defaults: {} }, { type: 'export', gates: ['none', 'owner'], fields: {}, required: [], defaults: {} }], genValidation: { ok: true, errors: [], warnings: [] }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
+    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genRecipes: [makeGenRecipe('quick', true)], genFacts: {}, genIdeas: [], genSteps: [{ type: 'author', gates: ['none'], fields: { repairRounds: { t: 'int', min: 0, max: 5 }, require: { t: 'strs', maxItems: 20 } }, required: [], defaults: {} }, { type: 'render', gates: ['none'], fields: { quality: { t: 'enum', values: ['draft', 'delivery'] } }, required: [], defaults: {} }, { type: 'export', gates: ['none', 'owner'], fields: {}, required: [], defaults: {} }], genValidation: { ok: true, errors: [], warnings: [] }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
   };
 }
 
@@ -368,6 +374,24 @@ export function installFakeApi(state: FakeState) {
         else state.genFacts[pid] = list.map((f) => (f.id === m![1] ? { ...f, ...body, status: 'unverified', evidence: null, originalValue: null } : f));
         return ok(method === 'DELETE' ? { deleted: true } : { fact: state.genFacts[pid]!.find((f) => f.id === m![1]) });
       }
+    }
+    if (method === 'GET' && path === '/api/generate/ideas') return ok({ ideas: state.genIdeas });
+    if (method === 'POST' && path === '/api/generate/ideas') {
+      const idea = makeGenIdea(`i${state.genIdeas.length + 1}`, body);
+      state.genIdeas.push(idea);
+      return ok({ idea });
+    }
+    if (method === 'DELETE' && (m = path.match(/^\/api\/generate\/ideas\/([^/]+)$/))) {
+      state.genIdeas = state.genIdeas.filter((i) => i.id !== m![1]);
+      return ok({ deleted: true });
+    }
+    if (method === 'POST' && path === '/api/generate/run') {
+      const idea = body.ideaId ? state.genIdeas.find((i) => i.id === body.ideaId) : state.genIdeas.find((i) => i.status === 'new');
+      if (!idea) return { status: 'error', error: 'The idea bank has no new idea' };
+      const project = makeGenProject(idea.projectId ?? `run-${idea.id}`, { brief: idea.brief });
+      if (!state.genProjects.some((d) => d.project.id === project.id)) state.genProjects.unshift({ project, plans: [], versions: [], assets: [], exports: [] });
+      Object.assign(idea, { status: idea.status === 'new' ? 'used' : idea.status, projectId: project.id });
+      return ok({ project });
     }
     if (method === 'GET' && path === '/api/generate/projects') return ok({ projects: state.genProjects.map((d) => d.project) });
     if (method === 'POST' && path === '/api/generate/projects') {

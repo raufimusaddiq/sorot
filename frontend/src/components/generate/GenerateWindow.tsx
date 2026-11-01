@@ -14,6 +14,7 @@ import { BriefForm, type PendingFile } from './BriefForm';
 import { BuildPanel } from './BuildPanel';
 import { DirectorLog } from './DirectorLog';
 import { FactsPanel } from './FactsPanel';
+import { IdeaBank } from './IdeaBank';
 import { PlanEditor } from './PlanEditor';
 import { RecipeEditor } from './RecipeEditor';
 import { VersionHistory } from './VersionHistory';
@@ -39,6 +40,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
   const [viewId, setViewId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showRecipes, setShowRecipes] = useState(false);
+  const [showIdeas, setShowIdeas] = useState(false);
   const [recipes, setRecipes] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
@@ -148,6 +150,20 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
     );
   }
 
+  if (showIdeas) {
+    return (
+      <Window title="Ideas" bar="bg-sun" right="unattended runs">
+        <button className="btn mb-3" onClick={() => setShowIdeas(false)}>← Back to videos</button>
+        <IdeaBank api={api} recipes={recipes} onOpen={async (id) => {
+          const { projects: list } = await api.listGenerateProjects();
+          setProjects(list);
+          setSelected(id);
+          setShowIdeas(false);
+        }} />
+      </Window>
+    );
+  }
+
   if (showRecipes) {
     return (
       <Window title="Recipes" bar="bg-sun" right="your pipelines">
@@ -168,6 +184,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
       <p className="text-xs text-subtle mb-3" data-testid="generate-ready">
         Ready · HyperFrames {status.hyperframes.version} · rendering on the {status.compute.toUpperCase()}
         {' · '}<button className="underline" onClick={() => setShowRecipes(true)}>Recipes</button>
+        {' · '}<button className="underline" onClick={() => setShowIdeas(true)}>Ideas</button>
       </p>
 
       <label className="block mb-3">

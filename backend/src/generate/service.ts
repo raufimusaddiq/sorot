@@ -13,7 +13,7 @@ import { DirectorLog } from "./events";
 import { isCreative, readFindings, type Finding } from "./findings";
 import { readFix, writeFix, type FixEdit, type FixFile } from "./fixes";
 import { Hyperframes, requiredOk } from "./hyperframes";
-import { mirrorProject, mirrorReview, readMirror } from "./mirror";
+import { MIRROR_FILES, mirrorProject, mirrorReview, readMirror } from "./mirror";
 import { planContext } from "./planContext";
 import { validatePlan, type Plan } from "./planSchema";
 import { freezeRecipe, parseRecipe, seedRecipes, type Recipe, type RecipeStep } from "./recipe";
@@ -22,6 +22,7 @@ import type { FactWeb } from "./facts";
 import { ImageClient } from "./images";
 import { Narrator } from "./narration";
 import { findPreset, loadPresets } from "./presets";
+import { IdeaBank, type IdeaFlags } from "./ideas";
 import { RecipeBook } from "./recipes";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
 import { settingsOf } from "./steps";
@@ -71,6 +72,8 @@ export interface CreateProjectInput {
   facts?: Array<{ claim?: unknown; value?: unknown; sourceUrl?: unknown }>;
   /** `true`: no numbers beyond the brief's own; a list: numbers that must never appear. */
   forbiddenNumbers?: true | string[];
+  /** Who the facts are from (`idea` for those that came with an idea). */
+  factsFrom?: GenFact["addedBy"];
 }
 
 const DOCTOR_TTL_MS = 30_000;
@@ -84,6 +87,7 @@ export class GenerateService {
   readonly assets: Assets;
   readonly queue: BuildQueue;
   readonly recipes: RecipeBook;
+  readonly ideas: IdeaBank;
   private doctorCache: { at: number; result: { ok: boolean; reason?: string } } | null = null;
   private catalogCache: Array<{ name: string; tags: string[] }> | null = null;
   /** Work running in the background, by project. */
@@ -105,6 +109,7 @@ export class GenerateService {
     this.director = new Director(llm, this.log, config.generatorDir);
     this.assets = new Assets(config, store);
     this.recipes = new RecipeBook(store);
+    this.ideas = new IdeaBank(store);
     this.runner = new Runner(store, this.log, {
       connected: (c) => this.connected(c),
       directorGate: (ctx, result) => this.decide(ctx.project, ctx.step, result.outputRef),
@@ -232,13 +237,13 @@ export class GenerateService {
     return out;
   }
 
-  addFact(projectId: string, input: { claim?: unknown; value?: unknown; sourceUrl?: unknown }): GenFact {
+  addFact(projectId: string, input: { claim?: unknown; value?: unknown; sourceUrl?: unknown }, addedBy: GenFact["addedBy"] = "owner"): GenFact {
     this.mustProject(projectId);
     const f = this.factFields(input);
     const t = now();
     const fact = this.store.saveGenFact({
       id: crypto.randomUUID(), projectId, ideaId: null, claim: f.claim as string, value: f.value ?? null, sourceUrl: f.sourceUrl as string,
-      status: "unverified", originalValue: null, evidence: null, addedBy: "owner", createdAt: t, updatedAt: t,
+      status: "unverified", originalValue: null, evidence: null, addedBy, createdAt: t, updatedAt: t,
     });
     mirrorProject(this.config, this.store, projectId);
     return fact;
@@ -329,12 +334,101 @@ export class GenerateService {
   /** Runs `work` for a project without blocking the request; whatever it leaves is saved by the runner. */
   private launch(projectId: string, work: () => Promise<unknown>): void {
     const job = work()
+      .then(() => this.unattendedNext(projectId))
       .catch((e: Error) => this.store.updateGenProject(projectId, { status: "FAILED", errorMessage: e.message }))
       .finally(() => {
         this.running.delete(projectId);
         mirrorProject(this.config, this.store, projectId);
       });
     this.running.set(projectId, job);
+  }
+
+  // ---- unattended runs (FR-034) ---------------------------------------------
+
+  private flagsOf(p: GenProject): Record<string, unknown> {
+    return p.briefFlags ? (JSON.parse(p.briefFlags) as Record<string, unknown>) : {};
+  }
+
+  /**
+   * A run that was told not to stop goes on by itself: when the project steps are done and the plan
+   * is approved (every gate was the director's), the build starts. A gate that waits for the owner
+   * simply leaves the project waiting.
+   */
+  private unattendedNext(projectId: string): void {
+    const p = this.store.getGenProject(projectId);
+    if (!p || !this.flagsOf(p).buildWithoutStopping || p.status !== "WAITING" || this.store.genVersionsForProject(projectId).length) return;
+    try {
+      this.queueVersion(p, this.assertCanBuild(projectId));
+    } catch (e) {
+      if (!(e instanceof HttpError)) throw e;   // not approved yet: it waits for the owner
+    }
+  }
+
+  /**
+   * The end of an unattended run: the newest version is built and its TECHNICAL verdict is not FAIL
+   * (CREATIVE never blocks), so it is accepted and exported. Publishing is never automatic.
+   */
+  private async finishUnattended(v: GenVersion): Promise<void> {
+    const p = this.mustProject(v.projectId);
+    if (!this.flagsOf(p).buildWithoutStopping || p.status === "ACCEPTED" || p.status === "EXPORTED") return;
+    if (this.store.genVersionsForProject(p.id)[0]?.id !== v.id || v.status !== "BUILT") return;   // a fix round is still to come
+    const technical = this.store.genVerdictsForVersion(v.id).find((x) => x.kind === "TECHNICAL")?.status;
+    if (technical !== "PASS" && technical !== "REVIEW") return;
+    this.acceptVersion(v.id);
+    const exportStep = parseRecipe(p).steps.find((s) => s.use === "export");
+    if (exportStep && exportStep.gate !== "owner") {
+      await this.exportVersion(v.id);
+      this.store.updateGenProject(p.id, { status: "EXPORTED" });
+    }
+  }
+
+  /**
+   * One run from the idea bank. No `ideaId`: the recipe's next new idea (the cursor moves). With an
+   * `ideaId`: that idea, whether new or already started (a started one is resumed); the cursor stays.
+   */
+  async runIdea(input: { recipeId?: string; ideaId?: string }): Promise<GenProject> {
+    const recipeId = input.recipeId?.trim() || "quick";
+    if (!this.store.getGenRecipe(recipeId)) throw new HttpError(404, `Recipe not found: ${recipeId}`);
+    const named = input.ideaId ? this.ideas.get(input.ideaId) : null;
+    const idea = named ?? this.ideas.next(recipeId);
+    if (!idea) throw new HttpError(404, `The idea bank has no new idea for the recipe ${recipeId}`);
+
+    const started = idea.projectId ? this.store.getGenProject(idea.projectId) : null;
+    if (started) return this.resumeUnattended(started);
+
+    const flags = (idea.flags ? JSON.parse(idea.flags) : {}) as IdeaFlags;
+    const project = await this.createProject({
+      brief: idea.brief, recipeId, ideaId: idea.id, buildWithoutStopping: true, language: flags.language, format: flags.format, targetSec: flags.targetSec,
+      preset: flags.preset, narration: flags.narration === true, ...(flags.market_data === false ? { forbiddenNumbers: true as const } : {}),
+      factsFrom: "idea", facts: this.ideas.factsOf(idea.id).map((f) => ({ claim: f.claim, value: f.value ?? undefined, sourceUrl: f.sourceUrl ?? undefined })),
+    });
+    this.ideas.link(idea.id, project.id);
+    if (!named) this.ideas.moveCursor(recipeId, idea.id);
+    return project;
+  }
+
+  /** Past concepts (novelty history) and past ideas from another tool or an earlier life of this one. */
+  importHistory(input: unknown) {
+    return this.store.transaction(() => this.ideas.importHistory(input, (id) => !!this.store.getGenRecipe(id)));
+  }
+
+  /** Picks a started run up where it stopped. */
+  private resumeUnattended(p: GenProject): GenProject {
+    this.idle(p.id);
+    if (p.status === "FAILED") {
+      this.store.updateGenProject(p.id, { briefFlags: JSON.stringify({ ...this.flagsOf(p), buildWithoutStopping: true }) });
+      return this.retry(p.id);
+    }
+    const versions = this.store.genVersionsForProject(p.id);
+    this.store.updateGenProject(p.id, { briefFlags: JSON.stringify({ ...this.flagsOf(p), buildWithoutStopping: true }) });
+    if (p.status === "WAITING" && !versions.length) {
+      this.launch(p.id, () => this.runner.runProject(p.id));
+    } else if (versions[0]?.status === "FAILED" || versions[0]?.status === "CANCELLED") {
+      this.queueVersion(this.mustProject(p.id), this.assertCanBuild(p.id));
+    } else if (versions[0]?.status === "BUILT") {
+      this.launch(p.id, () => this.finishUnattended(versions[0] as GenVersion));
+    }
+    return this.mustProject(p.id);
   }
 
   /** Resolves when no background work is running (tests, shutdown). */
@@ -413,7 +507,7 @@ export class GenerateService {
       narrationScript: null, concept: null, stepIndex: 0, stepState: null, narration: input.narration ? 1 : 0, storylines: null,
       pickedStoryline: null, status: "RUNNING", currentPlanId: null, acceptedVersionId: null, errorMessage: null, createdAt: t, updatedAt: t,
     });
-    for (const f of input.facts ?? []) this.addFact(project.id, f);
+    for (const f of input.facts ?? []) this.addFact(project.id, f, input.factsFrom ?? "owner");
     mirrorProject(this.config, this.store, project.id);
     this.launch(project.id, () => this.runner.runProject(project.id));
     return project;
@@ -451,6 +545,12 @@ export class GenerateService {
   events(id: string, limit = 200) {
     this.mustProject(id);
     return this.store.genEventsForProject(id, Math.max(1, Math.min(limit, 1000)));
+  }
+
+  /** The names of the mirrored files written for this project so far. */
+  fileNames(id: string): string[] {
+    this.mustProject(id);
+    return MIRROR_FILES.filter((name) => readMirror(this.config, id, name) !== null);
   }
 
   file(id: string, name: string): string {
@@ -761,6 +861,7 @@ export class GenerateService {
     const v = this.mustVersion(versionId);
     try {
       if (v.status === "BUILT" && v.projectDir) await this.autoFix(v);
+      await this.finishUnattended(this.mustVersion(versionId));
     } finally {
       this.prune(v.projectId);
     }

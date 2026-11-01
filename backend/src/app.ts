@@ -15,8 +15,8 @@ import { ImageClient } from "./generate/images";
 import { Narrator } from "./generate/narration";
 import { GenerateService } from "./generate/service";
 import { stepLibrary } from "./generate/recipes";
-import { planView, projectView, recipeView, verdictView, versionView } from "./generate/views";
-import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
+import { ideaView, planView, projectView, recipeView, verdictView, versionView } from "./generate/views";
+import { HttpError, corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
 import { ClipEditor } from "./editor";
 import { ConflictError, JobService } from "./jobs";
 import { CAPTION_STYLES, parseOptions, parseTimestamp, REFRAME_MODES } from "./options";
@@ -404,6 +404,28 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     generate.deleteFact(c.params.id as string);
     return ok({ deleted: true });
   });
+  router.on("GET", "/api/generate/ideas", (c) => ok({ ideas: generate.ideas.list(c.url.searchParams.get("status") ?? undefined).map((i) => ideaView(i)) }));
+  router.on("POST", "/api/generate/ideas", async (c) => {
+    const b = await c.body();
+    const facts = (Array.isArray(b.facts) ? b.facts : []).map((f: Record<string, unknown>, i: number) => {
+      const claim = typeof f.claim === "string" ? f.claim.trim() : "";
+      const url = typeof f.sourceUrl === "string" ? f.sourceUrl.trim() : "";
+      if (!claim || !/^https?:\/\/\S+$/i.test(url)) throw new HttpError(400, `facts[${i}]: give a claim and the web address of the page that states it`);
+      return { claim, value: typeof f.value === "string" && f.value.trim() ? f.value.trim() : null, sourceUrl: url };
+    });
+    return ok({ idea: ideaView(generate.ideas.add(b, facts)) }, 201);
+  });
+  router.on("GET", "/api/generate/ideas/:id", (c) => ok({ idea: ideaView(generate.ideas.get(c.params.id as string)), facts: generate.ideas.factsOf(c.params.id as string) }));
+  router.on("PATCH", "/api/generate/ideas/:id", async (c) => ok({ idea: ideaView(generate.ideas.update(c.params.id as string, await c.body())) }));
+  router.on("DELETE", "/api/generate/ideas/:id", (c) => {
+    generate.ideas.remove(c.params.id as string);
+    return ok({ deleted: true });
+  });
+  router.on("POST", "/api/generate/run", async (c) => {
+    const b = await c.body();
+    return ok({ project: projectView(await generate.runIdea({ recipeId: strArg(b, "recipeId") || undefined, ideaId: strArg(b, "ideaId") || undefined })) }, 201);
+  });
+  router.on("POST", "/api/generate/import-history", async (c) => ok(generate.importHistory(await c.body())));
   router.on("GET", "/api/generate/steps", () => ok({ steps: stepLibrary() }));
   router.on("GET", "/api/generate/recipes", () => ok({ recipes: generate.recipeList() }));
   router.on("POST", "/api/generate/recipes/validate", async (c) => ok(generate.recipes.validate((await c.body()).recipe)));
@@ -446,6 +468,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     const limit = Number(c.url.searchParams.get("limit") ?? 200);
     return ok({ events: generate.events(c.params.id as string, Number.isFinite(limit) ? limit : 200) });
   });
+  router.on("GET", "/api/generate/projects/:id/files", (c) => ok({ files: generate.fileNames(c.params.id as string) }));
   router.on("GET", "/api/generate/projects/:id/files/:name", (c) =>
     new Response(generate.file(c.params.id as string, c.params.name as string), { headers: { "Content-Type": "text/plain; charset=utf-8" } }));
 
