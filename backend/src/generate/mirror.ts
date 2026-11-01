@@ -51,7 +51,26 @@ function specMd(plan: Plan, revision: number, approved: boolean): string {
   ].join("\n");
 }
 
-/** Rewrites the mirrors that the project's data supports (BRIEF.md, STORYLINES.md, SPEC.md). */
+/** MOTION_PLAN.md: the numeric spec and, per shot, its frames, hero move, what it reads as, the hand-off and what moves when. */
+export function motionPlanMd(plan: Plan): string {
+  const n = plan.numeric;
+  if (!n) return "";
+  const kv = (o: Record<string, string | number>) => Object.entries(o).map(([k, v]) => `- ${k}: ${v}`);
+  return [
+    `# Motion plan: ${plan.title}`, "", `${n.totalFrames} frames at ${n.fps} fps (${plan.totalSec} s).`, "",
+    "## Spec", "", `Palette: ${plan.look.palette.join(" ")}`, `Shadow: ${n.shadow}`, "",
+    "Type:", ...Object.entries(n.typography).map(([r, t]) => `- ${r}: ${t.font} ${t.weight}, ${t.px} px, tracking ${t.tracking} em`), "",
+    "Easing:", ...kv(n.easing), "", "Durations (frames):", ...kv(n.durationsFrames), "", "Staggers (frames):", ...kv(n.staggerFrames), "",
+    "## Shots", "",
+    ...plan.shots.flatMap((s) => [
+      `### ${s.id} · frames ${s.frames?.[0] ?? "?"} to ${s.frames?.[1] ?? "?"}`, "",
+      `- Hero move: ${s.heroMove ?? "-"}`, `- Reads as: ${s.reads ?? "-"}`, `- Hands off: ${s.handoff ?? "-"}`,
+      ...(s.motionPlan?.length ? ["- Moves:", ...s.motionPlan.map((m) => `  - frames ${m.fromFrame} to ${m.toFrame}: ${m.token}${m.target ? ` on ${m.target}` : ""}`)] : []), "",
+    ]),
+  ].join("\n");
+}
+
+/** Rewrites the mirrors that the project's data supports (BRIEF.md, STORYLINES.md, SPEC.md, MOTION_PLAN.md). */
 export function mirrorProject(config: Pick<AppConfig, "genDir">, store: Store, projectId: string): string[] {
   const project = store.getGenProject(projectId);
   if (!project) return [];
@@ -61,9 +80,17 @@ export function mirrorProject(config: Pick<AppConfig, "genDir">, store: Store, p
   const put = (name: string, text: string) => { writeFileSync(join(out, name), text); written.push(name); };
 
   put("BRIEF.md", briefMd(project));
+  if (project.concept) {
+    const c = JSON.parse(project.concept) as { mechanism: string; concept: string };
+    put("CONCEPT.txt", `${c.mechanism}\n\n${c.concept}\n`);
+  }
   if (project.storylines) put("STORYLINES.md", storylinesMd(JSON.parse(project.storylines) as Storyline[], project.pickedStoryline));
   const current = project.currentPlanId ? store.getGenPlan(project.currentPlanId) : null;
-  if (current) put("SPEC.md", specMd(JSON.parse(current.plan) as Plan, current.revision, !!current.approvedAt));
+  if (current) {
+    const plan = JSON.parse(current.plan) as Plan;
+    put("SPEC.md", specMd(plan, current.revision, !!current.approvedAt));
+    if (plan.numeric) put("MOTION_PLAN.md", motionPlanMd(plan));
+  }
   return written;
 }
 

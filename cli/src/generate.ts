@@ -384,6 +384,129 @@ async function acceptCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
+// ---- recipes -----------------------------------------------------------------------
+
+const RECIPES = "/api/generate/recipes";
+
+async function stepsCmd(d: Deps, a: Args): Promise<number> {
+  const { steps } = await d.api.get("/api/generate/steps");
+  if (json(d, a, steps)) return 0;
+  d.out(table(["STEP", "GATES", "SETTINGS"], (steps as Json[]).map((s) => [s.type, (s.gates as string[]).join(", "), Object.keys(s.fields).join(", ") || "-"])));
+  return 0;
+}
+
+async function recipesCmd(d: Deps, a: Args): Promise<number> {
+  const { recipes } = await d.api.get(RECIPES);
+  if (json(d, a, recipes)) return 0;
+  d.out(table(["ID", "NAME", "VER", "KIND", "RUNS HERE"], (recipes as Json[]).map((r) => [
+    r.id, r.name, r.version, r.builtIn ? "example" : "yours", r.available ? "yes" : `no: ${(r.reasons as string[])[0]}`,
+  ])));
+  return 0;
+}
+
+/** A recipe from a .json file or, otherwise, by its id. */
+async function recipeFrom(d: Deps, ref: string): Promise<Json> {
+  if (ref.endsWith(".json") || d.fs.exists(ref)) {
+    try {
+      return JSON.parse(d.fs.readText(resolve(d.cwd, ref)));
+    } catch (e) {
+      throw new UsageError(`${ref} is not valid JSON: ${(e as Error).message}`);
+    }
+  }
+  return (await d.api.get(`${RECIPES}/${ref}`)).recipe.recipe;
+}
+
+function printProblems(d: Deps, r: Json): void {
+  for (const e of r.errors as string[]) d.out(`✗ ${e}`);
+  for (const w of r.warnings as string[]) d.out(`⚠ ${w}`);
+  if (r.ok) d.out("The recipe is valid.");
+}
+
+/** sorot gen recipe show|new|copy|edit|validate|export|import|delete */
+async function recipeCmd(d: Deps, a: Args): Promise<number> {
+  const sub = a.positionals[2];
+  const arg = (n: number, what: string) => need(a, n, what);
+  switch (sub) {
+    case "show": {
+      const r = (await d.api.get(`${RECIPES}/${arg(3, "recipe id")}`)).recipe;
+      if (!json(d, a, r)) d.out(JSON.stringify(r.recipe, null, 2));
+      return 0;
+    }
+    case "new":
+    case "copy": {
+      const from = sub === "new" ? (str(a, "from") ?? "quick") : arg(3, "recipe to copy");
+      const id = arg(sub === "new" ? 3 : 4, "id for the new recipe");
+      const { recipe } = await d.api.post(RECIPES, { fromId: from, id, name: str(a, "name") ?? id });
+      if (!json(d, a, recipe)) d.out(`Created ${recipe.id} from ${from}. Change it with: sorot gen recipe edit ${recipe.id}`);
+      return 0;
+    }
+    case "edit": {
+      const id = arg(3, "recipe id");
+      const current = (await d.api.get(`${RECIPES}/${id}`)).recipe;
+      if (current.builtIn) throw new UsageError("An example can't be edited: copy it first (sorot gen recipe copy)");
+      if (!d.editor) throw new UsageError("Set $EDITOR (or $VISUAL) to edit the recipe");
+      const file = d.fs.tempPath(`recipe-${id}.json`);
+      d.fs.writeText(file, `${JSON.stringify(current.recipe, null, 2)}
+`);
+      const code = await d.run([d.editor, file]);
+      if (code !== 0) throw new UsageError(`The editor exited with code ${code}; nothing was saved`);
+      let edited: unknown;
+      try {
+        edited = JSON.parse(d.fs.readText(file));
+      } catch (e) {
+        throw new UsageError(`The edited recipe is not valid JSON: ${(e as Error).message}`);
+      }
+      if (JSON.stringify(edited) === JSON.stringify(current.recipe)) {
+        d.out("No changes.");
+        return 0;
+      }
+      const saved = (await d.api.put(`${RECIPES}/${id}`, { recipe: edited })).recipe;
+      if (!json(d, a, saved)) d.out(`Saved ${id} as version ${saved.version}.`);
+      return 0;
+    }
+    case "validate": {
+      const r = await d.api.post(`${RECIPES}/validate`, { recipe: await recipeFrom(d, arg(3, "recipe id or .json file")) });
+      if (!json(d, a, r)) printProblems(d, r);
+      return r.ok ? 0 : 1;
+    }
+    case "export": {
+      const id = arg(3, "recipe id");
+      const text = await (await d.api.raw(`${RECIPES}/${id}/export`)).text();
+      const out = str(a, "out");
+      if (!out) {
+        d.out(text);
+        return 0;
+      }
+      d.fs.writeText(resolve(d.cwd, out), `${text}
+`);
+      d.out(`Saved ${out}`);
+      return 0;
+    }
+    case "import": {
+      const { recipe } = await d.api.post(`${RECIPES}/import`, { recipe: await recipeFrom(d, arg(3, ".json file")) });
+      if (!json(d, a, recipe)) d.out(`Imported ${recipe.id}. A command or connection it names must be set up in Settings first (sorot gen recipes shows if it runs here).`);
+      return 0;
+    }
+    case "delete": {
+      const id = arg(3, "recipe id");
+      await d.api.delete(`${RECIPES}/${id}`);
+      if (!json(d, a, { deleted: true })) d.out(`Deleted ${id}. Videos already started keep their copy.`);
+      return 0;
+    }
+    default:
+      throw new UsageError("Use: sorot gen recipe show|new|copy|edit|validate|export|import|delete");
+  }
+}
+
+/** Passes a step that waits for you (a gate set to "owner"). */
+async function approveStepCmd(d: Deps, a: Args): Promise<number> {
+  const id = await projectId(d, need(a, 2, "project"));
+  const step = need(a, 3, "step id");
+  const r = await d.api.post(`${BASE}/${id}/steps/${step}/approve`);
+  if (!json(d, a, r)) d.out(`Passed ${step}. The project is ${r.project.status}.`);
+  return 0;
+}
+
 const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   status: statusCmd,
   new: newCmd,
@@ -403,6 +526,10 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   fix: fixCmd,
   restore: restoreCmd,
   export: exportCmd,
+  steps: stepsCmd,
+  recipes: recipesCmd,
+  recipe: recipeCmd,
+  "approve-step": approveStepCmd,
 };
 
 export async function genCmd(d: Deps, a: Args): Promise<number> {

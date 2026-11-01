@@ -1,7 +1,9 @@
 import type { Store } from "../store";
 import type { GenExport, GenProject, GenVersion } from "../types";
 import type { AppConfig } from "../config";
-import type { ExecFn } from "../runner";
+import type { ExecFn, ScriptRunner } from "../runner";
+import type { ImageClient } from "./images";
+import type { Narrator } from "./narration";
 import type { Jev } from "../jev";
 import type { Director } from "./director";
 import type { DirectorLog } from "./events";
@@ -41,6 +43,9 @@ export interface RunnerDeps {
   hyperframes: Hyperframes;
   jev: Jev;
   exec: ExecFn;
+  runScript?: ScriptRunner;
+  narrator?: Narrator;
+  images?: ImageClient;
   config: AppConfig;
   catalog: StepContext["catalog"];
   /** The step library; tests pass stubs. */
@@ -291,7 +296,7 @@ export class Runner {
   private context(project: GenProject, version: GenVersion | null, recipe: Recipe, step: RecipeStep, signal?: AbortSignal): StepContext {
     return {
       project, version, recipe, step, signal, store: this.store, log: this.log,
-      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog,
+      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, runScript: this.deps.runScript, narrator: this.deps.narrator, images: this.deps.images, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog,
       settings: settingsOf(step.use, step.with),
       progress: (percent) => { if (version) this.store.updateGenVersion(version.id, { progress: Math.max(0, Math.min(100, Math.round(percent))) }); },
     };

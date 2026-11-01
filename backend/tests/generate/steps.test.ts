@@ -113,13 +113,13 @@ describe("plan step", () => {
     expect(r.store.getGenProject("p1")).toMatchObject({ currentPlanId: plans[0]!.id, title: "Judul dua" });
   });
 
-  test("a short video has no storyline; the plan is cached on the pick, not on revisions", async () => {
+  test("a short video has no storyline; the plan is cached on the pick and the script, not on revisions", async () => {
     const r = stepRig([JSON.stringify(samplePlan())]);
     await STEPS.plan.run(r.ctxFor("plan"));
     expect(body(r.requests[0]!).storyline).toBeNull();
     const key = STEPS.plan.inputKey!;
-    expect(key(r.ctxFor("plan"))).toBe("");
+    expect(key(r.ctxFor("plan"))).toBe("||0");
     r.store.updateGenProject("p1", { pickedStoryline: 2 });
-    expect(key(r.ctxFor("plan"))).toBe("2");
+    expect(key(r.ctxFor("plan"))).toBe("2||0");
   });
 });

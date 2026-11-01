@@ -90,7 +90,27 @@ export interface AppConfig {
   genConcurrency: number;
   /** Drafts kept per project; older ones are pruned, exports stay. */
   genKeepVersions: number;
+  /** Images for scenes (any OpenAI-compatible /images/generations endpoint); off without a URL, model and key. */
+  imageEnabled: boolean;
+  imageBaseUrl: string;
+  imageModel: string;
+  imageApiKey: string;
+  imageSize: string;
+  imageStyle: string;
+  /** The narration voice: one engine (elevenlabs, fish, openai or local on a GPU install) and a voice id per language. */
+  voiceEnabled: boolean;
+  voiceEngine: string;
+  voiceBaseUrl: string;
+  voiceModel: string;
+  voiceApiKey: string;
+  voiceVoices: Record<string, string>;
+  /** Local check commands recipes may name; off on hosted installs unless GEN_COMMANDS=1. */
+  commandsEnabled: boolean;
+  commands: GenCommand[];
 }
+
+/** A command the owner registered in Settings; a recipe's `command` step only names it. */
+export interface GenCommand { name: string; cmd: string; args: string[]; timeoutSec: number }
 
 type Env = Record<string, string | undefined>;
 
@@ -175,5 +195,19 @@ export function loadConfig(env: Env = process.env): AppConfig {
     genDir: `${dataDir}/generate`,
     genConcurrency: Math.max(1, int(env.GEN_CONCURRENCY, 1)),
     genKeepVersions: Math.max(1, int(env.GEN_KEEP_VERSIONS, 10)),
+    imageEnabled: true,
+    imageBaseUrl: (env.IMAGE_BASE_URL ?? "").trim(),
+    imageModel: (env.IMAGE_MODEL ?? "").trim(),
+    imageApiKey: (env.IMAGE_API_KEY ?? "").trim(),
+    imageSize: (env.IMAGE_SIZE ?? "").trim() || "1024x1024",
+    imageStyle: (env.IMAGE_STYLE ?? "").trim(),
+    voiceEnabled: true,
+    voiceEngine: (env.VOICE_ENGINE ?? "").trim(),
+    voiceBaseUrl: (env.VOICE_BASE_URL ?? "").trim(),
+    voiceModel: (env.VOICE_MODEL ?? "").trim(),
+    voiceApiKey: (env.VOICE_API_KEY ?? "").trim(),
+    voiceVoices: {},
+    commandsEnabled: !bool(env.SOROT_HOSTED) || bool(env.GEN_COMMANDS),
+    commands: [],
   };
 }

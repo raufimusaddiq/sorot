@@ -1,5 +1,6 @@
 import type { Finding, NewFinding } from "./findings";
 import type { Plan } from "./planSchema";
+import { wordErrorRate, wordsOf } from "./voice";
 
 // The TECHNICAL verdict (research R6): computed in code only, so it can't flip between runs.
 // These are its measures, as pure functions over what ffprobe, ffmpeg and the plan say; the step
@@ -103,4 +104,53 @@ export function audioFindings(probe: Probe | null, volume: Volume | null, limits
     found.push({ ...must("audio_clipping", `The audio peaks at ${volume.max} dB; it should stay under ${limits.maxTruePeakDb} dB.`, "Lower the volume of the track."), severity: "should-fix" });
   }
   return found;
+}
+
+// ---- the voice (FR-018) --------------------------------------------------------------
+
+export interface SpokenLine { id: string; text: string; start: number; durationSec: number; /** When its first word should be heard, if the voice was timed. */ firstWordAt: number | null }
+export interface HeardWord { text: string; start: number; end: number }
+
+const DRIFT_SEC = 0.3;
+const LINE_WINDOW_SEC = 0.6;
+
+/**
+ * `speechMatch`: Whisper listened to the rendered film (local, never a paid service); every line
+ * the script says should be heard where it was placed. A film whose overall word error rate is
+ * above the step's limit fails, and each line that was missed is named with its time. Captions
+ * that start more than 0.3 s from the spoken word are reported as drift.
+ */
+export function speechFindings(lines: SpokenLine[], heard: HeardWord[], limit: number): NewFinding[] {
+  const found: NewFinding[] = [];
+  const total = wordErrorRate(lines.flatMap((l) => wordsOf(l.text)), heard.flatMap((w) => wordsOf(w.text)));
+  const missed: SpokenLine[] = [];
+  for (const line of lines) {
+    const inside = heard.filter((w) => w.start >= line.start - LINE_WINDOW_SEC && w.start < line.start + line.durationSec + LINE_WINDOW_SEC);
+    const rate = wordErrorRate(wordsOf(line.text), inside.flatMap((w) => wordsOf(w.text)));
+    if (rate > 0.5) missed.push(line);
+    else if (line.firstWordAt !== null && inside[0] && Math.abs(inside[0].start - line.firstWordAt) > DRIFT_SEC) {
+      found.push({
+        severity: "should-fix", shotId: null, code: "caption_drift", state: "open", rule: "technical",
+        description: `The captions of line ${line.id} start ${Math.abs(Math.round((inside[0].start - line.firstWordAt) * 100) / 100)} s away from the spoken words (at ${Math.round(line.firstWordAt * 10) / 10} s).`,
+        suggestedFix: "Time the voice again (the align step) so the captions follow the words.", fromSec: line.firstWordAt, toSec: line.firstWordAt + line.durationSec,
+      });
+    }
+  }
+  if (total > limit || missed.length) {
+    found.push(must(
+      "speech_mismatch",
+      `The voice in the film doesn't match the script (word error rate ${Math.round(total * 100)}%, at most ${Math.round(limit * 100)}%)${missed.length ? `; not heard: ${missed.map((l) => `${l.id} at ${Math.round(l.start * 10) / 10} s ("${l.text.slice(0, 40)}")`).join(", ")}` : ""}.`,
+      "Check that the voice track is on the root composition at the lines' start times and isn't covered by the music.",
+      { fromSec: missed[0]?.start },
+    ));
+  }
+  return found;
+}
+
+/** `voiceRoute`: every recorded line ends inside the film, so none is cut off. */
+export function voiceRouteFindings(lines: Array<{ id: string; start: number; durationSec: number }>, filmSec: number): NewFinding[] {
+  return lines.filter((l) => l.start + l.durationSec > filmSec + 0.05).map((l) => must(
+    "voice_cut_off", `Line ${l.id} runs to ${Math.round((l.start + l.durationSec) * 10) / 10} s but the film ends at ${filmSec} s.`,
+    "Give the shot that narrates it more time, or shorten the script.", { fromSec: l.start, toSec: filmSec },
+  ));
 }

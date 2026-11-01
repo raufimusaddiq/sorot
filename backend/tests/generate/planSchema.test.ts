@@ -99,3 +99,81 @@ describe("validatePlan", () => {
     expect(numbersIn("tanpa angka")).toEqual([]);
   });
 });
+
+describe("validatePlan: a numeric plan", () => {
+  const numericCtx = (over: Partial<PlanContext> = {}) => ctx({ numeric: true, motionPlan: true, fps: 30, fonts: ["Plus Jakarta Sans", "Inter", "Bebas Neue"], ...over });
+  /** Three shots of 10 s at 30 fps: frames 0-300, 300-600, 600-900. */
+  const numericPlan = (over: Record<string, any> = {}) => {
+    const base = samplePlan();
+    return {
+      ...base,
+      numeric: {
+        typography: { title: { font: "Plus Jakarta Sans", weight: 700, px: 96, tracking: -0.02 }, body: { font: "Inter", weight: 400, px: 48, tracking: 0 } },
+        shadow: "0 8px 24px rgba(0,0,0,.4)",
+        easing: { enter: "power3.out", exit: "cubic-bezier(0.4, 0, 1, 1)" },
+        durationsFrames: { enter: 18, hold: 60 }, staggerFrames: { words: 4 },
+      },
+      shots: base.shots.map((s: any, i: number) => ({
+        ...s, frames: [i * 300, i * 300 + 300], heroMove: "the seed grows", reads: "a seed becomes a tree", handoff: "the tree's shadow",
+        motionPlan: [{ token: "enter", fromFrame: i * 300, toFrame: i * 300 + 18, target: "title" }],
+      })),
+      ...over,
+    };
+  };
+  const errorsOf = (plan: unknown, c = numericCtx()) => validatePlan(plan, c).errors;
+  const shotsOf = (f: (s: any, i: number) => any) => numericPlan({ shots: numericPlan().shots.map(f) });
+
+  test("a complete spec passes, and keeps its numbers on the plan and its shots", () => {
+    const check = validatePlan(numericPlan(), numericCtx());
+    expect(check.errors).toEqual([]);
+    expect(check.plan!.numeric).toEqual({
+      fps: 30, totalFrames: 900,
+      typography: { title: { font: "Plus Jakarta Sans", weight: 700, px: 96, tracking: -0.02 }, body: { font: "Inter", weight: 400, px: 48, tracking: 0 } },
+      shadow: "0 8px 24px rgba(0,0,0,.4)", easing: { enter: "power3.out", exit: "cubic-bezier(0.4, 0, 1, 1)" }, durationsFrames: { enter: 18, hold: 60 }, staggerFrames: { words: 4 },
+    });
+    expect(check.plan!.shots[1]).toMatchObject({ frames: [300, 600], heroMove: "the seed grows", reads: "a seed becomes a tree", handoff: "the tree's shadow", motionPlan: [{ token: "enter", fromFrame: 300, toFrame: 318, target: "title" }] });
+  });
+
+  test("a plan that is not numeric is untouched by all this", () => {
+    const check = validatePlan(samplePlan(), ctx());
+    expect(check.plan).not.toHaveProperty("numeric");
+    expect(check.plan!.shots[0]).not.toHaveProperty("frames");
+  });
+
+  test.each<[string, (p: any) => any, string]>([
+    ["one palette colour", (p) => ({ ...p, look: { ...p.look, palette: ["#0B1020"] } }), "at least two hex colours"],
+    ["a colour name", (p) => ({ ...p, look: { ...p.look, palette: ["#0B1020", "gold"] } }), "at least two hex colours"],
+    ["no typography", (p) => ({ ...p, numeric: { ...p.numeric, typography: {} } }), "numeric.typography: give the font"],
+    ["a font that isn't there", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Comic", weight: 700, px: 96, tracking: 0 } } } }), 'the font "Comic" isn\'t available'],
+    ["a weight of 450", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 450, px: 96, tracking: 0 } } } }), "weight is 100"],
+    ["a 2 px font", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 2, tracking: 0 } } } }), "px is a number from 8 to 400"],
+    ["wild tracking", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 40, tracking: 3 } } } }), "tracking is in em"],
+    ["no shadow", (p) => ({ ...p, numeric: { ...p.numeric, shadow: "" } }), "numeric.shadow"],
+    ["a made-up ease", (p) => ({ ...p, numeric: { ...p.numeric, easing: { enter: "smooth" } } }), "numeric.easing.enter"],
+    ["no easing", (p) => ({ ...p, numeric: { ...p.numeric, easing: {} } }), "numeric.easing: give an easing curve"],
+    ["half a frame", (p) => ({ ...p, numeric: { ...p.numeric, durationsFrames: { enter: 1.5 } } }), "numeric.durationsFrames.enter: a whole number"],
+    ["a negative stagger", (p) => ({ ...p, numeric: { ...p.numeric, staggerFrames: { words: -1 } } }), "numeric.staggerFrames.words"],
+    ["a wrong total", (p) => ({ ...p, numeric: { ...p.numeric, totalFrames: 600 } }), "numeric.totalFrames is 600; 30 s at 30 fps is 900"],
+    ["a gap between shots", () => shotsOf((s, i) => (i === 1 ? { ...s, frames: [310, 600] } : s)), "frames start at 310 but the shot before ends at 300"],
+    ["frames that end early", () => shotsOf((s, i) => (i === 2 ? { ...s, frames: [600, 590] } : s)), "frames end before they start"],
+    ["frames that disagree with the seconds", () => shotsOf((s, i) => (i === 0 ? { ...s, frames: [0, 200] } : s)), "200 frames is 6.7 s but durationSec is 10"],
+    ["frames missing", () => shotsOf((s, i) => (i === 0 ? { ...s, frames: undefined } : s)), "frames is [from, to]"],
+    ["no hero move", () => shotsOf((s, i) => (i === 0 ? { ...s, heroMove: "" } : s)), "heroMove is required"],
+    ["nothing read", () => shotsOf((s, i) => (i === 1 ? { ...s, reads: undefined } : s)), "reads is required"],
+    ["no hand-off", () => shotsOf((s, i) => (i === 2 ? { ...s, handoff: " " } : s)), "handoff is required"],
+    ["a token not in the spec", () => shotsOf((s, i) => (i === 0 ? { ...s, motionPlan: [{ token: "bounce-big", fromFrame: 0, toFrame: 10 }] } : s)), '"bounce-big", which isn\'t in the spec'],
+    ["a motion backwards", () => shotsOf((s, i) => (i === 0 ? { ...s, motionPlan: [{ token: "enter", fromFrame: 10, toFrame: 5 }] } : s)), "fromFrame < toFrame"],
+    ["a motion outside its shot", () => shotsOf((s, i) => (i === 0 ? { ...s, motionPlan: [{ token: "enter", fromFrame: 290, toFrame: 310 }] } : s)), "outside the shot's frames 0 to 300"],
+    ["no motion at all", () => shotsOf((s, i) => (i === 0 ? { ...s, motionPlan: [] } : s)), "motionPlan needs at least one step"],
+  ])("%s is refused", (_name, make, message) => {
+    const plan = make(numericPlan());
+    expect(errorsOf(plan).join("\n")).toContain(message);
+  });
+
+  test("without the motion plan setting the shots carry no motion steps; the frame rate comes from the recipe", () => {
+    const check = validatePlan(numericPlan(), numericCtx({ motionPlan: false }));
+    expect(check.plan!.shots[0]).not.toHaveProperty("motionPlan");
+    expect(validatePlan(numericPlan(), numericCtx({ fps: undefined })).plan!.numeric!.fps).toBe(30);
+    expect(errorsOf(numericPlan(), numericCtx({ fps: 24 })).join("\n")).toContain("720 frames");
+  });
+});

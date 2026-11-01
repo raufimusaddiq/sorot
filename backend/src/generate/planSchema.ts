@@ -22,6 +22,26 @@ export interface Shot {
   audio: string;
   narration: string | null;
   hold: boolean;
+  /** `numeric` plans: the frames the shot covers, [from, to), and what a stranger should take from it. */
+  frames?: [number, number];
+  heroMove?: string;
+  reads?: string;
+  handoff?: string;
+  /** `motionPlan`: what moves when, in spec tokens and frames. */
+  motionPlan?: MotionStep[];
+}
+
+export interface MotionStep { token: string; fromFrame: number; toFrame: number; target: string }
+
+/** Every adjective a number (`numeric: true`): colours, type, easing, durations and staggers in frames. */
+export interface NumericSpec {
+  fps: number;
+  totalFrames: number;
+  typography: Record<string, { font: string; weight: number; px: number; tracking: number }>;
+  shadow: string;
+  easing: Record<string, string>;
+  durationsFrames: Record<string, number>;
+  staggerFrames: Record<string, number>;
 }
 
 export interface Plan {
@@ -36,6 +56,7 @@ export interface Plan {
   blocks: string[];
   assumptions: string[];
   shots: Shot[];
+  numeric?: NumericSpec;
 }
 
 export interface PlanLimits {
@@ -67,6 +88,12 @@ export interface PlanContext {
   /** Do the recipe's plan step allow registry blocks? */
   blocksAllowed?: boolean;
   limits?: Partial<PlanLimits>;
+  /** The plan step's `numeric`: the plan carries a numeric spec (hex colours, type, easing, frames). */
+  numeric?: boolean;
+  /** The plan step's `motionPlan`: every shot says what moves when, using only the spec's tokens. */
+  motionPlan?: boolean;
+  /** The recipe's frame rate, to count frames in. */
+  fps?: number;
 }
 
 export interface PlanCheck {
@@ -83,6 +110,10 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.trim()).filter(Boolean) : []);
 const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
 const round1 = (n: number) => Math.round(n * 10) / 10;
+const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const EASING = /^(?:none|linear|(?:power[1-4]|sine|expo|circ|back|elastic|bounce)\.(?:in|out|inOut)|cubic-bezier\(\s*-?\d*\.?\d+(?:\s*,\s*-?\d*\.?\d+){3}\s*\))$/;
+const int = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
+const record = (v: unknown): Record<string, unknown> => (isObj(v) ? v : {});
 
 /** Numbers as written ("1,5", "2.500", "40"), compared with the decimal comma unified. */
 export function numbersIn(text: string): string[] {
@@ -174,6 +205,8 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     }
   }
 
+  const numeric = ctx.numeric ? checkNumeric(raw, shots, total, look, ctx, errors) : undefined;
+
   if (errors.length) return { ok: false, plan: null, errors, notes };
   const plan: Plan = {
     title, message, format: ctx.format, totalSec: total, language: ctx.language,
@@ -181,6 +214,96 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     sound: { music: str(sound.music) || "none", narration: narrationOn },
     narrationScript: narrationOn ? (str(raw.narrationScript) || null) : null,
     blocks, assumptions, shots,
+    ...(numeric ? { numeric } : {}),
   };
   return { ok: true, plan, errors, notes };
+}
+
+/**
+ * A numeric plan (every adjective a number): hex colours, type per role, easing per role, durations and
+ * staggers in frames, and every shot's frame range with no gap between them. Fills each shot's
+ * `frames`, `heroMove`, `reads`, `handoff` and (with `motionPlan`) `motionPlan` in place.
+ */
+function checkNumeric(raw: Record<string, unknown>, shots: Shot[], totalSec: number, look: Record<string, unknown>, ctx: PlanContext, errors: string[]): NumericSpec | undefined {
+  const fps = ctx.fps ?? 30;
+  const n = record(raw.numeric);
+  const palette = strs(look.palette);
+  if (palette.length < 2 || palette.some((c) => !HEX.test(c))) errors.push("numeric: look.palette needs at least two hex colours like #0B1020");
+
+  const typography: NumericSpec["typography"] = {};
+  const roles = Object.entries(record(n.typography));
+  if (!roles.length) errors.push("numeric.typography: give the font, weight, px and tracking of each text role (title, body...)");
+  for (const [role, v] of roles) {
+    const t = record(v);
+    const font = str(t.font);
+    const weight = t.weight;
+    if (!ctx.fonts.some((f) => f.toLowerCase() === font.toLowerCase())) errors.push(`numeric.typography.${role}: the font "${font}" isn't available (${ctx.fonts.join(", ")})`);
+    if (!int(weight) || weight < 100 || weight > 900 || weight % 100) errors.push(`numeric.typography.${role}: weight is 100, 200 ... 900`);
+    if (typeof t.px !== "number" || t.px < 8 || t.px > 400) errors.push(`numeric.typography.${role}: px is a number from 8 to 400`);
+    if (typeof t.tracking !== "number" || t.tracking < -0.2 || t.tracking > 0.5) errors.push(`numeric.typography.${role}: tracking is in em, from -0.2 to 0.5`);
+    typography[role] = { font, weight: weight as number, px: t.px as number, tracking: t.tracking as number };
+  }
+
+  const shadow = str(n.shadow);
+  if (!shadow) errors.push('numeric.shadow: give the shadow as CSS (or "none")');
+
+  const easing: Record<string, string> = {};
+  for (const [role, v] of Object.entries(record(n.easing))) {
+    if (typeof v !== "string" || !EASING.test(v)) errors.push(`numeric.easing.${role}: use a GSAP ease like power2.out or a cubic-bezier(a, b, c, d)`);
+    else easing[role] = v;
+  }
+  if (!Object.keys(easing).length) errors.push("numeric.easing: give an easing curve for each kind of motion");
+
+  const frames = (key: "durationsFrames" | "staggerFrames"): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const [name, v] of Object.entries(record(n[key]))) {
+      if (!int(v) || v < 0) errors.push(`numeric.${key}.${name}: a whole number of frames`);
+      else out[name] = v;
+    }
+    return out;
+  };
+  const durationsFrames = frames("durationsFrames");
+  const staggerFrames = frames("staggerFrames");
+
+  const totalFrames = Math.round(totalSec * fps);
+  if (int(n.totalFrames) && Math.abs(n.totalFrames - totalFrames) > 1) errors.push(`numeric.totalFrames is ${n.totalFrames}; ${totalSec} s at ${fps} fps is ${totalFrames}`);
+
+  // every shot: its frame range follows on from the one before, and says what it shows and hands on
+  const rawShots = Array.isArray(raw.shots) ? raw.shots : [];
+  const tokens = new Set([...Object.keys(easing), ...Object.keys(durationsFrames), ...Object.keys(staggerFrames)]);
+  let at = 0;
+  shots.forEach((shot, i) => {
+    const o = record(rawShots[i]);
+    const label = `shot ${i + 1} (${shot.id})`;
+    const f = Array.isArray(o.frames) ? o.frames : [];
+    if (f.length !== 2 || !int(f[0]) || !int(f[1])) errors.push(`${label}: frames is [from, to] in whole frames`);
+    else {
+      if (f[0] !== at) errors.push(`${label}: frames start at ${f[0]} but the shot before ends at ${at} (no gaps, no overlap)`);
+      if (f[1] <= f[0]) errors.push(`${label}: frames end before they start`);
+      else if (Math.abs((f[1] - f[0]) / fps - shot.durationSec) > 1 / fps + 1e-9) errors.push(`${label}: ${f[1] - f[0]} frames is ${round1((f[1] - f[0]) / fps)} s but durationSec is ${shot.durationSec}`);
+      shot.frames = [f[0], f[1]];
+      at = f[1];
+    }
+    for (const key of ["heroMove", "reads", "handoff"] as const) {
+      const v = str(o[key]);
+      if (!v) errors.push(`${label}: ${key} is required (${{ heroMove: "the one thing that moves most", reads: "what a stranger reads in this shot", handoff: "what carries into the next shot" }[key]})`);
+      else shot[key] = v;
+    }
+    if (ctx.motionPlan) {
+      const steps: MotionStep[] = [];
+      for (const [k, m] of (Array.isArray(o.motionPlan) ? o.motionPlan : []).entries()) {
+        const s = record(m);
+        const token = str(s.token);
+        if (!tokens.has(token)) errors.push(`${label}: motionPlan[${k}] uses "${token}", which isn't in the spec (${[...tokens].join(", ") || "no tokens"})`);
+        else if (!int(s.fromFrame) || !int(s.toFrame) || s.toFrame <= s.fromFrame) errors.push(`${label}: motionPlan[${k}] needs whole fromFrame < toFrame`);
+        else if (shot.frames && (s.fromFrame < shot.frames[0] || s.toFrame > shot.frames[1])) errors.push(`${label}: motionPlan[${k}] runs outside the shot's frames ${shot.frames[0]} to ${shot.frames[1]}`);
+        else steps.push({ token, fromFrame: s.fromFrame, toFrame: s.toFrame, target: str(s.target) });
+      }
+      if (!steps.length) errors.push(`${label}: motionPlan needs at least one step`);
+      shot.motionPlan = steps;
+    }
+  });
+  if (shots.length && at !== totalFrames && Math.abs(at - totalFrames) > 1) errors.push(`the shots' frames end at ${at} but the film is ${totalFrames} frames`);
+
+  return { fps, totalFrames: at || totalFrames, typography, shadow, easing, durationsFrames, staggerFrames };
 }

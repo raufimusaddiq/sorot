@@ -150,6 +150,16 @@ describe("example recipes", () => {
     expect(JSON.stringify(examples)).not.toMatch(/api[_-]?key|elevenlabs|voice id/i);
   });
 
+  test("the narrated recipes put the voice before the plan and the concept after the storylines", () => {
+    const byId = Object.fromEntries(loadExampleRecipes(GENERATOR_RECIPES).map((r) => [r.id, r]));
+    const order = (id: string) => byId[id]!.steps.map((x) => x.use);
+    expect(order("narrated-explainer").slice(0, 6)).toEqual(["script", "voice", "align", "storylines", "concept", "plan"]);
+    expect(order("story")).toEqual(["storylines", "plan", "images", "script", "voice", "align", "author", "check", "look", "render", "technical", "creative", "export"]);
+    expect(byId["narrated-explainer"]!.steps.find((x) => x.use === "plan")).toMatchObject({ gate: "director", with: { numeric: true, timingFrom: "voice", blocks: false } });
+    // steps that need a connection the owner may not have are skipped, not fatal
+    expect(byId["story"]!.steps.filter((x) => x.when).map((x) => [x.use, x.when])).toEqual([["images", "connection:image"], ["look", "connection:vision"]]);
+  });
+
   test("a missing folder has no examples; an invalid one is a loud error", () => {
     expect(loadExampleRecipes(join(tmpdir(), "no-such-folder-xyz"))).toEqual([]);
     withDir({ "bad.json": { ...quick(), steps: [] }, "note.txt": "ignored" }, (dir) => {

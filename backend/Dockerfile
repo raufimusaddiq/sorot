@@ -68,6 +68,12 @@ COPY ai-pipeline/requirements.txt /app/ai-pipeline/requirements.txt
 RUN python3 -m venv /app/ai-pipeline/.venv \
     && /app/ai-pipeline/.venv/bin/pip install --no-cache-dir -r /app/ai-pipeline/requirements.txt
 
+# The local voice (ai-pipeline/tts.py) pulls in torch: GB-sized, so only the CUDA image gets it
+# (release-image.yml passes LOCAL_TTS=1 for :latest-cuda). The API voices need none of this.
+ARG LOCAL_TTS=0
+COPY ai-pipeline/requirements-tts.txt /app/ai-pipeline/requirements-tts.txt
+RUN if [ "$LOCAL_TTS" = "1" ]; then /app/ai-pipeline/.venv/bin/pip install --no-cache-dir -r /app/ai-pipeline/requirements-tts.txt; fi
+
 # The Whisper model (WHISPER_MODEL, ~1.6 GB for large-v3-turbo) is not baked in:
 # it downloads on first use into /root/.cache/huggingface, the hf-cache volume
 # in docker-compose.yml, and survives image updates. The installers pre-fetch it.

@@ -7,13 +7,15 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient } from '@/lib/api';
 import { reportError } from '@/lib/errors';
-import type { ConnectionKind, ConnectionTest, ConnectionView, Connections } from '@/types';
+import type { ConnectionTest, ConnectionView, Connections } from '@/types';
+import { GenerateConnections } from './GenerateConnections';
 import { Toggle } from './ImportOptions';
 import { Window } from './Window';
 
+type CoreKind = 'llm' | 'jev' | 'tebar';
 type FieldDef = { key: 'baseUrl' | 'url' | 'model'; label: string; placeholder: string };
 
-const CARDS: Record<ConnectionKind, { title: string; bar: string; about: string; fallback: string; fields: FieldDef[] }> = {
+const CARDS: Record<CoreKind, { title: string; bar: string; about: string; fallback: string; fields: FieldDef[] }> = {
   llm: {
     title: 'LLM', bar: 'bg-lilac',
     about: 'Any OpenAI-compatible endpoint (Ollama, LM Studio, Groq, OpenRouter, OpenAI…). Reviews clips, writes copy and, as director, reads the whole video to pick moments and hooks.',
@@ -49,7 +51,7 @@ const label = 'font-pixel text-xs text-fg block mb-1';
 const field = 'field w-full px-2 py-1.5';
 
 function ConnectionCard({ kind, view, api, onSaved }: {
-  kind: ConnectionKind; view: ConnectionView; api: ApiClient; onSaved: (c: Connections) => void;
+  kind: CoreKind; view: ConnectionView; api: ApiClient; onSaved: (c: Connections) => void;
 }) {
   const card = CARDS[kind];
   const [form, setForm] = useState<Record<string, string>>({});
@@ -150,10 +152,13 @@ export function ConnectionsPanel({ api, onChange }: { api: ApiClient; onChange?:
     onChange?.(c);
   };
   return (
-    <div className="grid gap-6 lg:grid-cols-3">
-      {(['llm', 'jev', 'tebar'] as const).map((k) => (
-        <ConnectionCard key={k} kind={k} view={conns[k]} api={api} onSaved={saved} />
-      ))}
+    <div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        {(['llm', 'jev', 'tebar'] as const).map((k) => (
+          <ConnectionCard key={k} kind={k} view={conns[k]} api={api} onSaved={saved} />
+        ))}
+      </div>
+      <GenerateConnections api={api} conns={conns} onSaved={saved} />
     </div>
   );
 }

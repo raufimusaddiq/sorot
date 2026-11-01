@@ -14,6 +14,7 @@ import { BriefForm, type PendingFile } from './BriefForm';
 import { BuildPanel } from './BuildPanel';
 import { DirectorLog } from './DirectorLog';
 import { PlanEditor } from './PlanEditor';
+import { RecipeEditor } from './RecipeEditor';
 import { VersionHistory } from './VersionHistory';
 import { StorylineCards } from './StorylineCards';
 
@@ -36,6 +37,8 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
   const [verdicts, setVerdicts] = useState<GenVerdict[]>([]);
   const [viewId, setViewId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showRecipes, setShowRecipes] = useState(false);
+  const [recipes, setRecipes] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
     let live = true;
@@ -45,6 +48,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
         setStatus(s);
         if (!s.available) return;
         try {
+          api.listGenerateRecipes().then((r) => { if (live) setRecipes(r.recipes.filter((x) => x.available).map((x) => ({ id: x.id, name: x.name }))); }, () => {});
           const { projects: list } = await api.listGenerateProjects();
           if (!live) return;
           setProjects(list);
@@ -143,6 +147,15 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
     );
   }
 
+  if (showRecipes) {
+    return (
+      <Window title="Recipes" bar="bg-sun" right="your pipelines">
+        <button className="btn mb-3" onClick={() => { setShowRecipes(false); api.listGenerateRecipes().then((r) => setRecipes(r.recipes.filter((x) => x.available).map((x) => ({ id: x.id, name: x.name }))), () => {}); }}>← Back to videos</button>
+        <RecipeEditor api={api} />
+      </Window>
+    );
+  }
+
   const p = detail?.project;
   // The current plan first (a restore can make an older revision current), then the rest, newest first.
   const plans = currentPlan ? [currentPlan, ...(detail?.plans ?? []).filter((x) => x !== currentPlan)] : [];
@@ -153,6 +166,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
       <p className="text-sm text-fg/80 mb-1">Describe a video and Sorot plans it shot by shot, builds it with HyperFrames and checks it twice before you export.</p>
       <p className="text-xs text-subtle mb-3" data-testid="generate-ready">
         Ready · HyperFrames {status.hyperframes.version} · rendering on the {status.compute.toUpperCase()}
+        {' · '}<button className="underline" onClick={() => setShowRecipes(true)}>Recipes</button>
       </p>
 
       <label className="block mb-3">
@@ -165,7 +179,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
 
       {problem && <p role="alert" className="text-error text-sm mb-2">{problem}</p>}
 
-      {selected === NEW && <BriefForm busy={busy} onCreate={create} />}
+      {selected === NEW && <BriefForm busy={busy} recipes={recipes} voiceEngines={status.voice.engines} onCreate={create} />}
 
       {selected !== NEW && !p && <p className="text-sm text-subtle">Loading…</p>}
 

@@ -87,7 +87,18 @@ export type ConnectionView = {
   director?: boolean;
 };
 
-export type Connections = { llm: ConnectionView; jev: ConnectionView; tebar: ConnectionView };
+/** A command registered in Settings; recipes only name it. */
+export type GenCommand = { name: string; cmd: string; args: string[]; timeoutSec: number };
+
+/** The Generate-only connections: scene images, the narration voice, local commands. */
+export type ImageView = ConnectionView & { size?: string; style?: string };
+export type VoiceView = ConnectionView & { engine: string; engines: string[]; localAvailable: boolean; voices: Record<string, string> };
+export type CommandsView = { active: boolean; allowed: boolean; saved: string[]; commands: GenCommand[] };
+
+export type Connections = {
+  llm: ConnectionView; jev: ConnectionView; tebar: ConnectionView;
+  image?: ImageView; voice?: VoiceView; commands?: CommandsView;
+};
 export type ConnectionKind = keyof Connections;
 
 /** GET /api/generate/status: whether Generate can run here, and why not. */
@@ -257,6 +268,35 @@ export type GenExport = {
   title: string | null; description: string | null; createdAt: string;
   /** Only on the Library list. */
   projectTitle?: string;
+};
+
+/** A field of a step's settings schema (backend/src/generate/steps/schema.ts), as the editor draws it. */
+export type GenField =
+  | { t: 'bool' }
+  | { t: 'int' | 'num'; min: number; max: number }
+  | { t: 'enum'; values: string[] }
+  | { t: 'str'; max?: number }
+  | { t: 'strs'; maxItems: number; maxLen?: number }
+  | { t: 'obj'; fields: Record<string, GenField>; required?: string[] }
+  | { t: 'flag'; fields?: Record<string, GenField>; always?: boolean }
+  | { t: 'list'; max: number; item: GenField };
+
+export type GenStepSpec = { type: string; gates: string[]; fields: Record<string, GenField>; required: string[]; defaults: Record<string, unknown> };
+
+export type GenRecipeStep = {
+  use: string; id?: string; with?: Record<string, unknown>; gate?: 'none' | 'owner' | 'director';
+  prompt?: { mode: 'append' | 'replace'; text: string }; when?: string;
+};
+
+export type GenRecipe = {
+  id: string; name: string; description?: string; version?: number; builtIn?: boolean;
+  output: { width: number; height: number; fps: number; minSec: number; maxSec: number };
+  language?: 'id' | 'en'; steps: GenRecipeStep[]; rules?: Record<string, unknown>;
+};
+
+/** A recipe as listed: with whether it can run here, and why not. */
+export type GenRecipeItem = {
+  id: string; name: string; version: number; builtIn: boolean; description: string | null; recipe: GenRecipe; available: boolean; reasons: string[];
 };
 
 export type GenVerdictStatuses = Record<string, Partial<Record<'TECHNICAL' | 'CREATIVE', GenVerdict['status']>>>;

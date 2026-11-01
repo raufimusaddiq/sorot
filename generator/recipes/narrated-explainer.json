@@ -1,0 +1,37 @@
+{
+  "id": "narrated-explainer",
+  "name": "Narrated explainer",
+  "description": "A vertical explainer with a voice: script, voice and timing first, then three storylines, a named visual idea, a numeric plan timed from the voice, a bespoke build, a self-review of the frames, a delivery render, and checks that the voice says the script. Needs a voice engine in Settings.",
+  "version": 1,
+  "builtIn": true,
+  "language": "id",
+  "output": { "width": 1080, "height": 1920, "fps": 30, "minSec": 20, "maxSec": 90 },
+  "rules": {
+    "layout": { "safeTopPx": 250, "safeBottomPx": 340 },
+    "readability": { "minTextPx": 44, "holdBaseSec": 0.6, "holdPerWordSec": 0.28 },
+    "defaultsAudit": ["a centred title on a dark gradient", "every element fading in from below", "a generic icon grid"]
+  },
+  "steps": [
+    { "use": "script", "with": { "spellNumbers": true, "maxWords": 170 } },
+    { "use": "voice", "with": { "failClosed": true } },
+    { "use": "align", "with": { "source": "auto" } },
+    { "use": "storylines", "gate": "director", "with": { "count": 3, "requireBold": true } },
+    { "use": "concept", "with": { "novelty": { "lastN": 30 }, "mechanismTest": true } },
+    { "use": "plan", "gate": "director", "with": { "numeric": true, "motionPlan": true, "timingFrom": "voice", "blocks": false } },
+    { "use": "author", "with": { "repairRounds": 3, "concurrency": 3 } },
+    { "use": "check", "with": { "warnings": "fix-or-hold", "rounds": 3 } },
+    { "use": "look", "when": "connection:vision", "with": { "rounds": 2, "audit": true } },
+    { "use": "render", "with": { "quality": "delivery" } },
+    { "use": "technical", "with": { "measures": { "speechMatch": { "maxWordErrorRate": 0.25 }, "voiceRoute": true } } },
+    {
+      "use": "creative",
+      "with": {
+        "criteria": [
+          { "id": "opening", "question": "Does `opening` hold a stranger's eye from the very first moment?" },
+          { "id": "sync", "question": "Does what appears in `shots` follow what the voice says, beat by beat?" }
+        ]
+      }
+    },
+    { "use": "export", "with": { "mode": "copy", "quality": "delivery" } }
+  ]
+}

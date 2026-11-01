@@ -76,7 +76,9 @@ jobs:
           context: .
           file: backend/Dockerfile
           platforms: linux/amd64
-          build-args: BASE_IMAGE=${{ matrix.base }}
+          build-args: |
+            BASE_IMAGE=${{ matrix.base }}
+            LOCAL_TTS=${{ matrix.variant == 'cuda' && '1' || '0' }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -25,7 +25,11 @@ describe("plan context", () => {
     const ctx = planContext({ project, recipe, assets: [], connected: (c) => c === "image" || c === "voice", catalog: [] });
     expect(ctx).toMatchObject({ blocksAllowed: false, blocks: null, imageConnected: true, narration: true, limits: { maxShots: 6 } });
     const off = planContext({ project: { ...project, narration: 0 }, recipe: quickRecipe(), assets: [], connected: () => false, catalog: ["data-chart"] });
-    expect(off).toMatchObject({ blocksAllowed: true, blocks: ["data-chart"], imageConnected: false, narration: false, limits: { maxShots: 20 } });
+    expect(off).toMatchObject({ blocksAllowed: true, blocks: ["data-chart"], imageConnected: false, narration: false, limits: { maxShots: 20 }, numeric: false, motionPlan: false, fps: 30 });
+    const numeric = quickRecipe();
+    numeric.steps.find((s) => s.use === "plan")!.with = { numeric: true, motionPlan: true };
+    numeric.output.fps = 24;
+    expect(planContext({ project, recipe: numeric, assets: [], connected: () => false, catalog: [] })).toMatchObject({ numeric: true, motionPlan: true, fps: 24 });
   });
 });
 

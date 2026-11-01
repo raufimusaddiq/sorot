@@ -26,6 +26,9 @@ export interface Finding {
   source: string;
 }
 
+/** Findings that belong to the CREATIVE verdict: the judge's, and a custom command's that counts as creative. */
+export const isCreative = (f: Pick<Finding, "source">) => f.source === "creative" || f.source.startsWith("command-creative:");
+
 export type NewFinding = Omit<Finding, "id" | "source">;
 
 export const findingsPath = (projectDir: string) => join(projectDir, "findings.json");

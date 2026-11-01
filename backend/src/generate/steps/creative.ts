@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { JevError, noul } from "../../jev";
 import { now } from "../../store";
 import { builtFacts, creativeState, creativeVerdict, fromJev, fromLlm, jevQuestions, questionsFor, type Judgement } from "../creative";
-import { readFindings, saveFindings } from "../findings";
+import { isCreative, readFindings, saveFindings } from "../findings";
 import { HyperframesError } from "../hyperframes";
 import { buildTarget, readScene } from "./build";
 import { chosenStoryline } from "./storylines";
@@ -76,10 +76,14 @@ export const run: RunFn = async (ctx) => {
     judgedBy = `${pictures ? "llm-vision" : "llm"}:${pictures ? ctx.director.visionModel : ctx.director.model}`;
   }
 
-  const { status, findings } = creativeVerdict(judgements);
+  const verdict = creativeVerdict(judgements);
+  const findings = verdict.findings;
   saveFindings(dir, "creative", findings);
+  const mine = readFindings(dir).filter(isCreative);
+  // A custom check that counts as creative can ask for a look, never block.
+  const status = verdict.status === "PASS" && mine.some((f) => f.source !== "creative" && f.state === "open" && f.severity !== "polish") ? "REVIEW" : verdict.status;
   ctx.store.saveGenVerdict({
-    id: crypto.randomUUID(), versionId: version!.id, kind: "CREATIVE", status, findings: JSON.stringify(readFindings(dir).filter((f) => f.source === "creative")),
+    id: crypto.randomUUID(), versionId: version!.id, kind: "CREATIVE", status, findings: JSON.stringify(mine),
     judgedBy, inputs: JSON.stringify({ criteria: criteria.map((c) => c.id), risks: risks.map((c) => c.id), pictures, shots: plan.shots.length }), createdAt: now(),
   });
   return { status: "done", outputRef: status };

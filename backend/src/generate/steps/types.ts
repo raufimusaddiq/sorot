@@ -1,11 +1,13 @@
 import type { AppConfig } from "../../config";
-import type { ExecFn } from "../../runner";
+import type { ExecFn, ScriptRunner } from "../../runner";
 import type { Jev } from "../../jev";
 import type { Store } from "../../store";
 import type { GenProject, GenVersion } from "../../types";
 import type { Director } from "../director";
 import type { DirectorLog } from "../events";
 import type { Hyperframes } from "../hyperframes";
+import type { ImageClient } from "../images";
+import type { Narrator } from "../narration";
 import type { Recipe, RecipeStep } from "../recipe";
 
 /** What a step receives. `version` is set only for steps of the build segment (author ... export). */
@@ -23,6 +25,12 @@ export interface StepContext {
   jev: Jev;
   /** Runs ffprobe and ffmpeg. */
   exec: ExecFn;
+  /** Runs the Python scripts (Whisper, the local voice). */
+  runScript?: ScriptRunner;
+  /** The narration voice set up in Settings. */
+  narrator?: Narrator;
+  /** The image connection set up in Settings. */
+  images?: ImageClient;
   config: AppConfig;
   /** Is this connection (llm, jev, image, voice, vision) set up? */
   connected: (connection: string) => boolean;

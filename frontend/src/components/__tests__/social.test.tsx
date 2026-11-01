@@ -3,7 +3,7 @@ import { ApiClient } from '@/lib/api';
 import { ConnectionsPanel } from '../ConnectionsPanel';
 import { GeneratedLibrary } from '../GeneratedLibrary';
 import { PublishPanel, SAVED_ACCOUNTS, scheduleIso } from '../PublishPanel';
-import { emptyState, installFakeApi, makeAccount, makeClip, makeGenExport, makeGenProject, makePost, type FakeState } from '../../../test/fakeApi';
+import { emptyState, installFakeApi, makeAccount, makeClip, makeConnections, makeGenExport, makeGenProject, makePost, type FakeState } from '../../../test/fakeApi';
 import type { DraftTarget } from '@/types';
 
 let state: FakeState;
@@ -256,5 +256,99 @@ describe('GeneratedLibrary', () => {
     rerender(<GeneratedLibrary api={new ApiClient('')} />);
     await waitFor(() => expect(fake.calls.filter((c) => c.path === '/api/generate/exports')).toHaveLength(2));
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('GenerateConnections (Settings)', () => {
+  const generateSettings = (over: Partial<Record<'voice' | 'image' | 'commands', object>> = {}) => ({
+    ...makeConnections(),
+    voice: { active: false, enabled: true, saved: [], engine: '', engines: ['elevenlabs', 'fish', 'openai', 'local'], localAvailable: false, voices: {}, baseUrl: '', model: '', apiKey: '', apiKeySet: false, ...over.voice },
+    image: { active: false, enabled: true, saved: [], baseUrl: '', model: '', apiKey: '', apiKeySet: false, size: '1024x1024', style: '', ...over.image },
+    commands: { active: false, allowed: true, saved: [], commands: [], ...over.commands },
+  }) as never;
+
+  it('without the Generate connections the three core cards are all there is', async () => {
+    render(<ConnectionsPanel api={api} />);
+    await screen.findByRole('region', { name: 'LLM' });
+    expect(screen.queryByRole('region', { name: 'Generate connections' })).not.toBeInTheDocument();
+  });
+
+  it('the voice: engines (the local one only on a GPU install), a voice per language, a masked key', async () => {
+    state.settings = generateSettings();
+    render(<ConnectionsPanel api={api} />);
+    const voice = await screen.findByRole('region', { name: 'Narration voice' });
+    expect(within(voice).getByText(/No engine yet/)).toBeInTheDocument();
+    expect(within(voice).getByRole('option', { name: /Local, on this GPU — needs a GPU install/ })).toBeDisabled();
+    fireEvent.change(within(voice).getByLabelText('Voice engine'), { target: { value: 'elevenlabs' } });
+    await waitFor(() => expect(sent('PUT', '/api/settings/voice')[0]).toEqual({ engine: 'elevenlabs' }));
+
+    const save = within(voice).getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    fireEvent.change(within(voice).getByLabelText('Voice for Indonesian'), { target: { value: 'voice-id' } });
+    fireEvent.change(within(voice).getByLabelText('Voice API key'), { target: { value: ' xi-secret-1234 ' } });
+    fireEvent.change(within(voice).getByLabelText('Voice model'), { target: { value: 'eleven_v3' } });
+    fireEvent.change(within(voice).getByLabelText('Voice base URL'), { target: { value: 'http://proxy' } });
+    fireEvent.click(save);
+    await waitFor(() => expect(sent('PUT', '/api/settings/voice')[1]).toEqual({ baseUrl: 'http://proxy', model: 'eleven_v3', voices: { id: 'voice-id' }, apiKey: 'xi-secret-1234' }));
+    expect(await within(voice).findByPlaceholderText('••••1234 (leave empty to keep)')).toBeInTheDocument();
+    fireEvent.click(within(voice).getByLabelText('Use the voice'));
+    await waitFor(() => expect(sent('PUT', '/api/settings/voice')[2]).toEqual({ enabled: false }));
+  });
+
+  it('the local engine needs no key and is offered on a GPU install; the server refuses it elsewhere; the voice can be tested', async () => {
+    state.settings = generateSettings({ voice: { localAvailable: true, engine: 'local' } });
+    state.tests.voice = { ok: true, ms: 40, detail: 'local spoke a test line' };
+    const first = render(<ConnectionsPanel api={api} />);
+    const voice = await screen.findByRole('region', { name: 'Narration voice' });
+    expect(within(voice).getByRole('option', { name: /Local, on this GPU$/ })).toBeEnabled();
+    expect(within(voice).queryByLabelText('Voice API key')).not.toBeInTheDocument();
+    fireEvent.click(within(voice).getByRole('button', { name: 'Test' }));
+    expect(await within(voice).findByText('OK in 40 ms · local spoke a test line')).toBeInTheDocument();
+    first.unmount();
+
+    state.settings = generateSettings({ voice: { localAvailable: false } });
+    state.fail['PUT /api/settings/voice'] = 'the local voice needs a GPU install';
+    render(<ConnectionsPanel api={api} />);
+    const again = await screen.findByRole('region', { name: 'Narration voice' });
+    fireEvent.change(within(again).getByLabelText('Voice engine'), { target: { value: 'fish' } });
+    expect(await within(again).findByRole('alert')).toHaveTextContent('GPU install');
+  });
+
+  it('scene images: the service, model and key; it can be switched off and tested', async () => {
+    state.settings = generateSettings();
+    render(<ConnectionsPanel api={api} />);
+    const image = await screen.findByRole('region', { name: 'Scene images' });
+    fireEvent.change(within(image).getByLabelText('Image Base URL'), { target: { value: 'http://img/v1' } });
+    fireEvent.change(within(image).getByLabelText('Image Model'), { target: { value: 'flux' } });
+    fireEvent.change(within(image).getByLabelText('Image API key'), { target: { value: 'img-key-9999' } });
+    fireEvent.click(within(image).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sent('PUT', '/api/settings/image')[0]).toEqual({ baseUrl: 'http://img/v1', model: 'flux', apiKey: 'img-key-9999' }));
+    fireEvent.click(within(image).getByLabelText('Use images'));
+    await waitFor(() => expect(sent('PUT', '/api/settings/image')[1]).toEqual({ enabled: false }));
+    fireEvent.click(within(image).getByRole('button', { name: 'Test' }));
+    expect(await within(image).findByText('Failed: Not configured')).toBeInTheDocument();
+  });
+
+  it('custom commands: add, edit and remove rows, save the list; an install that turns them off says so and locks the card', async () => {
+    state.settings = generateSettings({ commands: { commands: [{ name: 'brand-check', cmd: 'python', args: ['check.py'], timeoutSec: 30 }] } });
+    const first = render(<ConnectionsPanel api={api} />);
+    const box = await screen.findByRole('region', { name: 'Custom commands' });
+    expect(within(box).getByRole('button', { name: 'Save' })).toBeDisabled();
+    fireEvent.click(within(box).getByRole('button', { name: 'Add a command' }));
+    fireEvent.change(within(box).getByLabelText('Command 2 name'), { target: { value: 'lint' } });
+    fireEvent.change(within(box).getByLabelText('Command 2 program'), { target: { value: 'node' } });
+    fireEvent.change(within(box).getByLabelText('Command 2 arguments'), { target: { value: 'lint.js  --strict' } });
+    fireEvent.change(within(box).getByLabelText('Command 2 time limit'), { target: { value: '90' } });
+    fireEvent.click(within(box).getByRole('button', { name: 'Remove command 1' }));
+    fireEvent.click(within(box).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sent('PUT', '/api/settings/commands')[0]).toEqual({ commands: [{ name: 'lint', cmd: 'node', args: ['lint.js', '--strict'], timeoutSec: 90 }] }));
+    first.unmount();
+
+    state.settings = generateSettings({ commands: { allowed: false } });
+    render(<ConnectionsPanel api={api} />);
+    expect(await screen.findByText(/Custom commands are off on this install/)).toBeInTheDocument();
+    const off = screen.getByRole('region', { name: 'Custom commands' });
+    expect(within(off).getByRole('button', { name: 'Add a command' })).toBeDisabled();
+    expect(within(off).getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 });
