@@ -180,7 +180,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
 
       {problem && <p role="alert" className="text-error text-sm mb-2">{problem}</p>}
 
-      {selected === NEW && <BriefForm busy={busy} recipes={recipes} voiceEngines={status.voice.engines} onCreate={create} />}
+      {selected === NEW && <BriefForm busy={busy} recipes={recipes} voiceEngines={status.voice.engines} presets={status.presets} onCreate={create} />}
 
       {selected !== NEW && !p && <p className="text-sm text-subtle">Loading…</p>}
 

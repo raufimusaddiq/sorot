@@ -99,3 +99,14 @@ describe("gen new --facts", () => {
     expect(await refused.run("gen", "new", "Jelaskan", "--facts", "facts.md")).toBe(1);
   });
 });
+
+describe("gen new --preset", () => {
+  test("starts from a ready-made format; the server's refusal of an unknown one is an error", async () => {
+    const h = harness({ [`POST ${BASE}`]: { project: { id: ID, status: "RUNNING" } } });
+    expect(await h.run("gen", "new", "Ceritakan petani", "--preset", "story", "--no-wait")).toBe(0);
+    expect(h.requests.at(-1)!.body).toEqual({ brief: "Ceritakan petani", preset: "story" });
+    const bad = harness({ [`POST ${BASE}`]: new Fail(400, 'Unknown preset "cinema" (motion-graphic, story, explainer, card, data, promo)') });
+    expect(await bad.run("gen", "new", "x", "--preset", "cinema")).toBe(1);
+    expect(bad.err[0]).toContain("Unknown preset");
+  });
+});

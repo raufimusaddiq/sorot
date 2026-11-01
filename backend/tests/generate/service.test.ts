@@ -19,7 +19,7 @@ describe("GenerateService availability", () => {
     expect(status).toMatchObject({
       available: true, reasons: [], hyperframes: { ok: true, version: env.config.hyperframesVersion },
       llm: { configured: true }, jev: { configured: false }, image: { configured: false }, compute: "gpu",
-      voice: { engines: [], localAvailable: true }, presets: [],
+      voice: { engines: [], localAvailable: true }, presets: [expect.objectContaining({ id: "motion-graphic" }), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything()],
     });
     expect(JSON.parse(hfFixture("doctor")).ok).toBe(false);
   });

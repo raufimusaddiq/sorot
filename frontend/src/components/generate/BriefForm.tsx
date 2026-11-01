@@ -4,7 +4,7 @@
 // fonts, music) are uploaded right after the project is created, in time for the plan.
 
 import { useState } from 'react';
-import type { GenCreateBody } from '@/types';
+import type { GenCreateBody, GenPreset } from '@/types';
 
 const label = 'font-pixel text-xs text-fg block mb-1';
 const field = 'field w-full px-2 py-1.5';
@@ -23,8 +23,10 @@ export function assetKind(filename: string): string | null {
   return KINDS[filename.split('.').pop()?.toLowerCase() ?? ''] ?? null;
 }
 
-export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
+export function BriefForm({ busy, recipes, voiceEngines, presets, onCreate }: {
   busy: boolean;
+  /** Ready-made formats to start from; none = no picker. */
+  presets?: GenPreset[];
   /** Voice engines that are set up; narration is offered only when there is one. */
   voiceEngines?: string[];
   /** Offered when there is more than one; the first is the default. */
@@ -37,6 +39,8 @@ export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
   const [language, setLanguage] = useState('id');
   const [style, setStyle] = useState('');
   const [narration, setNarration] = useState(false);
+  const [presetId, setPresetId] = useState('');
+  const preset = presets?.find((p) => p.id === presetId);
   const [factsText, setFactsText] = useState('');
   const [noNumbers, setNoNumbers] = useState(false);
   const canNarrate = (voiceEngines?.length ?? 0) > 0;
@@ -66,7 +70,7 @@ export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
     setProblem(null);
     onCreate({
       brief: brief.trim(), format, targetSec: seconds, language, ...(style.trim() ? { styleNotes: style.trim() } : {}),
-      ...(recipes && recipes.length > 1 ? { recipeId } : {}), ...(narration && canNarrate ? { narration: true } : {}),
+      ...(recipes && recipes.length > 1 ? { recipeId } : {}), ...(narration && canNarrate ? { narration: true } : {}), ...(presetId ? { preset: presetId } : {}),
       ...(facts.length ? { facts } : {}), ...(noNumbers ? { forbiddenNumbers: true as const } : {}),
     }, files);
   };
@@ -79,6 +83,17 @@ export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
           onChange={(e) => setBrief(e.target.value)} className={field} />
         <span className="text-xs text-subtle" aria-live="polite">{brief.length} / {MAX_BRIEF}</span>
       </label>
+      {presets && presets.length > 0 && (
+        <label className="block">
+          <span className={label}>Start from a format (optional)</span>
+          <select aria-label="Format preset" value={presetId} className={field}
+            onChange={(e) => { setPresetId(e.target.value); const p = presets.find((x) => x.id === e.target.value); if (p) setLength(String(p.targetSec)); }}>
+            <option value="">None: a blank brief</option>
+            {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+          {preset && <span className="text-xs text-subtle block mt-1">{preset.description} Usually {preset.targetSec} s.</span>}
+        </label>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <label>
           <span className={label}>Format</span>

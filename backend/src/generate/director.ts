@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef, type ToolHandler } from "../llm";
 import { isOnPage, headlineOnly, MIN_QUOTE } from "./facts";
+import { findPreset, presetBrief } from "./presets";
 import { numbersOf, sameNumber } from "./numbers";
 import type { GenAsset, GenProject, Json } from "../types";
 import type { DirectorLog } from "./events";
@@ -365,10 +366,16 @@ export class Director {
     throw new DirectorError(`The director's ${kind} didn't pass the checks: ${problems.join("; ")}`);
   }
 
+  /** The preset the video started from, as the director is told about it (its name alone if the file no longer lists it). */
+  private presetOf(project: GenProject) {
+    const preset = findPreset(this.generatorDir, project.preset);
+    return preset ? presetBrief(preset) : project.preset;
+  }
+
   private base(project: GenProject, assets: GenAsset[]) {
     return {
       brief: project.brief, format: project.format, targetSec: project.targetSec, language: project.language,
-      styleNotes: project.styleNotes, preset: project.preset,
+      styleNotes: project.styleNotes, preset: this.presetOf(project),
       assets: assets.map((a) => ({ kind: a.kind, path: a.path, shotId: a.shotId })),
     };
   }

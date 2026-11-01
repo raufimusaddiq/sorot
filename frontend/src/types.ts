@@ -101,6 +101,9 @@ export type Connections = {
 };
 export type ConnectionKind = keyof Connections;
 
+/** A ready-made format: sets the default length and tells the director its pacing and advice. */
+export type GenPreset = { id: string; label: string; description: string; targetSec: number };
+
 /** GET /api/generate/status: whether Generate can run here, and why not. */
 export type GenerateStatus = {
   available: boolean;
@@ -112,7 +115,7 @@ export type GenerateStatus = {
   vision: { configured: boolean };
   voice: { engines: string[]; localAvailable: boolean; localReason?: string };
   compute: 'cpu' | 'gpu';
-  presets: string[];
+  presets: GenPreset[];
 };
 
 export type ConnectionTest = { ok: boolean; ms: number; model?: string; detail?: string; error?: string };
@@ -308,7 +311,7 @@ export type GenProjectDetail = {
 };
 
 export type GenCreateBody = {
-  brief: string; format?: string; targetSec?: number; language?: string; styleNotes?: string; recipeId?: string; narration?: boolean;
+  brief: string; format?: string; targetSec?: number; language?: string; styleNotes?: string; recipeId?: string; narration?: boolean; preset?: string;
   facts?: Array<{ claim: string; value?: string; sourceUrl: string }>; forbiddenNumbers?: true | string[];
 };
 

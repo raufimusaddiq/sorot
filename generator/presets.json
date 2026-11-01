@@ -1,0 +1,58 @@
+{
+  "presets": [
+    {
+      "id": "motion-graphic",
+      "label": "Motion graphic",
+      "description": "Pure animated shapes and type, no story: a message told by how things move.",
+      "targetSec": 20,
+      "pacing": "brisk, rhythmic",
+      "blockTags": ["text", "shape", "transition"],
+      "hints": "No characters and no scenes: type, shapes and motion carry the message. One strong idea; every shot is a variation of one visual system."
+    },
+    {
+      "id": "story",
+      "label": "2D story",
+      "description": "A small story with a beginning, a turn and an end, told in scenes.",
+      "targetSec": 45,
+      "pacing": "unhurried, with one fast moment at the turn",
+      "blockTags": ["scene", "character"],
+      "hints": "Tell it as scenes with a beginning, a turn and an end. Give the turn its own shot. Keep text short: pictures tell the story, a caption or two supports it."
+    },
+    {
+      "id": "explainer",
+      "label": "Explainer",
+      "description": "Explains one idea step by step with simple visuals.",
+      "targetSec": 40,
+      "pacing": "steady, one idea per shot",
+      "blockTags": ["diagram", "text", "chart"],
+      "hints": "One idea per shot, in the order a newcomer needs them. Open with the question the viewer has, end with the one thing to remember. Show, then say."
+    },
+    {
+      "id": "card",
+      "label": "Quote or tip card",
+      "description": "A short animated card: one quote or one tip, designed to be read in seconds.",
+      "targetSec": 10,
+      "pacing": "slow and calm",
+      "blockTags": ["text", "quote"],
+      "hints": "One sentence only, large, with plenty of room. Two or three shots at most; hold the full sentence long enough to read it twice."
+    },
+    {
+      "id": "data",
+      "label": "Data highlight",
+      "description": "One number or a small comparison, shown as a chart.",
+      "targetSec": 25,
+      "pacing": "brisk to the number, then a pause on it",
+      "blockTags": ["chart", "data", "text"],
+      "hints": "Include a chart shot that shows exactly the numbers in the brief, drawn from those values and no others. Do not invent or round numbers. Give the key number its own shot and hold it."
+    },
+    {
+      "id": "promo",
+      "label": "Promo",
+      "description": "Shows a product or an offer: a hook, the benefit, a call to action.",
+      "targetSec": 20,
+      "pacing": "fast, with a clear last beat",
+      "blockTags": ["text", "logo", "cta"],
+      "hints": "Hook in the first second, one benefit per shot, and a final shot with the call to action and the logo if one was uploaded. Do not claim anything the brief does not say."
+    }
+  ]
+}
