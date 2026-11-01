@@ -10,8 +10,11 @@ import { DiscoveryAgent } from "./discoveryAgent";
 import { WebSearch } from "./webSearch";
 import { FeedbackService, ValidationError } from "./feedback";
 import { Hyperframes } from "./generate/hyperframes";
+import { ImageClient } from "./generate/images";
+import { Narrator } from "./generate/narration";
 import { GenerateService } from "./generate/service";
-import { planView, projectView, verdictView, versionView } from "./generate/views";
+import { stepLibrary } from "./generate/recipes";
+import { planView, projectView, recipeView, verdictView, versionView } from "./generate/views";
 import { corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
 import { ClipEditor } from "./editor";
 import { ConflictError, JobService } from "./jobs";
@@ -57,7 +60,8 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const jev = new Jev(config, httpFetch, deps.retryWaitMs);
   const tebar = new Tebar(config, httpFetch);
   // Saved UI / CLI connection settings go over the env before anything uses them.
-  const settings = new ConnectionSettings(config, store, { llm, jev, tebar });
+  const narrator = new Narrator(config, httpFetch, runScript);
+  const settings = new ConnectionSettings(config, store, { llm, jev, tebar, narrator });
   const youtube = new YouTube(exec, config.ytdlpPath);
   const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm, youtube, jev);
   const jobs = new JobService(config, store, orchestrator);
@@ -69,7 +73,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const feedback = new FeedbackService(config, store);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
   const publisher = new Publisher(config, store, tebar, llm, jev, feedback);
-  const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev, exec);
+  const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev, exec, narrator, runScript, new ImageClient(config, httpFetch));
 
   const router = new Router();
 
@@ -388,6 +392,26 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   });
   router.on("POST", "/api/generate/versions/:id/restore", (c) => ok({ project: projectView(generate.restoreVersion(c.params.id as string)) }));
   router.on("POST", "/api/generate/versions/:id/accept", (c) => ok({ project: projectView(generate.acceptVersion(c.params.id as string)) }));
+  router.on("GET", "/api/generate/steps", () => ok({ steps: stepLibrary() }));
+  router.on("GET", "/api/generate/recipes", () => ok({ recipes: generate.recipeList() }));
+  router.on("POST", "/api/generate/recipes/validate", async (c) => ok(generate.recipes.validate((await c.body()).recipe)));
+  router.on("POST", "/api/generate/recipes/import", async (c) => ok({ recipe: recipeView(generate.recipes.import((await c.body()).recipe)) }, 201));
+  router.on("POST", "/api/generate/recipes", async (c) => {
+    const b = await c.body();
+    return ok({ recipe: recipeView(generate.recipes.copy(strArg(b, "fromId"), b.id, b.name)) }, 201);
+  });
+  router.on("GET", "/api/generate/recipes/:id", (c) => ok({ recipe: recipeView(generate.recipes.get(c.params.id as string)) }));
+  router.on("PUT", "/api/generate/recipes/:id", async (c) => ok({ recipe: recipeView(generate.recipes.update(c.params.id as string, (await c.body()).recipe)) }));
+  router.on("DELETE", "/api/generate/recipes/:id", (c) => {
+    generate.recipes.remove(c.params.id as string);
+    return ok({ deleted: true });
+  });
+  router.on("GET", "/api/generate/recipes/:id/export", (c) => {
+    const recipe = generate.recipes.export(c.params.id as string);
+    return new Response(JSON.stringify(recipe, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="${recipe.id}.json"` } });
+  });
+  router.on("POST", "/api/generate/projects/:id/steps/:stepId/approve", (c) =>
+    ok({ project: projectView(generate.approveStep(c.params.id as string, c.params.stepId as string)) }));
   router.on("POST", "/api/generate/versions/:id/export", async (c) => {
     const b = await c.body();
     return ok({ export: await generate.exportVersion(c.params.id as string, { title: strArg(b, "title") || undefined, description: strArg(b, "description") || undefined }) }, 201);

@@ -66,10 +66,12 @@ export interface ComposeInput {
   fonts: FontFace[];
   /** A music asset from the project's assets/, laid under the whole video. */
   music?: { path: string; volume: number } | null;
+  /** The recorded voice: one clip per spoken line, on its own track above the music. */
+  voice?: Array<{ id: string; path: string; start: number; duration: number }> | null;
 }
 
 /** The root index.html: one host per shot, in the plan's order and with the plan's timing. */
-export function buildRoot({ plan, width, height, fonts, music }: ComposeInput): string {
+export function buildRoot({ plan, width, height, fonts, music, voice }: ComposeInput): string {
   const starts = shotStarts(plan);
   const total = round3(plan.shots.reduce((n, s) => n + s.durationSec, 0));
   const ground = plan.look.palette.find((c) => HEX.test(c)) ?? "#000000";
@@ -77,9 +79,10 @@ export function buildRoot({ plan, width, height, fonts, music }: ComposeInput): 
     `      @font-face { font-family: "${esc(f.family)}"; font-weight: ${f.weight}; src: url("${esc(f.path)}") format("woff2"); }`).join("\n");
   const hosts = plan.shots.map((s, i) =>
     `      <div id="host-${shotNumber(i)}" data-composition-id="${shotId(i)}" data-composition-src="${shotFile(i)}" data-start="${starts[i]}" data-duration="${s.durationSec}" data-width="${width}" data-height="${height}" data-track-index="0"></div>`).join("\n");
-  const audio = music
+  const audio = (music
     ? `\n      <audio id="music" class="clip" src="${esc(music.path)}" data-start="0" data-duration="${total}" data-track-index="1" data-volume="${music.volume}"></audio>`
-    : "";
+    : "") + (voice ?? []).map((v) =>
+    `\n      <audio id="voice-${esc(v.id)}" class="clip" src="${esc(v.path)}" data-start="${v.start}" data-duration="${v.duration}" data-track-index="2" data-volume="1"></audio>`).join("");
   return `<!doctype html>
 <html lang="${esc(plan.language)}" data-resolution="${height >= width ? "portrait" : "landscape"}">
   <head>

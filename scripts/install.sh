@@ -377,6 +377,8 @@ python_venv() {
   if [ "$GPU" -eq 1 ]; then
     # faster-whisper's GPU path needs cuBLAS + cuDNN 9 for CUDA 12; pip ships both.
     as_user "$venv/bin/pip" install -q nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
+    # The local narration voice (GB-sized: torch); the API voices need nothing extra.
+    as_user "$venv/bin/pip" install -q -r "$APP_DIR/ai-pipeline/requirements-tts.txt" || warn "Couldn't install the local voice packages; the API voices still work"
     CUDA_LIBS="$(as_user "$venv/bin/python3" -c 'import os, nvidia.cublas.lib as b, nvidia.cudnn.lib as c; print(os.path.dirname(b.__file__) + ":" + os.path.dirname(c.__file__))')"
   fi
   ok "Python $("$venv/bin/python3" -c 'import platform; print(platform.python_version())'), yt-dlp $("$venv/bin/yt-dlp" --version)"

@@ -1,10 +1,12 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { now } from "../../store";
-import { readFindings, saveFindings, type NewFinding } from "../findings";
+import { isCreative, readFindings, saveFindings, type NewFinding } from "../findings";
 import {
-  audioFindings, outputFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, verdictOf, type Probe, type Volume,
+  audioFindings, outputFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, speechFindings, verdictOf, voiceRouteFindings, type HeardWord, type Probe, type SpokenLine, type Volume,
 } from "../technical";
 import { sizeFor } from "../composer";
+import { placeLines, readVoice } from "../voice";
 import { buildTarget } from "./build";
 import type { RunFn, StepContext } from "./types";
 
@@ -21,6 +23,19 @@ const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.i
 async function probe(ctx: StepContext, file: string): Promise<Probe | null> {
   const res = await ctx.exec(probeBinary(ctx.config.ffmpegPath), ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", file], { signal: ctx.signal, timeoutMs: 60_000 });
   return res.exitCode === 0 ? parseProbe(res.stdout) : null;
+}
+
+/** The words Whisper hears in the rendered film (mono 16 kHz, on this machine). */
+async function listen(ctx: StepContext, file: string, dir: string): Promise<HeardWord[]> {
+  mkdirSync(join(dir, "checks"), { recursive: true });
+  const wav = join(dir, "checks", "speech.wav");
+  const res = await ctx.exec(ctx.config.ffmpegPath, ["-y", "-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", "16000", wav], { signal: ctx.signal, timeoutMs: 120_000 });
+  if (res.exitCode !== 0) return [];
+  const result = await (ctx.runScript as NonNullable<StepContext["runScript"]>)("transcribe.py", [
+    "--audio", wav, "--language", ctx.project.language, "--model", ctx.config.whisperModel, "--device", ctx.config.whisperDevice,
+  ], { signal: ctx.signal, timeoutMinutes: 10 });
+  const segments = (Array.isArray(result.segments) ? result.segments : []) as Array<{ words?: HeardWord[] }>;
+  return segments.flatMap((s) => (s.words ?? []).map((w) => ({ text: w.text, start: w.start, end: w.end })));
 }
 
 async function volume(ctx: StepContext, file: string): Promise<Volume | null> {
@@ -56,15 +71,29 @@ export const run: RunFn = async (ctx) => {
     own.push(...audioFindings(media, level, { minMeanVolumeDb: num(audio.minMeanVolumeDb, -40), maxTruePeakDb: num(audio.maxTruePeakDb, -1) }));
   }
 
+  // The voice: it is where the script placed it, and the captions follow it.
+  const flag = (v: unknown) => v === true || (typeof v === "object" && v !== null);
+  const voice = plan.sound.narration ? readVoice(ctx.config, ctx.project.id) : null;
+  const placed = voice ? placeLines(plan, voice.lines) : [];
+  if (voice && rendered && flag(measures.voiceRoute)) own.push(...voiceRouteFindings(placed.map((p) => ({ id: p.line.id, start: p.start, durationSec: p.line.durationSec })), plan.totalSec));
+  if (voice && rendered && flag(measures.speechMatch) && ctx.runScript && media?.streams.some((s) => s.codec_type === "audio")) {
+    const sp = obj(measures.speechMatch);
+    const heard = await listen(ctx, file as string, dir);
+    const lines: SpokenLine[] = placed.map((p) => ({
+      id: p.line.id, text: p.line.text, start: p.start, durationSec: p.line.durationSec, firstWordAt: p.line.words?.[0] ? p.start + p.line.words[0].start : null,
+    }));
+    own.push(...speechFindings(lines, heard, num(sp.maxWordErrorRate, 0.25)));
+  }
+
   saveFindings(dir, "technical", own);
   // the creative judge's findings belong to the other verdict
-  const all = readFindings(dir).filter((f) => f.source !== "creative");
+  const all = readFindings(dir).filter((f) => !isCreative(f));
   const status = verdictOf(all);
   ctx.store.saveGenVerdict({
     id: crypto.randomUUID(), versionId: version.id, kind: "TECHNICAL", status, findings: JSON.stringify(all), judgedBy: "code",
     inputs: JSON.stringify({
       render: { kind: version.renderKind, path: file }, sources: [...new Set(all.map((f) => f.source))], shots: plan.shots.length,
-      measures: ["output", "planText", "layout", "readability", "firstFrame", ...(planHasSound(plan) ? ["audio"] : [])],
+      measures: ["output", "planText", "layout", "readability", "firstFrame", ...(planHasSound(plan) ? ["audio"] : []), ...(voice && flag(measures.voiceRoute) ? ["voiceRoute"] : []), ...(voice && flag(measures.speechMatch) ? ["speechMatch"] : [])],
     }),
     createdAt: now(),
   });

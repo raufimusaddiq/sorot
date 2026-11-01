@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -51,6 +51,10 @@ export interface FakeState {
   genEstimate: GenEstimate;
   /** What the next fix round answers, and the bodies sent to it. */
   genNextFix: { needsApproval: boolean; summary: string };
+  /** The recipes the editor lists, the step library, and what validation answers. */
+  genRecipes: GenRecipeItem[];
+  genSteps: GenStepSpec[];
+  genValidation: { ok: boolean; errors: string[]; warnings: string[] };
   genFixBodies: unknown[];
   /** Verdicts by version id (GET /api/generate/versions/:id). */
   genVerdicts: Record<string, GenVerdict[]>;
@@ -73,6 +77,14 @@ export function makeGenVersion(id: string, over: Partial<GenVersion> = {}): GenV
     draftPath: 'data/generate/g1/v1/draft.mp4', stepState: null, hyperframesVersion: '0.8.223', buildMs: 60000, errorMessage: null,
     createdAt: ts(), updatedAt: ts(), ...over,
   };
+}
+
+export function makeGenRecipe(id: string, builtIn = false, over: Partial<GenRecipe> = {}): GenRecipeItem {
+  const recipe: GenRecipe = {
+    id, name: id === 'quick' ? 'Quick' : id, version: 1, builtIn, output: { width: 1080, height: 1920, fps: 30, minSec: 5, maxSec: 90 },
+    steps: [{ use: 'author' }, { use: 'render', with: { quality: 'draft' } }, { use: 'export' }], ...over,
+  };
+  return { id, name: recipe.name, version: 1, builtIn, description: null, recipe, available: true, reasons: [] };
 }
 
 export function makeGenExport(id: string, over: Partial<GenExport> = {}): GenExport {
@@ -192,7 +204,7 @@ export function emptyState(): FakeState {
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
     settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
-    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
+    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genRecipes: [makeGenRecipe('quick', true)], genSteps: [{ type: 'author', gates: ['none'], fields: { repairRounds: { t: 'int', min: 0, max: 5 }, require: { t: 'strs', maxItems: 20 } }, required: [], defaults: {} }, { type: 'render', gates: ['none'], fields: { quality: { t: 'enum', values: ['draft', 'delivery'] } }, required: [], defaults: {} }, { type: 'export', gates: ['none', 'owner'], fields: {}, required: [], defaults: {} }], genValidation: { ok: true, errors: [], warnings: [] }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
   };
 }
 
@@ -310,6 +322,25 @@ export function installFakeApi(state: FakeState) {
       return ok(state.autoRuns[0]);
     }
     if (method === 'GET' && path === '/api/generate/status') return ok(state.generate);
+    if (method === 'GET' && path === '/api/generate/steps') return ok({ steps: state.genSteps });
+    if (method === 'GET' && path === '/api/generate/recipes') return ok({ recipes: state.genRecipes });
+    if (method === 'POST' && path === '/api/generate/recipes/validate') return ok(state.genValidation);
+    if (method === 'POST' && path === '/api/generate/recipes/import') {
+      const item = makeGenRecipe(body.recipe.id, false, body.recipe);
+      state.genRecipes.push(item);
+      return ok({ recipe: item });
+    }
+    if (method === 'POST' && path === '/api/generate/recipes') {
+      const from = state.genRecipes.find((r) => r.id === body.fromId)!;
+      const item = makeGenRecipe(body.id, false, { ...from.recipe, id: body.id, name: body.name });
+      state.genRecipes.push(item);
+      return ok({ recipe: item });
+    }
+    if ((m = path.match(/^\/api\/generate\/recipes\/([^/]+)$/)) && (method === 'PUT' || method === 'DELETE')) {
+      if (method === 'DELETE') state.genRecipes = state.genRecipes.filter((r) => r.id !== m![1]);
+      else state.genRecipes = state.genRecipes.map((r) => (r.id === m![1] ? { ...r, recipe: body.recipe, name: body.recipe.name } : r));
+      return ok(method === 'DELETE' ? { deleted: true } : { recipe: { id: m[1] } });
+    }
     if (method === 'GET' && path === '/api/generate/projects') return ok({ projects: state.genProjects.map((d) => d.project) });
     if (method === 'POST' && path === '/api/generate/projects') {
       const project = makeGenProject(`g${state.genProjects.length + 1}`, {
@@ -405,9 +436,10 @@ export function installFakeApi(state: FakeState) {
       return ok({ deleted: true });
     }
     if (method === 'GET' && path === '/api/settings') return ok(state.settings);
-    if (method === 'PUT' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar)$/))) {
+    if (method === 'PUT' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar|image|voice|commands)$/))) {
       const kind = m[1] as keyof Connections;
       const view = { ...state.settings[kind] } as Record<string, unknown>;
+      if (kind === 'voice' && body.engine === 'local' && !view.localAvailable) return { status: 'error', error: 'the local voice needs a GPU install' };
       for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
         if (k === 'apiKey') Object.assign(view, { apiKeySet: v !== null && v !== '', apiKey: v ? `••••${String(v).slice(-4)}` : '' });
         else view[k] = v;
@@ -417,7 +449,7 @@ export function installFakeApi(state: FakeState) {
       state.settings = { ...state.settings, [kind]: view };
       return ok(state.settings);
     }
-    if (method === 'POST' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar)\/test$/))) return ok(state.tests[m[1]!] ?? { ok: false, ms: 1, error: 'Not configured' });
+    if (method === 'POST' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar|image|voice|commands)\/test$/))) return ok(state.tests[m[1]!] ?? { ok: false, ms: 1, error: 'Not configured' });
     if (method === 'GET' && path === '/api/social/accounts') return ok({ enabled: state.settings.tebar.active, accounts: state.accounts });
     if (method === 'GET' && path === '/api/generate/exports') {
       return ok({ exports: state.genProjects.flatMap((d) => d.exports.map((e) => ({ ...e, projectTitle: d.project.title ?? 'Proyek' }))) });

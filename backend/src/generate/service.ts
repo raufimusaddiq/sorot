@@ -4,13 +4,13 @@ import type { AppConfig } from "../config";
 import { HttpError } from "../http";
 import type { Jev } from "../jev";
 import type { Llm } from "../llm";
-import type { ExecFn } from "../runner";
+import type { ExecFn, ScriptRunner } from "../runner";
 import { now, type Store } from "../store";
 import type { GenExport, GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
 import { Assets, projectDir } from "./assets";
 import { Director, changedShots, type GateDecision as DirectorDecision } from "./director";
 import { DirectorLog } from "./events";
-import { readFindings, type Finding } from "./findings";
+import { isCreative, readFindings, type Finding } from "./findings";
 import { readFix, writeFix, type FixEdit, type FixFile } from "./fixes";
 import { Hyperframes, requiredOk } from "./hyperframes";
 import { mirrorProject, mirrorReview, readMirror } from "./mirror";
@@ -18,6 +18,9 @@ import { planContext } from "./planContext";
 import { validatePlan, type Plan } from "./planSchema";
 import { freezeRecipe, parseRecipe, seedRecipes, type Recipe, type RecipeStep } from "./recipe";
 import { BuildQueue, clipJobBusy, estimateBuild } from "./queue";
+import { ImageClient } from "./images";
+import { Narrator } from "./narration";
+import { RecipeBook } from "./recipes";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
 import { settingsOf } from "./steps";
 import { STORYLINE_NOTE, chosenStoryline, parseStorylines, projectFlags } from "./steps/storylines";
@@ -74,6 +77,7 @@ export class GenerateService {
   readonly runner: Runner;
   readonly assets: Assets;
   readonly queue: BuildQueue;
+  readonly recipes: RecipeBook;
   private doctorCache: { at: number; result: { ok: boolean; reason?: string } } | null = null;
   private catalogCache: Array<{ name: string; tags: string[] }> | null = null;
   /** Work running in the background, by project. */
@@ -86,10 +90,14 @@ export class GenerateService {
     private readonly llm: Llm,
     private readonly jev: Jev,
     exec: ExecFn,
+    readonly narrator: Narrator = new Narrator(config),
+    runScript?: ScriptRunner,
+    readonly images: ImageClient = new ImageClient(config),
   ) {
     this.log = new DirectorLog(store);
     this.director = new Director(llm, this.log, config.generatorDir);
     this.assets = new Assets(config, store);
+    this.recipes = new RecipeBook(store);
     this.runner = new Runner(store, this.log, {
       connected: (c) => this.connected(c),
       directorGate: (ctx, result) => this.decide(ctx.project, ctx.step, result.outputRef),
@@ -97,6 +105,9 @@ export class GenerateService {
       hyperframes,
       jev,
       exec,
+      runScript,
+      narrator: this.narrator,
+      images: this.images,
       config,
       catalog: () => this.catalog(),
     });
@@ -127,7 +138,12 @@ export class GenerateService {
 
   /** What is set up right now. Image, voice, vision, data and command connections arrive with their steps. */
   connections(): ConnectionState {
-    return { llm: this.llm.enabled, jev: this.jev.enabled, image: false, vision: this.llm.visionModel !== null, voiceEngines: [], dataSources: [], commands: [] };
+    const c = this.config;
+    return {
+      llm: this.llm.enabled, jev: this.jev.enabled, vision: this.llm.visionModel !== null,
+      image: c.imageEnabled && !!c.imageBaseUrl && !!c.imageModel && !!c.imageApiKey,
+      voiceEngines: this.narrator.engines, dataSources: [], commands: c.commandsEnabled ? c.commands.map((x) => x.name) : [],
+    };
   }
 
   connected(name: string): boolean {
@@ -195,6 +211,23 @@ export class GenerateService {
       }
     }
     return { available: reasons.length === 0, reasons };
+  }
+
+  /** Every recipe, with whether it can run here and why not. */
+  recipeList() {
+    return this.recipes.list().map((row) => {
+      const recipe = JSON.parse(row.recipe) as Recipe;
+      return { id: row.id, name: row.name, version: row.version, builtIn: !!row.builtIn, description: row.description, recipe, ...this.recipeAvailability(recipe) };
+    });
+  }
+
+  /** The owner passes a step that waits for them (an `owner` gate), then the project goes on. */
+  approveStep(projectId: string, id: string): GenProject {
+    const p = this.idle(projectId);
+    if (parseStates(p.stepState)[id]?.status !== "waiting") throw new HttpError(409, `Step "${id}" isn't waiting for approval`);
+    this.runner.markApproved(projectId, id);
+    this.launch(projectId, () => this.runner.runProject(projectId));
+    return this.mustProject(projectId);
   }
 
   /** Names and tags of the HyperFrames registry blocks; empty when the CLI can't list them. */
@@ -655,8 +688,8 @@ export class GenerateService {
     const failed = (kind: string) => verdicts.some((x) => x.kind === kind && x.status === "FAIL");
     const open = (f: Finding) => f.state === "open";
     const findings = readFindings(v.projectDir as string);
-    const pick = failed("TECHNICAL") && depth < rounds("technical") ? findings.filter((f) => f.source !== "creative" && f.severity === "must-fix" && open(f))
-      : failed("CREATIVE") && depth < rounds("creative") ? findings.filter((f) => f.source === "creative" && open(f)) : [];
+    const pick = failed("TECHNICAL") && depth < rounds("technical") ? findings.filter((f) => !isCreative(f) && f.severity === "must-fix" && open(f))
+      : failed("CREATIVE") && depth < rounds("creative") ? findings.filter((f) => isCreative(f) && open(f)) : [];
     if (pick.length) await this.fixVersion(v.id, { findingIds: pick.map((f) => f.id) }, { depth: depth + 1 });
   }
 

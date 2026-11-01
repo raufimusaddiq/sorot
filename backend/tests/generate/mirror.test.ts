@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
-import { MIRROR_FILES, mirrorProject, readMirror } from "../../src/generate/mirror";
+import { MIRROR_FILES, mirrorProject, motionPlanMd, readMirror } from "../../src/generate/mirror";
 import { validatePlan } from "../../src/generate/planSchema";
 import { Store } from "../../src/store";
 import { samplePlan } from "../helpers";
@@ -84,5 +84,40 @@ describe("mirrored files", () => {
     expect(readMirror(cfg, "p1", "MOTION_REVIEW.md")).toBeNull();
     expect(readMirror(cfg, "p1", "../p1/BRIEF.md")).toBeNull();
     expect(MIRROR_FILES).toContain("SPEC.md");
+  });
+});
+
+describe("MOTION_PLAN.md", () => {
+  const numeric = () => {
+    const base = samplePlan();
+    const raw = {
+      ...base,
+      numeric: { typography: { title: { font: "Plus Jakarta Sans", weight: 700, px: 96, tracking: 0 } }, shadow: "none", easing: { enter: "power3.out" }, durationsFrames: { enter: 18 }, staggerFrames: { words: 4 } },
+      shots: base.shots.map((s: any, i: number) => ({ ...s, frames: [i * 300, i * 300 + 300], heroMove: "seed grows", reads: "a seed", handoff: "its shadow", motionPlan: i === 0 ? [{ token: "enter", fromFrame: 0, toFrame: 18, target: "title" }] : [{ token: "words", fromFrame: i * 300, toFrame: i * 300 + 12 }] })),
+    };
+    return validatePlan(raw, { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false, numeric: true, motionPlan: true, fps: 30 }).plan!;
+  };
+
+  test("a numeric plan is written out: the spec, then each shot's frames, hero move, hand-off and moves", () => {
+    const text = motionPlanMd(numeric());
+    expect(text).toContain("900 frames at 30 fps (30 s)");
+    expect(text).toContain("- title: Plus Jakarta Sans 700, 96 px, tracking 0 em");
+    expect(text).toContain("- enter: power3.out");
+    expect(text).toContain("### s02 · frames 300 to 600");
+    expect(text).toContain("- Hero move: seed grows");
+    expect(text).toContain("  - frames 0 to 18: enter on title");
+    expect(text).toContain("  - frames 300 to 312: words");
+  });
+
+  test("a plan without a spec has none; the project mirror writes the file only for a numeric plan", () => {
+    expect(motionPlanMd(validatePlan(samplePlan(), { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false }).plan!)).toBe("");
+    const plain = validatePlan(samplePlan(), { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false }).plan!;
+    store.saveGenPlan({ id: "pl1", projectId: "p1", revision: 1, plan: JSON.stringify(plain), changeRequest: null, changeSummary: null, approvedAt: T, createdAt: T });
+    store.updateGenProject("p1", { currentPlanId: "pl1" });
+    expect(mirrorProject(cfg, store, "p1")).toEqual(["BRIEF.md", "SPEC.md"]);
+    store.saveGenPlan({ id: "pl2", projectId: "p1", revision: 2, plan: JSON.stringify(numeric()), changeRequest: null, changeSummary: null, approvedAt: T, createdAt: T });
+    store.updateGenProject("p1", { currentPlanId: "pl2" });
+    expect(mirrorProject(cfg, store, "p1")).toEqual(["BRIEF.md", "SPEC.md", "MOTION_PLAN.md"]);
+    expect(readMirror(cfg, "p1", "MOTION_PLAN.md")).toContain("# Motion plan: Bunga berbunga");
   });
 });

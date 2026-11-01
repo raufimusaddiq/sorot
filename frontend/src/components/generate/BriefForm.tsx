@@ -23,8 +23,10 @@ export function assetKind(filename: string): string | null {
   return KINDS[filename.split('.').pop()?.toLowerCase() ?? ''] ?? null;
 }
 
-export function BriefForm({ busy, recipes, onCreate }: {
+export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
   busy: boolean;
+  /** Voice engines that are set up; narration is offered only when there is one. */
+  voiceEngines?: string[];
   /** Offered when there is more than one; the first is the default. */
   recipes?: Array<{ id: string; name: string }>;
   onCreate: (body: GenCreateBody, files: PendingFile[]) => void;
@@ -34,6 +36,8 @@ export function BriefForm({ busy, recipes, onCreate }: {
   const [length, setLength] = useState('30');
   const [language, setLanguage] = useState('id');
   const [style, setStyle] = useState('');
+  const [narration, setNarration] = useState(false);
+  const canNarrate = (voiceEngines?.length ?? 0) > 0;
   const [recipeId, setRecipeId] = useState(recipes?.[0]?.id ?? '');
   const [logo, setLogo] = useState<File | null>(null);
   const [others, setOthers] = useState<File[]>([]);
@@ -53,7 +57,7 @@ export function BriefForm({ busy, recipes, onCreate }: {
     setProblem(null);
     onCreate({
       brief: brief.trim(), format, targetSec: seconds, language, ...(style.trim() ? { styleNotes: style.trim() } : {}),
-      ...(recipes && recipes.length > 1 ? { recipeId } : {}),
+      ...(recipes && recipes.length > 1 ? { recipeId } : {}), ...(narration && canNarrate ? { narration: true } : {}),
     }, files);
   };
 
@@ -96,6 +100,12 @@ export function BriefForm({ busy, recipes, onCreate }: {
         <span className={label}>Style notes (optional)</span>
         <input aria-label="Style notes" value={style} placeholder="tenang, warna hangat, tanpa teks berlebihan" onChange={(e) => setStyle(e.target.value)} className={field} />
       </label>
+      {voiceEngines !== undefined && (
+        <label className="text-sm block">
+          <input type="checkbox" aria-label="Narrate it" checked={narration && canNarrate} disabled={!canNarrate} onChange={(e) => setNarration(e.target.checked)} /> Narrate it with a voice
+          {!canNarrate && <span className="block text-xs text-subtle">Needs a voice engine: add one in Settings → Narration voice.</span>}
+        </label>
+      )}
       <div className="grid sm:grid-cols-2 gap-3">
         <label>
           <span className={label}>Logo (optional)</span>

@@ -34,5 +34,6 @@ export function planContext({ project, recipe, assets, connected, catalog }: Pla
     narration: project.narration === 1 && connected("voice"),
     blocksAllowed: settings.blocks !== false, blocks: catalog.length ? catalog : null,
     limits: { maxShots: Number(settings.maxShots) },
+    numeric: settings.numeric === true, motionPlan: settings.motionPlan === true, fps: recipe.output.fps,
   };
 }

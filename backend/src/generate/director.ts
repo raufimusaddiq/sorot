@@ -52,6 +52,15 @@ const PLAN_PROPS: Json = {
   narrationScript: { type: ["string", "null"] },
   blocks: { type: "array", items: str("a registry block name") },
   assumptions: { type: "array", items: str("anything you added that the brief did not say") },
+  numeric: {
+    type: "object", description: "only when the recipe asks for a numeric plan: every adjective as a number", properties: {
+      typography: { type: "object", description: "per text role (title, body...): {font, weight 100-900, px, tracking in em}" },
+      shadow: str('CSS box-shadow or "none"'),
+      easing: { type: "object", description: "per kind of motion: a GSAP ease (power2.out) or cubic-bezier(a,b,c,d)" },
+      durationsFrames: { type: "object", description: "named durations in whole frames" },
+      staggerFrames: { type: "object", description: "named staggers in whole frames" },
+    },
+  },
   shots: {
     type: "array", items: {
       type: "object", required: ["id", "purpose", "durationSec", "text", "visual", "motion"], properties: {
@@ -64,6 +73,13 @@ const PLAN_PROPS: Json = {
           },
         },
         motion: str("how it moves"), transition: str("cut, wipe..."), audio: { type: "string" }, narration: { type: ["string", "null"] }, hold: { type: "boolean" },
+        frames: { type: "array", items: { type: "integer" }, description: "numeric plans: [from, to) in frames; the first starts at 0 and each starts where the one before ends" },
+        heroMove: str("numeric plans: the one thing that moves most"), reads: str("numeric plans: what a stranger reads in this shot"), handoff: str("numeric plans: what carries into the next shot"),
+        motionPlan: {
+          type: "array", description: "when asked: what moves when, using only spec tokens", items: {
+            type: "object", required: ["token", "fromFrame", "toFrame"], properties: { token: str("an easing, durationsFrames or staggerFrames name"), fromFrame: { type: "integer" }, toFrame: { type: "integer" }, target: { type: "string" } },
+          },
+        },
       },
     },
   },
@@ -98,6 +114,32 @@ const TOOLS = {
     planEdits: { type: "object", description: "the full revised plan, only when a finding can't be fixed without changing the plan (its text or timing)", properties: PLAN_PROPS, required: ["title", "message", "look", "shots"] },
     summary: str("one sentence on what you changed"),
   }, ["sceneEdits", "summary"]),
+  look: tool("submit_look", "Submit what you see in the frames, as a stranger would.", {
+    frames: {
+      type: "array", items: {
+        type: "object", required: ["shotId", "description", "objects", "unexplained", "matches", "heroVisible"], properties: {
+          shotId: str("the shot the picture belongs to"), description: str("what a stranger sees, in a sentence or two, written before you look at what was meant"),
+          objects: { type: "array", items: { type: "string" } }, unexplained: { type: "array", items: { type: "string" }, description: "objects whose purpose a stranger could not tell" },
+          matches: { type: "boolean", description: "does the picture read as `reads` says?" }, heroVisible: { type: "boolean", description: "can the hero move be seen?" },
+        },
+      },
+    },
+    defaultsSeen: { type: "array", items: { type: "string" }, description: "items of defaultsAudit that you can see" },
+  }, ["frames", "defaultsSeen"]),
+  concept: tool("submit_concept", "Submit the one visual idea this video is built on.", {
+    mechanism: str("the single visual mechanism, born from this topic, in one sentence"),
+    concept: str("the idea in two to four sentences: what the viewer sees and why it explains the topic"),
+    boltOn: { type: "boolean", description: "true if the mechanism could be pasted onto any other topic unchanged (then it is a bolt-on and wrong)" },
+  }, ["mechanism", "concept", "boltOn"]),
+  sameidea: tool("submit_sameidea", "Say whether the new concept is the same idea as an earlier one.", {
+    same: { type: "boolean" }, as: str("the earlier concept it repeats, if it does"),
+  }, ["same"]),
+  script: tool("submit_script", "Submit the narration script, line by line.", {
+    lines: {
+      type: "array", description: "the spoken lines in order, one idea each",
+      items: { type: "object", required: ["id", "text"], properties: { id: str("l1, l2, ..."), text: str("what is said, one or two sentences") } },
+    },
+  }, ["lines"]),
   copy: tool("submit_copy", "Submit the title and the description to post the finished video with.", {
     title: str("at most 100 characters, plain text, in the video's language; no hashtags"),
     description: str("at most 400 characters; what the video says, in the video's language; a few hashtags at the end are fine"),
@@ -133,7 +175,7 @@ const TOOLS = {
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
@@ -141,6 +183,10 @@ const INSTRUCTIONS = {
   revise: "You are the director of a short 2D motion video. Change the plan as the owner asks. Change only what the request names: every other shot keeps its text, timing and look exactly as it is.",
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
   fix: "You are the director of a short 2D motion video. The video was built and judged; fix the findings the owner chose (and do what their note says). Prefer sceneEdits: they change how a shot looks and moves and cost little. Change the plan (planEdits) only when a finding cannot be fixed without it, because changing the plan's words or timing makes the owner approve again. Keep everything the findings don't touch exactly as it is.",
+  look: "You are a stranger who has never heard of this video. You are shown one picture per shot. For each, first say what you see, as plainly as you can, and list the things on screen; name any whose purpose you cannot tell. Only then compare it with what was meant, and say whether the picture reads that way and whether the main move can be seen. Also say which of the listed defaults you can see.",
+  concept: "You are the director of a short 2D motion video. Before any plan, name the ONE visual mechanism this video is built on: an idea that grows out of this topic and could not be moved onto another one. It must differ from the earlier concepts you are shown. Then say, honestly, whether it is a bolt-on.",
+  sameidea: "You compare video concepts. Two concepts are the same idea when they rest on the same visual mechanism, even in different words or for different topics. Answer for the new concept against the earlier ones.",
+  script: "You write the narration of a short 2D motion video: what a voice says over it. Plain spoken language in the project's language, short sentences, one idea per line, no stage directions, nothing a voice cannot say. Use only facts and numbers from the brief.",
   copy: "You write the post text for a finished 2D motion video: a title and a short description a viewer would read before watching. Say only what the video says. Do not invent numbers, names or promises.",
   judge: "You are a fresh judge of a finished 2D video. You did not make it and know nothing of how it was made. Judge only what the brief, the plan, and what was built (and the pictures, if any) show. Answer every criterion and every risk you are given, honestly: yes only when it clearly holds, no when it clearly doesn't, partly in between. A risk is flagged only when you can point at it. Point at the shot and the moment when you can, and say what to change.",
   scene: "You are the motion designer of a short 2D video. Write the scene file for the ONE shot you are given, exactly as the approved plan describes it, following the authoring contract below.",
@@ -148,9 +194,9 @@ const INSTRUCTIONS = {
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5 };
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1 };
 /** Output budget by job, as a floor: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000 };
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000 };
 
 export interface JudgeAnswer {
   criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
@@ -355,6 +401,10 @@ export class Director {
   async plan(input: {
     project: GenProject; step: RecipeStep; settings: Record<string, unknown>; assets: GenAsset[];
     storyline: Storyline | null; planCtx: PlanContext; catalog: Array<{ name: string; tags: string[] }>;
+    /** The spoken lines and how long each takes, when a voice was recorded before the plan. */
+    voice?: Array<{ id: string; text: string; durationSec: number }>;
+    /** The visual idea recorded before the plan; the plan builds on it. */
+    concept?: { mechanism: string; concept: string } | null;
   }): Promise<{ plan: Plan; notes: string[] }> {
     const { planCtx } = input;
     return this.ask(
@@ -364,8 +414,10 @@ export class Director {
         fonts: planCtx.fonts, maxShots: planCtx.limits?.maxShots ?? 20,
         blocks: planCtx.blocksAllowed === false ? [] : input.catalog,
         connections: { image: planCtx.imageConnected, narration: planCtx.narration },
+        ...(input.voice?.length ? { voiceLines: input.voice } : {}),
+        ...(input.concept ? { concept: input.concept } : {}),
       },
-      `Write the shot-by-shot plan for this ${input.project.targetSec}-second ${input.project.format} video. The shot durations add up to ${input.project.targetSec} seconds.`,
+      `Write the shot-by-shot plan for this ${input.project.targetSec}-second ${input.project.format} video. The shot durations add up to ${input.project.targetSec} seconds.${input.voice?.length ? " The voice is already recorded: each shot's narration is whole voiceLines, in order, copied word for word." : ""}`,
       (parsed) => {
         const check = validatePlan(parsed, planCtx);
         return check.ok ? { value: { plan: check.plan as Plan, notes: check.notes } } : { errors: check.errors };
@@ -468,6 +520,99 @@ export class Director {
         return missing.length ? { errors: [`you didn't answer: ${missing.join(", ")}`] } : { value: { criteria, risks } };
       },
       input.images,
+    );
+  }
+
+  // ---- look ------------------------------------------------------------------
+
+  /** A fresh look at the frames of a build, by the vision model. Every shot with a picture must be answered. */
+  async look(input: {
+    project: GenProject; step: RecipeStep; expected: Array<{ shotId: string; reads: string; heroMove: string }>; audit: string[]; images: string[];
+  }): Promise<{ frames: Array<{ shotId: string; description: string; objects: string[]; unexplained: string[]; matches: boolean; heroVisible: boolean }>; defaultsSeen: string[] }> {
+    return this.ask(
+      input.project, "look", input.step,
+      { pictures: input.images.length, shots: input.expected.map((e) => e.shotId), meant: input.expected, defaultsAudit: input.audit },
+      "Describe each picture as a stranger, then compare it with `meant`. Answer for every shot: the pictures come in the order of `shots`.",
+      (parsed) => {
+        const raw = parsed as { frames?: unknown; defaultsSeen?: unknown };
+        const list = Array.isArray(raw.frames) ? raw.frames : [];
+        const texts = (v: unknown) => (Array.isArray(v) ? v.map((x) => clip(x, 120)).filter(Boolean) : []);
+        const frames = list.flatMap((f) => {
+          const o = (typeof f === "object" && f !== null ? f : {}) as Record<string, unknown>;
+          const shotId = clip(o.shotId, 20);
+          return shotId && clip(o.description, 400) && typeof o.matches === "boolean" && typeof o.heroVisible === "boolean"
+            ? [{ shotId, description: clip(o.description, 400), objects: texts(o.objects), unexplained: texts(o.unexplained), matches: o.matches, heroVisible: o.heroVisible }] : [];
+        });
+        const missing = input.expected.filter((e) => !frames.some((f) => f.shotId === e.shotId)).map((e) => e.shotId);
+        return missing.length ? { errors: [`you didn't describe: ${missing.join(", ")}`] } : { value: { frames, defaultsSeen: texts(raw.defaultsSeen) } };
+      },
+      input.images,
+    );
+  }
+
+  // ---- concept ---------------------------------------------------------------
+
+  /** The one visual mechanism of the video. With `mechanismTest` a bolt-on is refused; `avoid` lists earlier concepts to differ from. */
+  async concept(input: {
+    project: GenProject; step: RecipeStep; settings: Record<string, unknown>; assets: GenAsset[]; storyline: Storyline | null; avoid: string[]; note?: string;
+  }): Promise<{ mechanism: string; concept: string }> {
+    const test = input.settings.mechanismTest === true;
+    return this.ask(
+      input.project, "concept", input.step,
+      { ...this.base(input.project, input.assets), storyline: input.storyline, earlierConcepts: input.avoid, ...(input.note ? { note: input.note } : {}) },
+      `Name the one visual mechanism for this video and say whether it is a bolt-on.${input.avoid.length ? " It must not repeat any earlier concept." : ""}`,
+      (parsed) => {
+        const raw = parsed as { mechanism?: unknown; concept?: unknown; boltOn?: unknown };
+        const mechanism = clip(raw.mechanism, 300);
+        const concept = clip(raw.concept, 800);
+        if (!mechanism || !concept) return { errors: ["give both the mechanism and the concept"] };
+        if (test && raw.boltOn !== false) return { errors: ["the mechanism is a bolt-on: it could be moved onto any other topic. Find one that only this topic has."] };
+        return { value: { mechanism, concept } };
+      },
+    );
+  }
+
+  /** Is the new concept the same idea as one of the earlier ones? Returns the one it repeats, or null. */
+  async sameIdea(input: { project: GenProject; step: RecipeStep; candidate: string; earlier: string[] }): Promise<string | null> {
+    return this.ask(
+      input.project, "sameidea", input.step, { candidate: input.candidate, earlier: input.earlier },
+      "Is `candidate` the same idea as any of `earlier`? Answer same: true with the one it repeats, or same: false.",
+      (parsed) => {
+        const raw = parsed as { same?: unknown; as?: unknown };
+        if (typeof raw.same !== "boolean") return { errors: ["answer same with true or false"] };
+        return { value: raw.same ? (clip(raw.as, 400) || input.earlier[0] || "an earlier concept") : null };
+      },
+    ) as Promise<string | null>;
+  }
+
+  // ---- script ----------------------------------------------------------------
+
+  /** The narration, line by line: spoken words only, as long as the video allows. */
+  async script(input: {
+    project: GenProject; step: RecipeStep; settings: Record<string, unknown>; assets: GenAsset[];
+  }): Promise<Array<{ id: string; text: string }>> {
+    const { settings, project } = input;
+    const maxWords = typeof settings.maxWords === "number" ? settings.maxWords : Math.round(project.targetSec * 2.6);
+    const spell = settings.spellNumbers === true;
+    return this.ask(
+      project, "script", input.step,
+      { ...this.base(project, input.assets), tone: typeof settings.tone === "string" ? settings.tone : null, maxWords, spellNumbers: spell },
+      `Write the narration for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: at most ${maxWords} words in all.${spell ? " Write every number out in words, as it is spoken." : ""}`,
+      (parsed) => {
+        const raw = (parsed as { lines?: unknown }).lines;
+        const list = Array.isArray(raw) ? raw : [];
+        const lines = list.flatMap((l) => {
+          const o = (typeof l === "object" && l !== null ? l : {}) as Record<string, unknown>;
+          return clip(o.text, 400) ? [{ id: clip(o.id, 20) || `l${list.indexOf(l) + 1}`, text: clip(o.text, 400) }] : [];
+        });
+        const errors: string[] = [];
+        if (!lines.length || lines.length > 40) errors.push("write between 1 and 40 lines");
+        if (new Set(lines.map((l) => l.id)).size !== lines.length) errors.push("every line needs its own id");
+        const words = lines.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
+        if (words > maxWords) errors.push(`the script has ${words} words; the most allowed is ${maxWords}`);
+        if (spell && lines.some((l) => /\d/.test(l.text))) errors.push("write numbers out in words (no digits): a voice reads them aloud");
+        return errors.length ? { errors } : { value: lines };
+      },
     );
   }
 

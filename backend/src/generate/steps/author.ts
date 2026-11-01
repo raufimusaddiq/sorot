@@ -1,12 +1,15 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import { buildRoot, bundledFontFaces, checkScene, GSAP_FILE, shotFile, sizeFor, type FontFace, type SceneIssue } from "../composer";
 import { editApplied, markEditApplied, readFix } from "../fixes";
 import { saveFindings, type NewFinding } from "../findings";
 import { mapPool } from "../../pool";
 import { BUNDLED_FONTS } from "../planContext";
 import type { Plan } from "../planSchema";
+import { placeLines, readVoice } from "../voice";
 import { buildTarget, readScene, sceneAssets } from "./build";
+import { readImageFailures } from "./images";
+import { gainOf, readMusic } from "./music";
 import type { RunFn, StepContext } from "./types";
 
 const BLOCK_SNIPPET_CHARS = 6000;
@@ -43,7 +46,10 @@ export async function prepareProject(ctx: StepContext, dir: string, plan: Plan):
     return family && families.includes(family) ? [{ family, weight: 400, path: a.path }] : [];
   });
 
-  const track = assets.find((a) => a.kind === "music" && a.id === plan.sound.music);
+  // The plan's own pick wins; else the bed the music step settled on, ducked under the voice when it speaks.
+  const bed = readMusic(config, project.id);
+  const track = assets.find((a) => a.kind === "music" && a.id === plan.sound.music) ?? (bed ? assets.find((a) => a.id === bed.assetId) : undefined);
+  const duck = plan.sound.narration && bed?.duckUnderVoiceDb != null && track?.id === bed.assetId ? gainOf(bed.duckUnderVoiceDb) : 1;
   const planStep = ctx.recipe.steps.find((s) => s.use === "plan");
   const blocksOn = planStep?.with?.blocks !== false && plan.blocks.length > 0;
   if (blocksOn) await ctx.hyperframes.add(dir, plan.blocks, { signal: ctx.signal });
@@ -54,9 +60,19 @@ export async function prepareProject(ctx: StepContext, dir: string, plan: Plan):
     }
   }
 
+  // The recorded voice goes into the project's assets/ and onto its own audio track.
+  const recorded = plan.sound.narration ? readVoice(config, project.id) : null;
+  const voice = recorded ? placeLines(plan, recorded.lines).flatMap(({ line, start }) => {
+    if (!existsSync(line.file)) return [];
+    const path = `assets/voice-${line.id}${extname(line.file)}`;
+    mkdirSync(join(dir, "assets"), { recursive: true });
+    cpSync(line.file, join(dir, path));
+    return [{ id: line.id, path, start, duration: line.durationSec }];
+  }) : null;
+
   const size = sizeFor(project.format, ctx.recipe.output);
   writeFileSync(join(dir, "index.html"), buildRoot({
-    plan, ...size, fonts: [...bundled, ...uploaded], music: track ? { path: track.path, volume: config.bgmVolume ?? MUSIC_VOLUME } : null,
+    plan, ...size, fonts: [...bundled, ...uploaded], music: track ? { path: track.path, volume: Math.round((config.bgmVolume ?? MUSIC_VOLUME) * duck * 1000) / 1000 } : null, voice,
   }));
   return { blocks };
 }
@@ -111,6 +127,10 @@ export const run: RunFn = async (ctx) => {
     return sceneFindings(plan, i, issues);
   });
   const left: NewFinding[] = perShot.flat();
+  // An image that could not be made leaves its shot on the fallback visual: worth a look, not a failure.
+  for (const f of readImageFailures(ctx)) {
+    left.push({ severity: "polish", shotId: f.shotId, code: "image_fallback", description: `The image for ${f.shotId} could not be made (${f.reason}); the shot uses its fallback visual.`, suggestedFix: "Upload an image for the shot, or try again.", state: "open", rule: "images" });
+  }
   saveFindings(dir, "author", left);
   return { status: "done", outputRef: dir };
 };

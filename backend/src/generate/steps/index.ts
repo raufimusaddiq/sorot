@@ -1,6 +1,6 @@
 import { STEP_SPECS, STEP_TYPES, type StepSpec, type StepType } from "./schema";
 import type { RunFn, StepContext } from "./types";
-import { run as align } from "./align";
+import { inputKey as alignKey, run as align } from "./align";
 import { run as author } from "./author";
 import { run as check } from "./check";
 import { run as command } from "./command";
@@ -9,7 +9,7 @@ import { run as creative } from "./creative";
 import { run as exportStep } from "./export";
 import { run as facts } from "./facts";
 import { run as idea } from "./idea";
-import { run as images } from "./images";
+import { inputKey as imagesKey, run as images } from "./images";
 import { run as look } from "./look";
 import { run as music } from "./music";
 import { inputKey as planKey, run as plan } from "./plan";
@@ -17,7 +17,7 @@ import { run as render } from "./render";
 import { run as script } from "./script";
 import { run as storylines } from "./storylines";
 import { run as technical } from "./technical";
-import { run as voice } from "./voice";
+import { inputKey as voiceKey, run as voice } from "./voice";
 
 export interface StepModule {
   type: StepType;
@@ -55,7 +55,7 @@ const RUNS: Record<StepType, RunFn> = {
   author, check, look, render, command, technical, creative, export: exportStep,
 };
 
-const INPUT_KEYS: Partial<Record<StepType, (ctx: StepContext) => string>> = { plan: planKey };
+const INPUT_KEYS: Partial<Record<StepType, (ctx: StepContext) => string>> = { plan: planKey, voice: voiceKey, align: alignKey, images: imagesKey };
 
 export const STEPS: Record<StepType, StepModule> = Object.fromEntries(
   STEP_TYPES.map((type) => [type, { type, spec: STEP_SPECS[type], defaults: DEFAULTS[type], run: RUNS[type], inputKey: INPUT_KEYS[type] }]),

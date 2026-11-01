@@ -1,0 +1,32 @@
+{
+  "id": "story",
+  "name": "Story with a narrator",
+  "description": "2D storytelling: you pick the storyline and approve the plan, scene images are made when an image connection is set up, then the narrator's script is written, voiced and timed before the build. Needs a voice engine in Settings.",
+  "version": 1,
+  "builtIn": true,
+  "language": "id",
+  "output": { "width": 1080, "height": 1920, "fps": 30, "minSec": 20, "maxSec": 90 },
+  "steps": [
+    { "use": "storylines", "gate": "owner", "with": { "count": 3 } },
+    { "use": "plan", "gate": "owner", "with": { "blocks": true } },
+    { "use": "images", "when": "connection:image" },
+    { "use": "script", "with": { "spellNumbers": false, "maxWords": 190, "tone": "bercerita, hangat" } },
+    { "use": "voice", "with": { "failClosed": true } },
+    { "use": "align", "with": { "source": "auto" } },
+    { "use": "author", "with": { "repairRounds": 3, "concurrency": 3 } },
+    { "use": "check", "with": { "warnings": "fix-or-hold" } },
+    { "use": "look", "when": "connection:vision", "with": { "rounds": 1 } },
+    { "use": "render", "with": { "quality": "draft" } },
+    { "use": "technical" },
+    {
+      "use": "creative",
+      "with": {
+        "criteria": [
+          { "id": "opening", "question": "Does `opening` pull a stranger into the story from the first moment?" },
+          { "id": "arc", "question": "Does the story have a beginning, a turn and an end that `shots` make clear?" }
+        ]
+      }
+    },
+    { "use": "export", "with": { "mode": "rerender", "quality": "delivery" } }
+  ]
+}

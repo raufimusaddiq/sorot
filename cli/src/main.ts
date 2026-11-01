@@ -71,6 +71,8 @@ Generate (2D videos from a brief)
   gen revise <p> "<change>" | approve <p> | asset <p> <file>   a brief becomes storylines, then an approved plan
   gen build <p> [--no-watch] | verdicts <p|v> | cancel <p|v> | accept <p|v>   build a draft, see both verdicts
   gen fix <p|v> [--finding id]... [--note ".."] [--shot s02] [--no-watch] | restore <p|v>   fix findings into a new version, restore a plan
+  gen steps | recipes | approve-step <p> <step>   the step library, your pipelines, pass a step that waits for you
+  gen recipe show|new|copy|edit|validate|export|import|delete <id|file>   build and share your own pipeline
   gen export <p|v> [--title ".."] [--description ".."] [-o DIR]   the finished video, into the Library; post it with: publish --generated <export>
 
 App

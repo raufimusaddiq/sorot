@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -278,6 +278,38 @@ export class ApiClient {
 
   async restoreGenerateVersion(id: string) {
     return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/restore`, { method: 'POST' });
+  }
+
+  async getGenerateSteps() {
+    return this.request<{ steps: GenStepSpec[] }>('/api/generate/steps');
+  }
+
+  async listGenerateRecipes() {
+    return this.request<{ recipes: GenRecipeItem[] }>('/api/generate/recipes');
+  }
+
+  async validateGenerateRecipe(recipe: GenRecipe) {
+    return this.request<{ ok: boolean; errors: string[]; warnings: string[] }>('/api/generate/recipes/validate', { method: 'POST', body: JSON.stringify({ recipe }) });
+  }
+
+  async copyGenerateRecipe(fromId: string, id: string, name: string) {
+    return this.request<{ recipe: { id: string } }>('/api/generate/recipes', { method: 'POST', body: JSON.stringify({ fromId, id, name }) });
+  }
+
+  async saveGenerateRecipe(id: string, recipe: GenRecipe) {
+    return this.request<{ recipe: { id: string } }>(`/api/generate/recipes/${id}`, { method: 'PUT', body: JSON.stringify({ recipe }) });
+  }
+
+  async deleteGenerateRecipe(id: string) {
+    return this.request<{ deleted: boolean }>(`/api/generate/recipes/${id}`, { method: 'DELETE' });
+  }
+
+  async importGenerateRecipe(recipe: GenRecipe) {
+    return this.request<{ recipe: { id: string } }>('/api/generate/recipes/import', { method: 'POST', body: JSON.stringify({ recipe }) });
+  }
+
+  generateRecipeExportUrl(id: string) {
+    return `${this.baseUrl}/api/generate/recipes/${id}/export`;
   }
 
   async exportGenerateVersion(versionId: string, body: { title?: string; description?: string } = {}) {

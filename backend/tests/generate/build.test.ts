@@ -14,6 +14,7 @@ import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import { Store } from "../../src/store";
 import type { GenAsset } from "../../src/types";
+import { writeVoice } from "../../src/generate/voice";
 import { fakeHyperframes, fakeLlm, hfFixture, procOk, quickRecipe, samplePlan, sceneHtml, SAMPLE_TITLES, type HfHandler } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
@@ -70,6 +71,27 @@ const upload = (id: string, kind: GenAsset["kind"], path: string, meta: string |
   ({ id, projectId: "p1", kind, origin: "upload", path, shotId: null, promptHash: null, meta, createdAt: T });
 
 describe("author step", () => {
+  test("the recorded voice is laid on its own track where its shot starts; the music bed ducks under it; a failed image is a polish finding", async () => {
+    const r = rig([html(0), html(1), html(2)], {}, {}, [upload("m1", "music", "assets/bed.mp3")]);
+    mkdirSync(join(r.config.genDir, "p1", "assets"), { recursive: true });
+    writeFileSync(join(r.config.genDir, "p1", "assets/bed.mp3"), "bed");
+    const row = r.store.getGenPlan("pl1")!;
+    const narrated = { ...r.plan, sound: { music: "none", narration: true }, shots: r.plan.shots.map((x, i) => (i === 1 ? { ...x, narration: "Uang tumbuh sendiri. Mulai dari sekarang." } : x)) };
+    r.store.saveGenPlan({ ...row, plan: JSON.stringify(narrated) });
+    const spoken = ["l1", "l2"].map((id, i) => ({ id, text: ["Uang tumbuh sendiri.", "Mulai dari sekarang."][i]!, file: join(tmp, `${id}.mp3`), durationSec: 2 + i, words: null }));
+    for (const l of spoken) writeFileSync(l.file, `voice-${l.id}`);
+    writeVoice(r.config, "p1", { engine: "openai", voice: "alloy", lines: spoken, aligned: null });
+    writeFileSync(join(r.config.genDir, "p1", "music.json"), JSON.stringify({ assetId: "m1", path: "assets/bed.mp3", duckUnderVoiceDb: -12 }));
+    writeFileSync(join(r.config.genDir, "p1", "images.json"), JSON.stringify([{ shotId: "s01", reason: "quota exceeded" }]));
+    await STEPS.author.run(r.ctxFor("author"));
+    const root = readFileSync(join(r.dir, "index.html"), "utf-8");
+    expect(root).toContain('id="voice-l1" class="clip" src="assets/voice-l1.mp3" data-start="10" data-duration="2"');
+    expect(root).toContain('id="voice-l2" class="clip" src="assets/voice-l2.mp3" data-start="12.15" data-duration="3"');
+    expect(readFileSync(join(r.dir, "assets/voice-l2.mp3"), "utf-8")).toBe("voice-l2");
+    expect(root).toContain('id="music" class="clip" src="assets/bed.mp3" data-start="0" data-duration="30" data-track-index="1" data-volume="0.03"');
+    expect(readFindings(r.dir)).toMatchObject([{ severity: "polish", code: "image_fallback", shotId: "s01", source: "author" }]);
+  });
+
   test("lays out the project, then writes one scene per shot", async () => {
     const r = rig([html(0), html(1), html(2)]);
     const result = await STEPS.author.run(r.ctxFor("author"));

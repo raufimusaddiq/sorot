@@ -66,6 +66,24 @@ describe('BriefForm', () => {
     );
   });
 
+  it('narration is offered only when a voice engine is set up, with a hint when it is not; sent only when ticked', () => {
+    const onCreate = jest.fn();
+    const none = render(<BriefForm busy={false} onCreate={onCreate} voiceEngines={[]} />);
+    expect(screen.getByLabelText('Narrate it')).toBeDisabled();
+    expect(screen.getByText(/Needs a voice engine: add one in Settings/)).toBeInTheDocument();
+    none.unmount();
+
+    render(<BriefForm busy={false} onCreate={onCreate} voiceEngines={['elevenlabs']} />);
+    expect(screen.getByLabelText('Narrate it')).toBeEnabled();
+    expect(screen.queryByText(/Needs a voice engine/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Brief'), { target: { value: 'Jelaskan bunga majemuk' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
+    expect(onCreate.mock.calls[0]![0]).not.toHaveProperty('narration');
+    fireEvent.click(screen.getByLabelText('Narrate it'));
+    fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
+    expect(onCreate.mock.calls[1]![0]).toMatchObject({ narration: true });
+  });
+
   it('is disabled while busy, and file kinds follow the extension', () => {
     render(<BriefForm busy onCreate={jest.fn()} />);
     fireEvent.change(screen.getByLabelText('Brief'), { target: { value: 'x' } });

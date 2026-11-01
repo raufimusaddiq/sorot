@@ -341,6 +341,9 @@ function Python-Venv($app, $py, $gpu) {
         # faster-whisper's GPU path needs cuBLAS + cuDNN 9 for CUDA 12; pip ships both (no CUDA install).
         & $venvPy -m pip install -q nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*" | Out-Host
         if ($LASTEXITCODE -ne 0) { Fail "pip install of the CUDA libraries failed (or re-run with -Cpu)" }
+        # The local narration voice (GB-sized: torch); the API voices need nothing extra.
+        & $venvPy -m pip install -q -r (Join-Path $app "ai-pipeline\requirements-tts.txt") | Out-Host
+        if ($LASTEXITCODE -ne 0) { Warn "Couldn't install the local voice packages; the API voices still work" }
         $cudaDirs = (& $venvPy -c "import os, nvidia.cublas as b, nvidia.cudnn as c; print(';'.join(d for m in (b, c) for d in (os.path.join(p, s) for p in m.__path__ for s in ('bin', 'lib')) if os.path.isdir(d)))" | Out-String).Trim()
     }
     Ok "venv ready, yt-dlp $(& (Join-Path $app 'ai-pipeline\.venv\Scripts\yt-dlp.exe') --version)"

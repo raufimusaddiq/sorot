@@ -1,0 +1,5 @@
+# Local voice (tts.py): installed only on GPU installs (docker --build-arg LOCAL_TTS=1, or the installers in GPU mode).
+torch>=2.3
+transformers>=4.44,<5
+scipy>=1.11
+numpy>=1.26
