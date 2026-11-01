@@ -348,3 +348,139 @@ Each increment runs `/test` (gate OPEN) before it's merged (`feat/2d-video-gener
 - No pipeline numbers are hard-coded outside the example recipe files; steps read the
   project's frozen recipe.
 - Commit after each task or logical group, and only when the owner asks.
+
+## Phase 12: Convergence
+
+Found by a real narrated build on the Docker app (2026-11-01) and a check of the code against the spec, plan and tasks. Effects: the build looked flat (every transition `cut`, little light or blur); the director should be given the HyperFrames effects as tools and choose them itself.
+
+- [X] T102 [US2] Apply the plan's per-shot `transition`: make it a choice from the catalog's transition blocks (not a free string), have the build wire it between sub-compositions in the root `index.html`, and fail the plan with a repair call when it names none that exists, in `backend/src/generate/planSchema.ts`, `composer.ts` (the root `index.html` writer) and `hyperframes.ts` per FR-004 (partial)
+- [X] T103 [US2] Give the director the HyperFrames effects as tools in an agent loop (`Llm.runTools`): `search_catalog` (blocks, components, shader transitions, with tags and a short description), `add_block`, `set_transition`, `set_look` (light, blur, depth, glow as exact values), bounded by steps and a token budget, so the plan step chooses its own effects instead of a fixed list, with the choices and the director's reason logged, in `backend/src/generate/director.ts` and `steps/plan.ts` per research R3 alternative "tool-calling with `Llm.runTools`" (deferred to a free-edit mode) and the owner's request of 2026-11-01 (missing). The spec and plan do not yet say this: record it in `research.md` R3 before building
+- [X] T104 [US2] Give the scene call the context a single shot lacks: the chosen effects and transition for its shot, the previous shot's handoff and the next shot's opening, and add an "Effects" section to `generator/prompts/authoring.md` and `story.md` (when to use light, blur, depth, a shader transition; each film needs a few; no effect without a reason in the plan) per FR-004 and FR-029 handoff (partial)
+- [X] T105 [US2] Add an `effectsUsed` measure to the always-checked TECHNICAL findings: count installed blocks and non-`cut` transitions and report a should-fix when a recipe's `minEffects` (default 3 for 15 s or longer) is not met; add the setting to the `plan` step schema and `recipe.md`, in `backend/src/generate/technical.ts` and `steps/schema.ts` per FR-012 and FR-029 (missing)
+- [X] T106 [US2] Add a CREATIVE question "does this film feel flat: the same move, light and cut in every shot?" to the criteria Sorot adds, so a build without effects is flagged even when `look` is skipped for want of a vision model, in `backend/src/generate/creative.ts` per FR-013 (partial)
+- [X] T107 [US3] Group the repeated findings of the `check` step: one finding per code, shot and message, with a count (a real build listed one `console_warning` 45 times), in `backend/src/generate/steps/check.ts` and the findings view per FR-012 (partial)
+- [X] T108 [US2] Keep an approved plan when a project is retried or resumed: a retry after a failed `align` or `voice` step must not re-run `plan` (a real retry made revisions 2, 3 and 4 and asked for approval each time), in `backend/src/generate/runner.ts` and `steps/plan.ts` per FR-006 and FR-028 (partial)
+- [X] T109 [US2] Give Generate calls their own token budget (setting `gen.llmMaxTokens`, default 32000, shown in Settings) instead of the clipping `LLM_MAX_TOKENS` (4000 in Docker, which a reasoning model exhausts before writing one scene), and make the failure message name the setting, in `backend/src/llm.ts`, `config.ts`, `settings.ts` per FR-016 (partial)
+- [X] T110 [US2] Land the fixes made during the real run, with their tests: a build is refused when a step before `author` failed (`service.assertCanBuild`), the Fish voice speaks with its default voice when no voice id is set (`narration.ts`), transient LLM failures are tried up to 3 times (`llm.ts`), and forbidden-number findings are reported once per number and shot (`technical.ts`), per FR-006, FR-018 and FR-012 (partial)
+- [X] T111 [P] Update `AGENTS.md` ("one retry on transient errors" is now 3 attempts), `docs/generate.md` and `contracts/recipe.md` (Fish needs no voice id; the build refuses a failed earlier step; the effects tools, transitions and `minEffects` once T102 to T105 land) per Constitution V, Stable Contracts (contradicts)
+- [X] T112 [P] Revert the accidental `LLM_MAX_TOKENS=64000` edit to the tracked `.env.docker` once T109 lands (the file is tracked, not gitignored) per AGENTS.md "never commit machine settings" (unrequested)
+- [X] T113 Record the real run in `research.md` and `tasks.md`: the Fish request that worked (model header `s2.1-pro-free`; save a redacted fixture in `backend/tests/fixtures/voice/`), the 20 s narrated build on the RTX 4060 Docker (467 s with 7 scenes, GPU Whisper alignment), and the findings above, which closes the Fish half of T067 and part of T096 and T100 per SC-013 (partial)
+- [X] T114 Rebuild the same brief ("Gunung Koin") after T102 to T106 and compare it with the flat build: count the effects used, the TECHNICAL and CREATIVE verdicts and a look at the frames, record in `research.md` per SC-013 (missing)
+
+## Part 3: Any look, any director (US9, FR-038 to FR-047)
+
+Design: [plan.md Part 3](plan.md#part-3-any-look-any-director-2026-11-01), research R22 to R31 and
+spike S7, [contracts/kit.md](contracts/kit.md), the additions in api.md, cli.md, recipe.md,
+director.md and [data-model.md](data-model.md#additions-for-any-look-any-director-2026-11-01).
+Every task lands with its own tests (constitution III: one test per behaviour, table rows,
+shared fakes in `backend/tests/helpers.ts`). New step settings keep their defaults in code, not in
+`steps/index.ts` DEFAULTS, so existing projects' step hashes don't change.
+
+## Phase 13: Contract and prompts first (R31, R29)
+
+**Goal**: the cheapest quality gains, measurable on the next build: scenes follow HyperFrames'
+own contract, plans follow its look and opening rules, and malformed answers can be repaired.
+
+**Independent test**: rebuild the T114 brief; repair rounds per scene go down, `dead_stretch` and
+contrast findings go down, and a planted missing brace in a plan is repaired on the first retry.
+
+- [X] T115 [US9] Correct `generator/prompts/authoring.md` to the HyperFrames 0.8.223 contract: remove `visibility`, `width` and `height` from the safe properties (never tween `display`, `visibility` or `autoAlpha` on a clip; animate transforms); `fromTo` only, never `from`; no CSS `transform` on an element GSAP transforms; `data-hold` on an element whose stillness is deliberate (instead of only "mark the shot as a hold"); text contrast 4.5:1 (3:1 for large text) is an error; motion craft: eases by role (arrive `expo.out` or `power4.out`, travel `power2.inOut`, leave `power3.in`), exits 40 to 50% shorter than entrances, a landed title stays still, one hero move per shot, no breathing, floating or pulsing loops, something new every 2 to 4 s. Assert the corrected lines reach the scene call in `backend/tests/generate/director.test.ts` (R31)
+- [X] T116 [P] [US9] Extend `generator/prompts/story.md`: `# Plan` gets the vertical safe band (on 1080×1920, words and the subject between 168 and 1330 px), title size 4 to 9% of frame height, value contrast between ground and ink and no off-white paper ground by default, the last line held at least 2 s; `# Storylines` gets frame 0 as the thumbnail, a hook that works with the sound off, a short menu of openings, explainers that start in a situation the viewer knows, "pick the one a stranger would follow", and numbers only from the brief; `# Effects` changes to 3 to 5 kinds of transition, at most a third of the seams as cuts, a flash or wipe only when it contrasts with the palette, glow as an exception with a reason (R31). Update the section assertions in `backend/tests/generate/director.test.ts`
+- [X] T117 [US9] Repair message for malformed answers: add `jsonError(text): { message, at, excerpt } | null` (parser message plus about 80 characters around the position) in `backend/src/llm.ts`, and use it in `Director.ask` in `backend/src/generate/director.ts` so the problem reads "not valid JSON: <message> near «<excerpt>»". Test with a plan missing one closing brace in `backend/tests/llm.test.ts` and `backend/tests/generate/director.test.ts` (FR-045, R29)
+- [X] T118 [US9] Plans in parts: every numeric plan (the shot count is only known after the outline; later also any plan from a model whose record shows malformed answers, T134), ask `submit_plan_outline` (title, message, look, shots with durations and text) and then `submit_shot_specs` for 4 shots at a time; validate each part, merge, and run `validatePlan` on the whole, in `backend/src/generate/director.ts` and `backend/src/generate/steps/plan.ts`. Table-test the split, a bad batch repaired on its own, and the merge (FR-045, R29)
+- [X] T119 [P] [US9] The effects pass checks a seam against the palette: `set_transition` with `flash`, `fade` or `wipe` is refused with a reason when the seam colour and the ground differ by less than a luminance threshold (relative luminance from WCAG), in `backend/src/generate/transitions.ts` (`contrastOf`) and `backend/src/generate/director.ts`. Test a white flash on a white ground refused and on a dark ground accepted
+
+## Phase 14: Kit foundation (R22, R23)
+
+**Goal**: an open, offline library of drawing and motion parts, loaded by the root, that users can
+extend.
+
+**Independent test**: `sorot gen kit` lists the built-in parts; a user part is added, rendered
+twice and offered; a part using `Math.random()` is refused; a version records the parts it used.
+
+- [ ] T120 Spike S7, cost: render 10 s at 1080×1920 with `data-motion-blur="on"` (default samples), and a 10 s Three.js scene, on the RTX 4060 Docker app and on the CPU image; record seconds of render per second of video in `specs/001-2d-video-generator/research.md` (spike S7) and choose the default `maxLevel` for CPU installs
+- [ ] T121 [US9] Part manifest and validation in `backend/src/generate/kit.ts`: `name` lowercase slug (`^[a-z0-9][a-z0-9-]{0,39}$`), unique on the install; `version`; `does` (one line, at most 200 characters); `runtime` one of `dom`, `canvas`, `webgl`; `needs.gpu` one of `no`, `preferred`, `required`; `settings` as `steps/schema.ts` fields; `defaults` valid against `settings`; `example` (one line). Files must stay inside the part folder. Table tests in `backend/tests/generate/kit.test.ts` (contracts/kit.md)
+- [ ] T122 [US9] Table `gen_kit_part` (name TEXT PK, source `builtIn`|`user`, version, manifest, path, checkedAt, createdAt, updatedAt) with auto-migration in `backend/src/db.ts`, store methods in `backend/src/store.ts`, and a start-up sync of `generator/kit/` (a user part may not take a built-in's name) in `backend/src/generate/kit.ts`; tests in `backend/tests/generate/kit.test.ts`
+- [ ] T123 [P] [US9] Built-in parts as general building blocks, each `part.json` + `part.js` + `example.json` registering `window.SorotKit[name].mount(host, settings, ctx)` and obeying the determinism rules (no clock, network, timers or unseeded randomness; motion on `ctx.tl` or a pure `render(t)`): `shade` (lighting for any shape from the key light), `shadow` (soft, contact), `depth` (layers and parallax), `camera` (pan, zoom, dolly, any projection including isometric as a setting), `motion` (eases by role, precomputed springs, paths, stagger), `text-reveal`, `particles` (seeded), `image-place` (an image as a lit card or cut-out with a shadow) in `generator/kit/`
+- [ ] T124 [P] [US9] The `three` part: vendor a pinned Three.js build (version recorded in `generator/package.json`) into `generator/kit/three/`, drawing from timeline time in an `hf-seek` listener, heavy setup on `window.__hf.buildReady`, seeded randomness; `needs.gpu: preferred`
+- [ ] T125 [US9] Load parts from the root: `prepareProject` copies the parts a version uses into `assets/kit/` and the composer adds their `<script>` tags after GSAP and sets the shared `ctx.look` (palette, key light angle from the plan) in `backend/src/generate/composer.ts` and `backend/src/generate/steps/author.ts`; record `gen_version.kit` (`{version, parts}`, new nullable column in `backend/src/db.ts`). Tests in `backend/tests/generate/composer.test.ts` and `build.test.ts`
+- [ ] T126 [US9] User parts: add from a folder or `.zip` into `data/kit/<name>/`, validate, render the example twice in a throwaway project (`init`, `lint`, `check`, a 1 s draft render, frame hashes equal) and refuse with the findings otherwise; remove (user parts only, 409 for built-ins); export as `.zip`; in `backend/src/generate/kit.ts`. Tests with `fakeHyperframes` in `backend/tests/generate/kit.test.ts` (FR-039, R23)
+- [ ] T127 [P] [US9] Routes `GET/POST /api/generate/kit`, `GET/DELETE /api/generate/kit/:name`, `GET /api/generate/kit/:name/export` per contracts/api.md in `backend/src/generate/service.ts` and the router; tests in `backend/tests/generate/api.test.ts`
+- [ ] T128 [P] [US9] CLI `sorot gen kit`, `kit show <name>`, `kit add <folder|.zip>`, `kit export <name> [-o file]`, `kit remove <name>` per contracts/cli.md in `cli/src/generate.ts`; tests in `cli/tests/`
+- [ ] T129 [US9] Recipes name parts: `author.require` may list kit part names; a recipe naming a part the install lacks is unavailable with "kit part <name> isn't installed", in `backend/src/generate/service.ts` (`recipeAvailability`) and `backend/src/generate/recipe.ts`; tests in `backend/tests/generate/recipe.test.ts` (FR-039)
+
+## Phase 15: Capability description (R27, FR-047)
+
+**Goal**: every director call knows what this install supports, generated from what is installed.
+
+**Independent test**: `sorot gen capabilities` lists a newly added part with no restart; a plan
+naming a missing part, or a scene using WebGL where it isn't allowed, goes back to repair.
+
+- [ ] T130 [US9] `backend/src/generate/capabilities.ts`: `capabilitiesFor({ level, parts?, kit, config, connected, estimate })` returning `{level, levelMeans, kit: [{name, does, runtime}], kitDetail, seams, renderer: {hyperframes, runtimes, gpu, frameBudgetMs}, connections: {image, voice, vision}}`, with `seams` from `transitions.ts` and `runtimes` from the machine (`webgl` only when GPU or allowed by `maxLevel`). Snapshot test from a fixture kit in `backend/tests/generate/capabilities.test.ts`
+- [ ] T131 [US9] Send `capabilities` in the user JSON of every director call (storylines, plan, effects, scene, repair, fix, kit-level), plan calls with the one-line summary and scene calls with `kitDetail` for the shot's parts, in `backend/src/generate/director.ts`; nothing in `generator/prompts/` lists parts by hand. Tests in `backend/tests/generate/director.test.ts`
+- [ ] T132 [US9] Check answers against the capabilities: `PlanContext.kit` so `validatePlan` refuses an unknown part or setting in `look.parts` (`kit_unknown_part`, `kit_bad_setting`); `checkScene` refuses `SorotKit["x"]` for an unknown part and a WebGL context or the `three` part where the level or machine doesn't allow it; all sent back as repair problems, in `backend/src/generate/planSchema.ts` and `backend/src/generate/composer.ts`. Tests in `planSchema.test.ts` and `composer.test.ts`
+- [ ] T133 [P] [US9] `GET /api/generate/capabilities?level=` and `sorot gen capabilities [--level] [--json]` in `backend/src/generate/service.ts` and `cli/src/generate.ts`; tests in `api.test.ts` and `cli/tests/`
+
+## Phase 16: Director levels (R24 to R26, FR-042 to FR-044)
+
+**Goal**: a small model finishes a film at the kit level, a strong one goes higher, and a shot
+that fails drops a level instead of failing the build.
+
+**Independent test**: with a fake model that writes no valid scene HTML, a build finishes at the
+kit level with `level_drop` findings; with one that does, shots stay at `compose` or `free`.
+
+- [ ] T134 [US9] Table `gen_model_record` (model, level `kit`|`compose`|`free`|`plan`, asked, firstPass, repaired, dropped, malformed, ms, calibratedAt NULL, updatedAt; PK model+level) in `backend/src/db.ts` and `backend/src/store.ts`; `recordAnswer(model, level, outcome, ms)` in `backend/src/generate/levels.ts`, called from `Director.ask` outcomes (first pass, repaired, malformed, failed); tests in `backend/tests/generate/levels.test.ts`
+- [ ] T135 [US9] `chooseLevel({ pin, recipeLevel, maxLevel, cpuCap, record })`: the highest level ≤ `maxLevel` where the model passed first time in at least 60% of at least 8 shots and sent malformed answers in at most 10%; no record → `kit`; a pin wins. Add `author.level: auto|kit|compose|free` and `author.maxLevel: kit|compose|free` to `backend/src/generate/steps/schema.ts` with no entry in DEFAULTS (defaults `auto` and `free`, or the S7 CPU default, in code). Table tests in `levels.test.ts`
+- [ ] T136 [US9] Kit level: `Director.kitShot()` with the forced tool `submit_shot_kit` (`{shotId, layers: [{part, settings, fromSec, toSec, layer?}], text}`) validated against the capabilities, and `backend/src/generate/kitScene.ts` writing `compositions/shot-NN.html` (the composition root, the planned text in the markup, each layer mounting its part between its times, the timeline registered) so `checkScene` passes. Tests in `director.test.ts` and `backend/tests/generate/kitScene.test.ts`
+- [ ] T137 [US9] Compose and free rules in the scene and repair calls (`levelMeans` text; compose mounts parts and writes GSAP but no WebGL of its own; free may write canvas, WebGL or use the `three` part), enforced by `checkScene` per level, in `backend/src/generate/director.ts` and `composer.ts`; tests
+- [ ] T138 [US9] Fallback in `backend/src/generate/steps/author.ts` and `steps/check.ts`: a shot still failing after its repair rounds at level L is rebuilt at L-1 from the same shot spec, with a `level_drop` should-fix finding (shot, from, to, reason) and `gen_version.shotLevels` (`{shotId: {planned, built, reason}}`, new nullable column); only a failure at `kit` fails the build. Tests in `build.test.ts` (FR-044, SC-019)
+- [ ] T139 [US9] Frame budget: for shots using a `needs.gpu` part or free-level canvas/WebGL, time one `snapshot` of the busiest moment against `frameBudgetMs` (from the render estimate per machine) and drop a level with a `frame_budget` finding when over, in `backend/src/generate/steps/check.ts`; tests with a fake snapshot timing
+- [ ] T140 [US9] Calibration: three sample shots per level from a fixed brief, recorded with `calibratedAt`; `POST /api/generate/models/calibrate`, `GET /api/generate/models` (records and the level `auto` would pick), `PUT /api/generate/models/:model/level` (pin); CLI `sorot gen calibrate [--model]`, `gen models`, `gen models pin <model> <level|auto>`, in `backend/src/generate/levels.ts`, `service.ts` and `cli/src/generate.ts`; tests
+- [ ] T141 [US9] The plan carries each shot's `level` (from `chooseLevel` at plan time, enum `kit`|`compose`|`free`, validated in `planSchema.ts`) and the author step uses it unless the record changed; tests in `steps.test.ts` and `planSchema.test.ts`
+
+## Phase 17: Smooth motion and a finished look (R28, R30, FR-040, FR-041, FR-046)
+
+**Goal**: motion is measured, fast moves are blurred, each shot's look is precise, and the judge
+asks whether the film looks finished.
+
+**Independent test**: a planted 400 px one-frame jump gives `motion_jump` with the shot and time;
+the smooth builds of 2026-11-01 give none; CREATIVE answers `finished` and `motion`.
+
+- [ ] T142 [US9] `backend/src/generate/motion.ts`: per-frame differences of the draft from ffmpeg (scene score per frame plus `freezedetect`), per shot with 2 frames around each seam excluded; a jump is a frame whose difference is above k× the median of its neighbours (k from settings), a stall is a freeze of at least N frames between movements in a moving shot; findings `motion_jump` / `motion_stall` (must-fix above the hard threshold, should-fix otherwise) with shotId and fromSec. Fixture ffmpeg outputs in `backend/tests/fixtures/` and tests in `backend/tests/generate/motion.test.ts`
+- [ ] T143 [US9] The always-on TECHNICAL measure `motion` in `MEASURES` (`backend/src/generate/steps/schema.ts`, `always: true`, tunable thresholds) and `backend/src/generate/steps/technical.ts`, listed in the verdict's `measures`; tests in `technical.test.ts`
+- [ ] T144 [US9] `render.motionBlur: auto|on|off` (no DEFAULTS entry; `auto` in code): the composer sets `data-motion-blur="on"` on the root when a shot's look marks it fast or the setting is `on`, in `backend/src/generate/composer.ts` and `steps/render.ts`; tests
+- [ ] T145 [US9] Per-shot `look` `{description, values, parts?: [{part, settings}]}` in `PLAN_PROPS` (`director.ts`) and `planSchema.ts` (description and values free, parts checked against the kit), passed to the scene and kit-level calls; tests in `planSchema.test.ts`
+- [ ] T146 [US9] CREATIVE always adds `finished` ("Do the things in `shots` read as what they are, and look finished and intended?") and `motion` ("Does the motion in `shots` move smoothly and with weight?"), both passing `lintQuestion`, in `backend/src/generate/creative.ts`; update the shared judge replies in `backend/tests/helpers.ts` and the creative tests
+- [ ] T147 Spike S7, thresholds: tune `motion` k and N on the builds of 2026-11-01 (no findings) and a planted jump (one finding); calibrate deepseek-v4-flash, deepseek-v4-1-flash and one small local model and check their `auto` levels; record in `specs/001-2d-video-generator/research.md`
+
+## Phase 18: UI, docs and validation
+
+**Goal**: the owner sees and controls levels and the kit, and the success criteria are measured.
+
+- [ ] T148 [P] [US9] UI: the plan editor shows each shot's look and level (`frontend/src/components/generate/PlanEditor.tsx`); Settings → Generate gets a Kit panel (list, add `.zip`, export, remove) and a Models panel (record, `auto` level, pin, Calibrate) in `frontend/src/components/generate/KitPanel.tsx` and `GenerateConnections.tsx`; types in `frontend/src/types.ts`, fakes in `frontend/test/fakeApi.ts`, jest tests
+- [ ] T149 [P] Docs: `docs/generate.md` (kit, levels, capabilities, motion measure), a new `docs/generate-kit.md` (writing and sharing your own part), `AGENTS.md` rule lines, `CHANGELOG.md` under `## [Unreleased]`
+- [ ] T150 Run quickstart scenario 11 on the Docker app with a small local model and a strong hosted model; measure SC-015 to SC-020 on the 20-brief set; record in `specs/001-2d-video-generator/research.md`
+- [ ] T151 Gates: `cd backend; bun test --coverage; bun run typecheck`, `cd frontend; bun run test; bun run build`, `cd cli; bun test --coverage` all pass with at least 95% line and function coverage (`/test` → OPEN)
+
+### Part 3 dependencies
+
+- Phase 13 has no dependency and can ship on its own. T118's "malformed record" condition waits
+  for T134.
+- Phase 14 → 15 → 16 → 17 in order: capabilities need the registry (T121, T122); levels need
+  capabilities (T130 to T132); the kit level needs parts (T123) and the scene writer (T136).
+- T120 (spike, cost) before T135 sets the CPU `maxLevel`; T147 (thresholds) after T142 and T140.
+- Phase 18 last; T150 needs everything above.
+
+### Parallel opportunities (Part 3)
+
+- T115, T116, T117 and T119 touch different files: run together.
+- T123 and T124 (built-in parts) alongside T121, T122 and T126 (backend registry).
+- T127, T128 and T133 (routes and CLI) once their services exist.
+- T148 and T149 together at the end.
+
+### Strategy
+
+Ship Phase 13 first: it needs no new structure and should show on the next build (fewer repairs,
+less washed-out). Then the kit (14) and capabilities (15) as one increment the strong model can
+already use at `compose`; then levels (16), which is what makes small local models finish films;
+then motion and look (17); then UI, docs and the SC measurements (18).

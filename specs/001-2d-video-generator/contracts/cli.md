@@ -35,3 +35,15 @@ Publishing a generated export goes through the existing command:
 `sorot publish --generated <exportId>`, with the same required choices (flags or questions).
 
 Exit codes: 0 ok, 1 API error, 2 bad usage (the same as other `sorot` commands).
+
+### Kit and levels (FR-038 to FR-047)
+
+| Command | Does | Key flags |
+|---|---|---|
+| `sorot gen kit` / `kit show <name>` | list the installed parts (built-in and yours) / one part's settings and example | `--json` |
+| `sorot gen kit add <folder\|.zip>` | add your own part: validated and rendered twice before it is offered | |
+| `sorot gen kit export <name>` / `kit remove <name>` | share a part / remove one of yours | `-o <file.zip>` |
+| `sorot gen capabilities` | print what the director is told on this install | `--level kit\|compose\|free` `--json` |
+| `sorot gen models` | each model's record and the level `auto` picks | `--json` |
+| `sorot gen calibrate` | measure the connected model at each level (about 5 min) | `--model <name>` |
+| `sorot gen models pin <model> <level\|auto>` | pin a model's level | |

@@ -263,6 +263,95 @@ order**. These are the common steps; their order is the user's choice:
 12. **Docs**: `docs/generate.md` (design, recipes, measurements), `AGENTS.md` rules, journal entry,
     README, a "build your own pipeline" guide, and a "porting an agent pipeline" guide.
 
+## Part 3: Any look, any director (2026-11-01)
+
+**Spec**: User Story 9, FR-038 to FR-047, SC-015 to SC-020. **Research**:
+[R22 to R31, spike S7](research.md#part-3-any-look-any-director-2026-11-01). **Contracts**:
+[kit.md](contracts/kit.md) and the additions at the end of api.md, cli.md, recipe.md and
+director.md. **Data**: [data-model.md](data-model.md#additions-for-any-look-any-director-2026-11-01).
+
+### Summary
+
+The director may draw anything; Sorot adds a floor. An open **kit** of drawing and motion parts
+(browser modules with a manifest, built-in and user-added, proven deterministic before use) is
+loaded by the root composition. **Director levels** decide how much the model writes per shot:
+`kit` (the model fills part settings in a tool call and Sorot writes the scene), `compose` (the
+model writes the scene using parts) and `free` (any drawing code within the contract). The level
+comes from each model's **record** on this install or a calibration, and a shot that fails at its
+level is rebuilt one level down. Every call gets a **capability description** generated from the
+installed kit, the renderer, the machine and the connections, and answers are checked against it.
+TECHNICAL gains an always-on `motion` measure; CREATIVE always asks whether things look finished
+and move with weight. The authoring contract follows HyperFrames' own rules (R31).
+
+### Technical context (changes only)
+
+- **Dependencies**: Three.js, pinned, shipped as the built-in `three` kit part (offline). No other
+  new dependency; the motion measure uses ffmpeg, which Sorot already runs.
+- **Storage**: `gen_kit_part`, `gen_model_record`, two nullable `gen_version` columns; user parts
+  under `data/kit/`.
+- **Performance**: kit-level calls are small (one shot's layers), so a small local model stays fast;
+  WebGL and motion blur costs are measured in spike S7 and set `maxLevel` for CPU installs.
+- **Testing**: parts are tested by rendering their examples through the fake HyperFrames runner
+  (unit) and the real CLI in spike S7; the model record and level choice are pure functions with
+  table tests; the capability description is snapshot-tested from a fixture kit.
+
+### Constitution check (Part 3)
+
+| Principle | Check | Status |
+|---|---|---|
+| I. Local-first, host-ready | Parts ship in the install or are added by the owner; renders stay offline; `data/kit` sits under `DATA_DIR` | PASS |
+| II. Language boundaries | Part scripts are browser media code run by HyperFrames (like GSAP), not Sorot logic; level choice, capability, validation, scene writing and measures are Bun | PASS |
+| III. Test gate | Every new module is a pure function or goes through the injected `exec`/`fetch`; shared fakes extended (`fakeHyperframes` renders part examples, `fakeLlm` `Calls`) | PASS |
+| IV. Optional AI | Generate stays AI-only; the kit level lets a small local model finish a film, and falling back keeps a build alive when a model can't write advanced code | PASS |
+| V. Stable contracts | Additive tables, columns, JSON fields and routes; new step settings keep their defaults in code so existing projects don't re-run | PASS |
+| VI. Safe publishing | Unchanged | PASS |
+
+**Post-design re-check**: still PASS. User parts are the one new trust point; they follow the
+custom-command model (only the owner adds them; recipes can only name them; each is rendered twice
+and checked before use).
+
+### Source changes
+
+```text
+generator/kit/<name>/{part.json, part.js, example.json}   built-in parts (shade, shadow, depth, camera, motion, text-reveal, particles, image-place, three)
+backend/src/generate/kit.ts            registry: sync built-ins, add/validate/remove user parts, example render check
+backend/src/generate/capabilities.ts   the capability description per call, and the checks against it
+backend/src/generate/levels.ts         model record updates, auto level choice, calibration run
+backend/src/generate/kitScene.ts       writes compositions/shot-NN.html from a kit-level answer
+backend/src/generate/motion.ts         the `motion` measure (ffmpeg frame differences per shot)
+backend/src/generate/{composer,director,planSchema,steps/author,steps/check,steps/technical,creative}.ts   wired in
+cli/src/generate.ts                    kit, capabilities, models, calibrate
+frontend/src/components/generate/      plan shows each shot's look and level; Settings: kit list, models and calibrate
+generator/prompts/{authoring,story}.md HyperFrames contract fixes (R31); parts are never listed by hand
+```
+
+### Flow (build, with levels)
+
+```text
+plan (look + parts per shot, checked against capabilities) ─► approve
+   └► author: for each shot, level = pin ?? auto(record, recipe maxLevel, machine)
+        kit      ─► submit_shot_kit ─► kitScene writes HTML
+        compose  ─► submit_scene (mounts parts) ─► kit-call + plan-lock checks
+        free     ─► submit_scene (any drawing code) ─► same checks
+        ▼ repair rounds; still failing or over the frame budget ─► one level down (level_drop)
+   └► check ─► render (motion blur per plan) ─► TECHNICAL (+ motion) ─► CREATIVE (+ finished, motion)
+   └► model record updated from every answer
+```
+
+### Phases (for /speckit-tasks)
+
+13. **Contract and prompts first** (R31, R29): HyperFrames authoring rules, story guidance, error
+    position in repairs, plans in parts. No new UI; measurable on the next build.
+14. **Kit foundation** (R22, R23): part format, registry, built-in parts, root loading, user parts
+    with validation, CLI and API; spike S7 for WebGL and motion blur cost.
+15. **Capability description** (R27): generated per call, checks in plan and scene validation.
+16. **Levels** (R24 to R26): kit-level tool call and scene writer, compose and free rules, model
+    record, auto choice, calibration, fallback with `level_drop`.
+17. **Smooth motion and finished look** (R28, R30): `motion` measure, motion blur setting, plan
+    `look`, CREATIVE criteria.
+18. **UI, docs and validation**: plan shows look and level; Settings kit and models; docs; quickstart
+    scenario 11; SC-015 to SC-020 measured on the 20-brief set with a small local model and a
+    strong one.
 ## Complexity Tracking
 
 | Item | Why needed | Simpler alternative rejected because |
@@ -273,3 +362,5 @@ order**. These are the common steps; their order is the user's choice:
 | New optional connections (`image`, `voice`, `data`) | FR-017, FR-018 and FR-026 need providers; they follow the same `setting` pattern | Hard-coding one provider breaks local-first and the any-endpoint rule |
 | Recipes as composed pipelines + runner | FR-022 to FR-025, FR-035 to FR-037: anyone must be able to run their own process, in their own order, without code | Fixed order + on/off knobs can't express different orders; a free graph/workflow engine is more than any known flow needs and much harder to validate and keep within the two rules |
 | User-registered local commands | FR-036: people need checks Sorot doesn't have | Code inside recipes would make shared recipes unsafe to import |
+| Kit of browser parts, built-in and user-added (FR-038, FR-039) | HyperFrames draws nothing by itself; parts give every director a tested floor and users their own looks | HyperFrames registry blocks are demo compositions, not composable parts; a Sorot DSL is a new language for no gain at the free level |
+| Director levels with a per-install model record (FR-042 to FR-044) | Sorot runs models from small local ones to strong hosted ones; one way of writing scenes can't serve both | A single level either caps strong models or fails weak ones; a hand-kept model list goes stale and ignores the gateway |

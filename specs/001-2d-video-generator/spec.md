@@ -39,6 +39,13 @@ and their own instructions for each director step. Sorot doesn't impose anyone's
 ships a few neutral example recipes, and anyone running Sorot can build, tune, share and import
 their own without changing code. Only the two working rules above are fixed for every recipe.
 
+HyperFrames itself is a plain canvas: it plays whatever the scenes draw. Sorot is the platform on
+top of it. The director may draw any object, in any style, with any motion the brief calls for;
+Sorot does not limit what can be drawn. What Sorot adds is a **kit**: an open, extensible library
+of drawing and motion parts that raises the floor of quality, and **director levels**, so the same
+recipe gives a finished, smooth video with a small local model and a richer one with a strong
+model.
+
 ## Clarifications
 
 ### Session 2026-10-31
@@ -58,6 +65,19 @@ their own without changing code. Only the two working rules above are fixed for 
   a step library and custom pipelines (recipes) that anyone can compose, and that pipeline is one
   of them (FR-022 to FR-035). Nothing user-specific (voices, data sources, accounts) ships with
   Sorot.
+
+### Session 2026-11-01
+
+- Q: The first real builds looked flat. What may a film show? → A: Anything. Any object, any style
+  (flat, illustrated, isometric, painterly, rendered in depth...), any motion. Sorot is a general
+  platform: it fixes the quality rules (objects read as what they are, motion is smooth, the video
+  is finished), not a list of looks (FR-038 to FR-041). The director is always told what the install
+  supports (FR-047).
+- Q: Sorot runs with very different AI directors, from a small local model to a strong hosted
+  one. Must all of them work? → A: Yes. The same recipe must give a finished, smooth video with a
+  low-end director and a richer one with a high-end director. How much the director writes itself
+  depends on what its model can do, and a shot a model can't manage falls back to a simpler level
+  instead of failing the build (FR-042 to FR-044).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -261,12 +281,50 @@ cursor.
 2. **Given** a used but unposted idea, **When** the user resumes it by name, **Then** its
    existing project continues and the next-idea cursor does not move.
 
+### User Story 9 - Any look, smooth motion, with any director (Priority: P2)
+
+A user writes any brief, in any style they like. Whatever model they connected, the film is
+finished: the things on screen read as what they are, the motion is smooth, and nothing looks
+half-built. A small local model gets there by choosing and setting kit parts; a strong model may
+draw things the kit doesn't have. The user sees in the plan how each shot will be made.
+
+**Why this priority**: the first real builds were correct but flat. Looks decide whether a viewer
+keeps watching, and Sorot's users run anything from a laptop model to a hosted one.
+
+**Independent Test**: build a few briefs in different styles with a small and a strong model.
+Every video renders, plays smoothly and passes TECHNICAL; the strong model's are at least as good
+on the CREATIVE questions. Force one shot to fail at the highest level: it is rebuilt one level
+down and the build finishes.
+
+**Acceptance Scenarios**:
+
+1. **Given** a small model, **When** a video is built, **Then** every shot is made from kit parts
+   the director chose and set, and the video passes TECHNICAL without the model writing scene code.
+2. **Given** a strong model and a recipe that allows it, **When** a shot needs something the kit
+   doesn't have, **Then** the director may draw it itself; it renders the same on every run and
+   meets the same checks as kit shots.
+3. **Given** any level, **When** something moves, **Then** the motion is smooth and TECHNICAL
+   measures it.
+4. **Given** a shot that still fails its checks at its level after its repair rounds, **When** the
+   build continues, **Then** that shot is rebuilt one level down and a finding says so.
+5. **Given** a plan, **When** the user reads it, **Then** each shot shows its look and the level it
+   will be built at.
+6. **Given** a user who wants a part the kit lacks, **When** they add it to their install, **Then**
+   recipes and directors can use it like a built-in part, and it can be shared and imported.
 ### Edge Cases
+
+- A model too weak to write a valid scene, or valid JSON, at the level asked: the shot drops a
+  level (free, then compose, then kit), keeping what was planned; the drop is recorded and shown.
+- A scene that is too heavy for the machine (a CPU-only install draws GPU effects in software):
+  the render-time estimate says so before the build, the recipe can cap the level on such
+  installs, and a scene over its frame-time budget is rebuilt one level down rather than stalling
+  the render.
 
 - The brief is too vague or too long for the target length: the director says so in the plan and
   proposes a shorter story or a longer length instead of silently cutting content.
-- The brief asks for something outside 2D (photoreal footage, 3D characters, a real person's
-  likeness): the director explains it is not supported and offers the nearest 2D treatment.
+- The brief asks for something Sorot doesn't make (photoreal footage, a real person's likeness):
+  the director explains it is not supported and offers the nearest drawn treatment or a generated
+  image.
 - Facts, names, or numbers in the brief: the plan uses them exactly; the director never invents
   statistics or quotes and marks anything it added as an assumption.
 - The AI director is not configured: the Generate area says so and links to Settings; nothing
@@ -366,9 +424,9 @@ cursor.
   Generate area MUST show that it is unavailable and how to connect one, and clipping MUST keep
   working unchanged. When the director fails mid-project, work already done (brief, plans,
   versions) MUST be kept and the user MUST be able to retry once it is back.
-- **FR-017**: Visuals MUST be built from text, shapes, icons, charts, and the user's own uploads.
-  When an image-generation provider is connected in Settings, the director MAY also generate 2D
-  images for shots; the plan MUST mark which shots use generated images, and the user MUST be able
+- **FR-017**: Visuals MUST be built from anything the director can draw (FR-038), including text,
+  shapes, icons, charts, kit parts, and the user's own uploads. When an image-generation provider is connected in
+  Settings, the director MAY also generate 2D images for shots; the plan MUST mark which shots use generated images, and the user MUST be able
   to swap any generated image for an upload. Without a connected provider, plans MUST use only the
   other sources.
 - **FR-018**: Each plan MAY include a narration script. When the user turns narration on, the video
@@ -457,6 +515,46 @@ cursor.
   built and posted (US8). Outside agents MUST be able to do the same through the command line and
   API, with machine-readable output.
 
+- **FR-038**: The director MAY draw any object, in any style, with any motion the brief calls for;
+  Sorot MUST NOT restrict films to a fixed set of looks. Sorot MUST ship a **kit**: a library of
+  drawing and motion parts that work inside the install (no network at render time), render the
+  same on every run (FR-009), and are tested in Sorot. The kit raises the floor of quality; it is
+  never the limit of what can be drawn.
+- **FR-039**: The kit MUST be open: users MUST be able to add their own parts to their install,
+  and share and import them, the same way as recipes (FR-022 to FR-024). A recipe names the parts
+  it needs, and a recipe naming a part the install lacks shows as unavailable with the reason
+  (FR-025). Each build records the kit version and parts it used.
+- **FR-040**: Motion MUST be smooth at every level, and the TECHNICAL verdict MUST measure it (for
+  example sudden jumps or stalls of a moving thing between frames) and report a finding with the
+  shot and time.
+- **FR-041**: The plan MUST state each shot's look precisely enough for the build and the checks
+  to hold the scene to it (what is on screen, how it is drawn and lit, how it moves, how the camera
+  sees it), in whatever terms the shot needs.
+- **FR-042**: The director MUST work at a level per shot, from choosing and setting kit parts
+  (Sorot's code assembles the scene; the model writes no scene code), through composing scenes from
+  kit parts, to drawing freely, held to the same contract, determinism and checks. A recipe MUST be
+  able to set the highest level allowed, and the plan MUST show each shot's level.
+- **FR-043**: The level MUST be chosen automatically when the recipe allows it, from the connected
+  model's measured record on this install (how often its answers pass their checks first time, its
+  malformed answers, its speed) or from a short calibration the user can run in Settings. The owner
+  MAY pin a level per recipe or per model.
+- **FR-044**: A shot that still fails its checks after its repair rounds, or exceeds its
+  frame-time budget, MUST be rebuilt one level down, keeping the plan's words, timing and look as
+  closely as that level can, with a finding naming the drop. Only a failure at the lowest level
+  fails the build.
+- **FR-045**: Every structured director answer (plans, scenes, choices) MUST be checked in code; a
+  malformed answer MUST get one repair call that says what is wrong and where, and answers too
+  large for the model to keep valid MUST be asked for in smaller parts.
+- **FR-046**: The CREATIVE verdict MUST also ask whether the things on screen read as what they
+  are and look finished and intended, and whether the motion is smooth and has weight.
+- **FR-047**: Every director call MUST be told what this install supports, so the director plans
+  only what can be built: the kit parts available (built-in and user-added) with what each does,
+  its settings and a short example; the level the call works at and what that level may do; what
+  the renderer can run on this machine and its time budget; and which connections are on (images,
+  voice, vision). This description MUST be generated from what is actually installed and
+  connected, never written by hand, so a new part or connection reaches the director without code
+  changes. Plans and scenes MUST be checked against it, and anything outside it goes back to the
+  director to repair (FR-045).
 ### Key Entities
 
 - **Generation project**: one user idea; holds brief, format, length, language, style notes,
@@ -487,6 +585,17 @@ cursor.
 - **Concept**: the one visual mechanism a project uses, recorded per recipe for the novelty
   check.
 - **Exported video**: final file in the library, linked to its project and usable by publishing.
+- **Kit**: Sorot's versioned, offline library of drawing and motion parts, built-in and
+  user-added; the version and parts used are recorded with each build.
+- **Kit part**: one drawing or motion part, with what it does, its settings and an example; shared
+  and imported like a recipe.
+- **Capability description**: what this install supports, generated from the installed kit, the
+  renderer, the machine and the connections; given to every director call and used to check its
+  answers.
+- **Director level**: from choosing kit parts to drawing freely; the highest level a recipe
+  allows, the level chosen for each shot and why, and any drop made during the build.
+- **Model record**: per connected model, how its answers fared on this install (first-time pass
+  rate of plans and scenes, malformed answers, speed), used to choose the level.
 
 ## Success Criteria *(mandatory)*
 
@@ -522,14 +631,36 @@ cursor.
 - **SC-014**: A recipe exported from one install and imported into another runs there with no
   edits other than that install's own connections.
 
+- **SC-015**: The same 20-brief test set (SC-004) built with a small local model at kit level
+  gives at least 80% TECHNICAL PASS or REVIEW, with no build failing because of the model's code.
+- **SC-016**: In that test set, at least 90% of shots pass the CREATIVE question "the things on
+  screen read as what they are and look finished", at every level.
+- **SC-017**: No exported video has a motion-smoothness finding at must-fix level; at least 95%
+  have none at all.
+- **SC-018**: Built with a strong model allowed the highest level, the same briefs are judged at
+  least as good as at the kit level on the CREATIVE questions in at least 70% of pairs, and never
+  take longer than twice the kit build time.
+- **SC-019**: A shot that fails at a higher level is rebuilt at a lower level in 100% of cases,
+  so no build fails only because of a model's scene code.
+- **SC-020**: A kit part added on an install is offered to the director on its next call with no
+  code change, and in the test set no plan asks for something the install doesn't support without
+  being sent back to repair.
+
 ## Assumptions
 
 - The rendering engine is the open-source HyperFrames framework named by the owner, which turns
   web-style compositions into video and supports 9:16, 16:9, and 1:1; Sorot depends on it and on
   its machine requirements being installable locally and in the Docker image.
-- "2D" means motion graphics, kinetic text, flat illustration, icons, shapes, charts, simple
-  character-free or flat-character animation, and the user's own images; photoreal footage and 3D
-  scenes are out of scope.
+- The output is a short animated video whose every frame is drawn by Sorot's scenes, in any
+  style the brief calls for (isometric, for example, is one 2D style among many), plus the user's
+  own and generated images. Filmed or photoreal footage and real people's likeness stay out of
+  scope. (Changed on 2026-11-01: earlier wording limited it to flat 2D.)
+- Director models range from small local ones to strong hosted ones. Measured on 2026-11-01: one
+  hosted model needed about 1.9 repair rounds per scene, another about 0.3 but was 4× slower and
+  dropped long calls; two numeric plans of about 12,000 characters from the second came back as
+  malformed JSON. The levels (FR-042) and the drop rule (FR-044) exist for this range.
+- Heavy scenes (for example GPU-drawn effects) render on the GPU on GPU installs; on CPU installs
+  they are drawn in software and slower, so recipes can cap the level there (FR-042, FR-044).
 - The AI director uses Sorot's existing AI connections (LLM, and Jev for judgment where it fits)
   configured in Settings. Generated images need an extra image-generation provider, which is
   optional and onboarded in Settings like the other connections.
