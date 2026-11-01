@@ -255,15 +255,15 @@ the second; resuming the first by name doesn't move the cursor (quickstart §9).
 
 ## Phase 11: Polish and cross-cutting concerns
 
-- [ ] T093 [P] Write `docs/generate.md` (design, step library, recipes, the two rules, verdict rules, measurements from S2/S3/S4, voice compute rule) and update `docs/api-spec.md`, `docs/cli.md` and `docs/data-model.md`
-- [ ] T094 [P] Write the guides "Build your own pipeline" and "Porting an agent pipeline", with the placeholder example `docs/examples/recipes/agent-explainer.json`
+- [x] T093 [P] Write `docs/generate.md` (design, step library, recipes, the two rules, verdict rules, measurements from S2/S3/S4, voice compute rule) and update `docs/api-spec.md`, `docs/cli.md` and `docs/data-model.md`
+- [x] T094 [P] Write the guides "Build your own pipeline" and "Porting an agent pipeline", with the placeholder example `docs/examples/recipes/agent-explainer.json`
 - [ ] T095 Spike S6 / SC-012: rebuild one video made by an existing agent pipeline as a recipe from `docs/examples/recipes/agent-explainer.json` with local Settings; time the setup (< 30 min, no code) and compare TECHNICAL numbers with that pipeline's own checks; record in `specs/001-2d-video-generator/research.md`
 - [ ] T096 Spike S2 (final) and S5: measure delivery renders for a 60 s narrated recipe (SC-013) and the vision look review; record in `specs/001-2d-video-generator/research.md`
-- [ ] T097 [P] Add Generate rules to `AGENTS.md` (pointers to `docs/generate.md`, the two rules, the voice compute rule, `generator/` holds no Sorot logic) and a user-facing entry under `## [Unreleased]` in `CHANGELOG.md`
-- [ ] T098 [P] Add a journal entry for the feature in `docs/journal/`
-- [ ] T099 Extend the CI smoke test to check that the CPU image has Node and HyperFrames but no local-TTS packages, in `.github/workflows/ci.yml`
+- [x] T097 [P] Add Generate rules to `AGENTS.md` (pointers to `docs/generate.md`, the two rules, the voice compute rule, `generator/` holds no Sorot logic) and a user-facing entry under `## [Unreleased]` in `CHANGELOG.md`
+- [x] T098 [P] Add a journal entry for the feature in `docs/journal/`
+- [x] T099 Extend the CI smoke test to check that the CPU image has Node and HyperFrames but no local-TTS packages, in `.github/workflows/ci.yml`
 - [ ] T100 Run every scenario in `specs/001-2d-video-generator/quickstart.md` and fix what fails
-- [ ] T101 Run the full gate with `/test` (backend, frontend, CLI, ai-pipeline: 100% pass, ≥ 95% coverage, zero type errors) and fix until the verdict is OPEN
+- [x] T101 Run the full gate with `/test` (backend, frontend, CLI, ai-pipeline: 100% pass, ≥ 95% coverage, zero type errors) and fix until the verdict is OPEN
 
 ---
 

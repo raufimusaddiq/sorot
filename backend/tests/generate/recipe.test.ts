@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../../src/db";
@@ -148,6 +148,11 @@ describe("example recipes", () => {
     expect(examples.map((r) => r.id)).toContain("quick");
     for (const r of examples) expect(validateRecipe(r)).toEqual({ ok: true, errors: [], warnings: [] });
     expect(JSON.stringify(examples)).not.toMatch(/api[_-]?key|elevenlabs|voice id/i);
+    // the porting guide's template: valid, 10+ steps, and every value that is the owner's is a placeholder
+    const template = JSON.parse(readFileSync(join(GENERATOR_RECIPES, "..", "..", "docs", "examples", "recipes", "agent-explainer.json"), "utf8"));
+    expect(validateRecipe(template)).toEqual({ ok: true, errors: [], warnings: [] });
+    expect(template.steps.length).toBeGreaterThanOrEqual(10);
+    expect(JSON.stringify(template)).toMatch(/MY_DATA_SOURCE.*MY_VERIFY_COMMAND|MY_VERIFY_COMMAND.*MY_DATA_SOURCE/);
   });
 
   test("the narrated recipes put the voice before the plan and the concept after the storylines", () => {

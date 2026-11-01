@@ -42,6 +42,12 @@ Tests are on point and compressed (the owner dislikes test bloat): one test per 
 - Publishing (`publisher.ts`, `tebar.ts`; UI Publish panel and `sorot publish`): draft (copy per platform, Jev copy check, platform limits) → user choices (TikTok privacy or draft mode, YouTube title + made-for-kids — never auto-filled, in the CLI too: flags or questions) → upload + `POST /v1/posts` with `Idempotency-Key`; `social_post` row + exact body saved first, so retry can't double-post. A post stays in one Tebar workspace (profile): accounts are listed per profile with the `Tebar-Profile` header (the account object has no documented profile field), and upload/post send the same header (`social_post.profile_id`). TikTok direct posts need privacy unless `video_public_only`, checked before upload. Retry of a post on Tebar = `POST /posts/{id}/retry` (failed accounts only); cancel = `DELETE`. Metrics sync (`TEBAR_SYNC_HOURS`) → `clip_feedback` → training. Polling only.
 - Auto-discover web search defaults to Bing HTML (`WEB_SEARCH`); DuckDuckGo is blocked by Indonesian ISPs. Learned weights → `data/weights.json` (wins over `ai-pipeline/weights.json`).
 
+**Generate** (briefs → 2D videos with HyperFrames; design `docs/generate.md`, spec `specs/001-2d-video-generator/`)
+- Two rules in every recipe: **plan before building** (`plan` has a gate and precedes `author`) and **two verdicts** (TECHNICAL in code, CREATIVE by a fresh judge; neither can be turned off). Recipes are frozen per project; shipped examples in `generator/recipes/` are read-only.
+- Every model decision is a forced single tool call validated in code (one repair call); a recipe's prompt text changes what the director is told, never what it must return.
+- Voice compute rule: online engines (`elevenlabs`, `fish`, `openai`) everywhere; `local` (KittenTTS) only on GPU installs (`WHISPER_DEVICE` ≠ `cpu`), never in the CPU image (`LOCAL_TTS=1` build arg), never swapped silently. Publishing is never automatic.
+- `generator/` holds no Sorot logic: tool bundle (pinned `hyperframes`), prompts, fonts, `recipes/`, `presets.json`. Rules, gates and verdicts live in `backend/src/generate/`.
+
 **Pipeline & media**
 - Hooks are decided in Bun (`hooks.ts`, golden port of `find_hook`); segments carry `hookStart`/`hookEnd` (absolute s, null = no replay); render.py/subtitle.py run `find_hook` only for files without the keys.
 - `clipsForVideo` orders by `rank_pos` (not `rank`: SQL reserved); render.py indexes render-tier segments in file order, so render tiers come first in `scoredSegments`.

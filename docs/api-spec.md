@@ -574,3 +574,25 @@ Profiles one channel now → `{ "channel": Channel, "rejected": bool }`. 404 `no
 
 #### `POST /api/discover/channels/{id}/status`
 `{ "status": "paused" }` (`ACTIVE`, `PAUSED`, `REJECTED`) → the updated Channel. 400 on any other value, 404 `not found`.
+
+## Generate
+
+Briefs to finished 2D videos ([generate.md](generate.md)). All under `/api/generate`; the exact request
+and response shapes are in `specs/001-2d-video-generator/contracts/api.md`. Errors use the usual
+envelope; `409` means the step is not allowed in the project's current state, `400` an invalid body.
+
+| Area | Routes |
+|---|---|
+| Availability | `GET /status` (connections, presets, voice engines, compute) · `GET /steps` (the step library) |
+| Projects | `GET/POST /projects` · `GET/PATCH/DELETE /projects/{id}` · `POST /projects/{id}/retry` · `GET /projects/{id}/events` (progress) · `GET /projects/{id}/files[/{name}]` (mirrored files) |
+| Storylines and plan | `POST /projects/{id}/storylines` · `POST …/storylines/{index}/pick` · `PUT …/plan` · `POST …/plan/revise` · `POST …/plan/approve` · `POST …/steps/{stepId}/approve` |
+| Assets | `POST /projects/{id}/assets` · `DELETE /assets/{id}` |
+| Builds | `POST /projects/{id}/versions` · `GET /projects/{id}/estimate` · `GET /versions/{id}` · `POST /versions/{id}/cancel\|fix\|restore\|accept` · `GET /versions/{id}/draft` · `GET /versions/{id}/sheets/{name}` |
+| Facts | `GET/POST /projects/{id}/facts` · `POST …/facts/verify` · `PATCH/DELETE /facts/{id}` |
+| Recipes | `GET/POST /recipes` · `GET/PUT/DELETE /recipes/{id}` · `POST /recipes/validate\|import` · `GET /recipes/{id}/export` |
+| Ideas and runs | `GET/POST /ideas` · `GET/PATCH/DELETE /ideas/{id}` · `POST /run` · `POST /import-history` |
+| Export and publish | `POST /versions/{id}/export` · `GET /exports` · `GET /exports/{id}/file` · `POST /exports/{id}/publish/draft\|publish` · `GET /exports/{id}/posts` |
+
+A project's `status` is `RUNNING`, `WAITING` (at an owner gate or for your pick or approval), `BUILDING`, `BUILT`,
+`ACCEPTED`, `EXPORTED` or `FAILED`. Publishing a generated export uses the same Tebar flow as
+clips (`social_post.subject_kind = "generated"`).

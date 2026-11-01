@@ -6,6 +6,20 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 
 ## [Unreleased]
 
+### Generate: briefs to finished 2D videos
+- A new mode that makes a short video from a brief, with no source footage: storylines, an approved
+  plan, a HyperFrames build, a TECHNICAL (code) and a CREATIVE (fresh judge) verdict, fix rounds, then
+  export to a Generated library and publish through Tebar like a clip. Needs an LLM connection;
+  clipping is unchanged and never needs one.
+- Recipes: build your own pipeline from a step library (facts, script, voice, storylines, plan, build,
+  look, render, verdicts, export), in the Recipes window or as JSON; copy, share and import them. Your
+  own checks run as commands registered in Settings.
+- Narration with voice and word timing (ElevenLabs, Fish, OpenAI voices on every install; a local
+  KittenTTS voice on GPU installs only), facts checked against their sources, ready-made format presets.
+- Idea bank and unattended runs: `sorot gen run --recipe R` takes the next idea to an exported video;
+  `sorot gen import-history` brings in past work. Guides: `docs/generate.md`,
+  `docs/generate-recipes.md`, `docs/generate-porting.md`.
+
 ## [1.0.0] — 2026-10-29
 
 First release. Sorot turns long YouTube or local videos into vertical 9:16 clips with word-timed captions,
