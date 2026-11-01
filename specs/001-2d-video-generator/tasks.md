@@ -230,8 +230,8 @@ unsourced number fails TECHNICAL (quickstart §9 step 1 to 3).
 **Independent Test**: start from "2D story" and see its defaults in the plan; "data highlight"
 gives a chart shot with the exact numbers entered.
 
-- [ ] T086 [P] [US5] Define presets (`motion-graphic`, `story`, `explainer`, `card`, `data`, `promo`: length, pacing, block tags, plan hints) in `generator/presets.json`, loaded and passed to the `plan` call in `backend/src/generate/director.ts`, with tests in `backend/tests/generate/director.test.ts`
-- [ ] T087 [P] [US5] Add the preset picker to `BriefForm.tsx` and `--preset` to `sorot gen new`, with tests in `frontend/src/components/generate/__tests__/plan.test.tsx` and `cli/tests/generate.test.ts`
+- [X] T086 [P] [US5] Define presets (`motion-graphic`, `story`, `explainer`, `card`, `data`, `promo`: length, pacing, block tags, plan hints) in `generator/presets.json`, loaded and passed to the `plan` call in `backend/src/generate/director.ts`, with tests in `backend/tests/generate/director.test.ts`
+- [X] T087 [P] [US5] Add the preset picker to `BriefForm.tsx` and `--preset` to `sorot gen new`, with tests in `frontend/src/components/generate/__tests__/plan.test.tsx` and `cli/tests/generate.test.ts`
 
 ---
 

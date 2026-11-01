@@ -84,6 +84,31 @@ describe('BriefForm', () => {
     expect(onCreate.mock.calls[1]![0]).toMatchObject({ narration: true });
   });
 
+  it('a format preset sets the length, explains itself and is sent with the brief; without presets there is no picker', () => {
+    const onCreate = jest.fn();
+    const none = render(<BriefForm busy={false} onCreate={onCreate} presets={[]} />);
+    expect(screen.queryByLabelText('Format preset')).not.toBeInTheDocument();
+    none.unmount();
+
+    const presets = [
+      { id: 'story', label: '2D story', description: 'A small story with a turn.', targetSec: 45 },
+      { id: 'card', label: 'Quote or tip card', description: 'One sentence, read in seconds.', targetSec: 10 },
+    ];
+    render(<BriefForm busy={false} onCreate={onCreate} presets={presets} />);
+    fireEvent.change(screen.getByLabelText('Brief'), { target: { value: 'Ceritakan petani dan benih' } });
+    fireEvent.change(screen.getByLabelText('Format preset'), { target: { value: 'story' } });
+    expect(screen.getByLabelText('Length')).toHaveValue(45);
+    expect(screen.getByText(/A small story with a turn\. Usually 45 s\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
+    expect(onCreate.mock.calls[0]![0]).toMatchObject({ preset: 'story', targetSec: 45 });
+    fireEvent.change(screen.getByLabelText('Length'), { target: { value: '50' } });      // the owner can still change it
+    fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
+    expect(onCreate.mock.calls[1]![0]).toMatchObject({ preset: 'story', targetSec: 50 });
+    fireEvent.change(screen.getByLabelText('Format preset'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
+    expect(onCreate.mock.calls[2]![0]).not.toHaveProperty('preset');
+  });
+
   it('is disabled while busy, and file kinds follow the extension', () => {
     render(<BriefForm busy onCreate={jest.fn()} />);
     fireEvent.change(screen.getByLabelText('Brief'), { target: { value: 'x' } });

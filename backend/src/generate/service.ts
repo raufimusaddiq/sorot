@@ -21,6 +21,7 @@ import { BuildQueue, clipJobBusy, estimateBuild } from "./queue";
 import type { FactWeb } from "./facts";
 import { ImageClient } from "./images";
 import { Narrator } from "./narration";
+import { findPreset, loadPresets } from "./presets";
 import { RecipeBook } from "./recipes";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
 import { settingsOf } from "./steps";
@@ -52,7 +53,7 @@ export interface GenerateStatus extends Availability {
   vision: { configured: boolean };
   voice: { engines: string[]; localAvailable: boolean; localReason?: string };
   compute: "cpu" | "gpu";
-  presets: string[];
+  presets: Array<{ id: string; label: string; description: string; targetSec: number }>;
 }
 
 export interface CreateProjectInput {
@@ -192,7 +193,7 @@ export class GenerateService {
         ...(this.compute === "gpu" ? {} : { localReason: "the local voice needs a GPU install" }),
       },
       compute: this.compute,
-      presets: [],
+      presets: loadPresets(this.config.generatorDir).map(({ id, label, description, targetSec }) => ({ id, label, description, targetSec })),
     };
   }
 
@@ -395,7 +396,9 @@ export class GenerateService {
     const language = input.language ?? frozen.recipe.language ?? "id";
     if (language !== "id" && language !== "en") throw new HttpError(400, "language must be id or en");
     const { minSec, maxSec } = frozen.recipe.output;
-    const targetSec = input.targetSec ?? Math.min(Math.max(30, minSec), maxSec);
+    const preset = input.preset ? findPreset(this.config.generatorDir, input.preset) : null;
+    if (input.preset && !preset) throw new HttpError(400, `Unknown preset "${input.preset}" (${loadPresets(this.config.generatorDir).map((p) => p.id).join(", ")})`);
+    const targetSec = input.targetSec ?? Math.min(Math.max(preset?.targetSec ?? 30, minSec), maxSec);
     if (!Number.isInteger(targetSec) || targetSec < minSec || targetSec > maxSec) {
       throw new HttpError(400, `The length must be a whole number of seconds from ${minSec} to ${maxSec} for this recipe`);
     }

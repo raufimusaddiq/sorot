@@ -9,9 +9,11 @@ describe("generate API", () => {
     env = makeEnv({ llmBaseUrl: "http://llm/v1", llmModel: "m" });
     const { status, body } = await env.json("GET", "/api/generate/status");
     expect(status).toBe(200);
+    expect(body.data.presets.map((p: any) => p.id)).toEqual(["motion-graphic", "story", "explainer", "card", "data", "promo"]);
+    expect(body.data.presets[1]).toEqual({ id: "story", label: "2D story", description: expect.any(String), targetSec: 45 });
     expect(body).toMatchObject({
       status: "ok",
-      data: { available: true, reasons: [], hyperframes: { ok: true }, llm: { configured: true }, compute: "gpu", presets: [] },
+      data: { available: true, reasons: [], hyperframes: { ok: true }, llm: { configured: true }, compute: "gpu" },
     });
   });
 
