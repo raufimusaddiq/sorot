@@ -1,5 +1,5 @@
-# Local voice (tts.py): installed only on GPU installs (docker --build-arg LOCAL_TTS=1, or the installers in GPU mode).
-torch>=2.3
-transformers>=4.44,<5
-scipy>=1.11
+# Local voice (tts.py): KittenTTS 2. Installed only on GPU installs (docker --build-arg LOCAL_TTS=1, or the installers in GPU mode).
+# Use a PyTorch CUDA build that matches your driver; the CUDA image and the installers take care of it.
+kittenml
+soundfile
 numpy>=1.26

@@ -278,7 +278,7 @@ describe('GenerateConnections (Settings)', () => {
     render(<ConnectionsPanel api={api} />);
     const voice = await screen.findByRole('region', { name: 'Narration voice' });
     expect(within(voice).getByText(/No engine yet/)).toBeInTheDocument();
-    expect(within(voice).getByRole('option', { name: /Local, on this GPU — needs a GPU install/ })).toBeDisabled();
+    expect(within(voice).getByRole('option', { name: /Local KittenTTS, on this GPU — needs a GPU install/ })).toBeDisabled();
     fireEvent.change(within(voice).getByLabelText('Voice engine'), { target: { value: 'elevenlabs' } });
     await waitFor(() => expect(sent('PUT', '/api/settings/voice')[0]).toEqual({ engine: 'elevenlabs' }));
 
@@ -300,7 +300,8 @@ describe('GenerateConnections (Settings)', () => {
     state.tests.voice = { ok: true, ms: 40, detail: 'local spoke a test line' };
     const first = render(<ConnectionsPanel api={api} />);
     const voice = await screen.findByRole('region', { name: 'Narration voice' });
-    expect(within(voice).getByRole('option', { name: /Local, on this GPU$/ })).toBeEnabled();
+    expect(within(voice).getByRole('option', { name: /Local KittenTTS, on this GPU$/ })).toBeEnabled();
+    expect(within(voice).getByRole('note')).toHaveTextContent('no Indonesian voice');
     expect(within(voice).queryByLabelText('Voice API key')).not.toBeInTheDocument();
     fireEvent.click(within(voice).getByRole('button', { name: 'Test' }));
     expect(await within(voice).findByText('OK in 40 ms · local spoke a test line')).toBeInTheDocument();

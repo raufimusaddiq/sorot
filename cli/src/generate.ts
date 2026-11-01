@@ -447,6 +447,111 @@ async function factsCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
+// ---- ideas, unattended runs, files, past work -----------------------------------------
+
+const IDEAS = "/api/generate/ideas";
+
+function printIdeas(d: Deps, ideas: Json[]): void {
+  if (!ideas.length) return d.out("No ideas yet. Add one: sorot gen idea add BRIEF.md");
+  d.out(table(["ID", "STATUS", "SLUG", "BRIEF"], ideas.map((i) => [truncate(i.id, 14), i.status, truncate(i.slug, 24), truncate(String(i.brief).replace(/\s+/g, " "), 50)])));
+}
+
+async function ideasCmd(d: Deps, a: Args): Promise<number> {
+  const { ideas } = await d.api.get(`${IDEAS}${str(a, "status") ? `?status=${str(a, "status")}` : ""}`);
+  if (!json(d, a, ideas)) printIdeas(d, ideas as Json[]);
+  return 0;
+}
+
+/** sorot gen idea add BRIEF.md [--id IDEA-042] [--slug s] [--facts facts.md] | show <id> */
+async function ideaCmd(d: Deps, a: Args): Promise<number> {
+  const sub = a.positionals[2];
+  if (sub === "show") {
+    const got = await d.api.get(`${IDEAS}/${need(a, 3, "idea id")}`);
+    if (json(d, a, got)) return 0;
+    const i = got.idea as Json;
+    d.out(`${i.slug} (${i.id}): ${i.status}${i.projectId ? ` · video ${short(i.projectId)}` : ""}`);
+    d.out(String(i.brief));
+    if (i.flags) d.out(`Flags: ${JSON.stringify(i.flags)}`);
+    for (const f of got.facts as Json[]) d.out(`Fact: ${f.claim}${f.value ? ` (${f.value})` : ""} — ${f.sourceUrl}`);
+    return 0;
+  }
+  if (sub !== "add") throw new UsageError("Use: sorot gen idea add BRIEF.md | idea show <id>   (list them with: sorot gen ideas)");
+  const file = need(a, 3, "BRIEF.md");
+  const path = resolve(d.cwd, file);
+  if (!d.fs.exists(path)) throw new UsageError(`No such file: ${file}`);
+  const slug = str(a, "slug") ?? basename(file).replace(/\.[^.]*$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const body: Json = { slug, brief: d.fs.readText(path).trim() };
+  if (str(a, "id")) body.id = str(a, "id");
+  if (str(a, "facts")) body.facts = readFactsFile(d, str(a, "facts") as string);
+  const { idea } = await d.api.post(IDEAS, body);
+  if (!json(d, a, idea)) d.out(`Added ${idea.slug} (${idea.id}). Run it with: sorot gen run --recipe <id> --idea ${idea.id}`);
+  return 0;
+}
+
+const RUN_END = ["EXPORTED", "FAILED", "WAITING"];
+
+/**
+ * sorot gen run --recipe <id> [--idea ID] [--json]: an unattended run. Without --idea it takes the
+ * recipe's next new idea (and moves the cursor); with one, that idea is started or resumed. It waits
+ * for the end and exits 0 only when a video was exported.
+ */
+async function runCmd(d: Deps, a: Args): Promise<number> {
+  const { project } = await d.api.post("/api/generate/run", { recipeId: str(a, "recipe") ?? "quick", ...(str(a, "idea") ? { ideaId: str(a, "idea") } : {}) });
+  if (has(a, "no-wait")) {
+    if (!json(d, a, project)) d.out(`Started ${project.id}. Follow it with: sorot gen show ${short(project.id)}`);
+    return 0;
+  }
+  const deadline = Date.now() + WAIT_MS * 2;
+  let detail: Json;
+  for (;;) {
+    detail = await d.api.get(`${BASE}/${project.id}`);
+    const newest = (detail.versions as Json[])[0];
+    const technicalFailed = !!newest && newest.status === "BUILT" && detail.verdictStatuses?.[newest.id]?.TECHNICAL === "FAIL";
+    if (RUN_END.includes(detail.project.status) || technicalFailed || Date.now() > deadline) break;
+    await d.sleep(d.pollMs);
+  }
+  const p = detail.project as Json;
+  const exported = (detail.exports as Json[])[0];
+  if (json(d, a, detail)) return p.status === "EXPORTED" ? 0 : 1;
+  if (p.status === "EXPORTED" && exported) {
+    d.out(`Exported "${exported.title}": ${exported.id}\nPost it with: sorot publish --generated ${exported.id} --to <accounts>`);
+    return 0;
+  }
+  if (p.status === "FAILED") d.err(`The run failed: ${p.errorMessage}. Run it again to retry: sorot gen run --recipe ${str(a, "recipe") ?? "quick"} --idea ${p.ideaId ?? "<ID>"}`);
+  else if (p.status === "WAITING") d.err(`The run is waiting for you at a gate. Pass it in the window or: sorot gen approve-step ${short(p.id)} <step>`);
+  else d.err(`The run stopped with the video ${p.status}. See: sorot gen verdicts ${short(p.id)}`);
+  return 1;
+}
+
+/** sorot gen files <project> [<name>]: the mirrored files, listed or printed. */
+async function filesCmd(d: Deps, a: Args): Promise<number> {
+  const id = await projectId(d, need(a, 2, "project"));
+  const name = a.positionals[3];
+  if (name) {
+    d.out((await (await d.api.raw(`${BASE}/${id}/files/${name}`)).text()).trimEnd());
+    return 0;
+  }
+  const { files } = await d.api.get(`${BASE}/${id}/files`);
+  if (!json(d, a, files)) for (const f of files as string[]) d.out(f);
+  return 0;
+}
+
+/** sorot gen import-history <file.json>: past concepts and ideas (see docs/generate.md for the shape). */
+async function importHistoryCmd(d: Deps, a: Args): Promise<number> {
+  const file = need(a, 2, "file.json");
+  const path = resolve(d.cwd, file);
+  if (!d.fs.exists(path)) throw new UsageError(`No such file: ${file}`);
+  let body: unknown;
+  try {
+    body = JSON.parse(d.fs.readText(path));
+  } catch (e) {
+    throw new UsageError(`${file} is not valid JSON: ${(e as Error).message}`);
+  }
+  const r = await d.api.post("/api/generate/import-history", body);
+  if (!json(d, a, r)) d.out(`Imported ${r.concepts} concept${r.concepts === 1 ? "" : "s"} and ${r.ideas} idea${r.ideas === 1 ? "" : "s"}; ${r.skipped} already there.`);
+  return 0;
+}
+
 // ---- recipes -----------------------------------------------------------------------
 
 const RECIPES = "/api/generate/recipes";
@@ -590,6 +695,11 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   restore: restoreCmd,
   export: exportCmd,
   facts: factsCmd,
+  ideas: ideasCmd,
+  idea: ideaCmd,
+  run: runCmd,
+  files: filesCmd,
+  "import-history": importHistoryCmd,
   steps: stepsCmd,
   recipes: recipesCmd,
   recipe: recipeCmd,

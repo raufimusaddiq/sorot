@@ -13,7 +13,7 @@ import { Window } from './Window';
 const label = 'font-pixel text-xs text-fg block mb-1';
 const field = 'field w-full px-2 py-1.5';
 const ENGINE_NOTE: Record<string, string> = {
-  elevenlabs: 'ElevenLabs (word times come with the voice)', fish: 'Fish Audio', openai: 'OpenAI-compatible /audio/speech', local: 'Local, on this GPU',
+  elevenlabs: 'ElevenLabs (word times come with the voice)', fish: 'Fish Audio', openai: 'OpenAI-compatible /audio/speech', local: 'Local KittenTTS, on this GPU',
 };
 const LANGUAGES: Array<[code: string, name: string]> = [['id', 'Indonesian'], ['en', 'English']];
 
@@ -108,6 +108,11 @@ function VoiceCard({ api, view, onSaved }: { api: ApiClient; view: NonNullable<C
                 placeholder={view.apiKeySet ? `${view.apiKey} (leave empty to keep)` : 'not set'} />
             </label>
           </>
+        )}
+        {view.engine === 'local' && (
+          <p className="text-xs text-subtle" role="note">
+            KittenTTS speaks English with a built-in voice (Bruno unless you name another). It has no Indonesian voice: for Indonesian, put the path of a 5 to 30 s recording of one speaker in the field below and it is cloned, or use an online engine.
+          </p>
         )}
         {LANGUAGES.map(([code, name]) => (
           <label key={code}>

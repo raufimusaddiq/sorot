@@ -71,6 +71,9 @@ Generate (2D videos from a brief)
   gen revise <p> "<change>" | approve <p> | asset <p> <file>   a brief becomes storylines, then an approved plan
   gen build <p> [--no-watch] | verdicts <p|v> | cancel <p|v> | accept <p|v>   build a draft, see both verdicts
   gen facts <p> | facts add <p> "claim" --source URL | facts rm <p> <f> | facts verify <p>   facts with sources; gen new --facts facts.md --no-numbers
+  gen ideas | idea add BRIEF.md [--id --slug --facts] | idea show <id>   the idea bank
+  gen run --recipe <id> [--idea ID] [--json]   an unattended run: the next idea, or the named one
+  gen files <p> [name] | import-history <file.json>   the files of a video; bring in past concepts and ideas
   gen fix <p|v> [--finding id]... [--note ".."] [--shot s02] [--no-watch] | restore <p|v>   fix findings into a new version, restore a plan
   gen steps | recipes | approve-step <p> <step>   the step library, your pipelines, pass a step that waits for you
   gen recipe show|new|copy|edit|validate|export|import|delete <id|file>   build and share your own pipeline

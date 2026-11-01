@@ -315,6 +315,12 @@ export type GenCreateBody = {
   facts?: Array<{ claim: string; value?: string; sourceUrl: string }>; forbiddenNumbers?: true | string[];
 };
 
+/** A brief lined up for a later run; its status follows its video. */
+export type GenIdea = {
+  id: string; slug: string; brief: string; flags: Record<string, unknown> | null; status: 'new' | 'used' | 'built' | 'posted';
+  projectId: string | null; createdAt: string; updatedAt: string;
+};
+
 /** A claim and where it comes from; `corrected` keeps the value it had before in `originalValue`. */
 export type GenFact = {
   id: string; projectId: string | null; claim: string; value: string | null; sourceUrl: string | null;

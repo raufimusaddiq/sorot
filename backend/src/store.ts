@@ -379,6 +379,9 @@ export class Store {
   genFactsForProject(projectId: string) {
     return this.all<GenFact>("SELECT * FROM gen_fact WHERE project_id = ? ORDER BY created_at", projectId);
   }
+  genFactsForIdea(ideaId: string) {
+    return this.all<GenFact>("SELECT * FROM gen_fact WHERE idea_id = ? AND project_id IS NULL ORDER BY created_at", ideaId);
+  }
   updateGenFact(id: string, fields: Partial<GenFact>) { this.patch("gen_fact", id, { ...fields, updatedAt: now() }); }
   deleteGenFact(id: string) { this.db.query("DELETE FROM gen_fact WHERE id = ?").run(id); }
 

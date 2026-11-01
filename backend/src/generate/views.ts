@@ -1,4 +1,4 @@
-import type { GenRecipeRow, GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
+import type { GenIdea, GenRecipeRow, GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
 
 // API shapes: the rows with their JSON columns parsed, so the UI and the CLI never parse twice.
 // Keys stay the camelCase of the columns (constitution V).
@@ -28,6 +28,12 @@ export function versionView(v: GenVersion) {
 
 export function verdictView(v: GenVerdict) {
   return { ...v, findings: JSON.parse(v.findings) as unknown[], inputs: parse<Record<string, unknown>>(v.inputs) };
+}
+
+/** An idea with its flags parsed. */
+export function ideaView(i: GenIdea) {
+  const { flags, ...rest } = i;
+  return { ...rest, flags: parse<Record<string, unknown>>(flags) };
 }
 
 /** A recipe row with its recipe parsed. */
