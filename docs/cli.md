@@ -60,6 +60,25 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `logs [-f]` | Last 200 log lines (`-f` follows). |
 | `health`, `doctor` | Is the API up / check config, GPU, Docker or service, ffmpeg and the API, with a fix for each problem; also shows which of Jev, the LLM and Tebar are connected (optional, never a problem). |
 
+### Generate: `sorot gen`
+
+Briefs to finished 2D videos ([generate.md](generate.md); full flags in
+`specs/001-2d-video-generator/contracts/cli.md`). `--json` works on every one.
+
+| Command | What it does |
+|---|---|
+| `gen status` | Is Generate available, and what is missing (LLM, voice, vision). |
+| `gen new "<brief>" [--recipe R --facts F --preset P --length S --lang id\|en --narration --no-numbers]` | Create a video; prints the storylines or the plan. |
+| `gen list`, `gen show <p>`, `gen plan <p>`, `gen files <p> [name]` | Videos, one video's state, its plan as a shot table, its mirrored files. |
+| `gen storylines`, `pick <p> <1-3>`, `revise <p> "<request>"`, `approve <p>`, `approve-step <p> <step>` | Work the storylines and plan; pass an owner gate. |
+| `gen build <p>`, `verdicts <v>`, `fix <v>`, `cancel\|restore\|accept <v>` | Build, read the two verdicts, fix must-fix items, keep a version. |
+| `gen export <v> [--title --out]`, then `publish --generated <id>` / `posts --generated <id>` | Delivery render into the library; publish it like a clip. |
+| `gen steps`, `recipes`, `recipe show\|new\|copy\|edit\|validate\|export\|import` | The step library and your pipelines. |
+| `gen facts <p> [add\|rm\|verify]` | Facts with sources. |
+| `gen ideas`, `idea add <BRIEF.md> [--id --slug --facts]`, `idea show <id>` | The idea bank. |
+| `gen run --recipe R [--idea ID]` | An unattended run on the next (or named) idea; exit 0 only when a video was exported. |
+| `gen import-history <file.json>` | Bring in past concepts and ideas. |
+
 ### Import options
 
 | Flag | Pipeline option |

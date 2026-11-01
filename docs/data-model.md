@@ -179,3 +179,18 @@ The schema is created on startup by `openDatabase()` in `backend/src/db.ts`
 `ALTER TABLE` when missing (`LEGACY_COLUMNS`), and the old `tiktok_*` columns
 of `clip_feedback` are renamed to `post_*`, so a database from the Java-era
 backend opens unchanged. No migration tool.
+
+## Generate tables
+
+Briefs to finished 2D videos ([generate.md](generate.md)); columns in
+`specs/001-2d-video-generator/data-model.md`. All are created and migrated in `db.ts`.
+
+- `gen_recipe` — a saved recipe (JSON) and its idea-bank cursor; shipped examples are seeded as built-in.
+- `gen_idea` — the idea bank: brief, flags, `status` (`new` → `used` → `built` → `posted`), linked project.
+- `gen_project` — one video: brief, format, length, language, preset, a **frozen copy** of its recipe,
+  step state, storylines, current plan and accepted version.
+- `gen_plan` — numbered plan revisions. `gen_version` — one build (folder, draft path, status).
+- `gen_verdict` — TECHNICAL and CREATIVE per version, with findings. `gen_asset` — uploaded logos,
+  images, fonts and music. `gen_fact` — claims with source page, evidence and status.
+- `gen_export` — a final file in the Generated library. `gen_event` — the progress log.
+- `social_post.subject_kind` (`clip` or `generated`) says what a post's `clip_id` points at.

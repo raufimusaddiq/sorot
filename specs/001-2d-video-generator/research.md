@@ -639,3 +639,21 @@ moving an existing pipeline in easier:
 | S4 | Does the configured LLM reliably write one valid scene from the authoring contract? | On 10 sample shots, ≥ 8 pass lint within 3 repair rounds |
 | S5 | Can the configured LLM do the look review (vision) on HyperFrames review sheets? | Document the `llm.visionModel` choice; `look` stays `when: connection:vision` in the examples |
 | S6 | Golden check: rebuild one video made by the example agent pipeline as a recipe | Its `technical` numbers match that pipeline's own verify output; the recipe is saved as `docs/examples/recipes/agent-explainer.json` with placeholders, and SC-012 is timed |
+
+### Spike status at the end of the build (2026-11-01)
+
+Done: S1, S4 (10 of 10), S2 first pass (light 30 s scene). **Still open, because each needs a person,
+keys or the user's own pipeline** (the code paths are tested with fakes only):
+
+- **S3** (T067): listen-test KittenTTS 2 with a cloned Indonesian reference on the RTX 4060; record
+  ElevenLabs and Fish request and response fixtures. Until then the online engines are the Indonesian route.
+- **S6 / SC-012** (T095): rebuild one real agent-pipeline video from
+  `docs/examples/recipes/agent-explainer.json` (the template validates and has 15 steps); time the
+  setup against the 30-minute target and compare `sorot gen verdicts` numbers with that pipeline's checks.
+- **S2 final / S5 / SC-013** (T096): one unattended 60 s narrated delivery render (expect 6 to 10 s per
+  second of video), and the vision look review with the configured `llm.visionModel`.
+- **Quickstart run** (T100): scenarios 1 to 10 need a running server with an LLM, a voice key and
+  HyperFrames; the same flows are covered by the backend, CLI and frontend tests against fakes.
+
+Known limit: an export runs inside its HTTP request (server idle timeout 255 s); a long delivery
+re-render may need the request moved to a background job.

@@ -120,6 +120,10 @@ jobs:
           docker exec sorot /app/ai-pipeline/.venv/bin/python3 -c "import faster_whisper, cv2, numpy, lightgbm, sklearn; assert hasattr(cv2, 'CascadeClassifier'); print('pipeline imports ok')"
           docker exec sorot ffmpeg -hide_banner -version | head -n 1
           docker exec sorot yt-dlp --version
+          # Generate: the CPU image has Node and the pinned HyperFrames, and none of the local-voice packages
+          docker exec sorot node --version
+          docker exec sorot node /app/node_modules/hyperframes/bin/hyperframes.mjs --version
+          if docker exec sorot /app/ai-pipeline/.venv/bin/python3 -c "import kittenml" 2>/dev/null; then echo "local TTS packages must not be in the CPU image"; exit 1; fi
       - if: failure() && steps.changes.outputs.docker == 'true'
         name: Container logs
         run: docker logs sorot || true

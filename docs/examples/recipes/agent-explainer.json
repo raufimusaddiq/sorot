@@ -1,0 +1,41 @@
+{
+  "id": "agent-explainer",
+  "name": "Agent explainer (placeholder)",
+  "description": "A template for porting a multi-step agent pipeline: sourced facts, script, voice, timing, three storylines, a named visual idea, a numeric plan, a bespoke build, a self-review, a delivery render, your own verifier as a command, both verdicts and an export. Every value that is yours (data source, command name, voice) is a placeholder: set them in Settings, then change the names here.",
+  "version": 1,
+  "language": "id",
+  "output": { "width": 1080, "height": 1920, "fps": 30, "minSec": 45, "maxSec": 60 },
+  "rules": {
+    "layout": { "safeTopPx": 250, "safeBottomPx": 340 },
+    "readability": { "minTextPx": 44, "holdBaseSec": 0.6, "holdPerWordSec": 0.28 },
+    "defaultsAudit": ["a centred title on a dark gradient", "every element fading in from below", "a generic icon grid"],
+    "content": [
+      { "id": "education_not_advice", "kind": "judge", "blocking": true, "question": "Does what appears in `shots` tell the viewer to buy, sell or hold a specific asset?" }
+    ]
+  },
+  "steps": [
+    { "use": "facts", "with": { "mode": "research", "sources": ["MY_DATA_SOURCE"], "maxSteps": 8 } },
+    { "use": "script", "with": { "spellNumbers": true, "maxWords": 170 } },
+    { "use": "voice", "with": { "failClosed": true } },
+    { "use": "align", "with": { "source": "auto" } },
+    { "use": "storylines", "gate": "director", "with": { "count": 3, "requireBold": true } },
+    { "use": "concept", "with": { "novelty": { "lastN": 30 }, "mechanismTest": true } },
+    { "use": "plan", "gate": "director", "with": { "numeric": true, "motionPlan": true, "timingFrom": "voice", "blocks": false } },
+    { "use": "author", "with": { "repairRounds": 3, "concurrency": 3 } },
+    { "use": "check", "with": { "warnings": "fix-or-hold", "rounds": 3 } },
+    { "use": "look", "when": "connection:vision", "with": { "rounds": 2, "audit": true } },
+    { "use": "render", "with": { "quality": "delivery" } },
+    { "use": "command", "with": { "name": "MY_VERIFY_COMMAND", "counts": "technical" } },
+    { "use": "technical", "with": { "measures": { "speechMatch": { "maxWordErrorRate": 0.25 }, "voiceRoute": true, "sourcedNumbers": true } } },
+    {
+      "use": "creative",
+      "with": {
+        "criteria": [
+          { "id": "opening", "question": "Does `opening` hold a stranger's eye from the very first moment?" },
+          { "id": "sync", "question": "Does what appears in `shots` follow what the voice says, beat by beat?" }
+        ]
+      }
+    },
+    { "use": "export", "with": { "mode": "copy", "quality": "delivery" } }
+  ]
+}
