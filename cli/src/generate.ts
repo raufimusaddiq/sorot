@@ -66,6 +66,7 @@ function printPlan(d: Deps, detail: Json): void {
   d.out(shotTable(plan));
   d.out(`Total ${plan.totalSec} s of ${detail.project.targetSec} s`);
   for (const note of plan.assumptions as string[]) d.out(`Assumed: ${note}`);
+  for (const note of (plan.effectNotes ?? []) as string[]) d.out(`Effect: ${note}`);
   if (!current.approvedAt) d.out(`Edit: sorot gen plan ${short(detail.project.id)} --edit   ·   change: sorot gen revise ${short(detail.project.id)} "…"   ·   approve: sorot gen approve ${short(detail.project.id)}`);
 }
 
@@ -268,7 +269,7 @@ function printVerdicts(d: Deps, verdicts: Json[]): void {
     const live = all.filter((f) => f.state !== "kept").sort((a, b) => SEVERITY[a.severity as keyof typeof SEVERITY] - SEVERITY[b.severity as keyof typeof SEVERITY]);
     if (!live.length) d.out("  nothing to fix");
     for (const f of live) {
-      d.out(`  ${String(f.severity).padEnd(10)} ${where(f)}${where(f) ? "  " : ""}${f.code}  ${f.description}`);
+      d.out(`  ${String(f.severity).padEnd(10)} ${where(f)}${where(f) ? "  " : ""}${f.code}  ${f.description}${Number(f.count) > 1 ? ` (x${f.count})` : ""}`);
       if (f.suggestedFix) d.out(`  ${"".padEnd(10)} Fix: ${f.suggestedFix}`);
     }
     for (const f of all.filter((x) => x.state === "kept")) d.out(`  kept       ${f.code}${f.shotId ? ` (${f.shotId})` : ""}: ${f.keptReason ?? "no reason given"}`);

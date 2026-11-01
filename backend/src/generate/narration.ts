@@ -111,7 +111,7 @@ export class Narrator {
   private async remote(engine: string, o: { text: string; voice: string; model: string; speed?: number; signal?: AbortSignal }): Promise<{ bytes: Uint8Array; timings: SpokenWord[] | null }> {
     const c = this.config;
     const base = (c.voiceBaseUrl || DEFAULT_BASE[engine] || "").replace(/\/+$/, "");
-    if (!o.voice) throw new VoiceError("Set a voice id for this language in Settings");
+    if (!o.voice && engine !== "fish") throw new VoiceError("Set a voice id for this language in Settings");   // Fish speaks with its default voice without one
     let url: string;
     let headers: Record<string, string>;
     let body: Record<string, unknown>;
@@ -122,7 +122,7 @@ export class Narrator {
     } else if (engine === "fish") {
       url = `${base}/v1/tts`;
       headers = { Authorization: `Bearer ${c.voiceApiKey}`, "Content-Type": "application/json", model: o.model };   // Fish takes the model as a header
-      body = { text: o.text, reference_id: o.voice, format: "mp3", ...(o.speed ? { prosody: { speed: o.speed } } : {}) };
+      body = { text: o.text, ...(o.voice ? { reference_id: o.voice } : {}), format: "mp3", ...(o.speed ? { prosody: { speed: o.speed } } : {}) };
     } else {
       url = `${base}/audio/speech`;
       headers = { Authorization: `Bearer ${c.voiceApiKey}`, "Content-Type": "application/json" };

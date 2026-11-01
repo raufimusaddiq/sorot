@@ -91,7 +91,7 @@ describe("gen verdicts, cancel, accept", () => {
     verdict("TECHNICAL", "FAIL", [
       finding({ severity: "polish", code: "craft", description: "A nit." }),
       finding({ severity: "must-fix", shotId: "s02", fromSec: 4.2, toSec: 5, code: "text_below_floor", description: "Text is too small.", suggestedFix: "Make it 40 px." }),
-      finding({ severity: "should-fix", shotId: "s03", fromSec: 12, code: "sweep_static", description: "Nothing moves." }),
+      finding({ severity: "should-fix", shotId: "s03", fromSec: 12, code: "sweep_static", description: "Nothing moves.", count: 3 }),
       finding({ severity: "should-fix", shotId: "s01", code: "dead_stretch", state: "kept", keptReason: "a still title card" }),
       finding({ severity: "should-fix", code: "late", state: "kept" }),
     ]),
@@ -103,7 +103,7 @@ describe("gen verdicts, cancel, accept", () => {
     expect(h.out).toEqual([
       "Version 2: BUILT", "TECHNICAL: FAIL  (judged by code)",
       "  must-fix   s02 · 4.2 to 5 s  text_below_floor  Text is too small.", "             Fix: Make it 40 px.",
-      "  should-fix s03 · 12 s  sweep_static  Nothing moves.", "  polish     craft  A nit.",
+      "  should-fix s03 · 12 s  sweep_static  Nothing moves. (x3)", "  polish     craft  A nit.",
       "  kept       dead_stretch (s01): a still title card", "  kept       late: no reason given",
       "CREATIVE: not judged yet",
     ]);

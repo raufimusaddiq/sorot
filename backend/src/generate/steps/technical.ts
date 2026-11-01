@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { now } from "../../store";
 import { isCreative, readFindings, saveFindings, type NewFinding } from "../findings";
 import {
-  audioFindings, contentFindings, forbiddenNumberFindings, outputFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, sourcedNumberFindings, speechFindings, verdictOf, voiceRouteFindings, type HeardWord, type Probe, type SpokenLine, type Volume,
+  audioFindings, contentFindings, effectFindings, forbiddenNumberFindings, minEffectsFor, outputFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, sourcedNumberFindings, speechFindings, verdictOf, voiceRouteFindings, type HeardWord, type Probe, type SpokenLine, type Volume,
 } from "../technical";
 import { sizeFor } from "../composer";
 import { allowedTexts } from "../facts";
@@ -105,6 +105,8 @@ export const run: RunFn = async (ctx) => {
   }
 
   own.push(...readabilityFindings(plan, { holdBaseSec: num(readability.holdBaseSec, 0.5), holdPerWordSec: num(readability.holdPerWordSec, 0.25) }));
+  // Effects (always checked): the floor is the plan step's minEffects.
+  own.push(...effectFindings(plan, minEffectsFor(plan, ctx.recipe.steps.find((s) => s.use === "plan")?.with?.minEffects)));
   if (planHasSound(plan) && media) {
     const level = media.streams.some((s) => s.codec_type === "audio") ? await volume(ctx, file as string) : null;
     own.push(...audioFindings(media, level, { minMeanVolumeDb: num(audio.minMeanVolumeDb, -40), maxTruePeakDb: num(audio.maxTruePeakDb, -1) }));
@@ -139,7 +141,7 @@ export const run: RunFn = async (ctx) => {
     id: crypto.randomUUID(), versionId: version.id, kind: "TECHNICAL", status, findings: JSON.stringify(all), judgedBy: "code",
     inputs: JSON.stringify({
       render: { kind: version.renderKind, path: file }, sources: [...new Set(all.map((f) => f.source))], shots: plan.shots.length,
-      measures: ["output", "planText", "layout", "readability", "firstFrame", ...(planHasSound(plan) ? ["audio"] : []), ...(voice && flag(measures.voiceRoute) ? ["voiceRoute"] : []), ...(voice && flag(measures.speechMatch) ? ["speechMatch"] : []), ...(flag(measures.sourcedNumbers) ? ["sourcedNumbers"] : [])],
+      measures: ["output", "planText", "layout", "readability", "firstFrame", "effects", ...(planHasSound(plan) ? ["audio"] : []), ...(voice && flag(measures.voiceRoute) ? ["voiceRoute"] : []), ...(voice && flag(measures.speechMatch) ? ["speechMatch"] : []), ...(flag(measures.sourcedNumbers) ? ["sourcedNumbers"] : [])],
     }),
     createdAt: now(),
   });

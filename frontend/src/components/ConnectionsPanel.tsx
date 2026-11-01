@@ -13,7 +13,7 @@ import { Toggle } from './ImportOptions';
 import { Window } from './Window';
 
 type CoreKind = 'llm' | 'jev' | 'tebar';
-type FieldDef = { key: 'baseUrl' | 'url' | 'model'; label: string; placeholder: string };
+type FieldDef = { key: 'baseUrl' | 'url' | 'model' | 'genMaxTokens'; label: string; placeholder: string };
 
 const CARDS: Record<CoreKind, { title: string; bar: string; about: string; fallback: string; fields: FieldDef[] }> = {
   llm: {
@@ -23,6 +23,8 @@ const CARDS: Record<CoreKind, { title: string; bar: string; about: string; fallb
     fields: [
       { key: 'baseUrl', label: 'Base URL', placeholder: 'http://localhost:11434/v1' },
       { key: 'model', label: 'Model', placeholder: 'qwen2.5:7b' },
+      // Generate writes whole scene files: a reasoning model needs far more than a clip review.
+      { key: 'genMaxTokens', label: 'Generate token budget', placeholder: '32000' },
     ],
   },
   jev: {

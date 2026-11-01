@@ -37,8 +37,8 @@ export interface StepContext {
   config: AppConfig;
   /** Is this connection (llm, jev, image, voice, vision) set up? */
   connected: (connection: string) => boolean;
-  /** Names and tags of the HyperFrames registry blocks (empty when the CLI can't list them). */
-  catalog: () => Promise<Array<{ name: string; tags: string[] }>>;
+  /** Names and tags of the HyperFrames registry blocks, with their kind and description (empty when the CLI can't list them). */
+  catalog: () => Promise<Array<{ name: string; tags: string[]; type?: string; description?: string }>>;
   signal?: AbortSignal;
   /** Percent done of this step (shown on the version while it builds). */
   progress: (percent: number, label?: string) => void;

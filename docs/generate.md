@@ -79,18 +79,40 @@ render, …) are checked when a recipe is saved or imported.
 
 **TECHNICAL** is code. Always on: output size, fps and length window, every planned line present,
 layout safe areas, readability (text size, hold time), first frame, audio levels when there is
-sound, and forbidden numbers. Optional: `speechMatch` (the voice says the script, by word error
+sound, forbidden numbers, and effects (blocks, non-cut transitions and shots with light, blur,
+depth or glow; fewer than the plan step's `minEffects`, 3 by default for 15 s or longer, is a
+should-fix). Optional: `speechMatch` (the voice says the script, by word error
 rate), `voiceRoute` (engine and voice are the ones configured), `sourcedNumbers`, dead stretches,
 blocking content rules (judged by Jev, then the LLM, else a should-fix "unjudged"), and `command`
 findings. A finding is `must-fix` or `should-fix`; any must-fix is a FAIL.
 
 **CREATIVE** is a fresh judge (Jev first, then the LLM) answering the recipe's criteria on the
-rendered frames. Sorot always adds a main-message question; a recipe's `fail: "main"` marks which
+rendered frames. Sorot always adds a main-message question and a "does it feel flat" risk; a recipe's `fail: "main"` marks which
 failure fails the verdict. `command-creative:*` findings count here.
 
 **Fix rounds**: fix the must-fix items (or ones you pick, with a note and a shot), up to the
 recipe's `autoFixRounds`; each fix is a new version, and `restore` returns to an earlier one.
 A version can be accepted only when its build is finished and TECHNICAL is not FAIL.
+
+## Effects and transitions
+
+After the plan is written the director chooses its effects with tools, one call at a time, each
+checked in code: `search_catalog` (Sorot's transitions and, when the recipe allows blocks,
+HyperFrames' registry), `set_transition`, `add_block` and `set_look` (light, blur, depth and glow as
+exact values). Every choice and its reason lands in the plan's "Effects the director chose", so you
+approve them with the plan. The pass is bounded (`effects.maxSteps`, `effects.tokenBudget`); when it
+fails the plan stands as written.
+
+A shot's `transition` is how it enters from the one before: `cut`, `fade`, `blur`, `flash`,
+`light-leak`, `wipe`, `zoom` or `iris`. Sorot writes each seam on the root timeline itself (half in
+each shot, so the plan's timing never moves); HyperFrames' shader transition blocks are whole demo
+compositions and cannot sit between shots.
+
+## Retries and failures
+
+A step before the build that failed (a voice that could not be made, say) is never skipped: the
+build is refused until the video is retried. A retry reuses the approved plan unless something the
+plan was made from changed. Fish speaks with its default voice when no voice id is set.
 
 ## The voice compute rule
 

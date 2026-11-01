@@ -8,6 +8,7 @@ const ctx = (over: Partial<PlanContext> = {}): PlanContext => ({
 });
 const shots = (plan: Record<string, any>, f: (s: any[]) => any[]) => ({ ...plan, shots: f(plan.shots) });
 const first = (f: (s: any) => any) => (p: Record<string, any>) => shots(p, (s) => [f(s[0]), ...s.slice(1)]);
+const second = (f: (s: any) => any) => (p: Record<string, any>) => shots(p, (s) => [s[0], f(s[1]), ...s.slice(2)]);
 
 describe("validatePlan", () => {
   test("a good plan passes and is normalised from the project, not from the model", () => {
@@ -31,17 +32,37 @@ describe("validatePlan", () => {
     ["total 15% over", first((s) => ({ ...s, durationSec: 14.5 })), {}, "add up to 34.5 s; the target is 30 s (allowed 27 to 33 s)"],
     ["total too short", (p) => shots(p, (s) => s.slice(0, 2)), {}, "add up to 20 s"],
     ["title of 7 words", first((s) => ({ ...s, text: [{ role: "title", value: "satu dua tiga empat lima enam tujuh" }] })), {}, "has 7 words; the limit is 6"],
+    ["title of 7 words around a symbol", first((s) => ({ ...s, text: [{ role: "title", value: "satu dua tiga = empat lima enam tujuh" }] })), {}, "has 7 words; the limit is 6"],
     ["a text line over 120 chars", first((s) => ({ ...s, text: [{ role: "body", value: "x".repeat(121) }] })), {}, "121 characters; the limit is 120"],
     ["no visual description", first((s) => ({ ...s, visual: {} })), {}, "visual.description is required"],
     ["duplicate ids", (p) => shots(p, (s) => s.map((x) => ({ ...x, id: "s01" }))), {}, 'the id "s01" is used twice'],
     ["a font that is not available", (p) => ({ ...p, look: { ...p.look, fonts: ["Comic Sans"] } }), {}, "not available: Comic Sans"],
     ["blocks when the recipe forbids them", (p) => ({ ...p, blocks: ["data-chart"] }), { blocksAllowed: false }, "allow registry blocks"],
     ["an unknown block", (p) => ({ ...p, blocks: ["nope"] }), { blocks: ["data-chart"] }, "unknown blocks: nope"],
+    ["a transition Sorot can't build", second((s) => ({ ...s, transition: "page curl" })), {}, "transition \"page curl\" isn't one Sorot can build; use one of cut, fade"],
+    ["an effect out of range", second((s) => ({ ...s, effects: { blurPx: 90 } })), {}, "effects.blurPx is a number from 0 to 40"],
+    ["a light without its angle", second((s) => ({ ...s, effects: { light: { intensity: 0.5, color: "warm" } } })), {}, "effects.light.color is a hex colour"],
+    ["effects that are not an object", second((s) => ({ ...s, effects: "lots" })), {}, "effects must be an object"],
+    ["depth in halves", second((s) => ({ ...s, effects: { depthLayers: 2.5 } })), {}, "effects.depthLayers is a whole number"],
   ])("refuses: %s", (_name, mutate, over, message) => {
     const check = validatePlan(mutate(samplePlan()), ctx(over));
     expect(check.ok).toBe(false);
     expect(check.plan).toBeNull();
     expect(check.errors.join("\n")).toContain(message);
+  });
+
+  test("transitions are named kinds (older words map onto them; the first shot always cuts); effects and the director's notes are kept", () => {
+    const p = shots({ ...samplePlan(), effectNotes: ["s02 flash: the number lands"] }, (s) => [{ ...s[0], transition: "wipe" }, { ...s[1], transition: "Crossfade", effects: { light: { angleDeg: 300, intensity: 0.6, color: "#FFD580" }, glowPx: 24, reason: "the coin shines" } }, { ...s[2], transition: "light-leak" }]);
+    const plan = validatePlan(p, ctx()).plan!;
+    expect(plan.shots.map((s) => s.transition)).toEqual(["cut", "fade", "light-leak"]);
+    expect(plan.shots[1]!.effects).toEqual({ light: { angleDeg: 300, intensity: 0.6, color: "#FFD580" }, glowPx: 24, reason: "the coin shines" });
+    expect(plan.shots[2]!.effects).toBeUndefined();
+    expect(plan.effectNotes).toEqual(["s02 flash: the number lands"]);
+    expect(validatePlan(second((s) => ({ ...s, effects: { reason: "none really" } }))(samplePlan()), ctx()).plan!.shots[1]!.effects).toBeUndefined();   // a reason alone is no effect
+  });
+
+  test("a symbol between words is not a word: a 6-word title with \"=\" passes", () => {
+    expect(validatePlan(first((s) => ({ ...s, text: [{ role: "title", value: "Daun yang pergi = air yang tinggal" }] }))(samplePlan()), ctx()).ok).toBe(true);
   });
 
   test("a font match ignores case; a known block passes; a block on a shot is cleared when blocks are off", () => {
@@ -62,11 +83,13 @@ describe("validatePlan", () => {
     expect(validatePlan(noFallback, ctx()).plan!.shots[0]!.visual.fallbackVisual).toBe("visual 1");
   });
 
-  test("narration is kept only when it is on and a voice can speak it", () => {
+  test("narration follows the project: on when it is on and a voice can speak it, whatever the director says", () => {
     const narrated = { ...samplePlan({ narrationScript: "Halo dunia", sound: { music: "none", narration: true } }), shots: samplePlan().shots.map((s: any) => ({ ...s, narration: "kata" })) };
     const on = validatePlan(narrated, ctx({ narration: true })).plan!;
     expect(on).toMatchObject({ narrationScript: "Halo dunia", sound: { narration: true } });
     expect(on.shots[0]!.narration).toBe("kata");
+    const silent = validatePlan({ ...narrated, sound: { music: "none", narration: false } }, ctx({ narration: true }));   // the director can't turn the owner's voice off
+    expect([silent.plan!.sound.narration, silent.notes]).toEqual([true, ["narration stays on: the project asks for a voice"]]);
     const off = validatePlan(narrated, ctx());
     expect(off.plan).toMatchObject({ narrationScript: null, sound: { narration: false } });
     expect(off.plan!.shots[0]!.narration).toBeNull();
@@ -132,6 +155,10 @@ describe("validatePlan: a numeric plan", () => {
       shadow: "0 8px 24px rgba(0,0,0,.4)", easing: { enter: "power3.out", exit: "cubic-bezier(0.4, 0, 1, 1)" }, durationsFrames: { enter: 18, hold: 60 }, staggerFrames: { words: 4 },
     });
     expect(check.plan!.shots[1]).toMatchObject({ frames: [300, 600], heroMove: "the seed grows", reads: "a seed becomes a tree", handoff: "the tree's shadow", motionPlan: [{ token: "enter", fromFrame: 300, toFrame: 318, target: "title" }] });
+    // frames counted from the start of the shot are read that way when only that reading fits
+    const local = numericPlan();
+    local.shots[1].motionPlan = [{ token: "enter", fromFrame: 0, toFrame: 18, target: "title" }];
+    expect(validatePlan(local, numericCtx()).plan!.shots[1]!.motionPlan).toEqual([{ token: "enter", fromFrame: 300, toFrame: 318, target: "title" }]);
   });
 
   test("a plan that is not numeric is untouched by all this", () => {

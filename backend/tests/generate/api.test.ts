@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { makeEnv, samplePlan, scriptLlm, type TestEnv } from "../helpers";
+import { EFFECTS_DONE, makeEnv, samplePlan, scriptLlm, type TestEnv } from "../helpers";
 
 let env: TestEnv;
 afterEach(() => env?.cleanup());
@@ -51,7 +51,7 @@ describe("generate API: projects and plan", () => {
   test("the whole flow over HTTP: create, pick, edit, revise, approve", async () => {
     env = makeEnv({ llmBaseUrl: "http://llm/v1", llmModel: "m" });
     env.app.start();
-    scriptLlm(env, [STORIES, PLAN, JSON.stringify({ plan: revised("Judul revisi"), changeSummary: "Judul shot 2 diganti" })]);
+    scriptLlm(env, [STORIES, PLAN, EFFECTS_DONE, JSON.stringify({ plan: revised("Judul revisi"), changeSummary: "Judul shot 2 diganti" })]);
 
     const created = await env.json("POST", base, { brief: "Jelaskan bunga majemuk", format: "9:16", targetSec: 30, styleNotes: "tenang" });
     expect(created.status).toBe(201);

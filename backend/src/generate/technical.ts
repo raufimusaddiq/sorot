@@ -1,7 +1,7 @@
 import type { Finding, NewFinding } from "./findings";
 import type { Plan } from "./planSchema";
 import { numbersOf, sameNumber, unmatchedNumbers } from "./numbers";
-import { wordErrorRate, wordsOf } from "./voice";
+import { speechWords, wordErrorRate } from "./voice";
 
 // The TECHNICAL verdict (research R6): computed in code only, so it can't flip between runs.
 // These are its measures, as pure functions over what ffprobe, ffmpeg and the plan say; the step
@@ -64,9 +64,33 @@ export function outputFindings(probe: Probe | null, want: OutputSpec, tol: Outpu
   return found;
 }
 
+/** What makes a film more than cuts between flat cards: installed blocks, seams that aren't cuts, and shots with light, blur, depth or glow. */
+export function effectsUsed(plan: Plan): { blocks: number; transitions: number; looks: number; total: number } {
+  const blocks = new Set([...plan.blocks, ...plan.shots.flatMap((s) => (s.visual.block ? [s.visual.block] : []))]).size;
+  const transitions = plan.shots.filter((s, i) => i > 0 && s.transition !== "cut").length;
+  const looks = plan.shots.filter((s) => s.effects).length;
+  return { blocks, transitions, looks, total: blocks + transitions + looks };
+}
+
+/** The plan step's `minEffects`, else 3 for a film of 15 s or longer (a shorter one may be plain). */
+export const minEffectsFor = (plan: Plan, setting: unknown): number =>
+  typeof setting === "number" ? setting : plan.totalSec >= 15 ? 3 : 0;
+
+/** A film with fewer effects than the recipe asks for looks flat: a should-fix, never a block. */
+export function effectFindings(plan: Plan, min: number): NewFinding[] {
+  const used = effectsUsed(plan);
+  if (used.total >= min) return [];
+  return [{
+    severity: "should-fix", shotId: null, code: "effects_few", state: "open", rule: "technical",
+    description: `The film uses ${used.total} effect${used.total === 1 ? "" : "s"} (${used.blocks} blocks, ${used.transitions} transitions, ${used.looks} shots with light, blur, depth or glow); the recipe asks for at least ${min}.`,
+    suggestedFix: "Give a few seams a transition with a cause, or a shot its light, blur or depth.",
+  }];
+}
+
 export interface ReadabilityRule { holdBaseSec: number; holdPerWordSec: number }
 
-const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
+/** Words, not symbols: "=", "→" or "&" between words are not read as one. */
+const words = (s: string) => s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 
 /** Text is read at a pace: a shot must show its words for the base time plus a little per word. */
 export function readabilityFindings(plan: Plan, rule: ReadabilityRule): NewFinding[] {
@@ -123,11 +147,11 @@ const LINE_WINDOW_SEC = 0.6;
  */
 export function speechFindings(lines: SpokenLine[], heard: HeardWord[], limit: number): NewFinding[] {
   const found: NewFinding[] = [];
-  const total = wordErrorRate(lines.flatMap((l) => wordsOf(l.text)), heard.flatMap((w) => wordsOf(w.text)));
+  const total = wordErrorRate(lines.flatMap((l) => speechWords(l.text)), speechWords(heard.map((w) => w.text).join(" ")));
   const missed: SpokenLine[] = [];
   for (const line of lines) {
     const inside = heard.filter((w) => w.start >= line.start - LINE_WINDOW_SEC && w.start < line.start + line.durationSec + LINE_WINDOW_SEC);
-    const rate = wordErrorRate(wordsOf(line.text), inside.flatMap((w) => wordsOf(w.text)));
+    const rate = wordErrorRate(speechWords(line.text), speechWords(inside.map((w) => w.text).join(" ")));
     if (rate > 0.5) missed.push(line);
     else if (line.firstWordAt !== null && inside[0] && Math.abs(inside[0].start - line.firstWordAt) > DRIFT_SEC) {
       found.push({
@@ -180,13 +204,14 @@ export function sourcedNumberFindings(plan: Plan, allowed: string[]): NewFinding
 export function forbiddenNumberFindings(plan: Plan, flag: unknown, brief: string): NewFinding[] {
   if (flag === undefined || flag === false || flag === null) return [];
   const forbidden = Array.isArray(flag) ? numbersOf(flag.filter((x): x is string => typeof x === "string").join(" . ")) : null;
-  return shownTexts(plan).flatMap(({ shotId, text }) => {
+  const found = shownTexts(plan).flatMap(({ shotId, text }) => {
     const hits = forbidden ? numbersOf(text).filter((n) => forbidden.some((f) => sameNumber(n, f))) : unmatchedNumbers(text, [brief]);
     return hits.map((n) => must(
       "number_forbidden", forbidden ? `Shot ${shotId} shows "${n.raw}", a number the brief says must not appear.` : `Shot ${shotId} shows "${n.raw}": the brief asks for no numbers beyond its own.`,
       "Remove the number.", { shotId },
     ));
   });
+  return [...new Map(found.map((f) => [f.description, f])).values()];   // the same number in a shot's title and on-screen text is one finding
 }
 
 export interface ContentAnswer { id: string; question: string; flagged: boolean; reason?: string; shotId?: string; suggestedFix?: string }

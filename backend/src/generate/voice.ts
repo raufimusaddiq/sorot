@@ -1,3 +1,4 @@
+import { numbersOf } from "./numbers";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AppConfig } from "../config";
@@ -49,6 +50,25 @@ export function writeVoice(config: Pick<AppConfig, "genDir">, projectId: string,
 
 /** The words of a text as they are compared: lower case, no punctuation. */
 export const wordsOf = (text: string): string[] => text.toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, " ").split(/\s+/).filter(Boolean);
+
+/**
+ * Words as they are spoken, for comparing a script with what Whisper heard: every number, spelled out
+ * or in digits, becomes one token of its value, so "delapan ribu delapan ratus empat puluh delapan"
+ * and Whisper's "8,848" match (a real check called that line unheard). Whisper splits "8,848" into
+ * "8" and ",848", so digits are joined back first.
+ */
+export function speechWords(text: string): string[] {
+  const glued = text.replace(/(\d)\s+([.,]\d)/g, "$1$2");
+  let out = "";
+  let at = 0;
+  for (const n of numbersOf(glued)) {
+    const from = glued.indexOf(n.raw, at);
+    if (from < 0) continue;
+    out += `${glued.slice(at, from)} n${String(n.value).replace(".", "p")}${n.percent ? "pct" : ""} `;
+    at = from + n.raw.length;
+  }
+  return wordsOf(out + glued.slice(at));
+}
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const norm = (text: string) => wordsOf(text).join(" ");
@@ -107,7 +127,27 @@ export function snapToVoice(plan: Plan, lines: VoiceLine[], padSec = 0.4): Plan 
     const total = mine.reduce((n, l) => n + l.durationSec, 0) + GAP_SEC * (mine.length - 1) + padSec;
     return { ...shot, durationSec: Math.ceil(total * 10) / 10 };
   });
-  return { ...plan, shots, totalSec: round3(shots.reduce((n, s) => n + s.durationSec, 0)) };
+  const snapped = { ...plan, shots, totalSec: round3(shots.reduce((n, s) => n + s.durationSec, 0)) };
+  return plan.numeric ? reframe(snapped, plan.numeric.fps) : snapped;
+}
+
+/**
+ * A numeric plan whose lengths changed: the shots' frame ranges are laid end to end again, each
+ * shot's motion moves with it (cut at its new end), and the film's frame count follows. Without this
+ * a director gate rightly refused a plan whose frames said 30 s while its shots said 31.6 s.
+ */
+function reframe(plan: Plan, fps: number): Plan {
+  let at = 0;
+  const shots = plan.shots.map((shot) => {
+    const from = at;
+    const to = from + Math.round(shot.durationSec * fps);
+    at = to;
+    if (!shot.frames) return shot;
+    const shift = from - shot.frames[0];
+    const motionPlan = shot.motionPlan?.map((m) => ({ ...m, fromFrame: Math.min(m.fromFrame + shift, to - 1), toFrame: Math.min(m.toFrame + shift, to) }));
+    return { ...shot, frames: [from, to] as [number, number], ...(motionPlan ? { motionPlan } : {}) };
+  });
+  return { ...plan, shots, numeric: { ...plan.numeric!, totalFrames: at } };
 }
 
 /** Word error rate: the edit distance between what should be said and what was heard, over the words that should be said. */

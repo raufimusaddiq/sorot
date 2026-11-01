@@ -7,7 +7,7 @@ import { STEPS, settingsOf } from "../../src/generate/steps";
 import { STORYLINE_NOTE, chosenStoryline, parseStorylines, projectFlags } from "../../src/generate/steps/storylines";
 import { Store } from "../../src/store";
 import type { GenProject } from "../../src/types";
-import { fakeLlm, quickRecipe, samplePlan } from "../helpers";
+import { AsText, Calls, fakeLlm, quickRecipe, samplePlan } from "../helpers";
 import { checkObject, STEP_SPECS, STEP_TYPES } from "../../src/generate/steps/schema";
 import { notImplemented, type StepContext } from "../../src/generate/steps/types";
 
@@ -113,6 +113,16 @@ describe("plan step", () => {
     expect(r.store.getGenProject("p1")).toMatchObject({ currentPlanId: plans[0]!.id, title: "Judul dua" });
   });
 
+  test("the director's effects pass runs unless the step turns it off; a pass that fails leaves the plan as written", async () => {
+    const withEffects = (r: ReturnType<typeof stepRig>) => { const c = r.ctxFor("plan"); return { ...c, settings: { ...c.settings, effects: { maxSteps: 3 } } }; };
+    const r = stepRig([JSON.stringify(samplePlan()), new Calls([["set_transition", { shotId: "s02", name: "fade", reason: "a pause" }]]), new AsText("A fade.")]);
+    await STEPS.plan.run(withEffects(r));
+    const saved = JSON.parse(r.store.genPlansForProject("p1")[0]!.plan);
+    expect([saved.shots[1].transition, saved.effectNotes]).toEqual(["fade", ["s02 enters with fade: a pause"]]);
+    const failing = stepRig([JSON.stringify(samplePlan())]);   // no reply for the pass: the LLM fails
+    await STEPS.plan.run(withEffects(failing));
+    expect(JSON.parse(failing.store.genPlansForProject("p1")[0]!.plan).shots.map((s: any) => s.transition)).toEqual(["cut", "cut", "cut"]);
+  });
   test("a short video has no storyline; the plan is cached on the pick and the script, not on revisions", async () => {
     const r = stepRig([JSON.stringify(samplePlan())]);
     await STEPS.plan.run(r.ctxFor("plan"));
@@ -121,5 +131,10 @@ describe("plan step", () => {
     expect(key(r.ctxFor("plan"))).toBe("||0");
     r.store.updateGenProject("p1", { pickedStoryline: 2 });
     expect(key(r.ctxFor("plan"))).toBe("2||0");
+    // a script written after the plan is not its input (a retry must not re-plan); one written before it is
+    r.store.updateGenProject("p1", { narrationScript: "Halo." });
+    expect(key(r.ctxFor("plan"))).toBe("2||0");
+    const ctx = r.ctxFor("plan");
+    expect(key({ ...ctx, recipe: { ...ctx.recipe, steps: [{ use: "script" }, ...ctx.recipe.steps] } })).toBe("2|Halo.|0");
   });
 });

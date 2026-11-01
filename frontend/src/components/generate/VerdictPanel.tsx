@@ -37,6 +37,7 @@ function Card({ kind, verdict, onFix }: { kind: GenVerdict['kind']; verdict?: Ge
             <span className="font-pixel text-xs border-2 border-line px-1 mr-1">{f.severity}</span>
             {where(f) && <span className="text-xs text-subtle mr-1">{where(f)}</span>}
             <span>{f.description}</span>
+            {(f.count ?? 1) > 1 && <span className="text-xs text-subtle ml-1">×{f.count}</span>}
             {f.suggestedFix && <span className="block text-xs text-subtle">Fix: {f.suggestedFix}</span>}
             {onFix && <button className="btn ml-1" aria-label={`Fix this: ${f.description}`} onClick={() => onFix(f.id)}>Fix this</button>}
           </li>

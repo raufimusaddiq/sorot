@@ -4,6 +4,7 @@ import { buildRoot, bundledFontFaces, checkScene, GSAP_FILE, shotFile, sizeFor, 
 import { editApplied, markEditApplied, readFix } from "../fixes";
 import { saveFindings, type NewFinding } from "../findings";
 import { mapPool } from "../../pool";
+import { LlmError } from "../../llm";
 import { BUNDLED_FONTS } from "../planContext";
 import type { Plan } from "../planSchema";
 import { placeLines, readVoice } from "../voice";
@@ -97,8 +98,7 @@ export const run: RunFn = async (ctx) => {
   let written = 0;
   const edits = new Map((readFix(dir)?.edits ?? []).map((e) => [e.shotId, e]));
 
-  // The scenes don't depend on each other, so a few can be written at once (the model is the slow part).
-  const perShot = await mapPool(plan.shots.map((shot, i) => ({ shot, i })), Math.max(1, Number(ctx.settings.concurrency)), async ({ shot, i }) => {
+  const writeShot = async ({ shot, i }: { shot: Plan["shots"][number]; i: number }): Promise<NewFinding[]> => {
     const input = {
       project: ctx.project, step: ctx.step, plan, index: i, ...size, assets,
       blocks: shot.visual.block && blocks[shot.visual.block] ? { [shot.visual.block]: blocks[shot.visual.block] as string } : {},
@@ -125,7 +125,22 @@ export const run: RunFn = async (ctx) => {
     }
     ctx.progress((++written / plan.shots.length) * 100);
     return sceneFindings(plan, i, issues);
+  };
+  // The scenes don't depend on each other, so a few can be written at once (the model is the slow part).
+  // A call the LLM drops doesn't stop the others: those shots get one more try, one at a time, once the
+  // rest are written (a hosted gateway dropped one long scene call in eight on 2026-11-01).
+  const shots = plan.shots.map((shot, i) => ({ shot, i }));
+  const firstPass = await mapPool(shots, Math.max(1, Number(ctx.settings.concurrency)), async (s) => {
+    try {
+      return await writeShot(s);
+    } catch (e) {
+      // a dropped call or a model that thought past its budget gets one more try; a spent quota won't come back in a minute
+      if (e instanceof LlmError && (e.transient || e.budget) && !ctx.signal?.aborted) return null;
+      throw e;
+    }
   });
+  const perShot: NewFinding[][] = [];
+  for (const [n, found] of firstPass.entries()) perShot.push(found ?? (await writeShot(shots[n]!)));
   const left: NewFinding[] = perShot.flat();
   // An image that could not be made leaves its shot on the fallback visual: worth a look, not a failure.
   for (const f of readImageFailures(ctx)) {

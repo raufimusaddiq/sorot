@@ -89,7 +89,7 @@ export class GenerateService {
   readonly recipes: RecipeBook;
   readonly ideas: IdeaBank;
   private doctorCache: { at: number; result: { ok: boolean; reason?: string } } | null = null;
-  private catalogCache: Array<{ name: string; tags: string[] }> | null = null;
+  private catalogCache: Array<{ name: string; tags: string[]; type?: string; description?: string }> | null = null;
   /** Work running in the background, by project. */
   private readonly running = new Map<string, Promise<unknown>>();
 
@@ -313,16 +313,18 @@ export class GenerateService {
   approveStep(projectId: string, id: string): GenProject {
     const p = this.idle(projectId);
     if (parseStates(p.stepState)[id]?.status !== "waiting") throw new HttpError(409, `Step "${id}" isn't waiting for approval`);
+    // passing the plan's gate approves the plan itself, or nothing can be built from it (a real unattended run stalled here)
+    if (parseRecipe(p).steps.find((s) => stepId(s) === id)?.use === "plan") return this.approvePlan(projectId, this.planOf(p).id);
     this.runner.markApproved(projectId, id);
     this.launch(projectId, () => this.runner.runProject(projectId));
     return this.mustProject(projectId);
   }
 
   /** Names and tags of the HyperFrames registry blocks; empty when the CLI can't list them. */
-  private async catalog(): Promise<Array<{ name: string; tags: string[] }>> {
+  private async catalog(): Promise<Array<{ name: string; tags: string[]; type?: string; description?: string }>> {
     if (this.catalogCache) return this.catalogCache;
     try {
-      this.catalogCache = (await this.hyperframes.catalog()).map((b) => ({ name: b.name, tags: b.tags ?? [] }));
+      this.catalogCache = (await this.hyperframes.catalog()).map((b) => ({ name: b.name, tags: b.tags ?? [], type: b.type, description: (b.description ?? "").slice(0, 200) }));
       return this.catalogCache;
     } catch {
       return [];
@@ -399,7 +401,7 @@ export class GenerateService {
     const flags = (idea.flags ? JSON.parse(idea.flags) : {}) as IdeaFlags;
     const project = await this.createProject({
       brief: idea.brief, recipeId, ideaId: idea.id, buildWithoutStopping: true, language: flags.language, format: flags.format, targetSec: flags.targetSec,
-      preset: flags.preset, narration: flags.narration === true, ...(flags.market_data === false ? { forbiddenNumbers: true as const } : {}),
+      preset: flags.preset, narration: flags.narration, ...(flags.market_data === false ? { forbiddenNumbers: true as const } : {}),
       factsFrom: "idea", facts: this.ideas.factsOf(idea.id).map((f) => ({ claim: f.claim, value: f.value ?? undefined, sourceUrl: f.sourceUrl ?? undefined })),
     });
     this.ideas.link(idea.id, project.id);
@@ -499,12 +501,14 @@ export class GenerateService {
 
     // facts are checked before the project exists, so a bad one refuses the whole request
     for (const f of input.facts ?? []) this.factFields(f);
+    // A recipe built around a voice speaks unless the owner said otherwise (a run once skipped its voice steps silently).
+    const narration = input.narration ?? frozen.recipe.steps.some((s) => s.use === "voice");
     const t = now();
     const project = this.store.saveGenProject({
       id: crypto.randomUUID(), title: null, brief, format, targetSec, language, styleNotes: input.styleNotes?.trim() || null,
       preset: input.preset ?? null, recipeId, recipe: frozen.json, ideaId: input.ideaId ?? null,
       briefFlags: this.createFlags(input),
-      narrationScript: null, concept: null, stepIndex: 0, stepState: null, narration: input.narration ? 1 : 0, storylines: null,
+      narrationScript: null, concept: null, stepIndex: 0, stepState: null, narration: narration ? 1 : 0, storylines: null,
       pickedStoryline: null, status: "RUNNING", currentPlanId: null, acceptedVersionId: null, errorMessage: null, createdAt: t, updatedAt: t,
     });
     for (const f of input.facts ?? []) this.addFact(project.id, f, input.factsFrom ?? "owner");
@@ -676,6 +680,11 @@ export class GenerateService {
     if (!row || !row.approvedAt || parseStates(p.stepState)[stepId(planStep)]?.status !== "done") {
       throw new HttpError(409, "Approve the plan first: nothing is built from an unapproved plan");
     }
+    // A step before the build that failed (a voice that could not be made, say) is not skipped: retry the project first.
+    const states = parseStates(p.stepState);
+    const steps = parseRecipe(p).steps;
+    const failed = steps.slice(0, Math.max(0, steps.findIndex((s) => s.use === "author"))).find((s) => states[stepId(s)]?.status === "failed");
+    if (failed) throw new HttpError(409, `The ${failed.use} step failed: ${states[stepId(failed)]?.reason ?? "see the log"}. Fix that and retry the video before building`);
     return row;
   }
 
@@ -699,6 +708,8 @@ export class GenerateService {
    * those are written again.
    */
   private queueVersion(p: GenProject, plan: GenPlan, opts: { parent?: GenVersion; fix?: FixFile } = {}): GenVersion {
+    /** What `hyperframes init` writes at the top of a project (the author step skips init when hyperframes.json is there). */
+    const HF_SCAFFOLD = ["hyperframes.json", "package.json", "meta.json"];
     const quality = parseRecipe(p).steps.find((s) => s.use === "render")?.with?.quality;
     const number = (this.store.genVersionsForProject(p.id)[0]?.number ?? 0) + 1;
     const dir = `${projectDir(this.config, p.id)}/v${number}`;
@@ -707,6 +718,8 @@ export class GenerateService {
       for (const f of readdirSync(join(opts.parent.projectDir, "compositions")).filter((x) => x.endsWith(".html"))) {
         cpSync(join(opts.parent.projectDir, "compositions", f), join(dir, "compositions", f));
       }
+      // and HyperFrames' scaffold: `init` refuses a folder that already has files in it
+      for (const f of HF_SCAFFOLD) if (existsSync(join(opts.parent.projectDir, f))) cpSync(join(opts.parent.projectDir, f), join(dir, f));
       writeFix(dir, opts.fix);
     }
     const t = now();

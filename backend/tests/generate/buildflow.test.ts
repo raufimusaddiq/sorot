@@ -2,16 +2,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ProcResult } from "../../src/runner";
-import { makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, type TestEnv } from "../helpers";
+import { EFFECTS_DONE, makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, type TestEnv } from "../helpers";
 
 const json = JSON.stringify;
 const story = (i: number) => ({ title: `Film ${i}`, pitch: "satu", opening: "benih", beats: ["hook", "isi", "akhir"], look: "flat", sound: "tenang", bold: false, recommended: i === 1, reason: "k" });
 const STORIES = json({ storylines: [story(1), story(2), story(3)] });
-const PLAN = json(samplePlan());
+/** A plan with three effects, so the always-checked effects floor passes. */
+const PLAN = json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: ["cut", "fade", "flash"][i], ...(i === 0 ? { effects: { glowPx: 20, reason: "the hook shines" } } : {}) })) }));
 const SCENES = [0, 1, 2].map((i) => json({ html: sceneHtml(i) }));
 const JUDGE = json({
   criteria: ["opening", "pace", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })),
-  risks: [{ id: "misleading_claim", flagged: false, reason: "" }],
+  risks: ["misleading_claim", "flat_film"].map((id) => ({ id, flagged: false, reason: "" })),
 });
 const CLEAN_CHECK = json({ ok: true, lint: { findings: [] }, runtime: { findings: [] }, layout: { findings: [] } });
 const probe = (over: { width?: number; duration?: string } = {}) => json({
@@ -29,7 +30,7 @@ const store = () => env.app.store;
 async function approved(extra: { media?: () => string; replies?: Parameters<typeof scriptLlm>[1]; config?: object } = {}) {
   env = makeEnv({ llmBaseUrl: "http://llm/v1", llmModel: "m", ...extra.config });
   env.app.start();
-  const llm = scriptLlm(env, [STORIES, PLAN, ...(extra.replies ?? [...SCENES, JUDGE])]);
+  const llm = scriptLlm(env, [STORIES, PLAN, EFFECTS_DONE, ...(extra.replies ?? [...SCENES, JUDGE])]);
   const fallback = env.execHandler.fn;
   env.hfHandlers.check = () => procOk(CLEAN_CHECK);
   env.execHandler.fn = (cmd, args, signal) => {
@@ -63,7 +64,7 @@ describe("a build, from the approved plan to two verdicts", () => {
     expect(got.verdicts.map((v: any) => [v.kind, v.status, v.judgedBy])).toEqual([["TECHNICAL", "PASS", "code"], ["CREATIVE", "PASS", "llm:m"]]);
     expect(got.verdicts[0].findings).toEqual([]);
     expect(store().getGenProject(id)!.status).toBe("BUILT");
-    expect(llm.requests).toHaveLength(2 + 3 + 1);   // storylines, plan, three scenes, the judge
+    expect(llm.requests).toHaveLength(3 + 3 + 1);   // storylines, plan, effects, three scenes, the judge
 
     const review = readFileSync(join(env.config.genDir, id, "MOTION_REVIEW.md"), "utf-8");
     expect(review).toContain("## TECHNICAL: PASS");
@@ -158,6 +159,18 @@ describe("refusals", () => {
     const early = await env.json("POST", `${base}/projects/${id}/versions`);
     expect(early.status).toBe(409);
     expect(early.body.error).toContain("Approve the plan first");
+    expect(store().genVersionsForProject(id)).toEqual([]);
+  });
+
+  test("a step before the build that failed is not skipped: the build waits for a retry", async () => {
+    const { id } = await approved();
+    const p = store().getGenProject(id)!;
+    const states = JSON.parse(p.stepState!);
+    states.storylines = { status: "failed", inputHash: "x", reason: "Set a voice id for this language in Settings" };
+    store().updateGenProject(id, { stepState: JSON.stringify(states) });
+    const blocked = await env.json("POST", `${base}/projects/${id}/versions`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toContain("The storylines step failed: Set a voice id");
     expect(store().genVersionsForProject(id)).toEqual([]);
   });
 

@@ -1,0 +1,8 @@
+{
+  "about": "The Fish Audio request that worked in the real narrated run of 2026-11-01 (RTX 4060 Docker): model in a header, no reference_id (Fish's default voice). The key is redacted and the spoken text shortened; the reply was MP3 audio.",
+  "url": "https://api.fish.audio/v1/tts",
+  "method": "POST",
+  "headers": { "Authorization": "Bearer ***", "Content-Type": "application/json", "model": "s2.1-pro-free" },
+  "body": { "text": "Halo", "format": "mp3" },
+  "response": { "status": 200, "contentType": "audio/mpeg" }
+}

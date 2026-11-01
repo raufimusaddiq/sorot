@@ -28,9 +28,12 @@ export const MAIN_MESSAGE: Criterion = {
 /** A risk Sorot always checks for. */
 export const MISLEADING_CLAIM: Criterion = { id: "misleading_claim", question: "Does `shots` state a fact or a number that `brief` does not support?" };
 
+/** Asked of every film, so a build without effects is flagged even when no vision model can look at it. */
+export const FLAT_FILM: Criterion = { id: "flat_film", question: "Does `shots` feel flat: the same move, light and cut in every shot?" };
+
 /**
  * What Sorot asks, from the recipe: the user's criteria (plus the main-message question unless one
- * of theirs is the main one), and the risks: the always-on claim check, each leftover default the
+ * of theirs is the main one), and the risks: the always-on claim and flat-film checks, each leftover default the
  * recipe wants audited and each non-blocking content rule.
  */
 export function questionsFor(settings: Record<string, unknown>, rules: Record<string, unknown> | undefined): { criteria: Criterion[]; risks: Criterion[] } {
@@ -41,7 +44,7 @@ export function questionsFor(settings: Record<string, unknown>, rules: Record<st
   }));
   const content = ((Array.isArray(rules?.content) ? rules?.content : []) as Array<{ id: string; question: string; blocking?: boolean }>)
     .filter((r) => !r.blocking).map((r): Criterion => ({ id: r.id, question: r.question }));
-  return { criteria, risks: [MISLEADING_CLAIM, ...audit, ...content] };
+  return { criteria, risks: [MISLEADING_CLAIM, FLAT_FILM, ...audit, ...content] };
 }
 
 // ---- the questions' design rules (TypeSafe, as clipGate.test.ts holds Sorot's own to) --------
@@ -66,8 +69,18 @@ export interface BuiltFacts {
   look: string;
   opening: string;
   ending: string;
-  shots: Array<{ id: string; seconds: number; from: number; role: string; onScreen: string; planned: string[]; drawn: string; moves: string; hold: boolean }>;
+  shots: Array<{ id: string; seconds: number; from: number; role: string; onScreen: string; planned: string[]; drawn: string; moves: string; hold: boolean; enters: string; effects: string }>;
 }
+
+/** A shot's light, blur, depth and glow in words ("none" without), for the judge. */
+const effectsText = (s: Plan["shots"][number]): string => {
+  const e = s.effects;
+  if (!e) return "none";
+  return [
+    e.light ? `light from ${e.light.angleDeg}° at ${e.light.intensity}` : "", e.blurPx ? `background blur ${e.blurPx} px` : "",
+    e.depthLayers ? `${e.depthLayers} depth layers` : "", e.glowPx ? `glow ${e.glowPx} px` : "",
+  ].filter(Boolean).join(", ");
+};
 
 const clipText = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -79,6 +92,7 @@ export function builtFacts(brief: string, plan: Plan, storyline: Storyline | nul
     const row = {
       id: s.id, seconds: s.durationSec, from, role: s.purpose, onScreen: html === null ? "(no scene was written)" : clipText(visibleText(html), 400),
       planned: s.text.map((t) => t.value), drawn: s.visual.description, moves: s.motion, hold: s.hold,
+      enters: i === 0 ? "opens the film" : s.transition, effects: effectsText(s),
     };
     from = Math.round((from + s.durationSec) * 1000) / 1000;
     return row;
@@ -105,7 +119,7 @@ const FIELDS: Record<string, string> = {
   look: "the colours, type and pace the plan chose",
   opening: "what the viewer sees in the first shot",
   ending: "what the viewer sees in the last shot",
-  shots: "every shot in order: the words on screen, what is drawn and how it moves",
+  shots: "every shot in order: the words on screen, what is drawn, how it moves, how it enters (its transition) and its light, blur, depth or glow",
 };
 
 /** A Jev state: the shared context (describing the fields present), then the facts. */

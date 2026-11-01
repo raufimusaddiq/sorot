@@ -4,7 +4,9 @@ Authoring contract v1, passed to the director's `scene` and `repair` calls.
 Derived from the HyperFrames render contract (https://github.com/heygen-com/hyperframes,
 Apache-2.0, Copyright HeyGen) and its CLI docs (`hyperframes docs data-attributes|compositions|gsap`),
 condensed and checked against hyperframes 0.8.223 (`lint` / `check` outputs in
-backend/tests/fixtures/hyperframes/). Sorot's own rules are marked [Sorot].
+backend/tests/fixtures/hyperframes/). Sorot's own rules are marked [Sorot]. The animation, motion
+and layout rules follow the hyperframes skill's contract (SKILL.md rules 5 and 6, references
+format.md, motion.md, types/vertical.md), reviewed on 2026-11-01.
 -->
 
 # Writing one scene
@@ -54,12 +56,45 @@ moves.
 
 - One GSAP timeline per composition, created with `{ paused: true }` and registered on
   `window.__timelines["<composition id>"]`. The runtime seeks it; never call `play()`.
-- Use `set`, `to`, `from`, `fromTo`. Safe properties: `opacity`, `x`, `y`, `scale`, `scaleX`,
-  `scaleY`, `rotation`, `width`, `height`, `visibility`. The position argument is an absolute
-  time in seconds on this shot's timeline.
+- Use `set`, `to` and `fromTo`, never `from`: the runtime re-seeks the shot each time it shows,
+  and `from` records its start state once, so it drifts. Set start states in the tween, not in CSS.
+- Animate transforms and opacity: `x`, `y`, `scale`, `scaleX`, `scaleY`, `rotation`, `opacity`.
+  Never tween `width`, `height`, `left` or `top`, and never tween `display`, `visibility` or
+  `autoAlpha` on an element with `class="clip"` (animate a child inside it instead).
+- No CSS `transform` on an element GSAP transforms: put the static transform on a wrapper.
+- The position argument is an absolute time in seconds on this shot's timeline.
 - Finite tweens only: no `repeat: -1`. Compute repeat counts from the shot's duration.
 - Every tween must have a visible reason in the plan (what it shows, hands off, or emphasises).
   Do not add decoration that the plan does not mention.
+
+## Motion craft
+
+- Eases by role: things arriving `expo.out` or `power4.out`; travel and camera `power2.inOut`;
+  things leaving `power3.in`. The same `power2.out` at 0.5 s on everything looks generated.
+- Exits are 40 to 50% shorter than entrances; overlapping moves overlap by 30 to 50%; words in a
+  line stagger by 0.06 to 0.12 s.
+- One hero move per shot: the one thing that moves most. Secondary moves travel 50 to 70% as far
+  and start 0.1 to 0.2 s later.
+- A title that has landed stays still. No breathing, floating or pulsing loops on titles or UI,
+  no slow creeping scale late in a shot, and not every element fading and sliding up the same way.
+- Something on screen changes every 2 to 4 s: reveal the shot's pieces across its length instead
+  of showing everything at once and then freezing.
+
+## Effects
+
+- The shot spec carries the effects the director chose: `effects` (light, blur, depth, glow as exact
+  values) and `enters` / `leaves` (the transitions on either side). Build them as given; do not
+  add others.
+- Sorot draws the transitions between shots on the root: do not fade or wipe the whole shot in or
+  out yourself. Do make the shot's own first and last moments meet them: `before` says what the
+  shot before hands on, `after` how the next one opens, so the hero can carry across the seam.
+- Light: a soft radial gradient or a lit edge from `light.angleDeg` (0 = from the top, clockwise)
+  at `light.intensity` opacity, in `light.color` or the palette's lightest colour.
+- Blur: `filter: blur(<blurPx>px)` on the background layer only, never on text.
+- Depth: `depthLayers` layers that move at different speeds (the far ones slower), with the far
+  ones a little smaller and dimmer.
+- Glow: `filter: drop-shadow(0 0 <glowPx>px <colour>)` or a blurred copy behind the hero element,
+  only where the plan asks for it, on the one thing to look at.
 
 ## Determinism (a render must give the same video every time)
 
@@ -84,7 +119,13 @@ moves.
   must appear in the scene exactly as written (same words, same numbers). Do not add, drop,
   translate or reword plan text. Extra text that is not in the plan is not allowed.
 - **[Sorot]** Keep text inside the frame's safe area (at least 64 px from each edge) and big
-  enough to read on a phone: body text at least 40 px on a 1080-wide frame, titles larger.
+  enough to read on a phone: body text at least 40 px on a 1080-wide frame, titles 4 to 9% of
+  the frame height.
+- On a 1080×1920 (9:16) frame the app draws over the edges: nothing in the top 168 px, and every
+  word and the subject between 168 and 1330 px from the top; below 1330 px only texture or
+  decoration.
+- Text must contrast with what is behind it: at least 4.5:1 for body text and 3:1 for large text
+  (`check` reports less as an error). Text is never blurred.
 - **[Sorot]** A line of text stays on screen at least 0.5 s plus 0.25 s per word.
 - Indonesian text is the default: use the given language as is.
 
@@ -93,8 +134,11 @@ moves.
 - Lay out with flex or grid and explicit sizes; avoid elements that overflow the frame or
   overlap by accident. If a `check` layout warning is intended (a label on a shape), keep it
   with a reason in `holds`.
-- A scene that nothing moves in is reported as `sweep_static`. A still shot should still have at
-  least a small entrance or hold motion; or mark the shot as a hold in the plan.
+- A scene that nothing moves in is reported as `sweep_static`, and more than 3 s with no change
+  as `dead_stretch` (the film's last 3 s are exempt). Keep something changing; when stillness is
+  deliberate (a held title, a pause before the payoff), put `data-hold` on that element.
+- Make sure the subject separates from the ground: a different value (light against dark), not
+  only a different hue.
 
 ## How findings are reported (what you repair)
 

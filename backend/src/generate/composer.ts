@@ -1,6 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plan, Shot } from "./planSchema";
+import { seams } from "./transitions";
 
 // The composer writes what must not be left to a model: the root index.html, with every shot's
 // start and length taken from the approved plan (FR-008/FR-009), the bundled fonts and a local
@@ -70,11 +71,16 @@ export interface ComposeInput {
   voice?: Array<{ id: string; path: string; start: number; duration: number }> | null;
 }
 
-/** The root index.html: one host per shot, in the plan's order and with the plan's timing. */
+/** The root index.html: one host per shot, in the plan's order and with the plan's timing, and the seams the plan names between them. */
 export function buildRoot({ plan, width, height, fonts, music, voice }: ComposeInput): string {
   const starts = shotStarts(plan);
   const total = round3(plan.shots.reduce((n, s) => n + s.durationSec, 0));
-  const ground = plan.look.palette.find((c) => HEX.test(c)) ?? "#000000";
+  const hexes = plan.look.palette.filter((c) => HEX.test(c));
+  const ground = hexes[0] ?? "#000000";
+  const seam = seams({
+    transitions: plan.shots.map((s) => s.transition), starts, durations: plan.shots.map((s) => s.durationSec),
+    ground, accent: hexes[1] ?? "#ffffff", host: (i) => `host-${shotNumber(i)}`,
+  });
   const faces = fonts.map((f) =>
     `      @font-face { font-family: "${esc(f.family)}"; font-weight: ${f.weight}; src: url("${esc(f.path)}") format("woff2"); }`).join("\n");
   const hosts = plan.shots.map((s, i) =>
@@ -97,12 +103,12 @@ ${faces}
   </head>
   <body>
     <div id="root" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}">${audio}
-${hosts}
+${hosts}${seam.overlays.length ? `\n${seam.overlays.join("\n")}` : ""}
     </div>
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
-      window.__timelines["main"] = tl;
+      window.__timelines["main"] = tl;${seam.tweens.length ? `\n${seam.tweens.join("\n")}` : ""}
       tl.seek(0);
     </script>
   </body>

@@ -149,7 +149,8 @@ export function realDeps(): Omit<Deps, "api"> {
       mkdir: (p) => mkdirSync(p, { recursive: true }),
       copy: copyFileSync,
       read: (p) => new Uint8Array(readFileSync(p)),
-      readText: (p) => readFileSync(p, "utf8"),
+      // Windows editors (Notepad, PowerShell 5.1) may start a UTF-8 file with a byte-order mark: JSON.parse refuses it.
+      readText: (p) => readFileSync(p, "utf8").replace(/^﻿/, ""),
       writeText: (p, text) => writeFileSync(p, text),
       tempPath: (name) => join(tmpdir(), `sorot-${process.pid}-${name}`),
       // Streamed by hand: Bun 1.3.12's Bun.write(path, response) never

@@ -27,7 +27,7 @@ describe('VerdictPanel', () => {
       makeVerdict('TECHNICAL', 'FAIL', [
         makeFinding('a', { severity: 'polish', description: 'A nit.' }),
         makeFinding('b', { severity: 'must-fix', shotId: 's02', fromSec: 4.2, toSec: 5, description: 'Text is too small.', suggestedFix: 'Make it 40 px.' }),
-        makeFinding('c', { severity: 'should-fix', shotId: 's03', fromSec: 12, description: 'Nothing moves.' }),
+        makeFinding('c', { severity: 'should-fix', shotId: 's03', fromSec: 12, description: 'Nothing moves.', count: 45 }),
       ]),
       makeVerdict('CREATIVE', 'REVIEW', [makeFinding('d', { severity: 'should-fix', description: 'The opening is a plain title.' })], { judgedBy: 'jev:jev-1.14.0' }),
     ]} />);
@@ -37,7 +37,7 @@ describe('VerdictPanel', () => {
     expect(within(tech).getByText(/A FAIL blocks the export/)).toBeInTheDocument();
     const items = within(tech).getAllByRole('listitem').map((li) => li.textContent);
     expect(items).toEqual([
-      'must-fixs02 · 4.2 to 5 sText is too small.Fix: Make it 40 px.', 'should-fixs03 · 12 sNothing moves.', 'polishA nit.',
+      'must-fixs02 · 4.2 to 5 sText is too small.Fix: Make it 40 px.', 'should-fixs03 · 12 sNothing moves.×45', 'polishA nit.',
     ]);
     const creative = card('CREATIVE');
     expect(within(creative).getByText('REVIEW')).toBeInTheDocument();

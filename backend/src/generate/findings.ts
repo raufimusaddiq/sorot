@@ -22,6 +22,8 @@ export interface Finding {
   keptReason?: string;
   /** The recipe rule or criterion it comes from. */
   rule?: string;
+  /** How many times the same thing was found (one code, shot and message), when more than once. */
+  count?: number;
   /** The step that found it: author, check, technical... */
   source: string;
 }
