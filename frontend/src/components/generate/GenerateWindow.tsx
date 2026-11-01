@@ -13,6 +13,7 @@ import { Window } from '../Window';
 import { BriefForm, type PendingFile } from './BriefForm';
 import { BuildPanel } from './BuildPanel';
 import { DirectorLog } from './DirectorLog';
+import { FactsPanel } from './FactsPanel';
 import { PlanEditor } from './PlanEditor';
 import { RecipeEditor } from './RecipeEditor';
 import { VersionHistory } from './VersionHistory';
@@ -254,6 +255,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
           )}
 
           <div className="flex flex-wrap gap-2">
+            {(p.recipe?.steps.some((s) => s.use === 'facts')) && <FactsPanel api={api} projectId={p.id} busy={WORKING.includes(p.status)} />}
             <DirectorLog api={api} projectId={p.id} version={p.updatedAt} />
             <button className="btn" disabled={busy || WORKING.includes(p.status)} onClick={() => {
               if (!window.confirm('Delete this video and its files?')) return;

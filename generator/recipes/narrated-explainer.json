@@ -1,8 +1,8 @@
 {
   "id": "narrated-explainer",
   "name": "Narrated explainer",
-  "description": "A vertical explainer with a voice: script, voice and timing first, then three storylines, a named visual idea, a numeric plan timed from the voice, a bespoke build, a self-review of the frames, a delivery render, and checks that the voice says the script. Needs a voice engine in Settings.",
-  "version": 1,
+  "description": "A vertical explainer with a voice, built on sourced facts: the facts are checked against their sources, then script, voice and timing, then three storylines, a named visual idea, a numeric plan timed from the voice, a bespoke build, a self-review of the frames, a delivery render, and checks that the voice says the script. Needs a voice engine in Settings.",
+  "version": 2,
   "builtIn": true,
   "language": "id",
   "output": { "width": 1080, "height": 1920, "fps": 30, "minSec": 20, "maxSec": 90 },
@@ -12,6 +12,7 @@
     "defaultsAudit": ["a centred title on a dark gradient", "every element fading in from below", "a generic icon grid"]
   },
   "steps": [
+    { "use": "facts", "with": { "mode": "verify" } },
     { "use": "script", "with": { "spellNumbers": true, "maxWords": 170 } },
     { "use": "voice", "with": { "failClosed": true } },
     { "use": "align", "with": { "source": "auto" } },
@@ -22,7 +23,7 @@
     { "use": "check", "with": { "warnings": "fix-or-hold", "rounds": 3 } },
     { "use": "look", "when": "connection:vision", "with": { "rounds": 2, "audit": true } },
     { "use": "render", "with": { "quality": "delivery" } },
-    { "use": "technical", "with": { "measures": { "speechMatch": { "maxWordErrorRate": 0.25 }, "voiceRoute": true } } },
+    { "use": "technical", "with": { "measures": { "speechMatch": { "maxWordErrorRate": 0.25 }, "voiceRoute": true, "sourcedNumbers": true } } },
     {
       "use": "creative",
       "with": {

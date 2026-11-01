@@ -1,5 +1,6 @@
 import type { Finding, NewFinding } from "./findings";
 import type { Plan } from "./planSchema";
+import { numbersOf, sameNumber, unmatchedNumbers } from "./numbers";
 import { wordErrorRate, wordsOf } from "./voice";
 
 // The TECHNICAL verdict (research R6): computed in code only, so it can't flip between runs.
@@ -152,5 +153,48 @@ export function voiceRouteFindings(lines: Array<{ id: string; start: number; dur
   return lines.filter((l) => l.start + l.durationSec > filmSec + 0.05).map((l) => must(
     "voice_cut_off", `Line ${l.id} runs to ${Math.round((l.start + l.durationSec) * 10) / 10} s but the film ends at ${filmSec} s.`,
     "Give the shot that narrates it more time, or shorten the script.", { fromSec: l.start, toSec: filmSec },
+  ));
+}
+
+// ---- numbers and content rules (FR-026, FR-027) -----------------------------------------
+
+/** Every text the film shows or says, with the shot it belongs to. */
+const shownTexts = (plan: Plan): Array<{ shotId: string; text: string }> =>
+  plan.shots.map((s) => ({ shotId: s.id, text: [...s.text.map((t) => t.value), s.narration ?? ""].join(" . ") }));
+
+/**
+ * `sourcedNumbers`: every number the film shows or says is one the brief gave or a verified (or
+ * corrected) fact states. `allowed` is those texts; "1,5%" and "satu koma lima persen" are one number.
+ */
+export function sourcedNumberFindings(plan: Plan, allowed: string[]): NewFinding[] {
+  return shownTexts(plan).flatMap(({ shotId, text }) => unmatchedNumbers(text, allowed).map((n) => must(
+    "number_unsourced", `Shot ${shotId} shows "${n.raw}", which no verified fact states.`,
+    "Take the number out, or add a fact with its source and verify it.", { shotId },
+  )));
+}
+
+/**
+ * `forbiddenNumbers`, whenever the brief has the flag: `true` means no number but the brief's own
+ * (for example "no market data"); a list names numbers that must not appear at all.
+ */
+export function forbiddenNumberFindings(plan: Plan, flag: unknown, brief: string): NewFinding[] {
+  if (flag === undefined || flag === false || flag === null) return [];
+  const forbidden = Array.isArray(flag) ? numbersOf(flag.filter((x): x is string => typeof x === "string").join(" . ")) : null;
+  return shownTexts(plan).flatMap(({ shotId, text }) => {
+    const hits = forbidden ? numbersOf(text).filter((n) => forbidden.some((f) => sameNumber(n, f))) : unmatchedNumbers(text, [brief]);
+    return hits.map((n) => must(
+      "number_forbidden", forbidden ? `Shot ${shotId} shows "${n.raw}", a number the brief says must not appear.` : `Shot ${shotId} shows "${n.raw}": the brief asks for no numbers beyond its own.`,
+      "Remove the number.", { shotId },
+    ));
+  });
+}
+
+export interface ContentAnswer { id: string; question: string; flagged: boolean; reason?: string; shotId?: string; suggestedFix?: string }
+
+/** A blocking content rule that is flagged blocks the export: the owner decided it matters that much. */
+export function contentFindings(answers: ContentAnswer[]): NewFinding[] {
+  return answers.filter((a) => a.flagged).map((a) => must(
+    `content.${a.id}`, a.reason || `A content rule is broken: ${a.question.replace(/`/g, "")}`, a.suggestedFix ?? "Change the film so this no longer applies.",
+    { rule: a.id, ...(a.shotId ? { shotId: a.shotId } : {}) },
   ));
 }

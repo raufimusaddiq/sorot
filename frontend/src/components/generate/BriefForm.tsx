@@ -37,6 +37,8 @@ export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
   const [language, setLanguage] = useState('id');
   const [style, setStyle] = useState('');
   const [narration, setNarration] = useState(false);
+  const [factsText, setFactsText] = useState('');
+  const [noNumbers, setNoNumbers] = useState(false);
   const canNarrate = (voiceEngines?.length ?? 0) > 0;
   const [recipeId, setRecipeId] = useState(recipes?.[0]?.id ?? '');
   const [logo, setLogo] = useState<File | null>(null);
@@ -54,10 +56,18 @@ export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
       if (!kind) return setProblem(`${file.name}: Generate can use images, fonts (.ttf .otf .woff .woff2) and music (.mp3 .m4a .wav .ogg)`);
       files.push({ file, kind });
     }
+    const facts: NonNullable<GenCreateBody['facts']> = [];
+    for (const line of factsText.split('\n').map((l) => l.trim()).filter(Boolean)) {
+      const parts = line.split('|').map((x) => x.trim());
+      const sourceUrl = parts.at(-1) ?? '';
+      if (parts.length < 2 || !/^https?:\/\//i.test(sourceUrl) || !parts[0]) return setProblem(`"${line.slice(0, 40)}": write each fact as  claim | value | https://address  (the value is optional)`);
+      facts.push({ claim: parts[0], ...(parts.length > 2 && parts[1] ? { value: parts[1] } : {}), sourceUrl });
+    }
     setProblem(null);
     onCreate({
       brief: brief.trim(), format, targetSec: seconds, language, ...(style.trim() ? { styleNotes: style.trim() } : {}),
       ...(recipes && recipes.length > 1 ? { recipeId } : {}), ...(narration && canNarrate ? { narration: true } : {}),
+      ...(facts.length ? { facts } : {}), ...(noNumbers ? { forbiddenNumbers: true as const } : {}),
     }, files);
   };
 
@@ -100,6 +110,17 @@ export function BriefForm({ busy, recipes, voiceEngines, onCreate }: {
         <span className={label}>Style notes (optional)</span>
         <input aria-label="Style notes" value={style} placeholder="tenang, warna hangat, tanpa teks berlebihan" onChange={(e) => setStyle(e.target.value)} className={field} />
       </label>
+      <details>
+        <summary className={`${label} cursor-pointer`}>Facts and numbers (optional)</summary>
+        <label className="block mt-2">
+          <span className={label}>Facts, one per line: claim | value | source address</span>
+          <textarea aria-label="Facts" rows={3} value={factsText} onChange={(e) => setFactsText(e.target.value)} className={field}
+            placeholder="Suku bunga acuan BI adalah 5,75 persen | 5,75% | https://www.bi.go.id/…" />
+        </label>
+        <label className="text-sm block mt-2">
+          <input type="checkbox" aria-label="No other numbers" checked={noNumbers} onChange={(e) => setNoNumbers(e.target.checked)} /> No numbers beyond the ones in my brief
+        </label>
+      </details>
       {voiceEngines !== undefined && (
         <label className="text-sm block">
           <input type="checkbox" aria-label="Narrate it" checked={narration && canNarrate} disabled={!canNarrate} onChange={(e) => setNarration(e.target.checked)} /> Narrate it with a voice

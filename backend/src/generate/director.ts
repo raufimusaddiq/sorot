@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef } from "../llm";
+import { parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef, type ToolHandler } from "../llm";
+import { isOnPage, headlineOnly, MIN_QUOTE } from "./facts";
+import { numbersOf, sameNumber } from "./numbers";
 import type { GenAsset, GenProject, Json } from "../types";
 import type { DirectorLog } from "./events";
 import { shotFile, shotId } from "./composer";
@@ -114,6 +116,12 @@ const TOOLS = {
     planEdits: { type: "object", description: "the full revised plan, only when a finding can't be fixed without changing the plan (its text or timing)", properties: PLAN_PROPS, required: ["title", "message", "look", "shots"] },
     summary: str("one sentence on what you changed"),
   }, ["sceneEdits", "summary"]),
+  verify: tool("submit_verification", "Say whether the source supports the claim.", {
+    verdict: { type: "string", enum: ["verified", "corrected", "unverifiable"] },
+    correctedValue: str("only for corrected: the value the source gives, as the source writes it"),
+    evidence: str("a passage copied word for word from the source page; required unless unverifiable"),
+    reason: str("one sentence"),
+  }, ["verdict", "reason"]),
   look: tool("submit_look", "Submit what you see in the frames, as a stranger would.", {
     frames: {
       type: "array", items: {
@@ -175,7 +183,7 @@ const TOOLS = {
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS, string[]> = { storylines: ["Storylines"], plan: ["Plan"], revise: ["Plan", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [], verify: [] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
@@ -183,6 +191,7 @@ const INSTRUCTIONS = {
   revise: "You are the director of a short 2D motion video. Change the plan as the owner asks. Change only what the request names: every other shot keeps its text, timing and look exactly as it is.",
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
   fix: "You are the director of a short 2D motion video. The video was built and judged; fix the findings the owner chose (and do what their note says). Prefer sceneEdits: they change how a shot looks and moves and cost little. Change the plan (planEdits) only when a finding cannot be fixed without it, because changing the plan's words or timing makes the owner approve again. Keep everything the findings don't touch exactly as it is.",
+  verify: "You check one claim against the text of its source page. Verified: the page says it, and you can copy the passage that does. Corrected: the page gives a different value; copy the passage and give the value it states. Unverifiable: the page does not say it, or only a headline does. Never add a fact the page does not state and never guess.",
   look: "You are a stranger who has never heard of this video. You are shown one picture per shot. For each, first say what you see, as plainly as you can, and list the things on screen; name any whose purpose you cannot tell. Only then compare it with what was meant, and say whether the picture reads that way and whether the main move can be seen. Also say which of the listed defaults you can see.",
   concept: "You are the director of a short 2D motion video. Before any plan, name the ONE visual mechanism this video is built on: an idea that grows out of this topic and could not be moved onto another one. It must differ from the earlier concepts you are shown. Then say, honestly, whether it is a bolt-on.",
   sameidea: "You compare video concepts. Two concepts are the same idea when they rest on the same visual mechanism, even in different words or for different topics. Answer for the new concept against the earlier ones.",
@@ -194,14 +203,17 @@ const INSTRUCTIONS = {
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1 };
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
 /** Output budget by job, as a floor: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000 };
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000, verify: 4000 };
 
 export interface JudgeAnswer {
   criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
   risks: Array<{ id: string; flagged: boolean; reason: string; shotId?: string; suggestedFix?: string }>;
 }
+
+/** One claim checked against its source page. */
+export interface Verification { verdict: "verified" | "corrected" | "unverifiable"; correctedValue: string | null; evidence: string | null; reason: string }
 
 export interface FixAnswer {
   /** The revised plan, when the fix needs one. */
@@ -521,6 +533,70 @@ export class Director {
       },
       input.images,
     );
+  }
+
+  // ---- facts -----------------------------------------------------------------
+
+  /**
+   * One claim against the text of its source. A verdict of verified or corrected must quote the page
+   * (checked here), and a number in the claim or the correction must be in the quote: nothing new is
+   * ever added. A page that is only a headline cannot verify anything unless the recipe allows it.
+   */
+  async verifyFact(input: {
+    project: GenProject; step: RecipeStep; claim: string; value: string | null; sourceUrl: string; page: string; headlinesAsEvidence: boolean;
+  }): Promise<Verification> {
+    return this.ask<Verification>(
+      input.project, "verify", input.step, { claim: input.claim, value: input.value, sourceUrl: input.sourceUrl, sourceText: input.page },
+      "Check the claim against sourceText: verified, corrected (give the value the page states) or unverifiable. Quote the page word for word.",
+      (parsed) => {
+        const raw = parsed as { verdict?: unknown; correctedValue?: unknown; evidence?: unknown; reason?: unknown };
+        const reason = clip(raw.reason, 300);
+        if (raw.verdict === "unverifiable") return { value: { verdict: "unverifiable", correctedValue: null, evidence: null, reason } };
+        if (raw.verdict !== "verified" && raw.verdict !== "corrected") return { errors: ["verdict is verified, corrected or unverifiable"] };
+        const evidence = clip(raw.evidence, 600);
+        if (!evidence || !isOnPage(evidence, input.page)) return { errors: ["the evidence must be a passage copied word for word from sourceText"] };
+        if (evidence.length < MIN_QUOTE && !input.headlinesAsEvidence) return { errors: [`the evidence is only ${evidence.length} characters; quote the sentence that states it`] };
+        if (headlineOnly(input.page) && !input.headlinesAsEvidence) return { value: { verdict: "unverifiable", correctedValue: null, evidence: null, reason: "the source is only a headline, which is not evidence" } };
+        const stated = numbersOf(evidence);
+        if (raw.verdict === "corrected") {
+          const corrected = clip(raw.correctedValue, 120);
+          const n = numbersOf(corrected)[0];
+          if (!corrected || (n && !stated.some((s) => sameNumber(s, n)))) return { errors: ["correctedValue must be a value that the evidence states"] };
+          return { value: { verdict: "corrected", correctedValue: corrected, evidence, reason } };
+        }
+        const mine = numbersOf(`${input.claim} ${input.value ?? ""}`);
+        const missing = mine.filter((n, i) => !stated.some((s) => sameNumber(s, n)) && mine.findIndex((m) => sameNumber(m, n)) === i);
+        if (missing.length) return { errors: [`the evidence does not state ${missing.map((n) => n.raw).join(", ")}: choose corrected or unverifiable`] };
+        return { value: { verdict: "verified", correctedValue: null, evidence, reason } };
+      },
+    );
+  }
+
+  /**
+   * Finds facts for a topic with read-only tools (fetch a page, search the web, query a registered
+   * data source). Whatever comes back must name its source; the step drops the rest.
+   */
+  async research(input: {
+    project: GenProject; step: RecipeStep; known: string[]; maxSteps: number; handlers: Record<string, ToolHandler>; dataSources: string[];
+  }): Promise<Array<{ claim: string; value: string | null; sourceUrl: string }>> {
+    const tools = [
+      tool("fetch_url", "Read a web page as text.", { url: { type: "string" } }),
+      tool("search_web", "Search the web.", { query: { type: "string" } }),
+      ...(input.dataSources.length ? [tool("query_data", `Run one read-only SELECT on a data source (${input.dataSources.join(", ")}).`, { source: { type: "string" }, sql: { type: "string" } })] : []),
+    ];
+    const system = "You gather facts for a short video. Use the tools to find numbers and claims about the brief's topic, each with the address of the page (or data:<source>) that states it. Only report what a tool showed you; never recall from memory. Finally answer with JSON only: {\"facts\":[{\"claim\":\"...\",\"value\":\"...\",\"sourceUrl\":\"...\"}]}.";
+    const brief = JSON.stringify({ brief: input.project.brief, language: input.project.language, alreadyKnown: input.known, task: "Find the facts the video needs, with their sources, then answer with the JSON." });
+    const messages: ChatMessage[] = [{ role: "system", content: system }, { role: "user", content: brief }];
+    const text = await this.log.track(
+      { projectId: input.project.id, kind: "research", model: this.llm.model, request: brief },
+      () => this.llm.runTools(messages, tools, input.handlers, { maxSteps: input.maxSteps, temperature: 0.2, finalPrompt: "Stop researching. Answer now with the JSON of the facts you found, each with its source." }),
+      (out) => ({ response: out }),
+    );
+    const list = (parseJson(text) as { facts?: unknown } | null)?.facts;
+    return (Array.isArray(list) ? list : []).flatMap((f) => {
+      const o = (typeof f === "object" && f !== null ? f : {}) as Record<string, unknown>;
+      return clip(o.claim, 400) && clip(o.sourceUrl, 500) ? [{ claim: clip(o.claim, 400), value: clip(o.value, 120) || null, sourceUrl: clip(o.sourceUrl, 500) }] : [];
+    });
   }
 
   // ---- look ------------------------------------------------------------------

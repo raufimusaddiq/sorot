@@ -309,6 +309,14 @@ export type GenProjectDetail = {
 
 export type GenCreateBody = {
   brief: string; format?: string; targetSec?: number; language?: string; styleNotes?: string; recipeId?: string; narration?: boolean;
+  facts?: Array<{ claim: string; value?: string; sourceUrl: string }>; forbiddenNumbers?: true | string[];
+};
+
+/** A claim and where it comes from; `corrected` keeps the value it had before in `originalValue`. */
+export type GenFact = {
+  id: string; projectId: string | null; claim: string; value: string | null; sourceUrl: string | null;
+  status: 'unverified' | 'verified' | 'corrected' | 'unverifiable'; originalValue: string | null; evidence: string | null;
+  addedBy: 'owner' | 'idea' | 'director'; createdAt: string; updatedAt: string;
 };
 
 // ---- Generate: builds and their two verdicts ----

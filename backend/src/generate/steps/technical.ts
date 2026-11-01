@@ -3,10 +3,18 @@ import { join } from "node:path";
 import { now } from "../../store";
 import { isCreative, readFindings, saveFindings, type NewFinding } from "../findings";
 import {
-  audioFindings, outputFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, speechFindings, verdictOf, voiceRouteFindings, type HeardWord, type Probe, type SpokenLine, type Volume,
+  audioFindings, contentFindings, forbiddenNumberFindings, outputFindings, parseProbe, parseVolume, planHasSound, readabilityFindings, sourcedNumberFindings, speechFindings, verdictOf, voiceRouteFindings, type HeardWord, type Probe, type SpokenLine, type Volume,
 } from "../technical";
 import { sizeFor } from "../composer";
+import { allowedTexts } from "../facts";
 import { placeLines, readVoice } from "../voice";
+import { builtFacts, creativeState, jevQuestions } from "../creative";
+import { YES } from "../../clipGate";
+import { JevError, noul } from "../../jev";
+import { LlmError } from "../../llm";
+import type { Plan } from "../planSchema";
+import { readScene } from "./build";
+import { chosenStoryline } from "./storylines";
 import { buildTarget } from "./build";
 import type { RunFn, StepContext } from "./types";
 
@@ -23,6 +31,37 @@ const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.i
 async function probe(ctx: StepContext, file: string): Promise<Probe | null> {
   const res = await ctx.exec(probeBinary(ctx.config.ffmpegPath), ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", file], { signal: ctx.signal, timeoutMs: 60_000 });
   return res.exitCode === 0 ? parseProbe(res.stdout) : null;
+}
+
+const briefFlags = (ctx: StepContext): Record<string, unknown> => (ctx.project.briefFlags ? (JSON.parse(ctx.project.briefFlags) as Record<string, unknown>) : {});
+
+/**
+ * The recipe's blocking content rules, asked of a fresh judge (Jev first, then the LLM): a rule that
+ * is flagged is a must-fix. A rule nobody could judge is a should-fix, so it is never silently passed.
+ */
+async function judgeBlocking(ctx: StepContext, dir: string, plan: Plan, rules: Array<{ id: string; question: string }>): Promise<NewFinding[]> {
+  const facts = builtFacts(ctx.project.brief, plan, chosenStoryline(ctx.project), (i) => readScene(dir, i));
+  if (ctx.jev.enabled) {
+    try {
+      const decision = await ctx.jev.decide(creativeState(facts), jevQuestions(rules));
+      return contentFindings(rules.map((r) => ({ id: r.id, question: r.question, flagged: noul(decision.answers[r.id] as never) >= YES })));
+    } catch (e) {
+      if (!(e instanceof JevError)) throw e;
+    }
+  }
+  try {
+    const answer = await ctx.director.judge({ project: ctx.project, step: ctx.step, facts, criteria: [], risks: rules });
+    return contentFindings(rules.map((r) => {
+      const a = answer.risks.find((x) => x.id === r.id)!;
+      return { id: r.id, question: r.question, flagged: a.flagged, reason: a.reason, shotId: a.shotId, suggestedFix: a.suggestedFix };
+    }));
+  } catch (e) {
+    if (!(e instanceof LlmError)) throw e;
+    return rules.map((r): NewFinding => ({
+      severity: "should-fix", shotId: null, code: `content_unjudged.${r.id}`, state: "open", rule: r.id,
+      description: `The content rule "${r.id}" could not be judged: ${e.message}`, suggestedFix: "Connect Jev or an LLM, or check the rule by hand and keep this finding with a reason.",
+    }));
+  }
 }
 
 /** The words Whisper hears in the rendered film (mono 16 kHz, on this machine). */
@@ -85,6 +124,13 @@ export const run: RunFn = async (ctx) => {
     own.push(...speechFindings(lines, heard, num(sp.maxWordErrorRate, 0.25)));
   }
 
+  // Numbers: sourced when the recipe asks, and never the ones the brief forbids. Blocking content rules are judged here.
+  const facts = ctx.store.genFactsForProject(ctx.project.id);
+  if (flag(measures.sourcedNumbers)) own.push(...sourcedNumberFindings(plan, allowedTexts(ctx.project.brief, facts)));
+  own.push(...forbiddenNumberFindings(plan, briefFlags(ctx).forbiddenNumbers, ctx.project.brief));
+  const blocking = ((Array.isArray(rules.content) ? rules.content : []) as Array<{ id: string; question: string; blocking?: boolean }>).filter((r) => r.blocking);
+  if (blocking.length) own.push(...(await judgeBlocking(ctx, dir, plan, blocking)));
+
   saveFindings(dir, "technical", own);
   // the creative judge's findings belong to the other verdict
   const all = readFindings(dir).filter((f) => !isCreative(f));
@@ -93,7 +139,7 @@ export const run: RunFn = async (ctx) => {
     id: crypto.randomUUID(), versionId: version.id, kind: "TECHNICAL", status, findings: JSON.stringify(all), judgedBy: "code",
     inputs: JSON.stringify({
       render: { kind: version.renderKind, path: file }, sources: [...new Set(all.map((f) => f.source))], shots: plan.shots.length,
-      measures: ["output", "planText", "layout", "readability", "firstFrame", ...(planHasSound(plan) ? ["audio"] : []), ...(voice && flag(measures.voiceRoute) ? ["voiceRoute"] : []), ...(voice && flag(measures.speechMatch) ? ["speechMatch"] : [])],
+      measures: ["output", "planText", "layout", "readability", "firstFrame", ...(planHasSound(plan) ? ["audio"] : []), ...(voice && flag(measures.voiceRoute) ? ["voiceRoute"] : []), ...(voice && flag(measures.speechMatch) ? ["speechMatch"] : []), ...(flag(measures.sourcedNumbers) ? ["sourcedNumbers"] : [])],
     }),
     createdAt: now(),
   });

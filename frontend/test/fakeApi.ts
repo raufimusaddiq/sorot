@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -53,6 +53,8 @@ export interface FakeState {
   genNextFix: { needsApproval: boolean; summary: string };
   /** The recipes the editor lists, the step library, and what validation answers. */
   genRecipes: GenRecipeItem[];
+  /** The facts of each project, and what a check against the sources makes of an unchecked one. */
+  genFacts: Record<string, GenFact[]>;
   genSteps: GenStepSpec[];
   genValidation: { ok: boolean; errors: string[]; warnings: string[] };
   genFixBodies: unknown[];
@@ -85,6 +87,13 @@ export function makeGenRecipe(id: string, builtIn = false, over: Partial<GenReci
     steps: [{ use: 'author' }, { use: 'render', with: { quality: 'draft' } }, { use: 'export' }], ...over,
   };
   return { id, name: recipe.name, version: 1, builtIn, description: null, recipe, available: true, reasons: [] };
+}
+
+export function makeGenFact(id: string, over: Partial<GenFact> = {}): GenFact {
+  return {
+    id, projectId: 'g1', claim: 'Suku bunga acuan BI adalah 5,75 persen', value: '5,75%', sourceUrl: 'https://bi.go.id/rapat', status: 'unverified',
+    originalValue: null, evidence: null, addedBy: 'owner', createdAt: ts(), updatedAt: ts(), ...over,
+  };
 }
 
 export function makeGenExport(id: string, over: Partial<GenExport> = {}): GenExport {
@@ -204,7 +213,7 @@ export function emptyState(): FakeState {
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
     settings: makeConnections(), tests: {}, accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
-    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genRecipes: [makeGenRecipe('quick', true)], genSteps: [{ type: 'author', gates: ['none'], fields: { repairRounds: { t: 'int', min: 0, max: 5 }, require: { t: 'strs', maxItems: 20 } }, required: [], defaults: {} }, { type: 'render', gates: ['none'], fields: { quality: { t: 'enum', values: ['draft', 'delivery'] } }, required: [], defaults: {} }, { type: 'export', gates: ['none', 'owner'], fields: {}, required: [], defaults: {} }], genValidation: { ok: true, errors: [], warnings: [] }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
+    genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genRecipes: [makeGenRecipe('quick', true)], genFacts: {}, genSteps: [{ type: 'author', gates: ['none'], fields: { repairRounds: { t: 'int', min: 0, max: 5 }, require: { t: 'strs', maxItems: 20 } }, required: [], defaults: {} }, { type: 'render', gates: ['none'], fields: { quality: { t: 'enum', values: ['draft', 'delivery'] } }, required: [], defaults: {} }, { type: 'export', gates: ['none', 'owner'], fields: {}, required: [], defaults: {} }], genValidation: { ok: true, errors: [], warnings: [] }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
   };
 }
 
@@ -340,6 +349,25 @@ export function installFakeApi(state: FakeState) {
       if (method === 'DELETE') state.genRecipes = state.genRecipes.filter((r) => r.id !== m![1]);
       else state.genRecipes = state.genRecipes.map((r) => (r.id === m![1] ? { ...r, recipe: body.recipe, name: body.recipe.name } : r));
       return ok(method === 'DELETE' ? { deleted: true } : { recipe: { id: m[1] } });
+    }
+    if ((m = path.match(/^\/api\/generate\/projects\/([^/]+)\/facts(\/verify)?$/))) {
+      const list = state.genFacts[m[1]!] ?? (state.genFacts[m[1]!] = []);
+      if (method === 'GET') return ok({ facts: list });
+      if (m[2]) {
+        state.genFacts[m[1]!] = list.map((f) => (f.status === 'unverified' ? { ...f, status: 'verified', evidence: 'Bank Indonesia menetapkan suku bunga acuan sebesar 5,75 persen' } : f));
+        return ok({ facts: state.genFacts[m[1]!] });
+      }
+      const fact = makeGenFact(`fact${list.length + 1}`, { projectId: m[1]!, ...body });
+      list.push(fact);
+      return ok({ fact });
+    }
+    if ((m = path.match(/^\/api\/generate\/facts\/([^/]+)$/))) {
+      for (const [pid, list] of Object.entries(state.genFacts)) {
+        if (!list.some((f) => f.id === m![1])) continue;
+        if (method === 'DELETE') state.genFacts[pid] = list.filter((f) => f.id !== m![1]);
+        else state.genFacts[pid] = list.map((f) => (f.id === m![1] ? { ...f, ...body, status: 'unverified', evidence: null, originalValue: null } : f));
+        return ok(method === 'DELETE' ? { deleted: true } : { fact: state.genFacts[pid]!.find((f) => f.id === m![1]) });
+      }
     }
     if (method === 'GET' && path === '/api/generate/projects') return ok({ projects: state.genProjects.map((d) => d.project) });
     if (method === 'POST' && path === '/api/generate/projects') {

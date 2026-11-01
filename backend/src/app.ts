@@ -10,6 +10,7 @@ import { DiscoveryAgent } from "./discoveryAgent";
 import { WebSearch } from "./webSearch";
 import { FeedbackService, ValidationError } from "./feedback";
 import { Hyperframes } from "./generate/hyperframes";
+import { fetchPageText } from "./generate/facts";
 import { ImageClient } from "./generate/images";
 import { Narrator } from "./generate/narration";
 import { GenerateService } from "./generate/service";
@@ -61,6 +62,8 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const tebar = new Tebar(config, httpFetch);
   // Saved UI / CLI connection settings go over the env before anything uses them.
   const narrator = new Narrator(config, httpFetch, runScript);
+  const search = new WebSearch(config.webSearch, httpFetch);
+  const factWeb = { fetchText: (url: string) => fetchPageText(url, httpFetch), search: (q: string) => search.search(q) };
   const settings = new ConnectionSettings(config, store, { llm, jev, tebar, narrator });
   const youtube = new YouTube(exec, config.ytdlpPath);
   const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm, youtube, jev);
@@ -73,7 +76,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const feedback = new FeedbackService(config, store);
   const editor = new ClipEditor(config, store, runScript, orchestrator);
   const publisher = new Publisher(config, store, tebar, llm, jev, feedback);
-  const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev, exec, narrator, runScript, new ImageClient(config, httpFetch));
+  const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev, exec, narrator, runScript, new ImageClient(config, httpFetch), factWeb);
 
   const router = new Router();
 
@@ -323,6 +326,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
       targetSec: typeof b.targetSec === "number" ? b.targetSec : undefined, language: strArg(b, "language") || undefined,
       styleNotes: strArg(b, "styleNotes") || undefined, preset: strArg(b, "preset") || undefined,
       narration: b.narration === true, buildWithoutStopping: b.buildWithoutStopping === true, ideaId: strArg(b, "ideaId") || undefined,
+      facts: Array.isArray(b.facts) ? b.facts : undefined, forbiddenNumbers: b.forbiddenNumbers === true ? true : Array.isArray(b.forbiddenNumbers) ? b.forbiddenNumbers : undefined,
     });
     return ok({ project: projectView(project) }, 201);
   });
@@ -392,6 +396,14 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   });
   router.on("POST", "/api/generate/versions/:id/restore", (c) => ok({ project: projectView(generate.restoreVersion(c.params.id as string)) }));
   router.on("POST", "/api/generate/versions/:id/accept", (c) => ok({ project: projectView(generate.acceptVersion(c.params.id as string)) }));
+  router.on("GET", "/api/generate/projects/:id/facts", (c) => ok({ facts: generate.facts(c.params.id as string) }));
+  router.on("POST", "/api/generate/projects/:id/facts/verify", async (c) => ok({ facts: await generate.verifyProjectFacts(c.params.id as string) }));
+  router.on("POST", "/api/generate/projects/:id/facts", async (c) => ok({ fact: generate.addFact(c.params.id as string, await c.body()) }, 201));
+  router.on("PATCH", "/api/generate/facts/:id", async (c) => ok({ fact: generate.updateFact(c.params.id as string, await c.body()) }));
+  router.on("DELETE", "/api/generate/facts/:id", (c) => {
+    generate.deleteFact(c.params.id as string);
+    return ok({ deleted: true });
+  });
   router.on("GET", "/api/generate/steps", () => ok({ steps: stepLibrary() }));
   router.on("GET", "/api/generate/recipes", () => ok({ recipes: generate.recipeList() }));
   router.on("POST", "/api/generate/recipes/validate", async (c) => ok(generate.recipes.validate((await c.body()).recipe)));

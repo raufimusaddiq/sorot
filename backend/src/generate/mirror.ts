@@ -5,6 +5,7 @@ import type { Store } from "../store";
 import type { GenVerdict, GenVersion } from "../types";
 import type { Finding } from "./findings";
 import type { Storyline } from "./director";
+import { factsMarkdown } from "./facts";
 import type { Plan } from "./planSchema";
 
 // Read-only mirrors of the database, written for people and outside agents into
@@ -80,6 +81,8 @@ export function mirrorProject(config: Pick<AppConfig, "genDir">, store: Store, p
   const put = (name: string, text: string) => { writeFileSync(join(out, name), text); written.push(name); };
 
   put("BRIEF.md", briefMd(project));
+  const facts = store.genFactsForProject(projectId);
+  if (facts.length) put("facts.md", factsMarkdown(facts));
   if (project.concept) {
     const c = JSON.parse(project.concept) as { mechanism: string; concept: string };
     put("CONCEPT.txt", `${c.mechanism}\n\n${c.concept}\n`);

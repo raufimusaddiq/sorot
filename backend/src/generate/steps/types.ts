@@ -6,6 +6,7 @@ import type { GenProject, GenVersion } from "../../types";
 import type { Director } from "../director";
 import type { DirectorLog } from "../events";
 import type { Hyperframes } from "../hyperframes";
+import type { FactWeb } from "../facts";
 import type { ImageClient } from "../images";
 import type { Narrator } from "../narration";
 import type { Recipe, RecipeStep } from "../recipe";
@@ -31,6 +32,8 @@ export interface StepContext {
   narrator?: Narrator;
   /** The image connection set up in Settings. */
   images?: ImageClient;
+  /** Pages and web search for the facts step. */
+  web?: FactWeb;
   config: AppConfig;
   /** Is this connection (llm, jev, image, voice, vision) set up? */
   connected: (connection: string) => boolean;

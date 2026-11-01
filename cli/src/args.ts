@@ -7,7 +7,7 @@ export interface Args {
 // Options that never take a value, so `--wait foo` keeps `foo` positional.
 const BOOLEAN = new Set([
   "json", "help", "no-wait", "trim", "hook", "yt-captions", "auto-captions", "yes", "follow", "version",
-  "on", "off", "reset", "draft", "override", "confirm-review", "narration", "edit", "no-stop", "no-watch",
+  "on", "off", "reset", "draft", "override", "confirm-review", "narration", "edit", "no-stop", "no-watch", "no-numbers",
 ]);
 // Options that may repeat: the values join with commas.
 const JOINED = new Set(["finding"]);

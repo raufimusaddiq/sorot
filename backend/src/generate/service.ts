@@ -6,7 +6,7 @@ import type { Jev } from "../jev";
 import type { Llm } from "../llm";
 import type { ExecFn, ScriptRunner } from "../runner";
 import { now, type Store } from "../store";
-import type { GenExport, GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
+import type { GenExport, GenFact, GenPlan, GenProject, GenVerdict, GenVersion } from "../types";
 import { Assets, projectDir } from "./assets";
 import { Director, changedShots, type GateDecision as DirectorDecision } from "./director";
 import { DirectorLog } from "./events";
@@ -18,6 +18,7 @@ import { planContext } from "./planContext";
 import { validatePlan, type Plan } from "./planSchema";
 import { freezeRecipe, parseRecipe, seedRecipes, type Recipe, type RecipeStep } from "./recipe";
 import { BuildQueue, clipJobBusy, estimateBuild } from "./queue";
+import type { FactWeb } from "./facts";
 import { ImageClient } from "./images";
 import { Narrator } from "./narration";
 import { RecipeBook } from "./recipes";
@@ -65,6 +66,10 @@ export interface CreateProjectInput {
   narration?: boolean;
   buildWithoutStopping?: boolean;
   ideaId?: string;
+  /** Facts the owner brings, each with its source. */
+  facts?: Array<{ claim?: unknown; value?: unknown; sourceUrl?: unknown }>;
+  /** `true`: no numbers beyond the brief's own; a list: numbers that must never appear. */
+  forbiddenNumbers?: true | string[];
 }
 
 const DOCTOR_TTL_MS = 30_000;
@@ -93,6 +98,7 @@ export class GenerateService {
     readonly narrator: Narrator = new Narrator(config),
     runScript?: ScriptRunner,
     readonly images: ImageClient = new ImageClient(config),
+    web?: FactWeb,
   ) {
     this.log = new DirectorLog(store);
     this.director = new Director(llm, this.log, config.generatorDir);
@@ -108,6 +114,7 @@ export class GenerateService {
       runScript,
       narrator: this.narrator,
       images: this.images,
+      web,
       config,
       catalog: () => this.catalog(),
     });
@@ -142,7 +149,7 @@ export class GenerateService {
     return {
       llm: this.llm.enabled, jev: this.jev.enabled, vision: this.llm.visionModel !== null,
       image: c.imageEnabled && !!c.imageBaseUrl && !!c.imageModel && !!c.imageApiKey,
-      voiceEngines: this.narrator.engines, dataSources: [], commands: c.commandsEnabled ? c.commands.map((x) => x.name) : [],
+      voiceEngines: this.narrator.engines, dataSources: c.dataSources.map((x) => x.name), commands: c.commandsEnabled ? c.commands.map((x) => x.name) : [],
     };
   }
 
@@ -187,6 +194,81 @@ export class GenerateService {
       compute: this.compute,
       presets: [],
     };
+  }
+
+  private createFlags(input: CreateProjectInput): string | null {
+    const flags: Record<string, unknown> = {};
+    if (input.buildWithoutStopping) flags.buildWithoutStopping = true;
+    if (input.forbiddenNumbers === true || (Array.isArray(input.forbiddenNumbers) && input.forbiddenNumbers.every((x) => typeof x === "string"))) flags.forbiddenNumbers = input.forbiddenNumbers;
+    return Object.keys(flags).length ? JSON.stringify(flags) : null;
+  }
+
+  // ---- facts (FR-026, FR-027) ------------------------------------------------
+
+  facts(projectId: string): GenFact[] {
+    this.mustProject(projectId);
+    return this.store.genFactsForProject(projectId);
+  }
+
+  /** An owner's fact needs a claim and a web address to check it against. */
+  private factFields(input: { claim?: unknown; value?: unknown; sourceUrl?: unknown }, partial = false) {
+    const out: { claim?: string; value?: string | null; sourceUrl?: string } = {};
+    if (!partial || input.claim !== undefined) {
+      const claim = typeof input.claim === "string" ? input.claim.trim() : "";
+      if (!claim || claim.length > 400) throw new HttpError(400, "claim: write the fact as a sentence (at most 400 characters)");
+      out.claim = claim;
+    }
+    if (!partial || input.value !== undefined) {
+      const value = typeof input.value === "string" ? input.value.trim() : "";
+      if (value.length > 120) throw new HttpError(400, "value is at most 120 characters");
+      out.value = value || null;
+    }
+    if (!partial || input.sourceUrl !== undefined) {
+      const url = typeof input.sourceUrl === "string" ? input.sourceUrl.trim() : "";
+      if (!/^https?:\/\/\S+$/i.test(url) || url.length > 500) throw new HttpError(400, "sourceUrl: give the web address of the page that states it");
+      out.sourceUrl = url;
+    }
+    return out;
+  }
+
+  addFact(projectId: string, input: { claim?: unknown; value?: unknown; sourceUrl?: unknown }): GenFact {
+    this.mustProject(projectId);
+    const f = this.factFields(input);
+    const t = now();
+    const fact = this.store.saveGenFact({
+      id: crypto.randomUUID(), projectId, ideaId: null, claim: f.claim as string, value: f.value ?? null, sourceUrl: f.sourceUrl as string,
+      status: "unverified", originalValue: null, evidence: null, addedBy: "owner", createdAt: t, updatedAt: t,
+    });
+    mirrorProject(this.config, this.store, projectId);
+    return fact;
+  }
+
+  /** Any edit makes the fact unchecked again: what was verified was the old wording. */
+  updateFact(id: string, input: { claim?: unknown; value?: unknown; sourceUrl?: unknown }): GenFact {
+    const fact = this.mustFact(id);
+    this.store.updateGenFact(id, { ...this.factFields(input, true), status: "unverified", evidence: null, originalValue: null });
+    if (fact.projectId) mirrorProject(this.config, this.store, fact.projectId);
+    return this.mustFact(id);
+  }
+
+  deleteFact(id: string): void {
+    const fact = this.mustFact(id);
+    this.store.deleteGenFact(id);
+    if (fact.projectId) mirrorProject(this.config, this.store, fact.projectId);
+  }
+
+  private mustFact(id: string): GenFact {
+    const f = this.store.getGenFact(id);
+    if (!f) throw new HttpError(404, "Fact not found");
+    return f;
+  }
+
+  /** Checks the project's facts against their sources now (the recipe's facts step, or a plain verify). */
+  async verifyProjectFacts(projectId: string): Promise<GenFact[]> {
+    const p = this.idle(projectId);
+    await this.runner.runFacts(p.id);
+    mirrorProject(this.config, this.store, projectId);
+    return this.store.genFactsForProject(projectId);
   }
 
   /** Why a recipe can't run here (a missing connection it needs), or none. */
@@ -318,14 +400,17 @@ export class GenerateService {
       throw new HttpError(400, `The length must be a whole number of seconds from ${minSec} to ${maxSec} for this recipe`);
     }
 
+    // facts are checked before the project exists, so a bad one refuses the whole request
+    for (const f of input.facts ?? []) this.factFields(f);
     const t = now();
     const project = this.store.saveGenProject({
       id: crypto.randomUUID(), title: null, brief, format, targetSec, language, styleNotes: input.styleNotes?.trim() || null,
       preset: input.preset ?? null, recipeId, recipe: frozen.json, ideaId: input.ideaId ?? null,
-      briefFlags: input.buildWithoutStopping ? JSON.stringify({ buildWithoutStopping: true }) : null,
+      briefFlags: this.createFlags(input),
       narrationScript: null, concept: null, stepIndex: 0, stepState: null, narration: input.narration ? 1 : 0, storylines: null,
       pickedStoryline: null, status: "RUNNING", currentPlanId: null, acceptedVersionId: null, errorMessage: null, createdAt: t, updatedAt: t,
     });
+    for (const f of input.facts ?? []) this.addFact(project.id, f);
     mirrorProject(this.config, this.store, project.id);
     this.launch(project.id, () => this.runner.runProject(project.id));
     return project;
