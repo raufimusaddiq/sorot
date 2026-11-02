@@ -4,6 +4,7 @@ import { checkScene, shotFile, shotStarts, sizeFor } from "../composer";
 import { readFindings, saveFindings, type NewFinding, type Severity } from "../findings";
 import { HyperframesError, type HfFinding } from "../hyperframes";
 import { planHasSound } from "../technical";
+import { PROBE_PREFIX, probeConfig, probeFindings, readProbe, withProbe } from "../sceneProbe";
 import { buildTarget, levelOfShot, readScene, readShotLevels, sceneAssets, sceneRules, shotIndexOf } from "./build";
 import { levelDrop, partsInScene, shotWriter } from "./author";
 import { levelBelow } from "../capabilities";
@@ -119,8 +120,11 @@ async function settleLevels(ctx: StepContext, dir: string, plan: Plan, failing: 
   return out;
 }
 
-/** lint first (cheap); `check` (it opens a browser) only once lint has no errors. */
-async function collect(ctx: Parameters<RunFn>[0], dir: string, starts: number[], durations: number[]): Promise<Found[]> {
+/**
+ * lint first (cheap); `check` (it opens a browser) only once lint has no errors. The check's page also
+ * runs Sorot's scene probe (sceneProbe.ts): its line comes out of the console warnings as findings.
+ */
+async function collect(ctx: Parameters<RunFn>[0], dir: string, plan: Plan, starts: number[], durations: number[]): Promise<Found[]> {
   const { hyperframes: hf, signal } = ctx;
   const map = (f: HfFinding): Found | null => {
     if (f.severity === "info" || IGNORED.has(f.code) || (f.code === "console_warning" && CAPTURE_NOISE.test(f.message))) return null;
@@ -132,10 +136,13 @@ async function collect(ctx: Parameters<RunFn>[0], dir: string, starts: number[],
   const fromLint = lint.findings.map(map).filter((f): f is Found => f !== null);
   if (fromLint.some((f) => f.severity === "error")) return fromLint;
   try {
-    const result = await hf.check(dir, { signal });
+    const result = await withProbe(dir, probeConfig(plan, ctx.recipe.output.fps), () => hf.check(dir, { signal }));
     const sections = Object.entries(result).filter(([k, v]) => k !== "lint" && typeof v === "object" && v !== null && Array.isArray((v as { findings?: unknown }).findings));
-    const fromCheck = sections.flatMap(([, v]) => (v as { findings: HfFinding[] }).findings).map(map).filter((f): f is Found => f !== null);
-    return [...fromLint, ...fromCheck];
+    const all = sections.flatMap(([, v]) => (v as { findings: HfFinding[] }).findings);
+    const isProbe = (f: HfFinding) => f.code === "console_warning" && f.message.startsWith(PROBE_PREFIX);
+    const fromCheck = all.filter((f) => !isProbe(f)).map(map).filter((f): f is Found => f !== null);
+    const probe = readProbe(all.filter(isProbe).map((f) => f.message));
+    return [...fromLint, ...fromCheck, ...(probe ? probeFindings(probe, plan) : [])];
   } catch (e) {
     if (!(e instanceof HyperframesError) || e.code === "cancelled") throw e;
     return [...fromLint, { shot: null, code: "checker_failed", severity: "error", message: `The check could not run: ${e.message}` }];
@@ -162,7 +169,7 @@ export const run: RunFn = async (ctx) => {
 
   let found: Found[] = [];
   for (let round = 0; ; round++) {
-    found = grouped(await collect(ctx, dir, starts, durations));
+    found = grouped(await collect(ctx, dir, plan, starts, durations));
     // the plan's own rules count too: a scene that lost its text is repaired with the lint findings
     const planLock = plan.shots.flatMap((shot, i) => checkScene(readScene(dir, i) ?? "", shot, i, sceneRules(ctx, levelOfShot(ctx, plan, i))).map((c): Found => ({ shot: i, code: c.code, severity: "error", message: c.message, hint: c.hint })));
     const todo = [...repairs(found), ...planLock];
@@ -193,7 +200,7 @@ export const run: RunFn = async (ctx) => {
   const dropped = await settleLevels(ctx, dir, plan, rounds === 0 ? [] : [...repairs(found).filter((f) => f.severity === "error"), ...plan.shots.flatMap((shot, i) =>
     checkScene(readScene(dir, i) ?? "", shot, i, sceneRules(ctx, levelOfShot(ctx, plan, i))).map((): Found => ({ shot: i, code: "plan-lock", severity: "error", message: "" })))]
     .map((f) => f.shot).filter((i): i is number => i !== null), starts, durations);
-  if (dropped.length) found = grouped(await collect(ctx, dir, starts, durations));
+  if (dropped.length) found = grouped(await collect(ctx, dir, plan, starts, durations));
 
   const severity = (f: Found): Severity => (f.severity === "error" ? "must-fix" : mode === "report" ? "polish" : "should-fix");
   const report: NewFinding[] = found.map((f) => {

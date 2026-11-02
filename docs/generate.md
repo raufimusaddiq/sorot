@@ -86,6 +86,13 @@ rate), `voiceRoute` (engine and voice are the ones configured), `sourcedNumbers`
 blocking content rules (judged by Jev, then the LLM, else a should-fix "unjudged"), and `command`
 findings. A finding is `must-fix` or `should-fix`; any must-fix is a FAIL.
 
+Before rendering, the check step also probes each scene in the browser (`sceneProbe.ts`, loaded into
+the root only while `hyperframes check` runs) and sends what it finds back as repairs: `hard_swap`
+(two large elements swapping visibility in ≤ 0.3 s), `fighting_tweens` (a kit part and another tween
+on the same property at once), `text_over_object` (≥ 30% of a text on a drawn object in most samples)
+and `first_frame_partial_text` (text 5–95% clipped on a shot's first frame after a cut). The faults
+come from a real Kimi film on 2026-11-02; HyperFrames' own lint and layout checks missed all four.
+
 **CREATIVE** is a fresh judge answering the recipe's criteria. With a vision model, what only the
 frames can show (`finished`, `motion`) goes to the LLM judge with the review sheets; Jev answers the
 rest first (it reads text: on 2026-11-02 it passed a film whose world was tilted on its side); what

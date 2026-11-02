@@ -7,6 +7,7 @@ import { openDatabase } from "../../src/db";
 import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { readFindings } from "../../src/generate/findings";
+import { PROBE_FILE, PROBE_PREFIX } from "../../src/generate/sceneProbe";
 import { Hyperframes } from "../../src/generate/hyperframes";
 import { Kit } from "../../src/generate/kit";
 import { capabilitiesFor } from "../../src/generate/capabilities";
@@ -462,6 +463,23 @@ describe("check step", () => {
     await STEPS.check.run(r.ctxFor("check"));
     expect(readFindings(r.dir)).toEqual([]);
     expect(r.requests).toHaveLength(0);
+  });
+
+  test("Sorot's scene probe runs in the check's page; its line becomes findings in their shots, repaired like the rest", async () => {
+    const rig = { l: "div.camera-rig", c: "shot-02" };
+    const fight = { el: "e1", p: ["scaleX", "y"], s: 11, e: 14 };
+    const line = `${PROBE_PREFIX}${json({ size: [1080, 1920], labels: { e1: rig }, tweens: [{ ...fight, kit: "camera#0", auto: false }, { ...fight, kit: null, auto: false }], fades: [], frames: [] })}`;
+    const roots: string[] = [];
+    // the first check finds the fight, the one after the repair finds nothing
+    const r = await built({ check: (args) => {
+      roots.push(readFileSync(join(args[1]!, "index.html"), "utf-8"));
+      return procOk(json({ ok: true, lint: { findings: [] }, runtime: { findings: roots.length === 1 ? [{ ...finding("console_warning", "warning"), message: line }] : [] }, layout: { findings: [] } }));
+    } }, [json({ html: sceneHtml(1) })]);
+    await STEPS.check.run(r.ctxFor("check"));
+    expect(roots[0]).toContain(`<script src="${PROBE_FILE}"></script>`);
+    expect(JSON.parse(r.requests[0]!.messages[1]!.content)).toMatchObject({ compositionId: "shot-02", findings: [{ code: "fighting_tweens" }] });
+    expect(readFindings(r.dir)).toEqual([]);
+    expect(readFileSync(join(r.dir, "index.html"), "utf-8")).not.toContain(PROBE_FILE);
   });
 
   test("a checker that can't run is a must-fix finding, so nothing is judged on a check that didn't happen", async () => {
