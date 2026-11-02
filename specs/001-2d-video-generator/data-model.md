@@ -377,3 +377,27 @@ Validated against the capability description; Sorot writes the scene from it.
 otherwise), `kit_unknown_part` and `kit_bad_setting` (plan or scene named something not
 installed; a validation error during the build, a must-fix if left), `frame_budget` (a shot too
 heavy to draw in time on this machine).
+
+## Additions for the director loop (2026-11-02, FR-048 to FR-053)
+
+No new tables or columns.
+
+- **Build session** (memory only, `Director.sessions`, the newest 4 by version id): `messages` (the
+  conversation), `opening` (how many messages are the opening: system + film), `latest` (shot index
+  → the last accepted HTML or kit answer), `turn` (the queue that runs turns one at a time). After a
+  restart a session is opened again from the opening and the shot files of the version.
+- **A turn** (one shot): `user {request: scene | repair | kitshot, level, levelMeans, position,
+  compositionId, file, shot, effects, enters, leaves, before, after, currentHtml?, findings?,
+  task}` → zero or more tool calls and results → `submit_*` and `{accepted}`. After acceptance the
+  tool exchanges are replaced by one note (FR-051).
+- **`gen_event`**: one row per director call as today, plus one per tool call (`kind` =
+  `search_blocks` | `use_block` | `look` | `check`; `request` = the arguments; `response` = the
+  result with images replaced by their count; `ms`; `ok`). The stranger's read inside `look` is its
+  own row (`kind` = `look`), as the look step's call is today.
+- **`gen_version.step_state.look`**: `{status: "done", reason: "looked in the loop"}` when every
+  shot was looked at in its turn; the look step runs as before otherwise.
+- **Settings (`setting` table, `llm.*`)**: added `contextTokens` (20000 to 2000000),
+  `planModel`, `sceneModel`, `judgeModel` (text, empty = `llm.model`), and `turnTokens` (to come,
+  FR-051); removed `vision`, `visionModel` (saved rows are ignored).
+- **Recipe step settings**: `author.toolSteps` (0 to 16, default 8; 0 = one forced call as before),
+  `author.looks` (0 to 4, default 2).

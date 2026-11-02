@@ -919,3 +919,92 @@ WebGL with SwiftShader (software). Treat these as single measurements.
 - The `finished` question is worded "Do the things in `shots` read as what they are, looking finished
   and intended?": the spec's "..., and look finished and intended?" asks two things by Sorot's own
   question lint.
+
+## Part 4: The director loop (2026-11-02)
+
+Evidence: three real builds on 2026-11-02 (Kimi isometric, GLM isometric, GLM story) and the
+`gen_event` log of every call. Design note: [docs/director-loop.md](../../docs/director-loop.md).
+
+## R32. One build session instead of a call per shot
+
+- **Decision**: a version's scenes, repairs and kit shots are one conversation (opening: system
+  message, whole plan, capabilities; one turn per shot, in order; each request extends the last).
+  `GEN_CONTEXT_TOKENS` (default 600000, for models with a 1M window) restarts it from the opening
+  and the latest shots. Built in `3c1ae8a`.
+- **Rationale**: with separate calls the best possible prefix reuse, replayed from the log, was 44%
+  (isometric) and 51% (story); the provider reported 34% and 40%. Calls ran in parallel (none could
+  reuse another), scene and repair started with different instructions, and the shot's own fields
+  came before the shared 8.7 KB capabilities. On the session build the estimate was 84% for scenes
+  (94 to 97% after the first) and 89% for repairs, 87% overall. Shots also see each other: the
+  story's figures stayed one style across shots.
+- **Cost**: scene writing is serial (4.4 min vs about 2.5 for seven GLM scenes); whole build time
+  was unchanged (about 15 min).
+- **Alternatives**: reordering fields only (tried first, `4c91448`: the ceiling stays near 50%);
+  staggering parallel calls (timing-dependent, cache writes aren't guaranteed in time); a bigger
+  output budget (`GEN_LLM_MAX_TOKENS` caps the answer, not the cache).
+
+## R33. Tools in the turn: use what ships, don't bundle art
+
+- **Decision**: `search_blocks` (word and tag match over the cached catalog), `use_block`
+  (`hyperframes add`, source returned up to 24 KB), `look` (R34), `check` (`checkScene` +
+  `hyperframes lint` for one shot), then `submit_*`. `tool_choice: auto` with the submit tool
+  offered every step; the last allowed step is forced to it. Limits per turn: 8 steps, 4 searches,
+  2 blocks, 2 looks, 3 checks (recipe `author.toolSteps`, `author.looks`).
+- **Rationale**: the registry already holds 448 items (238 components, 210 blocks): 38 in 3D, a
+  jointed walking character (`lottie-character-walk`), 12 maps, 9 charts; Three.js is already the
+  `three` part. The owner's requirement: no bundled assets (bloat, licences, sameness), no paid
+  generated images, the director's creativity not capped.
+- **Alternatives**: drawing lessons in the prompt (no feedback to the model; tried in spirit with
+  the worked example, which changed layout but not drawing); a bundled character/icon library
+  (rejected by the owner: size and sameness); embeddings for search (a new dependency for 448
+  short descriptions; word and tag match first, measured in S8).
+- **Not a tool**: the scene probe needs a full `hyperframes check` (minutes); it stays in the check
+  step and comes back as a repair turn.
+
+## R34. Looking: the director's eyes and a stranger's read, one model
+
+- **Decision**: `look` renders 1 to 3 frames of the draft (`snapshot --at`), sends only the frames
+  to a fresh call of the same model with the look step's questions, turns the answer into the look
+  findings with `look.ts`, and returns frames and findings to the director in the same turn. The
+  look step records "looked in the loop" when every shot was looked at. No separate vision model
+  (`LLM_VISION`, `LLM_VISION_MODEL` removed in `8ba50db`); a call with pictures goes to its role's
+  model.
+- **Rationale**: the look step's value is the stranger: a viewer that doesn't know what the shot
+  meant. The author can't be that for its own drawing, but the same model in a fresh call can.
+  Moving it into the turn means the director redraws before submitting instead of after the
+  build. GLM read a frame sheet correctly in a direct test (2026-11-02). One model to configure
+  keeps the settings small (owner's requirement).
+- **Alternatives**: the director judging its own frames only (biased: it knows its intent); keeping
+  the look step after the build (feedback arrives after the scene is written, text only); a second
+  vision model (more configuration; the director must see anyway).
+
+## R35. Compaction that keeps the cache
+
+- **Decision**: three levels, each rewriting only the tail (the current turn): end of turn
+  (always): the turn's tool exchanges become one note (`tools used: …`), the accepted answer stays;
+  mid-turn (past `GEN_TURN_TOKENS`, default 60000): older tool results become stubs, the latest of
+  each kind (frames, check, block source) stays whole; session (past `GEN_CONTEXT_TOKENS`): restart
+  from the opening and the latest shots (built).
+- **Rationale**: a provider caches the request's prefix, so editing anything before the current
+  turn would make every later request miss. Tool results are the bulky part (images, block sources,
+  check output) and are only useful while the shot is being made.
+- **Alternatives**: summarising the turn with an extra LLM call (cost and latency for a note code
+  can write); a sliding window over the whole conversation (moves the prefix on every turn, so
+  nothing is cached); never compacting (frames from earlier shots would fill the window).
+- **Sizes**: estimated in code at 3.5 characters a token and a placeholder 1,500 tokens an image,
+  corrected from the provider's usage numbers in S8.
+
+## R36. Removing the vision settings is a contract break
+
+- **Decision**: `llm.vision` and `llm.visionModel` answer 400 (unknown field); saved values are
+  ignored; called out in the CHANGELOG (constitution V). Recipes keep `creative.vision`
+  (`on`/`auto`/`off`): whether to show the frames, not which model sees them.
+
+## Spike S8 (before phases 20 to 22)
+
+| Question | How | Decides |
+|---|---|---|
+| Does a fast model (GLM) run a multi-step tool loop, or call the same tool repeatedly? | the story brief with tools on, the `gen_event` tool rows | per-tool limits, the forced-submit step |
+| What does an image cost in tokens on the provider? | the provider's usage numbers for calls with 1, 2, 3 frames | the compaction estimate, `author.looks` |
+| Can `lottie-character-walk` and the 3D blocks be adapted to 9:16 and a film's look? | install into a 9:16 project, adapt, render | whether `use_block` returns full sources or references |
+| Word and tag search: do the right blocks come up for "a person walking", "a bar chart", "a map"? | ten queries against the catalog | whether search needs more than words and tags |

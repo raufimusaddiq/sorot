@@ -134,7 +134,7 @@ Checked when a recipe is saved or imported:
   GPU install"), and it is never swapped for another engine silently.
 - `measures.sourcedNumbers` needs `facts`; `facts.mode: research` with `sources` needs those data
   sources to exist in Settings (else the recipe is unavailable, with the reason).
-- `look`, and `creative.vision: on`, need a vision-capable model (or `when: "connection:vision"`).
+- `look`, and `creative.vision: on`, need the LLM, whose model sees (or `when: "connection:vision"`; FR-052).
 - `images` needs the `image` connection (or `when`).
 - `export.mode: copy` needs `render.quality: delivery`.
 - Limits: ≤ 30 steps; `output` within 360..4096 px, 12..60 fps, 5..90 s; ≤ 20 audit items,
@@ -197,3 +197,12 @@ stay free-form hints, so an older recipe that lists words like `typography` is n
 New settings have no schema defaults that join a step's input hash; their defaults live in code,
 so existing projects don't re-run. A recipe naming a kit part the install lacks is unavailable
 with the reason "kit part <name> isn't installed".
+
+### Additions for the director loop (2026-11-02)
+
+- `author.toolSteps`: 0 to 16 (default 8): tool steps per shot turn; 0 = one forced call, as before.
+- `author.looks`: 0 to 4 (default 2): `look` calls per turn.
+- `look` still runs in recipes that name it; when the director looked at every shot in its turn it
+  records "looked in the loop" and does nothing else.
+- `look` and `creative.vision: on` need the LLM (its model sees); `vision-capable model` no longer
+  applies (FR-052).

@@ -79,3 +79,33 @@ flagged blocking rule is a must-fix.
 - **Judge**: Sorot always adds the criteria `finished` ("Do the things in `shots` read as what they
   are, and look finished and intended?") and `motion` ("Does the motion in `shots` move smoothly and
   with weight?").
+
+## Additions for the director loop (2026-11-02)
+
+**Session** (FR-048): `scene`, `repair` and `kitshot` are turns of one conversation per version.
+Opening: system (the three jobs, the authoring contract, the worked example, the step prompt) and
+one user message `{capabilities, film: {title, message, look, language, shots}, size, assets,
+fonts, task}`. Each turn's user message: `{request, level, levelMeans, …the shot's own fields,
+currentHtml?, findings?, task}`. All three submit tools are offered on every turn; the request
+names which one ends it.
+
+**Tools in a turn** (FR-049, to build). Offered with `tool_choice: "auto"`; the last allowed step
+forces the submit tool. Every result is JSON; an error is `{ "error": "…" }`.
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `search_blocks` | `{query: string ≤ 120, type?: "block" \| "component", limit?: 1..8}` | `{matches: [{name, type, title, description, tags, width, height, duration}]}` |
+| `use_block` | `{name: string}` | `{name, files: string[], source: string (≤ 24 KB), cut: boolean}`; refused when the recipe's plan step has `blocks: false` |
+| `look` | `{html: string, times: number[1..3]}` (seconds inside the shot) | content parts: the frames as images, then `{findings: [{code, severity, message, hint}], seen: {description, objects, unexplained}}` from a fresh call that sees only the frames |
+| `check` | `{html: string}` | `{findings: [{code, severity, message, hint}]}` from `checkScene` and `hyperframes lint` |
+| `submit_scene` / `submit_repair` / `submit_shot_kit` | as before | `{accepted: true}` or `{accepted: false, problems}` (one more try) |
+
+Limits per turn (recipe): `toolSteps` 8, `search_blocks` 4, `use_block` 2, `look` (`looks`) 2,
+`check` 3. Past a tool's limit its call returns `{ "error": "limit reached: submit now" }`.
+
+**Compaction** (FR-051): after `{accepted: true}`, the turn becomes `user (task)` → `user ("tools
+used: …")` → `assistant (submit_*)` → `tool ({accepted: true})`. Mid-turn past `GEN_TURN_TOKENS`:
+earlier tool results in the turn become `{ "stub": "<kind> #n removed: see #m" }`.
+
+**Pictures** (FR-052): a call with images goes to its role's model (`judge` for the CREATIVE
+verdict, `scene` for `look`); there is no vision model setting.

@@ -98,6 +98,9 @@ cancel) is unchanged (Principle VI).
 - `data`: `{sources: [{name, kind: "sqlite", path}]}`, read-only data sources for facts research
 - `commands`: `{commands: [{name, cmd, args[], timeoutSec}]}`, local check commands that recipes may name (off in hosted installs unless the admin enables them)
 - (removed 2026-11-02: `llm.vision`, `llm.visionModel`; the LLM's own model sees)
+- `llm.contextTokens`: whole number 20000 to 2000000, how far a build session may grow (env `GEN_CONTEXT_TOKENS`, default 600000)
+- `llm.planModel`, `llm.sceneModel`, `llm.judgeModel`: text, a model per Generate role (empty = `llm.model`; env `GEN_PLAN_MODEL`, `GEN_SCENE_MODEL`, `GEN_JUDGE_MODEL`)
+- `llm.turnTokens` (to come, FR-051): whole number, the turn budget before mid-turn compaction (env `GEN_TURN_TOKENS`, default 60000)
 - `llm.genMaxTokens`: whole number 256 to 200000, the output budget of each Generate director call (env `GEN_LLM_MAX_TOKENS`, default 32000; a form may send it as text)
 
 `image` and `voice` get `/api/settings/:kind/test`, like `llm`, `jev` and `tebar`.
