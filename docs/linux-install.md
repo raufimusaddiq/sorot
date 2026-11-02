@@ -2,7 +2,7 @@
 
 `scripts/install.sh` sets up Sorot on Debian, Ubuntu and their
 derivatives (Mint, Pop!_OS…). Run it from a clone of the repo as your normal
-user — it calls `sudo` for the system parts and keeps the repo files owned by you.
+user; it calls `sudo` for the system parts and keeps the repo files owned by you.
 
 ```bash
 git clone https://github.com/raufimusaddiq/sorot.git
@@ -22,14 +22,14 @@ PATH (see [cli.md](cli.md)).
 ## Before you start
 
 - **NVIDIA GPU (optional, strongly recommended).** Install the NVIDIA driver
-  yourself first — `nvidia-smi` must work. The installer never touches the
+  yourself first: `nvidia-smi` must work. The installer never touches the
   driver. Without a GPU everything runs on the CPU: on a 12-core machine a
   1-hour video takes roughly an hour (transcription ~30 min with
   `large-v3-turbo`, ~15 min with `WHISPER_MODEL=small`; rendering ~25 min).
 - **Disk:** ~15 GB for Docker mode (CUDA image + Whisper model), ~6 GB for
   native, plus your videos.
 - Other distros: install Docker Engine with the compose plugin (≥ 2.24) and the
-  NVIDIA Container Toolkit yourself, then run the installer — it skips what is
+  NVIDIA Container Toolkit yourself, then run the installer; it skips what is
   already there.
 
 ## Options
@@ -55,7 +55,7 @@ PATH (see [cli.md](cli.md)).
    kept; only the compose plugin is added).
 2. **NVIDIA Container Toolkit** from NVIDIA's apt repository when a GPU is
    present, and registers it with Docker.
-3. Adds you to the `docker` group — **log out and back in** before using
+3. Adds you to the `docker` group: **log out and back in** before using
    `sorot up/down/logs` without sudo.
 4. Writes `docker-compose.override.yml` (gitignored) for this machine: your
    port, `restart: unless-stopped` (the app comes back after a reboot), and on
@@ -64,10 +64,10 @@ PATH (see [cli.md](cli.md)).
    `ghcr.io/raufimusaddiq/sorot:latest` on CPU-only machines, `:latest-cuda`
    with a GPU. `--build` builds that variant from source instead (~10 min).
 6. Downloads the Whisper model (`large-v3-turbo`, ~1.6 GB) once into the
-   `hf-cache` Docker volume — it isn't in the image, and it survives image
-   updates — then starts the app.
+   `hf-cache` Docker volume (it isn't in the image, and it survives image
+   updates), then starts the app.
 
-Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot restart`
+Settings: `.env.docker` in the repo (shared with Windows): edit, then `sorot restart`
 (it recreates the container, so the new settings apply).
 
 ### Native mode
@@ -80,7 +80,7 @@ Settings: `.env.docker` in the repo (shared with Windows) — edit, then `sorot 
    `LD_LIBRARY_PATH`, no system CUDA install needed).
 4. `bun install` + builds the UI into `frontend/out`.
 5. Downloads the Whisper model (`large-v3-turbo`, ~1.6 GB) into `~/.cache/huggingface`.
-6. `/etc/sorot/sorot.env` — the service's settings (pipeline defaults
+6. `/etc/sorot/sorot.env`: the service's settings (pipeline defaults
    from `.env.docker` plus absolute paths). Kept on re-install; edit, then `sorot restart`.
 7. systemd unit `sorot.service`, running as you, enabled at boot.
 
@@ -91,14 +91,14 @@ installer prints the command to run the app by hand.
 
 - `sorot` → `/usr/local/bin/sorot` (one compiled binary; built in a Bun
   container in Docker mode, so Bun isn't needed on the host).
-- `/etc/sorot/cli.conf` — tells `sorot` the mode, repo path and URL.
+- `/etc/sorot/cli.conf`: tells `sorot` the mode, repo path and URL.
 - `data/input/` and `data/music/` created and owned by you.
 
 ## Files
 
 | Path | What |
 |---|---|
-| `<repo>/data/` | Videos, clips, database — everything you make |
+| `<repo>/data/` | Videos, clips, database: everything you make |
 | `<repo>/data/music/` | Background music tracks (`.mp3`, `.m4a`, …) |
 | `<repo>/docker-compose.override.yml` | Docker mode: this machine's port / GPU / restart |
 | `/etc/sorot/cli.conf` | `sorot` config |
@@ -124,14 +124,14 @@ Docker, Bun, ffmpeg and other system packages stay installed.
 
 ## Troubleshooting
 
-Start with `sorot doctor` — it checks the config, GPU, Docker or the service,
+Start with `sorot doctor`: it checks the config, GPU, Docker or the service,
 ffmpeg and the API, and says what to do about each failure.
 
 | Symptom | Fix |
 |---|---|
 | `permission denied … docker.sock` | Log out and in (docker group), or use `sudo sorot …` once |
-| `sorot up` says the app didn't answer | `sorot logs` — first start in Docker can take a minute |
+| `sorot up` says the app didn't answer | `sorot logs`: first start in Docker can take a minute |
 | Very slow, `doctor` shows no GPU | Install the NVIDIA driver, then re-run the installer (it adds the container toolkit / CUDA wheels) |
 | Native: transcription fails with `metadata_errors` | An old checkout without the `av<19` pin: `git pull`, re-run the installer |
 | Port in use | `scripts/install.sh --port 8090` |
-| Copied the repo from Windows | Fine — the installer strips Windows line endings from `.env.docker` |
+| Copied the repo from Windows | Fine: the installer strips Windows line endings from `.env.docker` |

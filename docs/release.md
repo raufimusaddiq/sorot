@@ -39,7 +39,7 @@ Where the version lives. Keep these in step in the release PR:
 On a branch such as `release/v1.1.0`:
 
 - In `CHANGELOG.md`:
-  - Rename `## [Unreleased]` to `## [1.1.0] — YYYY-MM-DD` and add a fresh empty `## [Unreleased]` above it.
+  - Rename `## [Unreleased]` to `## [1.1.0] - YYYY-MM-DD` and add a fresh empty `## [Unreleased]` above it.
   - Update the compare links at the bottom:
     - `[Unreleased]: …/compare/v1.1.0...HEAD`
     - `[1.1.0]: …/releases/tag/v1.1.0`
@@ -154,7 +154,7 @@ docker buildx imagetools create -t ghcr.io/raufimusaddiq/sorot:latest-cuda ghcr.
 ## Release notes template
 
 ```markdown
-## [X.Y.Z] — YYYY-MM-DD
+## [X.Y.Z] - YYYY-MM-DD
 
 One or two sentences: what this release is about.
 
