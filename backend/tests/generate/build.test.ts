@@ -103,9 +103,12 @@ describe("director levels", () => {
     expect(recordOf(r.store, "m")).toMatchObject({ compose: { asked: 3, firstPass: 2, dropped: 1 }, kit: { asked: 1, firstPass: 1 } });
   });
 
-  test("only a failure at the kit level fails the build", async () => {
-    const r = rig(["not json", "still not json", kitAnswer("s02"), kitAnswer("s03")]);
-    await expect(STEPS.author.run(r.ctxFor("author", {}, withKit(r)))).rejects.toThrow("Shot s01 couldn't be built at any level, not even from kit parts");
+  test("a kit-level answer that fails its checks is asked again with what was wrong, up to the repair rounds; only then does the build fail", async () => {
+    const r = rig(["not json", "still not json", kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03")]);
+    await STEPS.author.run(r.ctxFor("author", { repairRounds: 1 }, withKit(r)));
+    expect(JSON.parse(r.requests[2]!.messages.at(-1)!.content).findings[0]).toMatchObject({ code: "kit_answer_refused" });
+    const stubborn = rig(["not json", "still not json", "no", "nope"]);
+    await expect(STEPS.author.run(stubborn.ctxFor("author", { repairRounds: 1 }, withKit(stubborn)))).rejects.toThrow("Shot s01 couldn't be built at any level, not even from kit parts");
   });
 
   test("the check step fixes a kit-level shot as kit parts, never as the model's own HTML", async () => {

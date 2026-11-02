@@ -164,9 +164,19 @@ export function shotWriter(ctx: StepContext, dir: string, plan: Plan, blocks: Re
     };
     const rules = sceneRules(ctx, level);
     if (level === "kit") {
-      const answer = await ctx.director.kitShot({ ...input, kit, ...(fix ? { findings: fix } : {}) });
-      const html = writeKitScene({ plan, index: i, width: size.width, height: size.height, answer, kit });
-      return { html, issues: checkScene(html, shot, i, rules), repaired: false };
+      // the lowest level gets the step's repair rounds too: an answer that fails its checks is asked again
+      // with what was wrong (a real answer missed one setting's range twice and failed the whole build)
+      let findings = fix;
+      for (let n = 0; ; n++) {
+        try {
+          const answer = await ctx.director.kitShot({ ...input, kit, ...(findings ? { findings } : {}) });
+          const html = writeKitScene({ plan, index: i, width: size.width, height: size.height, answer, kit });
+          return { html, issues: checkScene(html, shot, i, rules), repaired: n > 0 };
+        } catch (e) {
+          if (!(e instanceof DirectorError) || n >= rounds) throw e;
+          findings = [{ code: "kit_answer_refused", message: e.message.replace(/^The director's kitshot didn't pass the checks: /, "") }];
+        }
+      }
     }
     let html = fix ? (await ctx.director.repair({ ...input, html: readScene(dir, i) ?? "", findings: fix })).html : await ctx.director.scene(input);
     let issues = checkScene(html, shot, i, rules);
