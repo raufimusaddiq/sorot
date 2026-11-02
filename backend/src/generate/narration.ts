@@ -111,7 +111,9 @@ export class Narrator {
   private async remote(engine: string, o: { text: string; voice: string; model: string; speed?: number; signal?: AbortSignal }): Promise<{ bytes: Uint8Array; timings: SpokenWord[] | null }> {
     const c = this.config;
     const base = (c.voiceBaseUrl || DEFAULT_BASE[engine] || "").replace(/\/+$/, "");
-    if (!o.voice && engine !== "fish") throw new VoiceError("Set a voice id for this language in Settings");   // Fish speaks with its default voice without one
+    // ElevenLabs needs a voice in its URL; Fish and an OpenAI-compatible service speak with their default voice without one
+    // (a gateway's model may publish no voice list at all: kenari.id's kokoro-tts, 2026-11-02)
+    if (!o.voice && engine === "elevenlabs") throw new VoiceError("Set a voice id for this language in Settings");
     let url: string;
     let headers: Record<string, string>;
     let body: Record<string, unknown>;
@@ -126,7 +128,7 @@ export class Narrator {
     } else {
       url = `${base}/audio/speech`;
       headers = { Authorization: `Bearer ${c.voiceApiKey}`, "Content-Type": "application/json" };
-      body = { model: o.model, input: o.text, voice: o.voice, response_format: "mp3", ...(o.speed ? { speed: o.speed } : {}) };
+      body = { model: o.model, input: o.text, ...(o.voice ? { voice: o.voice } : {}), response_format: "mp3", ...(o.speed ? { speed: o.speed } : {}) };
     }
     let res: Response;
     try {
