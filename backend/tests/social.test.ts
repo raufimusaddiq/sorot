@@ -148,6 +148,33 @@ describe("connection settings", () => {
     await put("llm", { baseUrl: "http://down/v1" });
     expect(await test("llm")).toMatchObject({ ok: false, error: "LLM HTTP 500: {}" });
   });
+
+  test("probe: validates a candidate connection before anything is saved", async () => {
+    env.fetchHandler.fn = async (url, init) => {
+      if (url !== "https://kenari.id/v1/chat/completions") return json({}, 404);
+      const auth = (init?.headers as Record<string, string>)?.Authorization;
+      return auth === "Bearer kn-good" ? llmReply(" OK ") : json({ error: { message: "invalid key" } }, 401);
+    };
+    const probe = async (body: unknown) => post("/api/settings/llm/probe", body);
+    expect(await (await probe({ model: "kenari/auto", apiKey: "kn-good" })).body.data)
+      .toMatchObject({ ok: true, model: "kenari/auto", detail: "OK" });
+    expect(await (await probe({ model: "kenari/auto", apiKey: "kn-bad" })).body.data)
+      .toMatchObject({ ok: false, error: expect.stringContaining("401") });
+    expect((await get("/api/settings")).body.data.llm).toMatchObject({ active: false, baseUrl: "" });   // nothing persisted either way
+    for (const body of [{ apiKey: "kn-good" }, { model: "kenari/auto" }]) expect((await probe(body)).status).toBe(400);
+  });
+
+  test("kenari-models: Kenari's own public catalog, mapped; a fetch failure is a warning, not an error", async () => {
+    env.fetchHandler.fn = async (url) => {
+      if (url !== "https://kenari.id/v1/models") return json({}, 500);
+      return json({ data: [{ id: "kenari/auto" }, { id: "step-3-7-flash:free", pricing: { free: true } }, { no_id: true }] });
+    };
+    expect((await get("/api/settings/llm/kenari-models")).body.data.models).toEqual([
+      { id: "kenari/auto", free: false }, { id: "step-3-7-flash:free", free: true },
+    ]);
+    env.fetchHandler.fn = async () => { throw new Error("offline"); };
+    expect((await get("/api/settings/llm/kenari-models")).body.data).toMatchObject({ models: [], warning: "offline" });
+  });
 });
 
 describe("publishing through Tebar", () => {

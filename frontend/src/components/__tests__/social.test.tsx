@@ -26,6 +26,7 @@ describe('ConnectionsPanel', () => {
     expect(within(llm).getByText(/the rules find, score and title the clips/)).toBeInTheDocument();
     expect(within(region('Tebar publishing')).queryByLabelText(/Director/)).not.toBeInTheDocument();
 
+    fireEvent.click(within(llm).getByRole('button', { name: 'Use a different provider' }));
     const save = within(llm).getByRole('button', { name: 'Save' });
     const key = within(llm).getByLabelText('LLM API key');
     expect(save).toBeDisabled();
@@ -52,7 +53,8 @@ describe('ConnectionsPanel', () => {
     state.tests.jev = { ok: true, ms: 87, model: 'jev-1.14.0', detail: 'answered 0.97' };
     state.fail['POST /api/settings/llm/test'] = 'backend down';
     render(<ConnectionsPanel api={api} />);
-    await screen.findByRole('region', { name: 'LLM' });
+    const llm = await screen.findByRole('region', { name: 'LLM' });
+    fireEvent.click(within(llm).getByRole('button', { name: 'Use a different provider' }));
     for (const [name, result] of [['Jev quality gate', 'OK in 87 ms · jev-1.14.0 · answered 0.97'],
       ['Tebar publishing', 'Failed: Not configured'], ['LLM', 'Failed: backend down']] as const) {
       fireEvent.click(within(region(name)).getByRole('button', { name: 'Test' }));
@@ -61,6 +63,48 @@ describe('ConnectionsPanel', () => {
     state.fail['PUT /api/settings/tebar'] = 'apiKey must not contain spaces';
     fireEvent.click(within(region('Tebar publishing')).getByLabelText(/Use Tebar publishing/));
     expect(await within(region('Tebar publishing')).findByRole('alert')).toHaveTextContent('apiKey must not contain spaces');
+  });
+
+  it('Kenari: a fresh install offers it first, fetches the live model list, and only saves after the key validates', async () => {
+    state.kenariModels = [{ id: 'kenari/auto', free: false }, { id: 'step-3-7-flash:free', free: true }];
+    render(<ConnectionsPanel api={api} />);
+    const llm = await screen.findByRole('region', { name: 'LLM' });
+    fireEvent.click(within(llm).getByRole('button', { name: 'Connect Kenari' }));
+    expect(await within(llm).findByRole('option', { name: 'step-3-7-flash:free (free)' })).toBeInTheDocument();
+    const save = within(llm).getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    const testKey = within(llm).getByRole('button', { name: 'Test key' });
+    expect(testKey).toBeDisabled();   // no key typed yet
+
+    fireEvent.change(within(llm).getByLabelText('Kenari API key'), { target: { value: 'kn-bad' } });
+    state.kenariProbe = { ok: false, ms: 1, error: 'LLM HTTP 401: invalid key' };
+    fireEvent.click(testKey);
+    expect(await within(llm).findByText('Failed: LLM HTTP 401: invalid key')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+
+    state.kenariProbe = { ok: true, ms: 50, model: 'kenari/auto', detail: 'OK' };
+    fireEvent.click(testKey);
+    expect(await within(llm).findByText('Key works · kenari/auto')).toBeInTheDocument();
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(sent('PUT', '/api/settings/llm')).toEqual([
+      { baseUrl: 'https://kenari.id/v1', model: 'kenari/auto', apiKey: 'kn-bad' },
+    ]));
+  });
+
+  it('Kenari: "Use a different provider" is reachable with no key, and an already-saved custom provider is shown as-is', async () => {
+    const first = render(<ConnectionsPanel api={api} />);
+    const fresh = await screen.findByRole('region', { name: 'LLM' });
+    fireEvent.click(within(fresh).getByRole('button', { name: 'Use a different provider' }));
+    expect(within(fresh).queryByLabelText('Kenari API key')).not.toBeInTheDocument();
+    expect(within(fresh).getByLabelText('LLM Base URL')).toBeInTheDocument();
+    first.unmount();
+
+    state.settings = makeConnections({ llm: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b', active: true } });
+    render(<ConnectionsPanel api={api} />);
+    const existing = await screen.findByRole('region', { name: 'LLM' });
+    expect(within(existing).queryByRole('button', { name: 'Connect Kenari' })).not.toBeInTheDocument();
+    expect(within(existing).getByLabelText('LLM Base URL')).toHaveValue('http://localhost:11434/v1');
   });
 });
 

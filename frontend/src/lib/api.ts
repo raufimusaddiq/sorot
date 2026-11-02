@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, KenariModel, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -191,6 +191,16 @@ export class ApiClient {
 
   async testConnection(kind: ConnectionKind) {
     return this.request<ConnectionTest>(`/api/settings/${kind}/test`, { method: 'POST' });
+  }
+
+  /** Kenari's live model catalog, for the onboarding picker — public, no key needed. */
+  async getKenariModels() {
+    return this.request<{ models: KenariModel[]; warning?: string }>('/api/settings/llm/kenari-models');
+  }
+
+  /** Validate a candidate LLM connection (not yet saved) with one small real call. */
+  async probeLlm(candidate: { baseUrl?: string; model: string; apiKey: string }) {
+    return this.request<ConnectionTest>('/api/settings/llm/probe', { method: 'POST', body: JSON.stringify(candidate) });
   }
 
   async getGenerateStatus() {

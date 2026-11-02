@@ -64,7 +64,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const narrator = new Narrator(config, httpFetch, runScript);
   const search = new WebSearch(config.webSearch, httpFetch);
   const factWeb = { fetchText: (url: string) => fetchPageText(url, httpFetch), search: (q: string) => search.search(q) };
-  const settings = new ConnectionSettings(config, store, { llm, jev, tebar, narrator });
+  const settings = new ConnectionSettings(config, store, { llm, jev, tebar, narrator }, httpFetch, deps.retryWaitMs);
   const youtube = new YouTube(exec, config.ytdlpPath);
   const orchestrator = new PipelineOrchestrator(config, store, runScript, exec, llm, youtube, jev);
   const jobs = new JobService(config, store, orchestrator);
@@ -158,6 +158,8 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   router.on("GET", "/api/settings", () => ok(settings.view()));
   router.on("PUT", "/api/settings/:kind", async (c) => ok(settings.update(c.params.kind as string, await c.body())));
   router.on("POST", "/api/settings/:kind/test", async (c) => ok(await settings.test(c.params.kind as string)));
+  router.on("GET", "/api/settings/llm/kenari-models", async () => ok(await settings.kenariModels()));
+  router.on("POST", "/api/settings/llm/probe", async (c) => ok(await settings.probe(await c.body())));
 
   // ---- publishing (Tebar) ----
   router.on("GET", "/api/social/accounts", async () =>

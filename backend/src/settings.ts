@@ -12,7 +12,7 @@ import { HttpError } from "./http";
 import type { Narrator } from "./generate/narration";
 import { VOICE_ENGINES } from "./generate/narration";
 import type { Jev } from "./jev";
-import type { Llm } from "./llm";
+import { Llm, LlmError } from "./llm";
 import type { Store } from "./store";
 import type { Tebar } from "./tebar";
 import type { Json } from "./types";
@@ -46,12 +46,21 @@ export const CONNECTIONS: Record<string, Record<string, Field>> = {
 
 export const mask = (key: string) => (key ? `••••${key.length >= 8 ? key.slice(-4) : ""}` : "");
 
+/** Kenari (kenari.id): an OpenAI-compatible AI gateway offered as this project's default LLM provider. */
+export const KENARI_BASE_URL = "https://kenari.id/v1";
+export const KENARI_DEFAULT_MODEL = "kenari/auto";
+
 export interface TestResult {
   ok: boolean;
   ms: number;
   model?: string;
   detail?: string;
   error?: string;
+}
+
+export interface KenariModel {
+  id: string;
+  free: boolean;
 }
 
 export class ConnectionSettings {
@@ -62,6 +71,9 @@ export class ConnectionSettings {
     private readonly config: AppConfig,
     private readonly store: Store,
     private readonly clients: { llm: Llm; jev: Jev; tebar: Tebar; narrator?: Narrator },
+    /** Same injected fetch (and retry wait) `app.ts` gives the shared `Llm` client, reused to probe a candidate connection without a real network call in tests. */
+    private readonly fetchFn: typeof fetch = fetch,
+    private readonly retryWaitMs = 2000,
   ) {
     for (const fields of Object.values(CONNECTIONS)) {
       for (const [key] of Object.values(fields)) this.env[key] = config[key];
@@ -168,6 +180,41 @@ export class ConnectionSettings {
       return done({ ok: true, detail: String(who.email ?? who.name ?? who.id ?? "connected") });
     } catch (e) {
       return done({ ok: false, error: (e as Error).message });
+    }
+  }
+
+  /**
+   * Validate a candidate LLM connection (not yet saved) with one small real chat call — lets
+   * onboarding confirm a key works before `update("llm", …)` commits it. `baseUrl` defaults to
+   * Kenari's; never persists anything, never echoes `apiKey` back.
+   */
+  async probe(candidate: Record<string, unknown>): Promise<TestResult> {
+    const model = validate("text", candidate.model, "model") as string;
+    const apiKey = validate("secret", candidate.apiKey, "apiKey") as string;
+    const baseUrl = candidate.baseUrl === undefined || candidate.baseUrl === "" ? KENARI_BASE_URL : (validate("url", candidate.baseUrl, "baseUrl") as string);
+    const t0 = performance.now();
+    const done = (r: Omit<TestResult, "ms">): TestResult => ({ ...r, ms: Math.round(performance.now() - t0) });
+    const candidateLlm = new Llm({ llmBaseUrl: baseUrl, llmModel: model, llmApiKey: apiKey, llmTimeoutSec: this.config.llmTimeoutSec }, this.fetchFn, this.retryWaitMs);
+    try {
+      const msg = await candidateLlm.chat([{ role: "user", content: "Reply with the single word OK." }], { temperature: 0 });
+      return done({ ok: true, model, detail: msg.content.trim().slice(0, 60) });
+    } catch (e) {
+      return done({ ok: false, error: e instanceof LlmError ? e.message : (e as Error).message });
+    }
+  }
+
+  /** Kenari's own model catalog (`GET /v1/models`) — public, no key needed. Never throws: a fetch failure comes back as an empty list with a warning. */
+  async kenariModels(): Promise<{ models: KenariModel[]; warning?: string }> {
+    try {
+      const res = await this.fetchFn(`${KENARI_BASE_URL}/models`);
+      if (!res.ok) return { models: [], warning: `Kenari HTTP ${res.status}` };
+      const data = (await res.json()) as { data?: Array<{ id?: unknown; pricing?: { free?: unknown } }> };
+      const models = (data.data ?? [])
+        .filter((m): m is { id: string; pricing?: { free?: unknown } } => typeof m.id === "string")
+        .map((m) => ({ id: m.id, free: !!m.pricing?.free }));
+      return { models };
+    } catch (e) {
+      return { models: [], warning: (e as Error).message };
     }
   }
 }

@@ -122,6 +122,9 @@ export type GenerateStatus = {
 
 export type ConnectionTest = { ok: boolean; ms: number; model?: string; detail?: string; error?: string };
 
+/** One entry from Kenari's live model catalog (GET /api/settings/llm/kenari-models). */
+export type KenariModel = { id: string; free: boolean };
+
 /** A Tebar account; profileId/profileName name its workspace (null with a single workspace). */
 export type SocialAccount = {
   id: string;
