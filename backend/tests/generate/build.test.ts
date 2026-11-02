@@ -269,7 +269,7 @@ describe("author step", () => {
       return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] } }] });
     }) as unknown as typeof fetch;
     const concurrent = rig([]);
-    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5 }, fetchFn, 0);
+    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, genSession: false }, fetchFn, 0);
     const ctx = concurrent.ctxFor("author", { repairRounds: 0, concurrency: 3 });
     ctx.director = new Director(llm, new DirectorLog(concurrent.store), "../generator");
     await STEPS.author.run(ctx);

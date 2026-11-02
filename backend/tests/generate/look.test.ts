@@ -140,7 +140,7 @@ describe("look step", () => {
     await STEPS.look.run(r.ctx);
     expect(r.snaps).toHaveLength(2);
     expect(r.requests[1]!.tool_choice.function.name).toBe("submit_repair");
-    expect(JSON.parse(r.requests[1]!.messages[1].content).findings).toEqual([expect.objectContaining({ code: "look_unexplained", message: expect.stringContaining("floating ring") })]);
+    expect(JSON.parse(r.requests[1]!.messages.at(-1).content).findings).toEqual([expect.objectContaining({ code: "look_unexplained", message: expect.stringContaining("floating ring") })]);
     expect(readFileSync(join(r.dir, "compositions/shot-01.html"), "utf-8")).toContain("ring removed");
     expect(readFindings(r.dir)).toEqual([]);
     expect(r.progress).toEqual([33, 67]);

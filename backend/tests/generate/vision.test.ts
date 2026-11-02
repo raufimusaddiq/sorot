@@ -80,5 +80,9 @@ describe("vision in the connection settings", () => {
     expect((await env.json("PUT", "/api/settings/llm", { genMaxTokens: "48000" })).body.data.llm.genMaxTokens).toBe(48000);
     expect(env.app.llm.genMaxTokens).toBe(48000);
     for (const bad of [100, 1.5, "lots"]) expect((await env.json("PUT", "/api/settings/llm", { genMaxTokens: bad })).status).toBe(400);
+    // the build session's context budget (up to a 1M-token window and beyond), and a model per role
+    expect((await env.json("PUT", "/api/settings/llm", { contextTokens: "750000", sceneModel: "glm" })).body.data.llm).toMatchObject({ contextTokens: 750000, sceneModel: "glm" });
+    expect([env.app.llm.genContextTokens, env.app.llm.modelFor("scene"), loadConfig({}).genContextTokens, loadConfig({ GEN_SESSION: "off" }).genSession]).toEqual([750000, "glm", 600000, false]);
+    for (const bad of [1000, 3_000_000]) expect((await env.json("PUT", "/api/settings/llm", { contextTokens: bad })).status).toBe(400);
   });
 });

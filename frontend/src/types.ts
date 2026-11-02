@@ -87,6 +87,8 @@ export type ConnectionView = {
   director?: boolean;
   /** LLM only: the output budget of each Generate director call. */
   genMaxTokens?: number;
+  /** LLM only: how far a build's director session may grow (tokens). */
+  contextTokens?: number;
   /** LLM only: Generate's model per role (empty = model). */
   planModel?: string;
   sceneModel?: string;

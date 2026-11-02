@@ -159,7 +159,7 @@ export function shotWriter(ctx: StepContext, dir: string, plan: Plan, blocks: Re
 
   const attempt = async (shot: Shot, i: number, level: Level, fix: Fix | null) => {
     const input: SceneInput = {
-      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level,
+      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level, ...(ctx.version ? { session: ctx.version.id } : {}),
       blocks: shot.visual.block && blocks[shot.visual.block] ? { [shot.visual.block]: blocks[shot.visual.block] as string } : {},
     };
     const rules = sceneRules(ctx, level);

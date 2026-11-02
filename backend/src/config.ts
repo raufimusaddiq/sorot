@@ -56,6 +56,10 @@ export interface AppConfig {
   /** Output budget per Generate director call: a scene file is long, so it has its own (Settings → LLM). */
   genLlmMaxTokens: number;
   /** Generate's model per role (Settings → LLM; "" = LLM_MODEL): plan = storylines, plan, effects and facts; scene = scenes, repairs and kit shots; judge = the CREATIVE judge without pictures. */
+  /** Generate writes a build's scenes, repairs and kit shots in one conversation (GEN_SESSION, default on). */
+  genSession: boolean;
+  /** How large that conversation may grow before it starts again from its opening and the latest shots (GEN_CONTEXT_TOKENS). */
+  genContextTokens: number;
   genPlanModel: string;
   genSceneModel: string;
   genJudgeModel: string;
@@ -188,6 +192,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmMaxCallSec: Math.max(60, int(env.LLM_MAX_CALL_SEC, 1800)),
     llmMaxTokens: Math.max(256, int(env.LLM_MAX_TOKENS, 4000)),
     genLlmMaxTokens: Math.max(256, int(env.GEN_LLM_MAX_TOKENS, 32000)),
+    genSession: !/^(0|false|no|off)$/i.test((env.GEN_SESSION ?? "").trim()),
+    genContextTokens: Math.max(20000, int(env.GEN_CONTEXT_TOKENS, 600000)),
     genPlanModel: (env.GEN_PLAN_MODEL ?? "").trim(),
     genSceneModel: (env.GEN_SCENE_MODEL ?? "").trim(),
     genJudgeModel: (env.GEN_JUDGE_MODEL ?? "").trim(),

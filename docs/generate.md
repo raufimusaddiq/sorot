@@ -53,6 +53,15 @@ the answer is still invalid after the repair, the step fails with the reason; it
 with a guess. Research steps (`facts`) use read-only tools (`fetch_url`, `search_web`, `query_data`
 with `SELECT` only, at most 50 rows).
 
+**The build session.** A build's scenes, repairs (author, check and look steps) and kit shots are one
+conversation, keyed by the version id: the system message and the whole film (plan, look, parts) are
+sent once, then each turn asks for one shot (`request: scene | repair | kitshot`, its level and its own
+fields) and the answer stays in the conversation. Turns run one at a time, in the order they are asked.
+Each request extends the last, so the provider's prompt cache covers almost all of it (separate calls
+reached at most 44–51% on real builds, 2026-11-02), and every shot sees the shots before it.
+`GEN_CONTEXT_TOKENS` (default 600000) caps the conversation; past it the session restarts from its
+opening and the latest version of each shot. `GEN_SESSION=off` goes back to one fresh call per shot.
+
 ### Step library
 
 | Step | Does |

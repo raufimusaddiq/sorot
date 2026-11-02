@@ -162,7 +162,7 @@ export class Llm {
   constructor(
     private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmMaxCallSec?: number }
       & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmVision?: boolean; llmVisionModel?: string; llmStream?: boolean }
-      & { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string },
+      & { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number },
     private readonly fetchFn: typeof fetch = fetch,
     private readonly retryWaitMs = 2000,
   ) {}
@@ -173,6 +173,14 @@ export class Llm {
 
   get model(): string {
     return this.config.llmModel;
+  }
+
+  /** Generate's build session (GEN_SESSION, default on) and how far it may grow (GEN_CONTEXT_TOKENS, Settings → LLM). */
+  get genSession(): boolean {
+    return this.config.genSession !== false;
+  }
+  get genContextTokens(): number {
+    return this.config.genContextTokens ?? 600000;
   }
 
   /** Generate's model for a role (Settings → LLM): its own when set, else LLM_MODEL. */

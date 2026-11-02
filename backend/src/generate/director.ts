@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { jsonError, parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef, type ToolHandler } from "../llm";
+import { jsonError, parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolCall, type ToolDef, type ToolHandler } from "../llm";
 import { isOnPage, headlineOnly, MIN_QUOTE } from "./facts";
 import { findPreset, presetBrief } from "./presets";
 import { numbersOf, sameNumber } from "./numbers";
@@ -315,6 +315,8 @@ export interface SceneInput {
   blocks?: Record<string, string>;
   /** The level the shot is written at (default compose). */
   level?: Level;
+  /** The build's director session (its version id): every scene, repair and kit shot of a build is one conversation. */
+  session?: string;
 }
 
 /** One answer's outcome, for the model's record (research R25). Scene kinds report their level; plan kinds report `plan`. */
@@ -322,6 +324,12 @@ export interface AnswerEvent { kind: string; level: Level | "plan"; outcome: "fi
 /** Calls whose outcome is the plan's record; scene calls count at their level (their real pass is decided by the author step). */
 const PLAN_KINDS: ReadonlySet<string> = new Set(["plan", "outline", "specs", "revise"]);
 const SCENE_KINDS: ReadonlySet<string> = new Set(["scene", "repair", "kitshot"]);
+/** A session offers all three scene tools every turn (the same list keeps the conversation's prefix the same). */
+const SESSION_TOOLS: ToolDef[] = [TOOLS.scene, TOOLS.repair, TOOLS.kitshot];
+/** Builds whose sessions stay open (one per pipeline; a few for retries and fixes). */
+const MAX_SESSIONS = 4;
+/** One build's conversation: the opening (instructions, film), every turn since, and the latest answer for each shot. */
+interface Session { messages: ChatInput[]; opening: number; latest: Map<number, string>; turn: Promise<unknown> }
 
 /** A capability query: the call's level and the parts whose full settings it gets (none for plan calls). */
 export interface CapabilityQuery { level?: Level; parts?: string[] }
@@ -381,6 +389,8 @@ export class Director {
   private contract: string | null = null;
   private sample: string | null = null;
 
+  /** Open build sessions by version id (the newest few). */
+  private readonly sessions = new Map<string, Session>();
   /** The capability description for a call; set by the service (null: calls go without it). */
   capabilities: ((q: CapabilityQuery) => Capabilities) | null = null;
   /** Hears each answer's outcome; the service adds it to the model's record. */
@@ -467,8 +477,6 @@ export class Director {
     validate: (parsed: unknown) => Validated<T>,
     images: string[] = [],
   ): Promise<T> {
-    const def = TOOLS[kind];
-    const name = def.function.name;
     // what this install can do goes with every planning and writing call; scene calls bring their own
     if (CAPABLE.has(kind) && this.capabilities && !("capabilities" in payload)) payload = { capabilities: this.planCapabilities(kind), ...payload };   // shared prefix first (cache)
     const brief = JSON.stringify({ ...payload, task });
@@ -476,19 +484,31 @@ export class Director {
       { role: "system", content: this.system(kind, step) },
       images.length ? withImages(brief, ...images) : { role: "user", content: brief },
     ];
-    let problems: string[] = [];
     const level: AnswerEvent["level"] | null = PLAN_KINDS.has(kind) ? "plan"
       : SCENE_KINDS.has(kind) ? ((payload.capabilities as { level?: Level } | undefined)?.level ?? "compose") : null;
+    return (await this.converse<T>(project, kind, messages, [TOOLS[kind]], task, validate, level, images.length > 0)).value;
+  }
+
+  /**
+   * One forced tool call on `messages`, validated; a failed validation goes back to the model as the
+   * tool's result and it gets one more try. The exchange stays in `messages` (a session keeps it).
+   */
+  private async converse<T>(
+    project: GenProject, kind: Kind, messages: ChatInput[], tools: ToolDef[], task: string,
+    validate: (parsed: unknown) => Validated<T>, level: AnswerEvent["level"] | null, seeing = false,
+  ): Promise<{ value: T; call: ToolCall | undefined }> {
+    const name = TOOLS[kind].function.name;
+    let problems: string[] = [];
     const tell = (outcome: AnswerEvent["outcome"], ms: number) => { if (level && this.onAnswer) this.onAnswer({ kind, level, outcome, ms }); };
     const started = Date.now();
     const model = this.llm.modelFor(roleOf(kind));
     for (let attempt = 0; attempt < 2; attempt++) {
       let answer = "";
       const reply = await this.log.track(
-        { projectId: project.id, kind, model: images.length ? (this.llm.visionModel ?? model) : model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
+        { projectId: project.id, kind, model: seeing ? (this.llm.visionModel ?? model) : model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
         async () => {
-          const opts = { tools: [def], toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
-          const r = images.length ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], { ...opts, model });
+          const opts = { tools, toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
+          const r = seeing ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], { ...opts, model });
           const call = r.tool_calls?.find((c) => c.function?.name === name);
           const args = call?.function.arguments;
           answer = typeof args === "string" ? args : args ? JSON.stringify(args) : r.content;
@@ -500,23 +520,22 @@ export class Director {
       const result: Validated<T> = parsed === null
         ? { errors: [reply.call ? malformed(answer) : `you didn't call ${name}`] }
         : validate(parsed);
-      if (result.value !== undefined) {
-        tell(attempt === 0 ? "firstPass" : "repaired", Date.now() - started);
-        return result.value;
-      }
-      // not JSON, or (for a scene) not the asked shape: the model's record counts it
-      if (parsed === null || SCENE_KINDS.has(kind)) tell("malformed", 0);
-      problems = result.errors ?? [];
-      const retry = JSON.stringify({ problems, task: `Fix these problems and call ${name} again with the full answer. ${task}` });
       if (reply.call) {
         messages.push(
           { role: "assistant", content: "", tool_calls: [reply.call] },
-          { role: "tool", tool_call_id: reply.call.id || name, name, content: JSON.stringify({ accepted: false, problems }) },
+          { role: "tool", tool_call_id: reply.call.id || name, name, content: JSON.stringify(result.value !== undefined ? { accepted: true } : { accepted: false, problems: result.errors ?? [] }) },
         );
       } else {
         messages.push({ role: "assistant", content: reply.message.content });
       }
-      messages.push({ role: "user", content: retry });
+      if (result.value !== undefined) {
+        tell(attempt === 0 ? "firstPass" : "repaired", Date.now() - started);
+        return { value: result.value, call: reply.call };
+      }
+      // not JSON, or (for a scene) not the asked shape: the model's record counts it
+      if (parsed === null || SCENE_KINDS.has(kind)) tell("malformed", 0);
+      problems = result.errors ?? [];
+      messages.push({ role: "user", content: JSON.stringify({ problems, task: `Fix these problems and call ${name} again with the full answer. ${task}` }) });
     }
     tell("failed", Date.now() - started);
     throw new DirectorError(`The director's ${kind} didn't pass the checks: ${problems.join("; ")}`);
@@ -816,20 +835,93 @@ export class Director {
     };
   }
 
+  /**
+   * A scene, repair or kit shot. With a session (the build's version id, GEN_SESSION on) it is the next
+   * turn of the build's one conversation: the film and the parts are said once at the start, every shot
+   * written so far stays in view (so the film stays consistent), and each call reuses the whole
+   * conversation from the provider's prompt cache. Turns take their place in line, one at a time.
+   * Without one it is a fresh call, as before.
+   */
+  private async askScene<T>(
+    input: SceneInput, kind: "scene" | "repair" | "kitshot", extra: Record<string, unknown>, task: string,
+    validate: (parsed: unknown) => Validated<T>, keep: (value: T) => string,
+  ): Promise<T> {
+    if (!input.session || !this.llm.genSession) return this.ask(input.project, kind, input.step, { ...this.sceneBase(input), ...extra }, task, validate);
+    const session = this.sessionFor(input);
+    const turn = session.turn.then(async () => {
+      this.trim(session);
+      const level = input.level ?? "compose";
+      const levelMeans = this.capabilities ? this.capabilities({ level }).levelMeans : undefined;
+      session.messages.push({ role: "user", content: JSON.stringify({ request: kind, level, ...(levelMeans ? { levelMeans } : {}), ...this.sceneOwn(input), ...extra, task }) });
+      const { value } = await this.converse<T>(input.project, kind, session.messages, SESSION_TOOLS, task, validate, level);
+      session.latest.set(input.index, keep(value));
+      return value;
+    });
+    session.turn = turn.catch(() => undefined);
+    return turn;
+  }
+
+  /** The build's session, opened on its first turn: the instructions, then the whole film and what the parts can do. */
+  private sessionFor(input: SceneInput): Session {
+    const key = input.session as string;
+    const open = this.sessions.get(key);
+    if (open) return open;
+    const { plan } = input;
+    const film = {
+      ...(this.capabilities ? { capabilities: this.sceneCapabilities({ ...input, level: "free" }) } : {}),
+      film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, shots: plan.shots },
+      size: { width: input.width, height: input.height }, assets: input.assets, fonts: plan.look.fonts,
+      task: "This is the film you are building, and what this install can do. Each request that follows asks for one shot (request scene), a repair of one (repair) or a kit-level shot (kitshot), at the level it names (levelMeans says what that level allows). Keep the film one film: the same characters, objects, colours and drawing style from shot to shot.",
+    };
+    const session: Session = {
+      messages: [{ role: "system", content: this.sessionSystem(input.step) }, { role: "user", content: JSON.stringify(film) }],
+      opening: 2, latest: new Map(), turn: Promise.resolve(),
+    };
+    this.sessions.set(key, session);
+    while (this.sessions.size > MAX_SESSIONS) this.sessions.delete(this.sessions.keys().next().value as string);
+    return session;
+  }
+
+  /** The session's system message: the three jobs, the authoring contract with its worked example, and the step's own prompt. */
+  private sessionSystem(step: RecipeStep): string {
+    const own = step.prompt;
+    const jobs = `${INSTRUCTIONS.scene}\n\nRequests come one at a time in this conversation. A "repair" request: ${INSTRUCTIONS.repair.replace(/^You are[^.]*\. /, "")} A "kitshot" request: ${INSTRUCTIONS.kitshot.replace(/^You are[^.]*\. /, "")}`;
+    const instructions = own?.mode === "replace" ? own.text : `${jobs}\n\n${this.guidance("scene")}${own ? `\n\n${own.text}` : ""}`;
+    return `${instructions.trim()}\n\nGive each answer by calling the function its request names (submit_scene, submit_repair or submit_shot_kit). Do not write the answer as text.`;
+  }
+
+  /**
+   * Past GEN_CONTEXT_TOKENS (≈ 3.5 characters a token) the session starts again from its opening and
+   * the latest version of every shot written so far, so it never outgrows the model's window.
+   */
+  private trim(session: Session): void {
+    const chars = session.messages.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : 0) + JSON.stringify(m.tool_calls ?? "").length, 0);
+    if (chars / 3.5 <= this.llm.genContextTokens) return;
+    const shots = [...session.latest].sort((a, b) => a[0] - b[0]).map(([i, latest]) => ({ shot: i + 1, file: shotFile(i), latest }));
+    session.messages = [...session.messages.slice(0, session.opening), { role: "user", content: JSON.stringify({ shotsSoFar: shots, task: "The conversation was shortened to fit: these are the latest versions of the shots written so far. Carry on from them." }) }];
+  }
+
+  /** What a scene call says about its own shot (the session said the rest at its start). */
+  private sceneOwn(input: SceneInput) {
+    const base = this.sceneBase(input);
+    const { capabilities: _c, film: _f, size: _s, assets: _a, fonts: _o, ...own } = base as typeof base & { capabilities?: unknown };
+    return own;
+  }
+
   /** The scene file for one shot (compositions/shot-NN.html). The checks run in code afterwards. */
   async scene(input: SceneInput): Promise<string> {
     const id = shotId(input.index);
-    return this.ask<string>(
-      input.project, "scene", input.step, this.sceneBase(input),
+    return this.askScene<string>(
+      input, "scene", {},
       `Write ${shotFile(input.index)} for shot ${input.index + 1} of ${input.plan.shots.length} as one complete HTML document, with data-composition-id="${id}".`,
-      (parsed) => htmlOf(parsed),
+      (parsed) => htmlOf(parsed), (html) => html,
     );
   }
 
   /** A scene that failed its checks goes back with its own findings; it may keep a warning with a reason. */
   async repair(input: SceneInput & { html: string; findings: Array<{ code: string; message: string; hint?: string }> }): Promise<{ html: string; holds: Array<{ code: string; reason: string }> }> {
-    return this.ask<{ html: string; holds: Array<{ code: string; reason: string }> }>(
-      input.project, "repair", input.step, { ...this.sceneBase(input), currentHtml: input.html, findings: input.findings },
+    return this.askScene<{ html: string; holds: Array<{ code: string; reason: string }> }>(
+      input, "repair", { currentHtml: input.html, findings: input.findings },
       `Repair ${shotFile(input.index)} so that every finding is resolved. Change only what the findings need, and keep the planned text and timeline.`,
       (parsed) => {
         const out = htmlOf(parsed);
@@ -841,6 +933,7 @@ export class Director {
         });
         return { value: { html: out.value as string, holds } };
       },
+      (out) => out.html,
     );
   }
 
@@ -849,13 +942,12 @@ export class Director {
    * the scene from the answer. The answer is checked against the capability description and the plan.
    */
   async kitShot(input: SceneInput & { kit: KitManifest[]; findings?: Array<{ code: string; message: string; hint?: string }> }): Promise<KitShot> {
-    const base = { ...this.sceneBase({ ...input, level: "kit" }), ...(input.findings ? { findings: input.findings } : {}) };
-    const caps = base.capabilities as Capabilities | undefined;
+    const caps = this.sceneCapabilities({ ...input, level: "kit" }) ?? undefined;
     const shot = input.plan.shots[input.index]!;
-    return this.ask<KitShot>(
-      input.project, "kitshot", input.step, base,
+    return this.askScene<KitShot>(
+      { ...input, level: "kit" }, "kitshot", input.findings ? { findings: input.findings } : {},
       `Build shot ${shot.id} (${shot.durationSec} s) from kit parts: call submit_shot_kit with its layers and its planned lines.`,
-      (parsed) => validateKitShot(parsed, shot, caps, input.kit),
+      (parsed) => validateKitShot(parsed, shot, caps, input.kit), (answer) => JSON.stringify(answer),
     );
   }
 

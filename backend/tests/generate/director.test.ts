@@ -404,6 +404,26 @@ describe("director: scenes", () => {
     expect(a!.slice(0, a!.indexOf('"position"'))).toBe(b!.slice(0, b!.indexOf('"position"')));
   });
 
+  test("a build session: the film is said once, every turn sees the shots before it, turns wait their place, and each request extends the last", async () => {
+    const r = rig([json({ html: HTML }), json({ html: HTML }), json({ html: HTML, holds: [] })], { genSession: true });
+    const session = { ...input(), session: "v1" };
+    await Promise.all([r.director.scene({ ...session, index: 0 }), r.director.scene(session), r.director.repair({ ...session, html: HTML, findings: [{ code: "x", message: "fix it" }] })]);
+    const [a, b, c] = r.requests.map((q) => q.messages);
+    expect(systemOf(r.requests[0]!)).toContain("Requests come one at a time");
+    expect(JSON.parse(a![1]!.content).film.shots).toHaveLength(plan.shots.length);   // the whole plan, once
+    expect(r.requests[0]!.tools.map((t: any) => t.function.name)).toEqual(["submit_scene", "submit_repair", "submit_shot_kit"]);
+    expect(b!.slice(0, a!.length)).toEqual(a);                                     // the next turn extends the last
+    expect(c!.slice(0, b!.length)).toEqual(b);
+    expect([a, b, c].map((m) => JSON.parse(m!.at(-1)!.content)).map((t) => [t.request, t.compositionId])).toEqual([["scene", "shot-01"], ["scene", "shot-02"], ["repair", "shot-02"]]);
+    // past its budget the session starts again from the opening and the latest shots
+    const small = rig([json({ html: HTML }), json({ html: HTML })], { genSession: true, genContextTokens: 1 });
+    await small.director.scene({ ...session, index: 0 });
+    await small.director.scene(session);
+    const again = small.requests[1]!.messages;
+    expect(again).toHaveLength(4);
+    expect(JSON.parse(again[2]!.content).shotsSoFar).toEqual([{ shot: 1, file: "compositions/shot-01.html", latest: HTML }]);
+  });
+
   test("each Generate role asks its own model when one is set, else the LLM model", async () => {
     const r = rig([json({ html: HTML }), json({ html: HTML })], { genSceneModel: "cheap", genJudgeModel: "strict" });
     await r.director.scene(input());

@@ -17,7 +17,7 @@ import type { Store } from "./store";
 import type { Tebar } from "./tebar";
 import type { Json } from "./types";
 
-type Kind = "url" | "text" | "secret" | "bool" | "tokens" | "engine" | "voices" | "commands" | "sources";
+type Kind = "url" | "text" | "secret" | "bool" | "tokens" | "context" | "engine" | "voices" | "commands" | "sources";
 type Field = [configKey: keyof AppConfig, kind: Kind];
 
 export const CONNECTIONS: Record<string, Record<string, Field>> = {
@@ -25,7 +25,7 @@ export const CONNECTIONS: Record<string, Record<string, Field>> = {
     enabled: ["llmEnabled", "bool"], baseUrl: ["llmBaseUrl", "url"], model: ["llmModel", "text"],
     apiKey: ["llmApiKey", "secret"], director: ["llmDirector", "bool"],
     vision: ["llmVision", "bool"], visionModel: ["llmVisionModel", "text"], genMaxTokens: ["genLlmMaxTokens", "tokens"],
-    planModel: ["genPlanModel", "text"], sceneModel: ["genSceneModel", "text"], judgeModel: ["genJudgeModel", "text"],
+    contextTokens: ["genContextTokens", "context"], planModel: ["genPlanModel", "text"], sceneModel: ["genSceneModel", "text"], judgeModel: ["genJudgeModel", "text"],
   },
   jev: {
     enabled: ["jevEnabled", "bool"], url: ["jevUrl", "url"], model: ["jevModel", "text"], apiKey: ["jevApiKey", "secret"],
@@ -232,6 +232,11 @@ function validate(kind: Kind, value: unknown, name: string): unknown {
   if (kind === "engine") {
     if (typeof value !== "string" || (value && !(VOICE_ENGINES as readonly string[]).includes(value))) throw new HttpError(400, `${name} must be one of ${VOICE_ENGINES.join(", ")}`);
     return value;
+  }
+  if (kind === "context") {
+    const n = typeof value === "string" && value.trim() ? Number(value) : value;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 20_000 || n > 2_000_000) throw new HttpError(400, `${name} must be a whole number of tokens from 20000 to 2000000`);
+    return n;
   }
   if (kind === "tokens") {
     const n = typeof value === "string" && value.trim() ? Number(value) : value;

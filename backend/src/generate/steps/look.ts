@@ -46,7 +46,7 @@ export const run: RunFn = async (ctx) => {
       const html = readScene(dir, index);
       if (html === null) continue;
       const fixed = await ctx.director.repair({
-        project: ctx.project, step: ctx.step, plan, index, ...size, assets, html,
+        project: ctx.project, step: ctx.step, plan, index, ...size, assets, html, ...(ctx.version ? { session: ctx.version.id } : {}),
         findings: found.filter((f) => f.shotId === id).map((f) => ({ code: f.code, message: f.description, hint: f.suggestedFix })),
       });
       if (checkScene(fixed.html, plan.shots[index]!, index, sceneRules(ctx, levelOfShot(ctx, plan, index))).length === 0) writeFileSync(join(dir, shotFile(index)), fixed.html);
