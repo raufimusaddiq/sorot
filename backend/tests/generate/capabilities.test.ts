@@ -28,8 +28,8 @@ describe("capability description", () => {
   test.each([
     // level asked, machine, recipe max → level given, parts offered
     ["free", { gpu: true }, "free", ["particles", "shade", "three"]],
-    ["compose", { gpu: true }, "compose", ["particles", "shade"]],
-    ["kit", {}, "kit", ["particles", "shade"]],
+    ["compose", { gpu: true }, "compose", ["particles", "shade", "three"]],
+    ["kit", {}, "kit", ["particles", "shade", "three"]],   // a tested WebGL part at any level the machine can draw
     ["free", { maxLevel: "compose" as Level }, "compose", ["particles", "shade"]],
     ["free", { gpu: false, maxLevel: "free" as Level }, "free", ["particles", "shade", "three"]],
   ])("asked %s on %o: answers at %s with %o", (level, over, given, names) => {
@@ -37,8 +37,8 @@ describe("capability description", () => {
     expect([c.level, c.kit.map((p) => p.name)] as unknown[]).toEqual([given, names]);
   });
 
-  test("a scene call gets the full settings of the parts it may use, never of a part its level hides; the budget follows the workers", () => {
-    expect(caps("compose", { parts: ["shade", "three"] }).kitDetail).toEqual({ shade: { settings: { strength: { t: "num", min: 0, max: 1 } }, defaults: { strength: 0.5 }, example: "shade example" } });
+  test("a scene call gets the full settings of the parts it may use, never of a part the machine can't draw; the budget follows the workers", () => {
+    expect(caps("compose", { maxLevel: "compose", parts: ["shade", "three"] }).kitDetail).toEqual({ shade: { settings: { strength: { t: "num", min: 0, max: 1 } }, defaults: { strength: 0.5 }, example: "shade example" } });
     expect([frameBudgetMs(1), frameBudgetMs(4), caps("kit", { workers: 1 }).renderer.frameBudgetMs]).toEqual([500, 2000, 500]);
     expect(caps("compose", { maxLevel: "compose" }).renderer.runtimes).toEqual(["dom", "canvas"]);
   });
@@ -49,11 +49,11 @@ describe("capability description", () => {
 
   test.each([
     [{ part: "neon" }, "kit_unknown_part", '"neon" isn\'t an installed kit part (installed: particles, shade)'],
-    [{ part: "three" }, "kit_not_allowed", '"three" (webgl) isn\'t allowed at the compose level'],
+    [{ part: "three" }, "kit_not_allowed", '"three" (webgl) isn\'t allowed at the compose level on this machine'],
     [{ part: "shade", settings: { strength: 4 } }, "kit_bad_setting", "p[0].settings.strength: must be between 0 and 1"],
     [{ part: "shade", settings: { glow: 1 } }, "kit_bad_setting", 'shade has no setting "glow"'],
   ])("a reference %o is refused as %s", (ref, code, message) => {
-    const [problem] = checkPartRefs([ref], caps("compose"), KIT, "p");
+    const [problem] = checkPartRefs([ref], caps("compose", { maxLevel: "compose" }), KIT, "p");   // a CPU install capped below free draws no WebGL
     expect(problem!.code).toBe(code as never);
     expect(problem!.message).toContain(message);
   });

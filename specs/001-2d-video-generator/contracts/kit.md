@@ -80,6 +80,10 @@ A recipe only names parts (`author.require`, a shot's `look.parts`); it never ca
 | `compose` | `submit_scene` HTML that mounts kit parts (`SorotKit["x"].mount`) and adds its own GSAP | plan-lock, kit calls (known parts, valid settings), lint/check |
 | `free` | `submit_scene` HTML with any drawing code the contract allows (its own canvas, WebGL, Three.js via the `three` part) | the same, plus the frame-time budget |
 
+Implementation note (owner's decision, 2026-11-02): a WebGL **part** (`three`, `iso`) is offered at
+every level on a machine that can draw WebGL, since it is Sorot's own tested code; what stays
+`free`-only is the model writing its own canvas/WebGL.
+
 Fallback: after the step's repair rounds, or over the frame-time budget, the shot is rebuilt one
 level down from the same shot spec, with a `level_drop` finding. A failure at `kit` fails the
 build.

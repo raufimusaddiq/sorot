@@ -200,7 +200,7 @@ describe("kit API", () => {
   test("capabilities: what a director call is told now, at the level asked; a level that doesn't exist is a 400", async () => {
     rig();
     const c = (await env!.json("GET", "/api/generate/capabilities?level=kit")).body.data.capabilities;
-    expect([c.level, c.kit.map((p: any) => p.name), Object.keys(c.kitDetail)]).toEqual(["kit", BUILT_INS.filter((n) => !["iso", "three"].includes(n)), BUILT_INS.filter((n) => !["iso", "three"].includes(n))]);
+    expect([c.level, c.kit.map((p: any) => p.name), Object.keys(c.kitDetail)]).toEqual(["kit", BUILT_INS, BUILT_INS]);   // tested WebGL parts too, at the kit level
     expect((await env!.json("GET", "/api/generate/capabilities")).body.data.capabilities.level).toBe("compose");
     expect((await env!.json("GET", "/api/generate/capabilities?level=max")).status).toBe(400);
   });

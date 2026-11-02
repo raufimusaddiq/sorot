@@ -16,7 +16,7 @@ export type Level = (typeof LEVELS)[number];
 export const LEVEL_MEANS: Record<Level, string> = {
   kit: "fill in kit parts, their settings and their times for the shot (submit_shot_kit); Sorot writes the scene from them",
   compose: "write the scene HTML; use kit parts by mounting them with SorotKitRuntime.mount(name, host, settings, {tl, duration}); add your own GSAP and 2D canvas; no WebGL of your own",
-  free: "write the scene HTML with any drawing the contract allows: kit parts, your own canvas or WebGL, or Three.js through the three part",
+  free: "write the scene HTML with any drawing the contract allows: kit parts, your own canvas or WebGL, or Three.js through SorotKit.three.setup",
 };
 
 /**
@@ -81,9 +81,14 @@ export function runtimesFor(gpu: boolean, maxLevel: Level): KitRuntime[] {
   return gpu || maxLevel === "free" ? ["dom", "canvas", "webgl"] : ["dom", "canvas"];
 }
 
-/** Which parts a call at `level` may use: WebGL parts only at `free`, and only where the machine draws WebGL. */
-export function partsFor(level: Level, kit: KitManifest[], runtimes: KitRuntime[]): KitManifest[] {
-  return kit.filter((p) => runtimes.includes(p.runtime) && (p.runtime !== "webgl" || level === "free"));
+/**
+ * Which parts a call may use: every part the machine can draw, at any level. A WebGL part is Sorot's own
+ * tested code (rendered twice the same before it is offered), so it is safe below `free`; what stays a
+ * `free`-only thing is the model writing its own WebGL (checkScene). Owner's decision, 2026-11-02: the
+ * isometric `iso` part should reach kit-level films.
+ */
+export function partsFor(_level: Level, kit: KitManifest[], runtimes: KitRuntime[]): KitManifest[] {
+  return kit.filter((p) => runtimes.includes(p.runtime));
 }
 
 export function capabilitiesFor(input: CapabilityInput): Capabilities {
