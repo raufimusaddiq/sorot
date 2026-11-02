@@ -175,6 +175,40 @@ describe("connection settings", () => {
     env.fetchHandler.fn = async () => { throw new Error("offline"); };
     expect((await get("/api/settings/llm/kenari-models")).body.data).toMatchObject({ models: [], warning: "offline" });
   });
+
+  test("image/voice kenari-models: filtered to that modality's endpoint", async () => {
+    env.fetchHandler.fn = async (url) => {
+      if (url !== "https://kenari.id/v1/models") return json({}, 500);
+      return json({ data: [
+        { id: "kenari/auto", endpoints: ["chat"] },
+        { id: "gpt-image-2", endpoints: ["images"], pricing: { free: false } },
+        { id: "gemini-3-1-flash-tts", endpoints: ["audio_speech"], voices: ["Kore", "Aoede"] },
+      ] });
+    };
+    expect((await get("/api/settings/image/kenari-models")).body.data.models).toEqual([{ id: "gpt-image-2", free: false }]);
+    expect((await get("/api/settings/voice/kenari-models")).body.data.models).toEqual([{ id: "gemini-3-1-flash-tts", voices: ["Kore", "Aoede"] }]);
+  });
+
+  test("kenari-account: only when the saved llm connection is Kenari's; balance+quota+usage combined; a 403 is a warning", async () => {
+    expect((await get("/api/settings/llm/kenari-account")).body.data).toEqual({ account: null });   // no Kenari connection saved yet
+    await put("llm", { baseUrl: "https://kenari.id/v1", model: "kenari/auto", apiKey: "kn-good" });
+    env.fetchHandler.fn = async (url, init) => {
+      const auth = (init?.headers as Record<string, string>)?.Authorization;
+      if (auth !== "Bearer kn-good") return json({ error: { code: "restricted_key_not_allowed" } }, 403);
+      if (url === "https://kenari.id/v1/account/balance") return json({ balance_micro_idr: 1_000_000_000 });
+      if (url === "https://kenari.id/v1/account/quota") return json({ plan: { name: "Studio", windows: { week: { budget_rp: 300000, remaining_rp: 233222, used_frac: 0.2226, resets_at: "2026-11-07T00:58:27Z" } } } });
+      if (url === "https://kenari.id/v1/usage") return json({ total: { requests: 42, prompt_tokens: 1000, completion_tokens: 200 } });
+      return json({}, 404);
+    };
+    expect((await get("/api/settings/llm/kenari-account")).body.data).toEqual({ account: {
+      plan: "Studio", balanceRp: 1000,
+      windows: { week: { budgetRp: 300000, remainingRp: 233222, usedFrac: 0.2226, resetsAt: "2026-11-07T00:58:27Z" } },
+      usage: { requests: 42, promptTokens: 1000, completionTokens: 200 },
+    } });
+
+    await put("llm", { apiKey: "kn-restricted" });
+    expect((await get("/api/settings/llm/kenari-account")).body.data).toMatchObject({ account: null, warning: "Kenari HTTP 403" });
+  });
 });
 
 describe("publishing through Tebar", () => {

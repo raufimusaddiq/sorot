@@ -63,6 +63,25 @@ export interface KenariModel {
   free: boolean;
 }
 
+export interface KenariVoiceModel {
+  id: string;
+  voices: string[];
+}
+
+export interface KenariQuotaWindow {
+  budgetRp: number;
+  remainingRp: number;
+  usedFrac: number;
+  resetsAt: string;
+}
+
+export interface KenariAccount {
+  plan: string | null;
+  windows: Record<string, KenariQuotaWindow>;
+  balanceRp: number;
+  usage: { requests: number; promptTokens: number; completionTokens: number };
+}
+
 export class ConnectionSettings {
   /** The env layer, kept so clearing a saved field restores it. */
   private readonly env: Partial<Record<keyof AppConfig, unknown>> = {};
@@ -203,18 +222,77 @@ export class ConnectionSettings {
     }
   }
 
-  /** Kenari's own model catalog (`GET /v1/models`) — public, no key needed. Never throws: a fetch failure comes back as an empty list with a warning. */
-  async kenariModels(): Promise<{ models: KenariModel[]; warning?: string }> {
+  /**
+   * Kenari's own model catalog (`GET /v1/models`) — public, no key needed. `undefined` returns
+   * every chat-capable model (the default list); an endpoint name (`"images"`, `"audio_speech"`,
+   * …) filters to models offering it. Never throws: a fetch failure comes back as `{ warning }`.
+   */
+  private async kenariCatalog(endpoint?: string): Promise<{ rows: Array<Record<string, unknown>> } | { warning: string }> {
     try {
       const res = await this.fetchFn(`${KENARI_BASE_URL}/models`);
-      if (!res.ok) return { models: [], warning: `Kenari HTTP ${res.status}` };
-      const data = (await res.json()) as { data?: Array<{ id?: unknown; pricing?: { free?: unknown } }> };
-      const models = (data.data ?? [])
-        .filter((m): m is { id: string; pricing?: { free?: unknown } } => typeof m.id === "string")
-        .map((m) => ({ id: m.id, free: !!m.pricing?.free }));
-      return { models };
+      if (!res.ok) throw new Error(`Kenari HTTP ${res.status}`);
+      const data = (await res.json()) as { data?: Array<Record<string, unknown>> };
+      const all = (data.data ?? []).filter((m) => typeof m.id === "string");
+      return { rows: endpoint ? all.filter((m) => Array.isArray(m.endpoints) && (m.endpoints as unknown[]).includes(endpoint)) : all };
     } catch (e) {
-      return { models: [], warning: (e as Error).message };
+      return { warning: (e as Error).message };
+    }
+  }
+
+  private async catalog<T>(endpoint: string | undefined, map: (m: Record<string, unknown>) => T): Promise<{ models: T[]; warning?: string }> {
+    const result = await this.kenariCatalog(endpoint);
+    return "warning" in result ? { models: [], warning: result.warning } : { models: result.rows.map(map) };
+  }
+
+  /** Every chat-capable Kenari model, for the LLM onboarding picker. */
+  async kenariModels(): Promise<{ models: KenariModel[]; warning?: string }> {
+    return this.catalog(undefined, (m) => ({ id: m.id as string, free: !!(m.pricing as { free?: unknown } | undefined)?.free }));
+  }
+
+  /** Kenari's image-generation models (`endpoints` includes `"images"`), for the image onboarding picker. */
+  async kenariImageModels(): Promise<{ models: KenariModel[]; warning?: string }> {
+    return this.catalog("images", (m) => ({ id: m.id as string, free: !!(m.pricing as { free?: unknown } | undefined)?.free }));
+  }
+
+  /** Kenari's text-to-speech models (`endpoints` includes `"audio_speech"`) and each one's voice ids, for the voice onboarding picker. */
+  async kenariVoiceModels(): Promise<{ models: KenariVoiceModel[]; warning?: string }> {
+    return this.catalog("audio_speech", (m) => ({ id: m.id as string, voices: Array.isArray(m.voices) ? (m.voices as string[]) : [] }));
+  }
+
+  /**
+   * The saved connection's Kenari balance, plan quota and usage totals — so a user never has to
+   * leave Sorot to check "how much do I have left." `null` when the saved connection isn't
+   * Kenari, or on a restricted/shared key that can't read account data (Kenari answers those
+   * with 403), or on a fetch failure; never throws.
+   */
+  async kenariAccount(): Promise<{ account: KenariAccount | null; warning?: string }> {
+    if (this.config.llmBaseUrl !== KENARI_BASE_URL || !this.config.llmApiKey) return { account: null };
+    const headers = { Authorization: `Bearer ${this.config.llmApiKey}` };
+    try {
+      const [balanceRes, quotaRes, usageRes] = await Promise.all([
+        this.fetchFn(`${KENARI_BASE_URL}/account/balance`, { headers }),
+        this.fetchFn(`${KENARI_BASE_URL}/account/quota`, { headers }),
+        this.fetchFn(`${KENARI_BASE_URL}/usage`, { headers }),
+      ]);
+      const failed = [balanceRes, quotaRes, usageRes].find((r) => !r.ok);
+      if (failed) return { account: null, warning: `Kenari HTTP ${failed.status}` };
+      const balance = (await balanceRes.json()) as { balance_micro_idr?: number };
+      const quota = (await quotaRes.json()) as { plan?: { name?: string; windows?: Record<string, { budget_rp?: number; remaining_rp?: number; used_frac?: number; resets_at?: string }> } };
+      const usage = (await usageRes.json()) as { total?: { requests?: number; prompt_tokens?: number; completion_tokens?: number } };
+      const windows: Record<string, KenariQuotaWindow> = {};
+      for (const [name, w] of Object.entries(quota.plan?.windows ?? {})) {
+        windows[name] = { budgetRp: w.budget_rp ?? 0, remainingRp: w.remaining_rp ?? 0, usedFrac: w.used_frac ?? 0, resetsAt: w.resets_at ?? "" };
+      }
+      return {
+        account: {
+          plan: quota.plan?.name ?? null,
+          windows,
+          balanceRp: Math.round((balance.balance_micro_idr ?? 0) / 1_000_000),
+          usage: { requests: usage.total?.requests ?? 0, promptTokens: usage.total?.prompt_tokens ?? 0, completionTokens: usage.total?.completion_tokens ?? 0 },
+        },
+      };
+    } catch (e) {
+      return { account: null, warning: (e as Error).message };
     }
   }
 }

@@ -160,6 +160,9 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   router.on("POST", "/api/settings/:kind/test", async (c) => ok(await settings.test(c.params.kind as string)));
   router.on("GET", "/api/settings/llm/kenari-models", async () => ok(await settings.kenariModels()));
   router.on("POST", "/api/settings/llm/probe", async (c) => ok(await settings.probe(await c.body())));
+  router.on("GET", "/api/settings/llm/kenari-account", async () => ok(await settings.kenariAccount()));
+  router.on("GET", "/api/settings/image/kenari-models", async () => ok(await settings.kenariImageModels()));
+  router.on("GET", "/api/settings/voice/kenari-models", async () => ok(await settings.kenariVoiceModels()));
 
   // ---- publishing (Tebar) ----
   router.on("GET", "/api/social/accounts", async () =>
