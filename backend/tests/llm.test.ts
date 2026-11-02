@@ -133,12 +133,13 @@ describe("chat", () => {
     expect([loadConfig({}).llmStream, loadConfig({ LLM_STREAM: "0" }).llmStream]).toEqual([true, false]);
   });
 
-  test("only a silence times out: a stream that keeps sending is never cut, one that goes quiet is", async () => {
-    const drip = (gapMs: number, chunks: number) => (async () => new Response(new ReadableStream({
+  test("only a silence times out: a stream that keeps sending is never cut, one that goes quiet is, keep-alives don't count, and a call has a total cap", async () => {
+    const drip = (gapMs: number, chunks: number, ping = false) => (async (_u: unknown, init?: RequestInit) => new Response(new ReadableStream({
       async start(c) {
         for (let i = 0; i < chunks; i++) {
+          if (init?.signal?.aborted) return c.error(new DOMException("aborted", "AbortError"));
           await Bun.sleep(gapMs);
-          c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(delta({ content: "a" }, i === chunks - 1 ? "stop" : null))}\n\n`));
+          c.enqueue(new TextEncoder().encode(ping && i < chunks - 1 ? ": keep-alive\n\n" : `data: ${JSON.stringify(delta({ content: "a" }, i === chunks - 1 ? "stop" : null))}\n\n`));
         }
         c.close();
       },
@@ -146,6 +147,10 @@ describe("chat", () => {
     const quick = { ...CFG, llmTimeoutSec: 0.2 };
     expect((await new Llm(quick, drip(60, 6), 0).chat([])).content).toBe("aaaaaa");   // 0.36 s in all, never 0.2 s quiet
     await expect(new Llm(quick, drip(400, 2), 0).chat([])).rejects.toThrow("no answer for 0.2 s");
+    // a gateway pinging ": keep-alive" for half an hour held a build in check (2026-11-02)
+    await expect(new Llm(quick, drip(60, 8, true), 0).chat([])).rejects.toThrow("no answer for 0.2 s");
+    await expect(new Llm({ ...quick, llmMaxCallSec: 0.3 }, drip(60, 12), 0).chat([])).rejects.toThrow("ran past LLM_MAX_CALL_SEC (0.3 s)");
+    expect([loadConfig({}).llmMaxCallSec, loadConfig({ LLM_MAX_CALL_SEC: "5" }).llmMaxCallSec]).toEqual([1800, 60]);
   });
   test("parseJson tolerates prose and fences", () => {
     expect(parseJson('{"a": 1}')).toEqual({ a: 1 });

@@ -49,6 +49,8 @@ export interface AppConfig {
   llmModel: string;
   llmApiKey: string;
   llmTimeoutSec: number;
+  /** The longest one LLM call may take in all, streamed or not (LLM_MAX_CALL_SEC). */
+  llmMaxCallSec: number;
   /** Output budget per LLM call. Reasoning models (e.g. Kimi, DeepSeek-R1) spend it thinking before they answer. */
   llmMaxTokens: number;
   /** Output budget per Generate director call: a scene file is long, so it has its own (Settings → LLM). */
@@ -179,6 +181,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmModel: (env.LLM_MODEL ?? "").trim(),
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),
     llmTimeoutSec: int(env.LLM_TIMEOUT, 120),
+    llmMaxCallSec: Math.max(60, int(env.LLM_MAX_CALL_SEC, 1800)),
     llmMaxTokens: Math.max(256, int(env.LLM_MAX_TOKENS, 4000)),
     genLlmMaxTokens: Math.max(256, int(env.GEN_LLM_MAX_TOKENS, 32000)),
     llmStream: !/^(0|false|no|off)$/i.test((env.LLM_STREAM ?? "").trim()),

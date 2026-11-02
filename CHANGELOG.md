@@ -63,6 +63,11 @@ now point here.
 
 Timings below were each measured once, on the machine named in `docs/journal/`; yours will differ.
 
+### LLM calls
+- A streamed model call that only sends keep-alive pings now times out after `LLM_TIMEOUT` of silence, and
+  every call stops after `LLM_MAX_CALL_SEC` (default 1800 s) in total; before, one such call held a
+  Generate build in check for over half an hour.
+
 ### Import and transcription
 - YouTube URL or local file, whole or a time range (`--from 13:25 --to 25:00`). A short range is copied
   out of the stream (no re-encode); a range of at least 10% of the video downloads the whole video and

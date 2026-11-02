@@ -160,7 +160,7 @@ export function jsonError(text: string): { message: string; at: number; excerpt:
 
 export class Llm {
   constructor(
-    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec">
+    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmMaxCallSec?: number }
       & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmVision?: boolean; llmVisionModel?: string; llmStream?: boolean },
     private readonly fetchFn: typeof fetch = fetch,
     private readonly retryWaitMs = 2000,
@@ -229,13 +229,17 @@ export class Llm {
     if (streaming) Object.assign(body, { stream: true, stream_options: { include_usage: true } });
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.config.llmApiKey) headers.Authorization = `Bearer ${this.config.llmApiKey}`;
-    // LLM_TIMEOUT is the longest silence: the wait for the first byte, then between streamed chunks.
+    // LLM_TIMEOUT is the longest silence: the wait for the first byte, then between streamed chunks that
+    // carry part of the answer (a keep-alive ping doesn't count). LLM_MAX_CALL_SEC caps the whole call:
+    // a gateway that kept a Generate scene call open with pings held a build for over 30 min (2026-11-02).
     const abort = new AbortController();
     let timer = setTimeout(() => abort.abort(), this.config.llmTimeoutSec * 1000);
     const alive = () => {
       clearTimeout(timer);
       timer = setTimeout(() => abort.abort(), this.config.llmTimeoutSec * 1000);
     };
+    let overLong = false;
+    const cap = setTimeout(() => { overLong = true; abort.abort(); }, (this.config.llmMaxCallSec ?? 1800) * 1000);
     let res: Response;
     let text = "";
     let data: Json = {};
@@ -247,10 +251,12 @@ export class Llm {
       } catch (e) {
         // A timeout already waited LLM_TIMEOUT: not retried, so a stage can't stall twice as long.
         const timedOut = abort.signal.aborted || (e as Error).name === "TimeoutError";
+        if (overLong) throw new LlmError(`LLM call ran past LLM_MAX_CALL_SEC (${this.config.llmMaxCallSec ?? 1800} s) without finishing`, false);
         throw new LlmError(`LLM unreachable at ${base}: ${timedOut ? `no answer for ${this.config.llmTimeoutSec} s` : (e as Error).message}`, !timedOut);
       }
     } finally {
       clearTimeout(timer);
+      clearTimeout(cap);
     }
     if (!res.ok) throw new LlmError(`LLM HTTP ${res.status}: ${text.slice(0, 300)}`, TRANSIENT_STATUSES.has(res.status));
     if (!data.choices && !data.error) {
@@ -333,6 +339,7 @@ export class Llm {
  * gateway's error. `alive` is called on every chunk, so only a silence times out.
  */
 async function readStream(res: Response, alive: () => void, signal: AbortSignal): Promise<Json> {
+  // only a chunk that carries part of the answer (or its end) keeps the call alive, not a keep-alive ping
   const reader = (res.body as ReadableStream<Uint8Array>).getReader();
   // a silence ends the read here too, whatever the fetch implementation does with the signal
   signal.addEventListener("abort", () => void reader.cancel().catch(() => undefined), { once: true });
@@ -352,6 +359,7 @@ async function readStream(res: Response, alive: () => void, signal: AbortSignal)
     } catch {
       return;   // a keep-alive or a broken line: the rest of the stream still counts
     }
+    if (chunk.error || chunk.usage || chunk.choices) alive();
     if (chunk.error) error = chunk.error as Json;
     if (chunk.usage) usage = chunk.usage as Json;
     const choice = (chunk.choices as Array<{ delta?: Json; finish_reason?: string | null }> | undefined)?.[0];
@@ -369,7 +377,6 @@ async function readStream(res: Response, alive: () => void, signal: AbortSignal)
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    alive();
     buffer += decoder.decode(value, { stream: true });
     let end: number;
     while ((end = buffer.indexOf("\n")) >= 0) {
