@@ -67,6 +67,8 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
 - A streamed model call that only sends keep-alive pings now times out after `LLM_TIMEOUT` of silence, and
   every call stops after `LLM_MAX_CALL_SEC` (default 1800 s) in total; before, one such call held a
   Generate build in check for over half an hour.
+- Generate director requests put what every call shares (the capabilities, the film) first, so a provider's
+  prompt cache can reuse it from shot to shot; the shot's own fields come after.
 
 ### Import and transcription
 - YouTube URL or local file, whole or a time range (`--from 13:25 --to 25:00`). A short range is copied

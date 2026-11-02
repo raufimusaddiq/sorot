@@ -451,7 +451,7 @@ export class Director {
     const def = TOOLS[kind];
     const name = def.function.name;
     // what this install can do goes with every planning and writing call; scene calls bring their own
-    if (CAPABLE.has(kind) && this.capabilities && !("capabilities" in payload)) payload = { ...payload, capabilities: this.planCapabilities(kind) };
+    if (CAPABLE.has(kind) && this.capabilities && !("capabilities" in payload)) payload = { capabilities: this.planCapabilities(kind), ...payload };   // shared prefix first (cache)
     const brief = JSON.stringify({ ...payload, task });
     const messages: ChatInput[] = [
       { role: "system", content: this.system(kind, step) },
@@ -748,9 +748,9 @@ export class Director {
     };
     const system = `${INSTRUCTIONS.effects}\n\n${this.guidance("effects")}`.trim();
     const brief = JSON.stringify({
+      ...(this.capabilities ? { capabilities: this.planCapabilities("effects") } : {}),
       plan: { title: plan.title, message: plan.message, look: plan.look, shots: plan.shots.map((s) => ({ id: s.id, purpose: s.purpose, seconds: s.durationSec, text: s.text.map((t) => t.value), visual: s.visual.description, motion: s.motion, transition: s.transition, hold: s.hold })) },
       blocksAllowed: blocksOn,
-      ...(this.capabilities ? { capabilities: this.planCapabilities("effects") } : {}),
       task: "Choose this film's effects with the tools: a few seams with a transition that has a cause, and light, blur, depth or glow where a shot needs it. Search first, then set. When you are done, answer with one sentence on what you chose.",
     });
     const summary = await this.log.track(
@@ -781,15 +781,18 @@ export class Director {
     const prev = plan.shots[index - 1];
     const next = plan.shots[index + 1];
     const shot = plan.shots[index]!;
+    // what every shot of the film shares comes first and the shot's own fields after it: providers cache
+    // a request's prefix, and with the shot first the 9 KB capabilities were never cached (34% cache
+    // hits on a real build, 2026-11-02)
     return {
+      ...(this.capabilities ? { capabilities: this.sceneCapabilities(input) } : {}),
+      film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, shots: plan.shots.length },
+      size: { width: input.width, height: input.height }, assets: input.assets, fonts: plan.look.fonts, blocks: input.blocks ?? {},
+      position: index + 1, compositionId: shotId(index), file: shotFile(index),
       shot, effects: shot.effects ?? null,
       enters: index === 0 ? "the film opens on this shot" : shot.transition, leaves: next ? next.transition : "the film ends on this shot",
       before: prev ? { id: prev.id, purpose: prev.purpose, lastText: prev.text.at(-1)?.value ?? null, handoff: prev.handoff ?? null } : null,
       after: next ? { id: next.id, purpose: next.purpose, firstText: next.text[0]?.value ?? null, opens: next.visual.description } : null,
-      compositionId: shotId(index), file: shotFile(index), size: { width: input.width, height: input.height },
-      film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, position: index + 1, of: plan.shots.length },
-      assets: input.assets, fonts: plan.look.fonts, blocks: input.blocks ?? {},
-      ...(this.capabilities ? { capabilities: this.sceneCapabilities(input) } : {}),
     };
   }
 

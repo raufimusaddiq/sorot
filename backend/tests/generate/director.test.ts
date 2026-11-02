@@ -375,14 +375,14 @@ describe("director: scenes", () => {
   });
 
   test("scene: one call for one shot with the film around it, the authoring contract and the one function to call", async () => {
-    const r = rig([json({ html: HTML })]);
+    const r = rig([json({ html: HTML }), json({ html: HTML })]);
     expect(await r.director.scene({ ...input(), blocks: { "data-chart": "<div>chart</div>" } })).toBe(HTML);
     const req = r.requests[0]!;
     expect(req.tool_choice).toEqual({ type: "function", function: { name: "submit_scene" } });
     expect(req.tools[0].function.parameters.required).toEqual(["html"]);
     expect(userOf(req)).toMatchObject({
       compositionId: "shot-02", file: "compositions/shot-02.html", size: { width: 1080, height: 1920 },
-      shot: { id: "s02" }, film: { title: "Bunga berbunga", position: 2, of: 3 }, assets: ["assets/ab-logo.png"], fonts: ["Plus Jakarta Sans"],
+      shot: { id: "s02" }, film: { title: "Bunga berbunga", shots: 3 }, position: 2, assets: ["assets/ab-logo.png"], fonts: ["Plus Jakarta Sans"],
       blocks: { "data-chart": "<div>chart</div>" },
       // the seams on either side and the neighbours, so the hero can carry across
       effects: null, enters: "cut", leaves: "cut",
@@ -396,6 +396,10 @@ describe("director: scenes", () => {
     expect(systemOf(req)).toContain("submit_scene");
     expect(systemOf(req)).not.toContain("Offer N storylines");
     expect(req.max_tokens).toBe(16000);
+    // what every shot shares leads the request, so a provider's prefix cache covers it (34% hits before)
+    await r.director.scene({ ...input(), index: 2, blocks: { "data-chart": "<div>chart</div>" } });
+    const [a, b] = r.requests.map((q) => q.messages[1].content as string);
+    expect(a!.slice(0, a!.indexOf('"position"'))).toBe(b!.slice(0, b!.indexOf('"position"')));
   });
 
   test("with a capability description, a scene call gets its level and the full settings of every part it may use; storylines get the summary, plans every part's settings", async () => {
