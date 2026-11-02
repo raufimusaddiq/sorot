@@ -17,6 +17,8 @@ window.SorotKit["iso"] = {
     canvas.style.position = "absolute"; canvas.style.left = "0"; canvas.style.top = "0";
     canvas.style.width = W + "px"; canvas.style.height = H + "px";
     host.appendChild(canvas);
+    // already drawn in 3D: a camera tilt on a stage around it would tilt the picture twice
+    if (window.SorotKit.camera) window.SorotKit.camera.unproject(canvas);
 
     var scene = new THREE.Scene();
     // frame the items: centre on them and size the view to their extent (zoom scales it)

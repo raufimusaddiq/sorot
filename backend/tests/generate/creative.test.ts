@@ -285,20 +285,28 @@ describe("creative step", () => {
     await expect(STEPS.creative.run(stubborn.ctx)).rejects.toThrow("didn't pass the checks");
   });
 
+  const sheets = {
+    snapshot: () => {
+      const out = join(tmp, "snaps");
+      mkdirSync(out, { recursive: true });
+      writeFileSync(join(out, "review-beats-1.jpg"), "BEATS");
+      writeFileSync(join(out, "review-beats-2.jpg"), "BEATS2");   // only the first page of each goes to the judge
+      writeFileSync(join(out, "review-phone-1.jpg"), "PHONE");
+      return procOk(JSON.stringify({ ok: true, outputDir: out, frames: [{ path: join(out, "f1.png"), time: 1 }] }));
+    },
+  };
+
+  test("with Jev and a vision model, what only the frames show (finished, motion) goes to the vision judge and the rest to Jev", async () => {
+    const { jev, requests } = fakeJev(() => noulA(0.95));
+    const r = rig({ jev, vision: "vl-model", replies: [judgeYes(["finished", "motion"], [])], criteria: [crit("opening")], handlers: sheets });
+    await STEPS.creative.run(r.ctx);
+    expect(Object.keys(requests[0]!.questions)).not.toContain("finished");
+    expect(JSON.parse(r.requests[0]!.messages[1].content[0].text).criteria.map((c: any) => c.id)).toEqual(["finished", "motion"]);
+    expect(r.verdict().judgedBy).toBe("jev:jev-1.14.0 + llm-vision:vl-model");
+  });
+
   test("vision: with a vision model the judge gets HyperFrames' review sheets as pictures and the verdict says so; the sheets are kept with the version", async () => {
-    const r = rig({
-      vision: "vl-model", replies: [LLM_PASS], criteria: [crit("opening"), crit("pace")],
-      handlers: {
-        snapshot: () => {
-          const out = join(tmp, "snaps");
-          mkdirSync(out, { recursive: true });
-          writeFileSync(join(out, "review-beats-1.jpg"), "BEATS");
-          writeFileSync(join(out, "review-beats-2.jpg"), "BEATS2");   // only the first page of each goes to the judge
-          writeFileSync(join(out, "review-phone-1.jpg"), "PHONE");
-          return procOk(JSON.stringify({ ok: true, outputDir: out, frames: [{ path: join(out, "f1.png"), time: 1 }] }));
-        },
-      },
-    });
+    const r = rig({ vision: "vl-model", replies: [LLM_PASS], criteria: [crit("opening"), crit("pace")], handlers: sheets });
     await STEPS.creative.run(r.ctx);
     expect(r.verdict()).toMatchObject({ judgedBy: "llm-vision:vl-model" });
     expect(JSON.parse(r.verdict().inputs!).pictures).toBe(2);

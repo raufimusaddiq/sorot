@@ -24,9 +24,9 @@ const story = (i: number, extra: Record<string, unknown> = {}) => ({
 const planCtx: PlanContext = { brief: project.brief, targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false };
 const json = (v: unknown) => JSON.stringify(v);
 
-function rig(replies: Parameters<typeof fakeLlm>[0]) {
+function rig(replies: Parameters<typeof fakeLlm>[0], models: Parameters<typeof fakeLlm>[1] = {}) {
   const store = new Store(openDatabase(":memory:"));
-  const { llm, requests } = fakeLlm(replies);
+  const { llm, requests } = fakeLlm(replies, models);
   const director = new Director(llm, new DirectorLog(store), "../generator");
   return { director, requests, store, events: () => store.genEventsForProject("p1").reverse() };
 }
@@ -393,6 +393,8 @@ describe("director: scenes", () => {
     expect(systemOf(req)).toContain("never `from`");   // HyperFrames' own contract: fromTo only, transforms not width/height
     expect(systemOf(req)).toContain("## Motion craft");
     expect(systemOf(req)).toContain("Writing one scene");          // the authoring contract
+    expect(systemOf(req)).toContain('# A worked example');          // one finished shot to learn the craft from
+    expect(systemOf(req)).toContain('data-composition-id="shot-02"');
     expect(systemOf(req)).toContain("submit_scene");
     expect(systemOf(req)).not.toContain("Offer N storylines");
     expect(req.max_tokens).toBe(16000);
@@ -400,6 +402,13 @@ describe("director: scenes", () => {
     await r.director.scene({ ...input(), index: 2, blocks: { "data-chart": "<div>chart</div>" } });
     const [a, b] = r.requests.map((q) => q.messages[1].content as string);
     expect(a!.slice(0, a!.indexOf('"position"'))).toBe(b!.slice(0, b!.indexOf('"position"')));
+  });
+
+  test("each Generate role asks its own model when one is set, else the LLM model", async () => {
+    const r = rig([json({ html: HTML }), json({ html: HTML })], { genSceneModel: "cheap", genJudgeModel: "strict" });
+    await r.director.scene(input());
+    expect([r.requests[0]!.model, r.director.model, r.director.judgeModel, r.events()[0]!.model]).toEqual(["cheap", "cheap", "strict", "cheap"]);
+    expect(rig([]).director.model).toBe("m");
   });
 
   test("with a capability description, a scene call gets its level and the full settings of every part it may use; storylines get the summary, plans every part's settings", async () => {

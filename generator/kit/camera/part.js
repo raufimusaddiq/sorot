@@ -1,4 +1,8 @@
 // camera: one move over the whole shot on a stage element (the host, or `target` inside it).
+// The isometric or perspective projection tilts flat 2D layers; a stage holding a drawn 3D picture
+// (the iso or three part's canvas) keeps it upright and gets only the move, whichever part mounts
+// first: the camera skips the tilt when the canvas is already there, and those parts call
+// unproject() on mount to take back a tilt put on a stage around them.
 window.SorotKit = window.SorotKit || {};
 window.SorotKit["camera"] = {
   mount: function (host, s, ctx) {
@@ -7,14 +11,15 @@ window.SorotKit["camera"] = {
     var EASE = { travel: "power2.inOut", arrive: "expo.out", linear: "none" };
     var a = Math.max(0, Math.min(1, s.amount));
     var w = ctx.size.width, h = ctx.size.height;
-    var base = {};
-    if (s.projection === "isometric") {
+    var drawn3d = stage.querySelector('[data-kit="iso"], [data-kit="three"]');
+    if (s.projection === "isometric" && !drawn3d) {
       host.style.perspective = "none";
-      base = { rotationX: 54.7356, rotationZ: -45, transformOrigin: "50% 50%" };
-    } else if (s.projection === "perspective") {
-      base = { transformPerspective: 1600, rotationX: 12, transformOrigin: "50% 60%" };
+      gsap.set(stage, { rotationX: 54.7356, rotationZ: -45, transformOrigin: "50% 50%" });
+      stage.setAttribute("data-kit-projection", s.projection);
+    } else if (s.projection === "perspective" && !drawn3d) {
+      gsap.set(stage, { transformPerspective: 1600, rotationX: 12, transformOrigin: "50% 60%" });
+      stage.setAttribute("data-kit-projection", s.projection);
     }
-    gsap.set(stage, base);
     var from = {}, to = { duration: ctx.duration, ease: EASE[s.ease] || EASE.travel };
     switch (s.move) {
       case "pan-left": from.x = w * a * 0.5; to.x = -w * a * 0.5; break;
@@ -28,5 +33,14 @@ window.SorotKit["camera"] = {
       default: return;
     }
     ctx.tl.fromTo(stage, from, to, ctx.start);
+  },
+  // Takes the projection tilt off every stage around `node` (a 3D part's canvas, already drawn in
+  // its own projection); the stages keep their moves.
+  unproject: function (node) {
+    for (var el = node.parentElement; el; el = el.parentElement) {
+      if (!el.hasAttribute("data-kit-projection")) continue;
+      window.gsap.set(el, { rotationX: 0, rotationZ: 0, transformPerspective: 0 });
+      el.removeAttribute("data-kit-projection");
+    }
   },
 };

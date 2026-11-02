@@ -1,7 +1,7 @@
 {
   "name": "iso",
   "version": "1.0.0",
-  "does": "An isometric 3D diorama (Three.js, orthographic camera, soft shadows): blocks, coin stacks, bars, cylinders, spheres, houses and trees on a floor grid, rising in one by one.",
+  "does": "An isometric 3D diorama (Three.js, orthographic camera, soft shadows): blocks, coin stacks, bars, cylinders, spheres, houses and trees on a floor grid, rising in one by one. Already isometric.",
   "runtime": "webgl",
   "needs": { "gpu": "preferred" },
   "settings": {

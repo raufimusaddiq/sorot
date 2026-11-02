@@ -13,7 +13,7 @@ import { Toggle } from './ImportOptions';
 import { Window } from './Window';
 
 type CoreKind = 'llm' | 'jev' | 'tebar';
-type FieldDef = { key: 'baseUrl' | 'url' | 'model' | 'genMaxTokens'; label: string; placeholder: string };
+type FieldDef = { key: 'baseUrl' | 'url' | 'model' | 'genMaxTokens' | 'planModel' | 'sceneModel' | 'judgeModel'; label: string; placeholder: string };
 
 const CARDS: Record<CoreKind, { title: string; bar: string; about: string; fallback: string; fields: FieldDef[] }> = {
   llm: {
@@ -25,6 +25,10 @@ const CARDS: Record<CoreKind, { title: string; bar: string; about: string; fallb
       { key: 'model', label: 'Model', placeholder: 'qwen2.5:7b' },
       // Generate writes whole scene files: a reasoning model needs far more than a clip review.
       { key: 'genMaxTokens', label: 'Generate token budget', placeholder: '32000' },
+      // Generate can give each role its own model (empty = the model above): a strong planner and judge, a cheap scene writer.
+      { key: 'planModel', label: 'Generate plan model', placeholder: 'same as Model' },
+      { key: 'sceneModel', label: 'Generate scene model', placeholder: 'same as Model' },
+      { key: 'judgeModel', label: 'Generate judge model', placeholder: 'same as Model' },
     ],
   },
   jev: {

@@ -16,6 +16,8 @@ window.SorotKit["three"] = {
     canvas.style.position = "absolute"; canvas.style.left = "0"; canvas.style.top = "0";
     canvas.style.width = W + "px"; canvas.style.height = H + "px";
     host.appendChild(canvas);
+    // already drawn in 3D: a camera tilt on a stage around it would tilt the picture twice
+    if (window.SorotKit.camera) window.SorotKit.camera.unproject(canvas);
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera(35, W / H, 0.1, 200);
     // key light from the film's angle (0 = from the top, 90 = from the right), plus a soft fill

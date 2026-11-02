@@ -86,8 +86,10 @@ rate), `voiceRoute` (engine and voice are the ones configured), `sourcedNumbers`
 blocking content rules (judged by Jev, then the LLM, else a should-fix "unjudged"), and `command`
 findings. A finding is `must-fix` or `should-fix`; any must-fix is a FAIL.
 
-**CREATIVE** is a fresh judge (Jev first, then the LLM) answering the recipe's criteria on the
-rendered frames. Sorot always adds a main-message question and a "does it feel flat" risk; a recipe's `fail: "main"` marks which
+**CREATIVE** is a fresh judge answering the recipe's criteria. With a vision model, what only the
+frames can show (`finished`, `motion`) goes to the LLM judge with the review sheets; Jev answers the
+rest first (it reads text: on 2026-11-02 it passed a film whose world was tilted on its side); what
+Jev doesn't answer goes to the LLM judge too. Sorot always adds a main-message question and a "does it feel flat" risk; a recipe's `fail: "main"` marks which
 failure fails the verdict. `command-creative:*` findings count here.
 
 **Fix rounds**: fix the must-fix items (or ones you pick, with a note and a shot), up to the

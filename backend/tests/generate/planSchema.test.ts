@@ -106,6 +106,15 @@ describe("validatePlan", () => {
     expect(off.notes.join()).toContain("narration was removed");
   });
 
+  test.each([
+    ["no upload: the promise is dropped", [], "none", ["music was removed: no music track is uploaded"]],
+    ["an upload: kept", ["bed.mp3"], "bed.mp3", []],
+    ["not known: kept", undefined, "bed.mp3", []],
+  ])("music is only an uploaded track (%s)", (_n, music, want, notes) => {
+    const check = validatePlan(samplePlan({ sound: { music: "bed.mp3", narration: false } }), ctx({ music }));
+    expect([check.plan!.sound.music, check.notes.filter((n) => n.startsWith("music"))]).toEqual([want, notes]);
+  });
+
   test("numbers that are not in the brief become assumptions; the brief's own stay as they are", () => {
     const brief = "Bunga 1,5% per bulan selama 12 bulan";
     const plan = first((s) => ({ ...s, text: [{ role: "title", value: "1,5% selama 12 bulan" }, { role: "body", value: "jadi 18,5% dan 40%" }] }))(samplePlan());

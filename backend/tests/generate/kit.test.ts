@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -97,6 +97,46 @@ describe("zip", () => {
     expect(readZip(writeZip(files))).toEqual(files);
     expect(["../x", "/etc/x", "C:/x", "a\\b", "a/./b", "a/b"].map(safeEntryPath)).toEqual([false, false, false, false, false, true]);
     expect(() => readZip(new TextEncoder().encode("not a zip"))).toThrow("This isn't a zip file");
+  });
+});
+
+/** Mounts built-in parts in a DOM with a GSAP that records: `set` merges into `el.gsapSet`, the timeline keeps its tweens. */
+// required, not imported: jsdom's types bring in the DOM lib, which clashes with Bun's types
+const { JSDOM } = require("jsdom") as { JSDOM: new (html: string, options: object) => { window: unknown } };
+const inDom = (markup: string, parts: string[]) => {
+  const dom = new JSDOM(`<div id="stage">${markup}</div>`, { runScripts: "outside-only" });
+  const w = dom.window as any;
+  w.gsap = { set: (el: any, v: object) => { el.gsapSet = { ...el.gsapSet, ...v }; } };
+  for (const p of parts) w.eval(readFileSync(join(import.meta.dir, "../../../generator/kit", p, "part.js"), "utf8"));
+  const tweens: unknown[][] = [];
+  const ctx = { tl: { fromTo: (...a: unknown[]) => tweens.push(a) }, start: 0, duration: 2, size: { width: 1080, height: 1920 } };
+  return { w, stage: w.document.getElementById("stage"), tweens, mount: (name: string, s: object) => w.SorotKit[name].mount(w.document.getElementById("stage"), s, ctx) };
+};
+
+describe("parts in a DOM", () => {
+  test.each(["word", "char", "line"])("text-reveal keeps every space as plain text between its boxes, so none collapses: by %s", (by) => {
+    const { w, stage, tweens, mount } = inDom('<h1>Biarkan <span class="accent">bunga</span> mekar pagi</h1>', ["text-reveal"]);
+    mount("text-reveal", { target: "h1", by, style: "fade", at: 0, stagger: 0.1, length: 0.5 });
+    const boxes = [...stage.querySelectorAll("span")].filter((el: any) => el.style.display === "inline-block");
+    expect([stage.textContent, boxes.some((b: any) => /^\s|\s$/.test(b.textContent)), tweens.length > 0]).toEqual(["Biarkan bunga mekar pagi", false, true]);
+    expect(w.document.querySelector(".accent").textContent).toBe("bunga");
+  });
+
+  test.each([
+    ["flat 2D layers get the tilt", '<div class="city"></div>', 54.7356],
+    ["an iso diorama, already isometric, gets only the move", '<canvas data-kit="iso"></canvas>', undefined],
+    ["a three scene gets only the move", '<div><canvas data-kit="three"></canvas></div>', undefined],
+  ])("camera over %s", (_, markup, tilt) => {
+    const { stage, tweens, mount } = inDom(markup, ["camera"]);
+    mount("camera", { projection: "isometric", move: "dolly-in", amount: 0.3, ease: "travel", target: "" });
+    expect([stage.gsapSet?.rotationX, tweens.length]).toEqual([tilt, 1]);
+  });
+  test("a 3D part mounted after the camera takes the tilt back off the stages around it", () => {
+    const { w, stage, mount } = inDom('<div class="layer"></div>', ["camera"]);
+    mount("camera", { projection: "perspective", move: "zoom-in", amount: 0.3, ease: "travel", target: "" });
+    const canvas = stage.querySelector(".layer").appendChild(w.document.createElement("canvas"));
+    w.SorotKit.camera.unproject(canvas);
+    expect([stage.gsapSet.rotationX, stage.gsapSet.transformPerspective, stage.hasAttribute("data-kit-projection")]).toEqual([0, 0, false]);
   });
 });
 

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plan, Shot } from "./planSchema";
-import { seams } from "./transitions";
+import { accentOf, seams } from "./transitions";
 
 // The composer writes what must not be left to a model: the root index.html, with every shot's
 // start and length taken from the approved plan (FR-008/FR-009), the bundled fonts and a local
@@ -116,7 +116,7 @@ export function buildRoot({ plan, width, height, fonts, music, voice, kit, motio
   const ground = hexes[0] ?? "#000000";
   const seam = seams({
     transitions: plan.shots.map((s) => s.transition), starts, durations: plan.shots.map((s) => s.durationSec),
-    ground, accent: hexes[1] ?? "#ffffff", host: (i) => `host-${shotNumber(i)}`,
+    ground, accent: accentOf(plan.look.palette), host: (i) => `host-${shotNumber(i)}`,
   });
   const faces = fonts.map((f) =>
     `      @font-face { font-family: "${esc(f.family)}"; font-weight: ${f.weight}; src: url("${esc(f.path)}") format("woff2"); }`).join("\n");

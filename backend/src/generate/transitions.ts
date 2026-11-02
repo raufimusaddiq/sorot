@@ -56,8 +56,30 @@ export const SEAM_MIN_CONTRAST = 1.5;
  * accent's wipe, the warm light leak. The others move or veil the shots themselves.
  */
 export function seamColour(kind: string, palette: string[]): string | null {
+  return kind === "flash" ? "#ffffff" : kind === "wipe" ? accentOf(palette) : kind === "light-leak" ? "#ffc890" : null;
+}
+
+/** Chroma (max - min channel, 0 to 1) of a hex colour that `luminance` accepts. */
+function chroma(hex: string): number {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})/i.exec(hex.trim())!;
+  const h = m[1]!.length === 3 ? [...m[1]!].map((c) => c + c).join("") : m[1]!;
+  const ch = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return (Math.max(...ch) - Math.min(...ch)) / 255;
+}
+
+/**
+ * The film's accent: plans order the palette ground, ink, accent... but not always, so it is the
+ * most saturated colour that is neither the ground (the first) nor the ink (the colour that stands
+ * out most on the ground, as `inkOn` picks it); the first wins a tie. A palette of only ground and
+ * ink gets the ink; one with no second colour, white.
+ */
+export function accentOf(palette: string[]): string {
   const hexes = palette.filter((c) => luminance(c) !== null);
-  return kind === "flash" ? "#ffffff" : kind === "wipe" ? (hexes[1] ?? "#ffffff") : kind === "light-leak" ? "#ffc890" : null;
+  const [ground, ...rest] = hexes;
+  if (!ground || !rest.length) return "#ffffff";
+  const ink = rest.reduce((best, c) => (contrastOf(c, ground)! > contrastOf(best, ground)! ? c : best));
+  const others = rest.filter((c) => c !== ink);
+  return others.length ? others.reduce((best, c) => (chroma(c) > chroma(best) ? c : best)) : ink;
 }
 
 /** The kind a plan's transition names, or null when it names none Sorot can build. */

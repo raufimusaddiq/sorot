@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildRoot, bundledFontFaces, checkScene, motionBlurOf, shotFile, shotId, shotStarts, visibleText } from "../../src/generate/composer";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
-import { contrastOf, luminance, seamColour, seams, TRANSITION_NAMES } from "../../src/generate/transitions";
+import { accentOf, contrastOf, luminance, seamColour, seams, TRANSITION_NAMES } from "../../src/generate/transitions";
 import { samplePlan, sceneHtml as scene } from "../helpers";
 
 const planOf = (over: Record<string, unknown> = {}): Plan =>
@@ -38,6 +38,14 @@ describe("root composition", () => {
   test("seam colours and WCAG contrast: black on white is 21:1, a colour on itself 1:1; only hex colours count", () => {
     expect([contrastOf("#000", "#ffffff"), contrastOf("#0B1020", "#0B1020"), contrastOf("red", "#fff"), luminance("#ffffff80")]).toEqual([21, 1, null, 1]);
     expect(["flash", "wipe", "light-leak", "zoom"].map((k) => seamColour(k, ["#0B1020", "red", "#FFD23F"]))).toEqual(["#ffffff", "#FFD23F", "#ffc890", null]);
+  });
+  test.each([
+    [["#F2D3AC", "#2D1C17", "#C85F3D", "#9A8F84"], "#C85F3D"],   // ground, ink, accent: the dark ink is not the band
+    [["#0B1020", "#3FA7FF", "#FFFFFF"], "#3FA7FF"],               // the ink (white) comes last
+    [["#0B1020", "#FFD23F"], "#FFD23F"],                           // only ground and ink: the ink
+    [["#0B1020", "red"], "#ffffff"],                               // no second hex colour
+  ])("the wipe paints the accent, not the ink: %p", (palette, accent) => {
+    expect(accentOf(palette)).toBe(accent);
   });
   test.each(TRANSITION_NAMES.filter((k) => k !== "cut"))("every kind of seam is built from tweens inside the two shots: %s", (kind) => {
     const s = seams({ transitions: ["cut", kind], starts: [0, 3], durations: [3, 1], ground: "#000000", accent: "#ffffff", host: (i) => `host-0${i + 1}` });

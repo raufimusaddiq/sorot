@@ -55,6 +55,10 @@ export interface AppConfig {
   llmMaxTokens: number;
   /** Output budget per Generate director call: a scene file is long, so it has its own (Settings → LLM). */
   genLlmMaxTokens: number;
+  /** Generate's model per role (Settings → LLM; "" = LLM_MODEL): plan = storylines, plan, effects and facts; scene = scenes, repairs and kit shots; judge = the CREATIVE judge without pictures. */
+  genPlanModel: string;
+  genSceneModel: string;
+  genJudgeModel: string;
   /** Ask for streamed answers (default on): a gateway cut non-streamed requests at 180 s. LLM_STREAM=0 turns it off. */
   llmStream: boolean;
   /** Web search for the discovery agent: "bing" (key-free HTML), a SearXNG URL, or "off". */
@@ -184,6 +188,9 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmMaxCallSec: Math.max(60, int(env.LLM_MAX_CALL_SEC, 1800)),
     llmMaxTokens: Math.max(256, int(env.LLM_MAX_TOKENS, 4000)),
     genLlmMaxTokens: Math.max(256, int(env.GEN_LLM_MAX_TOKENS, 32000)),
+    genPlanModel: (env.GEN_PLAN_MODEL ?? "").trim(),
+    genSceneModel: (env.GEN_SCENE_MODEL ?? "").trim(),
+    genJudgeModel: (env.GEN_JUDGE_MODEL ?? "").trim(),
     llmStream: !/^(0|false|no|off)$/i.test((env.LLM_STREAM ?? "").trim()),
     webSearch: (env.WEB_SEARCH ?? "").trim() || "bing",
     llmEnabled: true,

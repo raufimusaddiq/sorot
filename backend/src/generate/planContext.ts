@@ -37,6 +37,7 @@ export function planContext({ project, recipe, assets, connected, catalog, capab
     brief: project.brief, targetSec: project.targetSec, format: project.format, language: project.language,
     fonts: availableFonts(assets), imageConnected: connected("image"),
     narration: project.narration === 1 && connected("voice"),
+    music: assets.filter((a) => a.kind === "music").map((a) => a.path.split("/").pop() ?? a.path),
     blocksAllowed: settings.blocks !== false, blocks: catalog.length ? catalog : null,
     limits: { maxShots: Number(settings.maxShots) },
     numeric: settings.numeric === true, motionPlan: settings.motionPlan === true, fps: recipe.output.fps,

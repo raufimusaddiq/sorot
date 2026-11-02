@@ -61,7 +61,7 @@ const PLAN_PROPS: Json = {
       pacing: str("e.g. brisk"), notes: str("anything else about the look"),
     }, required: ["palette", "fonts", "pacing"],
   },
-  sound: { type: "object", properties: { music: str('"none" or an asset'), narration: { type: "boolean" } } },
+  sound: { type: "object", properties: { music: str('"none", or one of connections.music (uploaded tracks only; Sorot makes no music)'), narration: { type: "boolean" } } },
   narrationScript: { type: ["string", "null"] },
   blocks: { type: "array", items: str("a registry block name") },
   assumptions: { type: "array", items: str("anything you added that the brief did not say") },
@@ -264,6 +264,8 @@ const INSTRUCTIONS = {
 } as const;
 
 type Kind = keyof typeof TOOLS;
+/** Which Generate role answers each call (Settings → LLM: plan, scene and judge models). */
+const roleOf = (kind: Kind | "effects" | "research"): "plan" | "scene" | "judge" => (kind === "judge" ? "judge" : SCENE_KINDS.has(kind as Kind) ? "scene" : "plan");
 const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, outline: 0.4, specs: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, kitshot: 0.4, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
 /** Words a voice says per second, pauses between lines included: Fish in Indonesian measured 1.7 to 2.0 (2026-11-01). */
 const WORDS_PER_SEC = 1.8;
@@ -377,6 +379,7 @@ export function withPlaceholders(parsed: unknown, fps: number): Record<string, u
 export class Director {
   private guide: string | null = null;
   private contract: string | null = null;
+  private sample: string | null = null;
 
   /** The capability description for a call; set by the service (null: calls go without it). */
   capabilities: ((q: CapabilityQuery) => Capabilities) | null = null;
@@ -407,7 +410,10 @@ export class Director {
   }
 
   /** The model that answers, and the one that looks at pictures (null when none is set up). */
-  get model(): string { return this.llm.model; }
+  /** The model that writes scenes: the one the level records and Calibrate are about. */
+  get model(): string { return this.llm.modelFor("scene"); }
+  /** The CREATIVE judge's model when it judges without pictures. */
+  get judgeModel(): string { return this.llm.modelFor("judge"); }
   get visionModel(): string | null { return this.llm.visionModel; }
 
   /** generator/prompts/authoring.md: the contract a scene must keep (read once). */
@@ -419,13 +425,26 @@ export class Director {
     return this.contract;
   }
 
+  /**
+   * generator/prompts/example-scene.html: one finished shot that keeps the contract (zones that don't
+   * overlap, one continuous build, a flat camera over the isometric part, the title whole on the first
+   * frame), for the model to learn the craft from. Read once; empty when the file is missing.
+   */
+  private example(): string {
+    if (this.sample === null) {
+      const path = join(this.generatorDir, "prompts", "example-scene.html");
+      this.sample = existsSync(path) ? readFileSync(path, "utf-8").trim() : "";
+    }
+    return this.sample ? `\n\n# A worked example\n\nOne finished shot from another film; it uses only kit parts, so it fits the compose and free levels. Learn the craft from it (how the zones, parts, timing and text fit together); don't copy its content, colours or words.\n\n\`\`\`html\n${this.sample}\n\`\`\`` : "";
+  }
+
   /** The part of generator/prompts/story.md that applies to this job (the file is read once). */
   private guidance(kind: Kind | "effects"): string {
     if (this.guide === null) {
       const path = join(this.generatorDir, "prompts", "story.md");
       this.guide = existsSync(path) ? readFileSync(path, "utf-8").replace(/<!--[\s\S]*?-->/g, "").trim() : "";
     }
-    if (kind === "scene" || kind === "repair") return this.authoring();
+    if (kind === "scene" || kind === "repair") return `${this.authoring()}${this.example()}`;
     // story.md has one top-level section per job: each call gets its own.
     const wanted = GUIDANCE_SECTIONS[kind];
     return this.guide.split(/^(?=# )/m).filter((sec) => wanted.some((w) => sec.startsWith(`# ${w}`))).join("\n\n").trim();
@@ -462,13 +481,14 @@ export class Director {
       : SCENE_KINDS.has(kind) ? ((payload.capabilities as { level?: Level } | undefined)?.level ?? "compose") : null;
     const tell = (outcome: AnswerEvent["outcome"], ms: number) => { if (level && this.onAnswer) this.onAnswer({ kind, level, outcome, ms }); };
     const started = Date.now();
+    const model = this.llm.modelFor(roleOf(kind));
     for (let attempt = 0; attempt < 2; attempt++) {
       let answer = "";
       const reply = await this.log.track(
-        { projectId: project.id, kind, model: images.length ? (this.llm.visionModel ?? this.llm.model) : this.llm.model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
+        { projectId: project.id, kind, model: images.length ? (this.llm.visionModel ?? model) : model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
         async () => {
           const opts = { tools: [def], toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
-          const r = images.length ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], opts);
+          const r = images.length ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], { ...opts, model });
           const call = r.tool_calls?.find((c) => c.function?.name === name);
           const args = call?.function.arguments;
           answer = typeof args === "string" ? args : args ? JSON.stringify(args) : r.content;
@@ -569,7 +589,7 @@ export class Director {
         ...this.base(input.project, input.assets), storyline: input.storyline,
         fonts: planCtx.fonts, maxShots: planCtx.limits?.maxShots ?? 20,
         blocks: planCtx.blocksAllowed === false ? [] : input.catalog.map((b) => ({ name: b.name, tags: b.tags })),
-        connections: { image: planCtx.imageConnected, narration: planCtx.narration },
+        connections: { image: planCtx.imageConnected, narration: planCtx.narration, music: planCtx.music ?? null },
         ...(input.voice?.length ? { voiceLines: input.voice } : {}),
         ...(input.concept ? { concept: input.concept } : {}),
       },
@@ -595,7 +615,7 @@ export class Director {
       ...this.base(input.project, input.assets), storyline: input.storyline,
       fonts: planCtx.fonts, maxShots: planCtx.limits?.maxShots ?? 20,
       blocks: planCtx.blocksAllowed === false ? [] : input.catalog.map((b) => ({ name: b.name, tags: b.tags })),
-      connections: { image: planCtx.imageConnected, narration: planCtx.narration },
+      connections: { image: planCtx.imageConnected, narration: planCtx.narration, music: planCtx.music ?? null },
       ...(input.voice?.length ? { voiceLines: input.voice } : {}),
       ...(input.concept ? { concept: input.concept } : {}),
     };
@@ -754,9 +774,9 @@ export class Director {
       task: "Choose this film's effects with the tools: a few seams with a transition that has a cause, and light, blur, depth or glow where a shot needs it. Search first, then set. When you are done, answer with one sentence on what you chose.",
     });
     const summary = await this.log.track(
-      { projectId: input.project.id, kind: "effects", model: this.llm.model, request: brief },
+      { projectId: input.project.id, kind: "effects", model: this.llm.modelFor("plan"), request: brief },
       () => this.llm.runTools([{ role: "system", content: system }, { role: "user", content: brief }], tools, handlers, {
-        maxSteps: input.maxSteps, tokenBudget: input.tokenBudget, temperature: TEMPERATURE.plan, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET,
+        maxSteps: input.maxSteps, tokenBudget: input.tokenBudget, temperature: TEMPERATURE.plan, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET, model: this.llm.modelFor("plan"),
         finalPrompt: "Stop choosing. Answer with one sentence on the effects you chose.",
       }),
       (out) => ({ response: { choices: notes, summary: out } }),
@@ -929,8 +949,8 @@ export class Director {
     const brief = JSON.stringify({ brief: input.project.brief, language: input.project.language, alreadyKnown: input.known, task: "Find the facts the video needs, with their sources, then answer with the JSON." });
     const messages: ChatMessage[] = [{ role: "system", content: system }, { role: "user", content: brief }];
     const text = await this.log.track(
-      { projectId: input.project.id, kind: "research", model: this.llm.model, request: brief },
-      () => this.llm.runTools(messages, tools, input.handlers, { maxSteps: input.maxSteps, temperature: 0.2, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET, finalPrompt: "Stop researching. Answer now with the JSON of the facts you found, each with its source." }),
+      { projectId: input.project.id, kind: "research", model: this.llm.modelFor("plan"), request: brief },
+      () => this.llm.runTools(messages, tools, input.handlers, { model: this.llm.modelFor("plan"), maxSteps: input.maxSteps, temperature: 0.2, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET, finalPrompt: "Stop researching. Answer now with the JSON of the facts you found, each with its source." }),
       (out) => ({ response: out }),
     );
     const list = (parseJson(text) as { facts?: unknown } | null)?.facts;

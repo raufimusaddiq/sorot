@@ -14,8 +14,11 @@ window.SorotKit["text-reveal"] = {
         var node = nodes[i];
         var text = node.nodeValue;
         if (!text.trim()) continue;
-        // words (and lines) stay whole; by char, each word is one unbreakable box holding its letters
-        var words = s.by === "line" ? [text] : text.split(/(\s+)/);
+        // words (and lines) stay whole; by char, each word is one unbreakable box holding its letters.
+        // Spaces stay plain text between the boxes: inside an inline-block a leading or trailing
+        // space collapses ("Biarkan " before a nested span showed as "Biarkanbunga").
+        var edge = /^(\s*)([\s\S]*?)(\s*)$/.exec(text);
+        var words = s.by === "line" ? [edge[1], edge[2], edge[3]] : text.split(/(\s+)/);
         var frag = document.createDocumentFragment();
         for (var j = 0; j < words.length; j++) {
           var w = words[j];

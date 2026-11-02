@@ -161,7 +161,8 @@ export function jsonError(text: string): { message: string; at: number; excerpt:
 export class Llm {
   constructor(
     private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmMaxCallSec?: number }
-      & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmVision?: boolean; llmVisionModel?: string; llmStream?: boolean },
+      & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmVision?: boolean; llmVisionModel?: string; llmStream?: boolean }
+      & { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string },
     private readonly fetchFn: typeof fetch = fetch,
     private readonly retryWaitMs = 2000,
   ) {}
@@ -172,6 +173,12 @@ export class Llm {
 
   get model(): string {
     return this.config.llmModel;
+  }
+
+  /** Generate's model for a role (Settings → LLM): its own when set, else LLM_MODEL. */
+  modelFor(role: "plan" | "scene" | "judge"): string {
+    const own = { plan: this.config.genPlanModel, scene: this.config.genSceneModel, judge: this.config.genJudgeModel }[role];
+    return own?.trim() || this.config.llmModel;
   }
 
   /** The model that looks at images: set, switched on, and the LLM itself on. */
@@ -292,14 +299,14 @@ export class Llm {
     opts: {
       maxSteps?: number; temperature?: number; finalPrompt?: string; onCall?: (name: string, args: Json, result: unknown) => void;
       /** Per call, and the setting it comes from. */
-      maxTokens?: number; budgetName?: string;
+      maxTokens?: number; budgetName?: string; model?: string;
       /** Tokens the whole loop may use (as the server reports them); past it the loop ends like at maxSteps. */
       tokenBudget?: number;
     } = {},
   ): Promise<string> {
     const history = [...messages];
     const maxSteps = opts.maxSteps ?? 8;
-    const per = { temperature: opts.temperature, maxTokens: opts.maxTokens, budgetName: opts.budgetName };
+    const per = { temperature: opts.temperature, maxTokens: opts.maxTokens, budgetName: opts.budgetName, model: opts.model };
     let used = 0;
     for (let step = 0; step < maxSteps && !(opts.tokenBudget && used >= opts.tokenBudget); step++) {
       const msg = await this.chat(history, { tools, ...per });

@@ -69,6 +69,13 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
   Generate build in check for over half an hour.
 - Generate director requests put what every call shares (the capabilities, the film) first, so a provider's
   prompt cache can reuse it from shot to shot; the shot's own fields come after.
+- Generate: each role can use its own model (Settings → LLM: plan, scene and judge models; `GEN_PLAN_MODEL`,
+  `GEN_SCENE_MODEL`, `GEN_JUDGE_MODEL`), e.g. a strong planner and judge with a cheap scene writer.
+- Generate fixes from a real isometric film: the camera part no longer tilts an already isometric `iso`/`three`
+  diorama a second time; the wipe band takes the palette's accent, not the ink; `text-reveal` by line keeps the
+  space before a styled word; a plan can't promise music when no track is uploaded; with a vision model the
+  CREATIVE judge looks at the frames for "finished" and "motion" (Jev, reading text, passed a broken film);
+  scene calls carry a worked example shot.
 
 ### Import and transcription
 - YouTube URL or local file, whole or a time range (`--from 13:25 --to 25:00`). A short range is copied

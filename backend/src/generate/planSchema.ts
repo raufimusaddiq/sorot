@@ -105,6 +105,16 @@ export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   maxShots: 20, minShotSec: 1, maxShotSec: 15, sumTolerance: 0.1, titleWords: 6, textChars: 120,
 };
 
+/**
+ * Music is only ever the owner's upload: a plan can't promise a track that isn't there (a real plan
+ * described "acoustic guitar" with nothing uploaded, and the finished film failed audio_missing).
+ */
+function musicOf(music: string, ctx: PlanContext, notes: string[]): string {
+  if (music === "none" || ctx.music === undefined || ctx.music.length) return music;
+  notes.push("music was removed: no music track is uploaded");
+  return "none";
+}
+
 export interface PlanContext {
   brief: string;
   targetSec: number;
@@ -115,6 +125,8 @@ export interface PlanContext {
   imageConnected: boolean;
   /** Narration is on for the project and a voice engine can speak it. */
   narration: boolean;
+  /** The music tracks the film can use (uploads); undefined = not known, any choice is kept. */
+  music?: string[];
   /** Blocks from the HyperFrames catalog the plan may name; null = any. */
   blocks?: string[] | null;
   /** Do the recipe's plan step allow registry blocks? */
@@ -292,7 +304,7 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
   const plan: Plan = {
     title, message, format: ctx.format, totalSec: total, language: ctx.language,
     look: { palette: strs(look.palette), fonts, pacing: str(look.pacing), notes: str(look.notes) },
-    sound: { music: str(sound.music) || "none", narration: narrationOn },
+    sound: { music: musicOf(str(sound.music) || "none", ctx, notes), narration: narrationOn },
     narrationScript: narrationOn ? (str(raw.narrationScript) || null) : null,
     blocks, assumptions, shots,
     ...(numeric ? { numeric } : {}),

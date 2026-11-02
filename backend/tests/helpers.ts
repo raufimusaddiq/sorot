@@ -365,7 +365,7 @@ function completion(body: any, reply: string | AsText | Calls | ThoughtTooLong):
 export const gatewayDown = () => Object.assign(new Error("upstream unavailable"), { status: 503 });
 
 /** An Llm whose replies come from `replies` in order (a string = the model's text; an Error = HTTP 400, or its `status`). `requests` logs each body. */
-export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>) {
+export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>, config: { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string } = {}) {
   const requests: Array<{ messages: Array<{ role: string; content: string }>; [k: string]: any }> = [];
   const queue = [...replies];
   const fetchFn = (async (_url: string, init?: RequestInit) => {
@@ -376,7 +376,7 @@ export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong 
     if (next instanceof Error) return new Response(next.message, { status: (next as Error & { status?: number }).status ?? 400 });
     return completion(body, typeof next === "function" ? next(body) : next);
   }) as unknown as typeof fetch;
-  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, genLlmMaxTokens: 4000 }, fetchFn, 0);
+  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, genLlmMaxTokens: 4000, ...config }, fetchFn, 0);
   return { llm, requests };
 }
 

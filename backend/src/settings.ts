@@ -25,6 +25,7 @@ export const CONNECTIONS: Record<string, Record<string, Field>> = {
     enabled: ["llmEnabled", "bool"], baseUrl: ["llmBaseUrl", "url"], model: ["llmModel", "text"],
     apiKey: ["llmApiKey", "secret"], director: ["llmDirector", "bool"],
     vision: ["llmVision", "bool"], visionModel: ["llmVisionModel", "text"], genMaxTokens: ["genLlmMaxTokens", "tokens"],
+    planModel: ["genPlanModel", "text"], sceneModel: ["genSceneModel", "text"], judgeModel: ["genJudgeModel", "text"],
   },
   jev: {
     enabled: ["jevEnabled", "bool"], url: ["jevUrl", "url"], model: ["jevModel", "text"], apiKey: ["jevApiKey", "secret"],
