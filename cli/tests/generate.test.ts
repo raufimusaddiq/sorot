@@ -102,3 +102,38 @@ describe("sorot gen capabilities", () => {
     ]);
   });
 });
+
+describe("sorot gen models and calibrate", () => {
+  const rec = (level: string, asked: number, firstPass: number) => ({ level, asked, firstPass, repaired: 1, dropped: 0, malformed: 0, calibratedAt: null });
+
+  test("lists each model's record per level with its auto level; pin sets and auto clears", async () => {
+    const h = harness({
+      "GET /api/generate/models": { current: "m1", calibration: null, models: [{ model: "m1", pin: null, auto: "compose", records: [rec("compose", 10, 8)] }, { model: "m2", pin: "kit", auto: "kit", records: [] }] },
+      "PUT /api/generate/models/m2/level": (b: any) => ({ model: { model: "m2", pin: b.level, auto: "kit", records: [] } }),
+    });
+    expect(await h.run("gen", "models")).toBe(0);
+    expect(h.out[0]!.split("\n").slice(1).map((l) => l.split(/\s{2,}/).slice(0, 5))).toEqual([["m1 *", "auto: compose", "compose", "10", "80%"], ["m2", "kit", "-", "0", "-"]]);
+    expect(await h.run("gen", "models", "pin", "m2", "free")).toBe(0);
+    expect([h.requests.at(-1)!.body, h.out.at(-1)]).toEqual([{ level: "free" }, "m2 is pinned to free."]);
+    expect(await h.run("gen", "models", "pin", "m2", "auto")).toBe(0);
+    expect(h.requests.at(-1)!.body).toEqual({ level: null });
+    expect(await h.run("gen", "models", "pin", "m2", "max")).toBe(2);
+  });
+
+  test("calibrate waits for the run and prints each level; a failed run exits 1", async () => {
+    let polls = 0;
+    const result = { kit: { asked: 3, firstPass: 3, repaired: 0, failed: 0 }, compose: { asked: 3, firstPass: 1, repaired: 1, failed: 1 } };
+    const h = harness({
+      "POST /api/generate/models/calibrate": { run: { model: "m1" } },
+      "GET /api/generate/models": () => ({ calibration: ++polls < 2 ? { done: false } : { done: true, result } }),
+    });
+    expect(await h.run("gen", "calibrate")).toBe(0);
+    expect(h.out).toEqual([
+      "Calibrating m1: three sample shots at each level (a few minutes)...",
+      "  kit: 3 first time, 0 after a repair, 0 failed (of 3)", "  compose: 1 first time, 1 after a repair, 1 failed (of 3)",
+    ]);
+    const bad = harness({ "POST /api/generate/models/calibrate": { run: { model: "m1" } }, "GET /api/generate/models": { calibration: { done: true, error: "LLM down" } } });
+    expect(await bad.run("gen", "calibrate")).toBe(1);
+    expect(bad.err.at(-1)).toBe("Calibration failed: LLM down");
+  });
+});

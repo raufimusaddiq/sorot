@@ -469,6 +469,13 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     if (!isLevel(level)) return fail(400, "level must be kit, compose or free");
     return ok({ capabilities: generate.capabilities(level, generate.kit.list().map((p) => p.name)) });
   });
+  router.on("GET", "/api/generate/models", () => ok(generate.models()));
+  router.on("POST", "/api/generate/models/calibrate", async (c) => ok({ run: generate.calibrateModel(strArg(await c.body(), "model") || undefined) }, 202));
+  router.on("PUT", "/api/generate/models/:model/level", async (c) => {
+    const level = (await c.body()).level ?? null;
+    if (level !== null && !isLevel(level)) return fail(400, "level must be kit, compose, free or null (auto)");
+    return ok({ model: generate.pinModel(decodeURIComponent(c.params.model as string), level) });
+  });
   router.on("GET", "/api/generate/kit/:name/export", (c) => {
     const name = c.params.name as string;
     return new Response(generate.kit.export(name), { headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="${name}.zip"` } });

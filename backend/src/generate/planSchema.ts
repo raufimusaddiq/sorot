@@ -255,10 +255,12 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     if (transition === null) errors.push(`${at} (${id}): transition "${str(o.transition)}" isn't one Sorot can build; use one of ${TRANSITION_NAMES.join(", ")}`);
     const effects = o.effects === undefined || o.effects === null ? undefined : checkEffects(o.effects, `${at} (${id}): effects`, errors);
     const shotLook = o.look === undefined || o.look === null ? undefined : checkShotLook(o.look, `${at} (${id}): look`, errors, ctx.kit);
+    const level = o.level === undefined || o.level === null ? undefined : str(o.level);
+    if (level !== undefined && !["kit", "compose", "free"].includes(level)) errors.push(`${at} (${id}): level must be kit, compose or free`);
     return {
       id, purpose: str(o.purpose) || "beat", durationSec: round1(durationSec), text, visual, motion: str(o.motion),
       transition: transition ?? "cut", audio: str(o.audio), narration, hold: o.hold === true,
-      ...(effects ? { effects } : {}), ...(shotLook ? { look: shotLook } : {}),
+      ...(effects ? { effects } : {}), ...(shotLook ? { look: shotLook } : {}), ...(level ? { level } : {}),
     };
   });
 

@@ -9,6 +9,8 @@ import { DirectorLog } from "../../src/generate/events";
 import { readFindings } from "../../src/generate/findings";
 import { Hyperframes } from "../../src/generate/hyperframes";
 import { Kit } from "../../src/generate/kit";
+import { capabilitiesFor } from "../../src/generate/capabilities";
+import { recordOf, setModelPin } from "../../src/generate/levels";
 import { Llm } from "../../src/llm";
 import type { ExecFn } from "../../src/runner";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
@@ -70,6 +72,56 @@ function rig(replies: Parameters<typeof fakeLlm>[0], handlers: Record<string, Hf
 const scenes = (dir: string) => [0, 1, 2].map((i) => readFileSync(join(dir, `compositions/shot-0${i + 1}.html`), "utf-8"));
 const upload = (id: string, kind: GenAsset["kind"], path: string, meta: string | null = null): GenAsset =>
   ({ id, projectId: "p1", kind, origin: "upload", path, shotId: null, promptHash: null, meta, createdAt: T });
+
+/** A context with the built-in kit and its capability description, at `level` unless a record says otherwise. */
+function withKit(r: ReturnType<typeof rig>) {
+  const kit = new Kit(r.config, r.store, new Hyperframes(r.config, r.fake.exec), r.fake.exec);
+  kit.syncBuiltIns();
+  const capabilities = (level = "compose" as const, parts?: string[]) => capabilitiesFor({ level, parts, kit: kit.manifests(), config: r.config, connected: () => false });
+  return { kit, capabilities };
+}
+const kitAnswer = (id: string) => json({ shotId: id, layers: [{ part: "particles", settings: { kind: "snow" }, fromSec: 0, toSec: 5 }] });
+
+describe("director levels", () => {
+  test("a new model writes at the kit level: Sorot writes the scenes from its answers and the version records each shot's level", async () => {
+    const r = rig([kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03")]);
+    await STEPS.author.run(r.ctxFor("author", {}, withKit(r)));
+    expect(r.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_shot_kit", "submit_shot_kit", "submit_shot_kit"]);
+    expect(scenes(r.dir)[1]).toContain('SorotKitRuntime.mount("particles", layers[0]');
+    expect(JSON.parse(r.store.getGenVersion("v1")!.shotLevels!)).toEqual({ s01: { planned: "kit", built: "kit" }, s02: { planned: "kit", built: "kit" }, s03: { planned: "kit", built: "kit" } });
+    expect(recordOf(r.store, "m")).toMatchObject({ kit: { asked: 3, firstPass: 3 } });
+    expect(readFindings(r.dir)).toEqual([]);
+  });
+
+  test("a shot that still fails at its level after the repairs is rebuilt one level down, with a level_drop finding; the record counts it", async () => {
+    const lost = html(1, "Judul lain");
+    const r = rig([html(0), lost, lost, kitAnswer("s02"), html(2)], {}, { shots: samplePlan().shots.map((s: any) => ({ ...s, level: "compose" })) });
+    setModelPin(r.store, "m", "compose");
+    await STEPS.author.run(r.ctxFor("author", { repairRounds: 1 }, withKit(r)));
+    expect(JSON.parse(r.store.getGenVersion("v1")!.shotLevels!).s02).toEqual({ planned: "compose", built: "kit", reason: "compose didn't pass: scene_missing_text" });
+    expect(readFindings(r.dir)).toMatchObject([{ code: "level_drop", severity: "should-fix", shotId: "s02", rule: "levels" }]);
+    expect(recordOf(r.store, "m")).toMatchObject({ compose: { asked: 3, firstPass: 2, dropped: 1 }, kit: { asked: 1, firstPass: 1 } });
+  });
+
+  test("only a failure at the kit level fails the build", async () => {
+    const r = rig(["not json", "still not json", kitAnswer("s02"), kitAnswer("s03")]);
+    await expect(STEPS.author.run(r.ctxFor("author", {}, withKit(r)))).rejects.toThrow("Shot s01 couldn't be built at any level, not even from kit parts");
+  });
+
+  test("a heavy shot over the frame budget is rebuilt one level down by the check step", async () => {
+    const heavy = html(1, SAMPLE_TITLES[1], "<script>document.createElement('canvas').getContext('webgl');</script>");
+    const r = rig([html(0), heavy, html(2), html(1)], { check: () => check() }, { shots: samplePlan().shots.map((s: any) => ({ ...s, level: "free" })) });
+    const k = withKit(r);
+    setModelPin(r.store, "m", "free");
+    await STEPS.author.run(r.ctxFor("author", {}, k));
+    let t = 0;
+    const ticks = [0, 1000, 1000, 5000];   // one snapshot 1 s; three snapshots 4 s: 1.5 s a frame, over the 1 s budget
+    await STEPS.check.run(r.ctxFor("check", {}, { ...k, clock: () => ticks[Math.min(t++, ticks.length - 1)]! }));
+    expect(r.fake.calls.filter((c) => c[0] === "snapshot").map((c) => c[2])).toEqual(["--at", "--at"]);
+    expect(JSON.parse(r.store.getGenVersion("v1")!.shotLevels!).s02).toMatchObject({ planned: "free", built: "compose" });
+    expect(readFindings(r.dir).find((f) => f.code === "frame_budget")).toMatchObject({ shotId: "s02", description: "s02 was rebuilt at the compose level after free didn't pass (one frame took 1500 ms to draw; the budget here is 1000 ms)." });
+  });
+});
 
 describe("author step", () => {
   test("the recorded voice is laid on its own track where its shot starts; the music bed ducks under it; a failed image is a polish finding", async () => {

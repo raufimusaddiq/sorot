@@ -7,9 +7,14 @@ import { saveFindings, type NewFinding } from "../findings";
 import { mapPool } from "../../pool";
 import { LlmError } from "../../llm";
 import { BUNDLED_FONTS } from "../planContext";
-import type { Plan } from "../planSchema";
+import type { Plan, Shot } from "../planSchema";
 import { placeLines, readVoice } from "../voice";
-import { buildTarget, levelOfShot, readScene, readShotLevels, sceneAssets, sceneRules } from "./build";
+import { settingsOf } from "./index";
+import { buildTarget, levelOfShot, plannedLevel, readScene, readShotLevels, sceneAssets, sceneRules, type ShotLevels } from "./build";
+import { levelBelow, type Level } from "../capabilities";
+import { DirectorError, type SceneInput } from "../director";
+import { writeKitScene } from "../kitScene";
+import { recordAnswer, type Outcome } from "../levels";
 import { readImageFailures } from "./images";
 import { gainOf, readMusic } from "./music";
 import type { RunFn, StepContext } from "./types";
@@ -133,6 +138,93 @@ export const sceneFindings = (plan: Plan, shotIndex: number, issues: SceneIssue[
     severity: "must-fix", shotId: plan.shots[shotIndex]!.id, code: i.code, description: i.message, suggestedFix: i.hint, state: "open", rule: "plan-lock",
   }));
 
+export interface ShotBuild { html: string; issues: SceneIssue[]; level: Level; findings: NewFinding[] }
+type Fix = Array<{ code: string; message: string; hint?: string }>;
+
+/**
+ * Builds one shot from `level` down (FR-044): a kit-level answer written by Sorot, or the model's scene
+ * with its repair rounds; a level that can't make the shot pass hands it one level down, with a
+ * `level_drop` finding. Only a failure at the lowest level fails the build. Every outcome goes into the
+ * model's record. `levels` (the version's shotLevels) is kept up to date.
+ */
+export function shotWriter(ctx: StepContext, dir: string, plan: Plan, blocks: Record<string, string>, levels: ShotLevels) {
+  const size = sizeFor(ctx.project.format, ctx.recipe.output);
+  const assets = sceneAssets(ctx);
+  const rounds = Number((ctx.step.use === "author" ? ctx.settings : settingsOf("author", ctx.recipe.steps.find((s) => s.use === "author")?.with)).repairRounds);
+  const kit = ctx.kit?.manifests() ?? [];
+  const tally = (level: Level, outcome: Outcome) => recordAnswer(ctx.store, ctx.director.model, level, outcome);
+  // a kit-level shot needs parts to build from; without any, compose is the floor
+  const kitFloor = !!(ctx.kit && ctx.capabilities?.("kit").kit.length);
+
+  const attempt = async (shot: Shot, i: number, level: Level, fix: Fix | null) => {
+    const input: SceneInput = {
+      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level,
+      blocks: shot.visual.block && blocks[shot.visual.block] ? { [shot.visual.block]: blocks[shot.visual.block] as string } : {},
+    };
+    const rules = sceneRules(ctx, level);
+    if (level === "kit") {
+      const answer = await ctx.director.kitShot({ ...input, kit, ...(fix ? { findings: fix } : {}) });
+      const html = writeKitScene({ plan, index: i, width: size.width, height: size.height, answer, kit });
+      return { html, issues: checkScene(html, shot, i, rules), repaired: false };
+    }
+    let html = fix ? (await ctx.director.repair({ ...input, html: readScene(dir, i) ?? "", findings: fix })).html : await ctx.director.scene(input);
+    let issues = checkScene(html, shot, i, rules);
+    let repaired = false;
+    for (let n = 0; issues.length && n < rounds; n++) {
+      html = (await ctx.director.repair({ ...input, html, findings: issues })).html;
+      issues = checkScene(html, shot, i, rules);
+      repaired = true;
+    }
+    return { html, issues, repaired };
+  };
+
+  return async (shot: Shot, i: number, from: Level, planned: Level, fix: Fix | null): Promise<ShotBuild> => {
+    let level = from;
+    let html: string | null = null;
+    let issues: SceneIssue[] = [];
+    const findings: NewFinding[] = [];
+    for (;;) {
+      let why = "";
+      let failure: Error | null = null;
+      try {
+        const out = await attempt(shot, i, level, fix);
+        html = out.html;
+        issues = out.issues;
+        if (!issues.length) {
+          tally(level, out.repaired ? "repaired" : "firstPass");
+          break;
+        }
+        why = issues.map((x) => x.code).join(", ");
+      } catch (e) {
+        if (!(e instanceof DirectorError)) throw e;
+        why = e.message.slice(0, 200);
+        failure = e;
+      }
+      tally(level, "failed");
+      const below = levelBelow(level);
+      const lower = below === "kit" && !kitFloor ? null : below;
+      if (!lower) {
+        if (!failure && html !== null && issues.length) break;   // the lowest level's scene stays, with its findings as must-fix
+        if (!kitFloor && failure) throw failure;
+        throw new Error(`Shot ${shot.id} couldn't be built at any level, not even from kit parts: ${why}`);
+      }
+      tally(level, "dropped");
+      findings.push(levelDrop(shot.id, level, lower, why));
+      levels[shot.id] = { planned, built: lower, reason: `${level} didn't pass: ${why}` };
+      level = lower;
+      fix = null;
+    }
+    return { html: html as string, issues, level, findings };
+  };
+}
+
+/** The finding a shot rebuilt one level down leaves behind (should-fix: it still reads, just plainer). */
+export const levelDrop = (shotId: string, from: Level, to: Level, why: string, code = "level_drop"): NewFinding => ({
+  severity: "should-fix", shotId, code, state: "open", rule: "levels",
+  description: `${shotId} was rebuilt at the ${to} level after ${from} didn't pass (${why}).`,
+  suggestedFix: "Fine as it is if the shot reads well; a stronger model, or Calibrate, keeps shots at the higher level.",
+});
+
 /**
  * Writes the version's project and one scene per shot, shot by shot (a small model only ever holds
  * one shot). A scene that breaks the plan or the determinism rules goes back with its own findings,
@@ -148,36 +240,31 @@ export const run: RunFn = async (ctx) => {
   let written = 0;
   const edits = new Map((readFix(dir)?.edits ?? []).map((e) => [e.shotId, e]));
 
-  const levels = readShotLevels(ctx);
+  const levels: ShotLevels = readShotLevels(ctx);
+  const build = shotWriter(ctx, dir, plan, blocks, levels);
+
   const writeShot = async ({ shot, i }: { shot: Plan["shots"][number]; i: number }): Promise<NewFinding[]> => {
-    const level = levelOfShot(ctx, plan, i, levels);
-    const rules = sceneRules(ctx, level);
-    const input = {
-      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level,
-      blocks: shot.visual.block && blocks[shot.visual.block] ? { [shot.visual.block]: blocks[shot.visual.block] as string } : {},
-    };
+    const planned = levels[shot.id]?.planned ?? plannedLevel(ctx, shot);
+    let level = levelOfShot(ctx, plan, i, levels);
     let html = readScene(dir, i);
-    let issues = html === null ? [] : checkScene(html, shot, i, rules);
+    let issues = html === null ? [] : checkScene(html, shot, i, sceneRules(ctx, level));
     // a fix round: this shot's scene (copied from the version being fixed) changes as the edit says
     const edit = edits.get(shot.id);
     const fixing = html !== null && edit !== undefined && !editApplied(dir, shot.id);
+    let extra: NewFinding[] = [];
     if (html === null || issues.length || fixing) {
       // a clean scene from an earlier try of this version is kept; anything else is written afresh
-      if (fixing && edit) {
-        html = (await ctx.director.repair({
-          ...input, html: html as string, findings: [{ code: "fix_request", message: edit.instruction }, ...(edit.findings ?? []), ...issues],
-        })).html;
-      } else html = await ctx.director.scene(input);
-      issues = checkScene(html, shot, i, rules);
-      for (let n = 0; issues.length && n < rounds; n++) {
-        html = (await ctx.director.repair({ ...input, html, findings: issues })).html;
-        issues = checkScene(html, shot, i, rules);
-      }
+      const fix = fixing && edit ? [{ code: "fix_request", message: edit.instruction }, ...(edit.findings ?? []), ...issues] : null;
+      const out = await build(shot, i, level, planned, fix);
+      ({ html, issues, level } = out);
+      extra = out.findings;
       writeFileSync(join(dir, shotFile(i)), html);
       if (fixing) markEditApplied(dir, shot.id);
     }
+    levels[shot.id] = { planned, built: level, ...(levels[shot.id]?.reason && levels[shot.id]?.built === level ? { reason: levels[shot.id]!.reason } : {}) };
+    if (ctx.version) ctx.store.updateGenVersion(ctx.version.id, { shotLevels: JSON.stringify(levels) });
     ctx.progress((++written / plan.shots.length) * 100);
-    return sceneFindings(plan, i, issues);
+    return [...extra, ...sceneFindings(plan, i, issues)];
   };
   // The scenes don't depend on each other, so a few can be written at once (the model is the slow part).
   // A call the LLM drops doesn't stop the others: those shots get one more try, one at a time, once the

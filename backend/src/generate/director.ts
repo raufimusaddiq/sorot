@@ -11,6 +11,8 @@ import { checkEffects, validatePlan, type Plan, type PlanContext } from "./planS
 import { contrastOf, SEAM_MIN_CONTRAST, seamColour, TRANSITIONS, TRANSITION_NAMES, transitionKind } from "./transitions";
 import type { RecipeStep } from "./recipe";
 import type { Capabilities, Level } from "./capabilities";
+import type { KitManifest } from "./kit";
+import { validateKitShot, type KitShot } from "./kitScene";
 
 // The bounded LLM director (contracts/director.md). Every call is one request and one TOOL CALL:
 // the model must call one function whose arguments are the answer, so a reasoning model can't
@@ -213,10 +215,25 @@ const TOOLS = {
       items: { type: "object", required: ["code", "reason"], properties: { code: { type: "string" }, reason: { type: "string" } } },
     },
   }, ["html"]),
+  kitshot: tool("submit_shot_kit", "Submit this shot as kit parts: which parts, their settings and when each runs. Sorot writes the scene from them.", {
+    shotId: str("the shot's id, as given"),
+    layers: {
+      type: "array", description: "1 to 8 parts, back to front; each runs from fromSec to toSec of the shot", items: {
+        type: "object", required: ["part", "settings", "fromSec", "toSec"], properties: {
+          part: str("a part name from capabilities.kit"), settings: { type: "object", description: "only settings the part has (capabilities.kitDetail)" },
+          fromSec: { type: "number" }, toSec: { type: "number" }, layer: { type: "integer", description: "stacking order, 0 at the back" },
+        },
+      },
+    },
+    text: {
+      type: "array", description: "the shot's planned lines, word for word, each with its role",
+      items: { type: "object", required: ["role", "value"], properties: { role: str("title, body, caption..."), value: str("the planned words") } },
+    },
+  }, ["shotId", "layers"]),
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS | "effects", string[]> = { effects: ["Effects"], outline: ["Plan", "Effects"], specs: ["Plan"], storylines: ["Storylines"], plan: ["Plan", "Effects"], revise: ["Plan", "Effects", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [], verify: [] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS | "effects", string[]> = { effects: ["Effects"], outline: ["Plan", "Effects"], specs: ["Plan"], storylines: ["Storylines"], plan: ["Plan", "Effects"], revise: ["Plan", "Effects", "Revising"], gate: [], scene: [], repair: [], kitshot: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [], verify: [] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
@@ -236,17 +253,18 @@ const INSTRUCTIONS = {
   effects: "You are the director of a short 2D motion video. The plan is written; now choose its effects with the tools, as a film editor would: a transition only where something on screen causes it, light, blur, depth or glow only where a shot needs it, and a registry block only when it shows the shot's idea better than drawing it. Every choice needs a reason. A few strong effects beat many weak ones; a film with none looks flat.",
   scene: "You are the motion designer of a short 2D video. Write the scene file for the ONE shot you are given, exactly as the approved plan describes it, following the authoring contract below.",
   repair: "You are the motion designer of a short 2D video. Fix the scene file for the ONE shot you are given so that every finding listed is resolved, changing nothing else, following the authoring contract below. A warning that is intended may be kept: list it in holds with the reason.",
+  kitshot: "You are the motion designer of a short 2D video. Build the ONE shot you are given from the kit parts listed in capabilities: choose the parts, set only the settings each part has, and say when each runs inside the shot. Parts with a target setting act on what is already there: the shot's text is .t-title, .t-body and .t-caption (one class per role), and an empty target means the whole shot. Use the shot's look and the film's look. Keep it to the few parts the shot needs.",
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, outline: 0.4, specs: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, outline: 0.4, specs: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, kitshot: 0.4, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
 /** Words a voice says per second, pauses between lines included: Fish in Indonesian measured 1.7 to 2.0 (2026-11-01). */
 const WORDS_PER_SEC = 1.8;
 
 /** The setting a director call's budget comes from, named when a reasoning model runs out of it. */
 export const GEN_BUDGET = "the Generate token budget (Settings → LLM, GEN_LLM_MAX_TOKENS)";
 /** Output budget by job, as a floor under GEN_LLM_MAX_TOKENS: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, outline: 12000, specs: 8000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000, verify: 4000 };
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, outline: 12000, specs: 8000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, kitshot: 6000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000, verify: 4000 };
 
 export interface JudgeAnswer {
   criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
@@ -290,10 +308,16 @@ export interface SceneInput {
   level?: Level;
 }
 
+/** One answer's outcome, for the model's record (research R25). Scene kinds report their level; plan kinds report `plan`. */
+export interface AnswerEvent { kind: string; level: Level | "plan"; outcome: "firstPass" | "repaired" | "malformed" | "failed"; ms: number }
+/** Calls whose outcome is the plan's record; scene calls count at their level (their real pass is decided by the author step). */
+const PLAN_KINDS: ReadonlySet<string> = new Set(["plan", "outline", "specs", "revise"]);
+const SCENE_KINDS: ReadonlySet<string> = new Set(["scene", "repair", "kitshot"]);
+
 /** A capability query: the call's level and the parts whose full settings it gets (none for plan calls). */
 export interface CapabilityQuery { level?: Level; parts?: string[] }
 /** The calls that are told what this install can do (FR-047). */
-const CAPABLE: ReadonlySet<string> = new Set(["storylines", "plan", "outline", "specs", "revise", "scene", "repair", "fix"]);
+const CAPABLE: ReadonlySet<string> = new Set(["storylines", "plan", "outline", "specs", "revise", "scene", "repair", "kitshot", "fix"]);
 
 /** The scene's HTML from a call's arguments; a model sometimes wraps it in a markdown fence. */
 function htmlOf(parsed: unknown): { value?: string; errors?: string[] } {
@@ -349,6 +373,8 @@ export class Director {
 
   /** The capability description for a call; set by the service (null: calls go without it). */
   capabilities: ((q: CapabilityQuery) => Capabilities) | null = null;
+  /** Hears each answer's outcome; the service adds it to the model's record. */
+  onAnswer: ((e: AnswerEvent) => void) | null = null;
 
   constructor(private readonly llm: Llm, private readonly log: DirectorLog, private readonly generatorDir: string) {}
 
@@ -413,6 +439,10 @@ export class Director {
       images.length ? withImages(brief, ...images) : { role: "user", content: brief },
     ];
     let problems: string[] = [];
+    const level: AnswerEvent["level"] | null = PLAN_KINDS.has(kind) ? "plan"
+      : SCENE_KINDS.has(kind) ? ((payload.capabilities as { level?: Level } | undefined)?.level ?? "compose") : null;
+    const tell = (outcome: AnswerEvent["outcome"], ms: number) => { if (level && this.onAnswer) this.onAnswer({ kind, level, outcome, ms }); };
+    const started = Date.now();
     for (let attempt = 0; attempt < 2; attempt++) {
       let answer = "";
       const reply = await this.log.track(
@@ -431,7 +461,12 @@ export class Director {
       const result: Validated<T> = parsed === null
         ? { errors: [reply.call ? malformed(answer) : `you didn't call ${name}`] }
         : validate(parsed);
-      if (result.value !== undefined) return result.value;
+      if (result.value !== undefined) {
+        tell(attempt === 0 ? "firstPass" : "repaired", Date.now() - started);
+        return result.value;
+      }
+      // not JSON, or (for a scene) not the asked shape: the model's record counts it
+      if (parsed === null || SCENE_KINDS.has(kind)) tell("malformed", 0);
       problems = result.errors ?? [];
       const retry = JSON.stringify({ problems, task: `Fix these problems and call ${name} again with the full answer. ${task}` });
       if (reply.call) {
@@ -444,6 +479,7 @@ export class Director {
       }
       messages.push({ role: "user", content: retry });
     }
+    tell("failed", Date.now() - started);
     throw new DirectorError(`The director's ${kind} didn't pass the checks: ${problems.join("; ")}`);
   }
 
@@ -763,6 +799,21 @@ export class Director {
         });
         return { value: { html: out.value as string, holds } };
       },
+    );
+  }
+
+  /**
+   * The kit level (FR-042): the model only picks parts, settings and times for the shot; Sorot writes
+   * the scene from the answer. The answer is checked against the capability description and the plan.
+   */
+  async kitShot(input: SceneInput & { kit: KitManifest[]; findings?: Array<{ code: string; message: string; hint?: string }> }): Promise<KitShot> {
+    const base = { ...this.sceneBase({ ...input, level: "kit" }), ...(input.findings ? { findings: input.findings } : {}) };
+    const caps = base.capabilities as Capabilities | undefined;
+    const shot = input.plan.shots[input.index]!;
+    return this.ask<KitShot>(
+      input.project, "kitshot", input.step, base,
+      `Build shot ${shot.id} (${shot.durationSec} s) from kit parts: call submit_shot_kit with its layers and its planned lines.`,
+      (parsed) => validateKitShot(parsed, shot, caps, input.kit),
     );
   }
 

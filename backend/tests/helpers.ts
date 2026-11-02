@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { createApp, type App } from "../src/app";
 import { loadConfig, type AppConfig } from "../src/config";
 import { openDatabase } from "../src/db";
+import { Store } from "../src/store";
 import { Jev } from "../src/jev";
 import { Llm } from "../src/llm";
 import type { ExecFn, ProcResult, ScriptOptions, ScriptRunner } from "../src/runner";
@@ -170,7 +171,10 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   };
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => fetchHandler.fn(String(input), init)) as typeof fetch;
-  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec, fetch: fetchFn, retryWaitMs: 0 });
+  const db = openDatabase(":memory:");
+  // Generate: the model writes its own scenes in these tests (a new model would start at the kit level, R25)
+  if (config.llmModel) new Store(db).setSetting(`gen.modelLevel.${config.llmModel}`, "compose");
+  const app = createApp(config, { db, runScript, exec, fetch: fetchFn, retryWaitMs: 0 });
   const req = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.fetch(new Request(`http://localhost${path}`, {
       method,

@@ -34,7 +34,7 @@ describe("capability description", () => {
     ["free", { gpu: false, maxLevel: "free" as Level }, "free", ["particles", "shade", "three"]],
   ])("asked %s on %o: answers at %s with %o", (level, over, given, names) => {
     const c = caps(level as Level, over);
-    expect([c.level, c.kit.map((p) => p.name)]).toEqual([given, names]);
+    expect([c.level, c.kit.map((p) => p.name)] as unknown[]).toEqual([given, names]);
   });
 
   test("a scene call gets the full settings of the parts it may use, never of a part its level hides; the budget follows the workers", () => {

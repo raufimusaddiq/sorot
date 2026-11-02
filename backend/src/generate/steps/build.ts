@@ -2,8 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { HttpError } from "../../http";
 import { shotFile, type SceneKit } from "../composer";
-import { isLevel, recipeLevel, type Level } from "../capabilities";
-import type { Plan } from "../planSchema";
+import { atMost, isLevel, recipeLevel, recipeMaxLevel, type Level } from "../capabilities";
+import { chooseLevel, modelPin, recordOf } from "../levels";
+import type { Plan, Shot } from "../planSchema";
 import type { StepContext } from "./types";
 
 // What the steps of a build (author, check, render, the verdicts) share: where the version's
@@ -41,11 +42,29 @@ export const readShotLevels = (ctx: StepContext): ShotLevels => {
   return raw ? (JSON.parse(raw) as ShotLevels) : {};
 };
 
-/** The level a shot is written and checked at: what the build used, else the plan's, else the recipe's pin, else compose. */
+/**
+ * The level `auto` gives this model now (research R25): a pin wins, else its record on this install,
+ * capped by the recipe and the machine. Without a kit there is nothing to build a kit-level shot from,
+ * so the floor is compose.
+ */
+export function autoLevel(ctx: StepContext): Level {
+  const chosen = chooseLevel({
+    pin: modelPin(ctx.store, ctx.director.model), recipeLevel: recipeLevel(ctx.recipe), maxLevel: recipeMaxLevel(ctx.recipe),
+    cpuCap: ctx.capabilities?.("free").level ?? "free", record: recordOf(ctx.store, ctx.director.model),
+  });
+  return chosen === "kit" && !(ctx.kit && ctx.capabilities?.("kit").kit.length) ? "compose" : chosen;
+}
+
+/** The level a shot is planned at: the plan's (FR-042), never above what `auto` gives now (a worse record or a lower cap wins). */
+export function plannedLevel(ctx: StepContext, shot: Shot): Level {
+  const now = autoLevel(ctx);
+  return isLevel(shot.level) ? atMost(shot.level, now) : now;
+}
+
+/** The level a shot is written and checked at: what the build used, else its planned level. */
 export function levelOfShot(ctx: StepContext, plan: Plan, index: number, levels: ShotLevels = readShotLevels(ctx)): Level {
   const shot = plan.shots[index]!;
-  const pinned = recipeLevel(ctx.recipe);
-  return levels[shot.id]?.built ?? (isLevel(shot.level) ? shot.level : pinned !== "auto" ? pinned : "compose");
+  return levels[shot.id]?.built ?? plannedLevel(ctx, shot);
 }
 
 /** What a scene is held to besides the plan: the project's files and, with a kit, the parts and drawing its level allows. */

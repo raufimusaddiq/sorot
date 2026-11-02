@@ -24,6 +24,7 @@ import { Narrator } from "./narration";
 import { findPreset, loadPresets } from "./presets";
 import { IdeaBank, type IdeaFlags } from "./ideas";
 import { Kit, requiredParts } from "./kit";
+import { calibrate, chooseLevel, modelPin, recordAnswer, recordOf, setModelPin, type CalibrationResult } from "./levels";
 import { capabilitiesFor, CPU_MAX_LEVEL, recipeMaxLevel, type Capabilities, type Level } from "./capabilities";
 import { RecipeBook } from "./recipes";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
@@ -79,6 +80,12 @@ export interface CreateProjectInput {
 }
 
 const DOCTOR_TTL_MS = 30_000;
+
+/** A changed plan keeps each shot's planned level where it says none: the level is Sorot's to set (FR-042), not the director's. */
+export function keepLevels(before: Plan, after: Plan): Plan {
+  const was = new Map(before.shots.map((s) => [s.id, s.level]));
+  return { ...after, shots: after.shots.map((s) => (s.level || !was.get(s.id) ? s : { ...s, level: was.get(s.id) })) };
+}
 const FORMATS = ["9:16", "16:9", "1:1"];
 const MAX_BRIEF = 2000;
 
@@ -115,6 +122,13 @@ export class GenerateService {
     this.ideas = new IdeaBank(store);
     this.kit = new Kit(config, store, hyperframes, exec);
     this.director.capabilities = (q) => this.capabilities(q.level, q.parts);
+    // every answer feeds the model's record (R25): plan calls count here; a scene's pass is the author step's to count
+    this.director.onAnswer = (e) => {
+      const model = this.director.model;
+      if (e.level === "plan") recordAnswer(store, model, "plan", e.outcome, e.ms);
+      else if (e.outcome === "malformed") recordAnswer(store, model, e.level, "malformed");
+      else store.addGenModelRecord(model, e.level, { ms: e.ms });
+    };
     this.runner = new Runner(store, this.log, {
       connected: (c) => this.connected(c),
       directorGate: (ctx, result) => this.decide(ctx.project, ctx.step, result.outputRef),
@@ -175,6 +189,45 @@ export class GenerateService {
     return capabilitiesFor({
       level, parts, kit: this.kit.manifests(), config: this.config, connected: (c) => this.connected(c), maxLevel: this.machineMaxLevel,
     });
+  }
+
+  // ---- models and levels (R25) ---------------------------------------------------------
+
+  private calibrating: { model: string; startedAt: string; result?: CalibrationResult; error?: string; done: boolean } | null = null;
+
+  /** Each model's record per level, its pin, and the level `auto` would give it now; the calibration that ran last. */
+  models() {
+    const records = this.store.genModelRecords();
+    const names = [...new Set([this.director.model, ...records.map((r) => r.model)].filter(Boolean))];
+    return {
+      current: this.director.model,
+      models: names.map((model) => ({
+        model, pin: modelPin(this.store, model), records: records.filter((r) => r.model === model),
+        auto: chooseLevel({ record: recordOf(this.store, model), cpuCap: this.machineMaxLevel }),
+      })),
+      calibration: this.calibrating,
+    };
+  }
+
+  /** Measures the connected model at each level in the background (three sample shots each). */
+  calibrateModel(model?: string) {
+    const current = this.director.model;
+    if (!this.llm.enabled) throw new HttpError(409, "Connect an LLM in Settings first");
+    if (model && model !== current) throw new HttpError(400, `Only the connected model (${current}) can be calibrated: connect ${model} in Settings first`);
+    if (this.calibrating && !this.calibrating.done) throw new HttpError(409, `A calibration of ${this.calibrating.model} is running`);
+    const run = { model: current, startedAt: new Date().toISOString(), done: false } as NonNullable<GenerateService["calibrating"]>;
+    this.calibrating = run;
+    const job = calibrate({ store: this.store, director: this.director, kit: this.kit.manifests(), capabilities: (l) => this.capabilities(l), maxLevel: this.machineMaxLevel })
+      .then((r) => { run.result = r; }, (e: Error) => { run.error = e.message; })
+      .finally(() => { run.done = true; this.running.delete("calibration"); });
+    this.running.set("calibration", job);
+    return run;
+  }
+
+  /** Pins a model to a level, or back to auto with null. */
+  pinModel(model: string, level: Level | null) {
+    setModelPin(this.store, model, level);
+    return this.models().models.find((m) => m.model === model) ?? { model, pin: level, records: [], auto: "kit" as Level };
   }
 
   /** What a plan's shot looks are checked against: the kit at the highest level the recipe allows. */
@@ -684,7 +737,7 @@ export class GenerateService {
     const catalog = (await this.catalog()).map((b) => b.name);
     const planCtx = planContext({ project: p, recipe, assets: this.store.genAssetsForProject(id), connected: (c) => this.connected(c), catalog, ...this.kitFor(recipe) });
     const out = await this.director.revise({ project: p, step: planStep, current: JSON.parse(current.plan) as Plan, request: text, planCtx });
-    return { plan: this.savePlan(p, out.plan, { request: text, summary: out.changeSummary }), changeSummary: out.changeSummary };
+    return { plan: this.savePlan(p, keepLevels(JSON.parse(current.plan) as Plan, out.plan), { request: text, summary: out.changeSummary }), changeSummary: out.changeSummary };
   }
 
   /** The owner approves the current revision (FR-006); the rest of the project's steps then run. */
@@ -865,6 +918,7 @@ export class GenerateService {
 
     let row = oldRow;
     if (answer.plan) {
+      answer.plan = keepLevels(plan, answer.plan);
       row = this.savePlan(p, answer.plan, { request: note ?? `Fix: ${chosen.map((f) => f.code).join(", ")}`, summary: answer.summary }, !answer.needsApproval);
       if (answer.needsApproval) return { version: null, plan: row, needsApproval: true, summary: answer.summary };
     }

@@ -275,6 +275,20 @@ CREATE TABLE IF NOT EXISTS gen_kit_part (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gen_model_record (
+    model TEXT NOT NULL,
+    level TEXT NOT NULL CHECK (level IN ('kit', 'compose', 'free', 'plan')),
+    asked INTEGER NOT NULL DEFAULT 0,
+    first_pass INTEGER NOT NULL DEFAULT 0,
+    repaired INTEGER NOT NULL DEFAULT 0,
+    dropped INTEGER NOT NULL DEFAULT 0,
+    malformed INTEGER NOT NULL DEFAULT 0,
+    ms INTEGER NOT NULL DEFAULT 0,
+    calibrated_at TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (model, level)
+);
+
 CREATE TABLE IF NOT EXISTS gen_verdict (
     id TEXT PRIMARY KEY,
     version_id TEXT NOT NULL REFERENCES gen_version(id),

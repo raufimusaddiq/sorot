@@ -43,6 +43,8 @@ export interface StepContext {
   catalog: () => Promise<Array<{ name: string; tags: string[]; type?: string; description?: string }>>;
   /** The installed kit parts (built in and the owner's). */
   kit?: Kit;
+  /** Milliseconds, for timing a frame against the budget (tests pass their own). */
+  clock?: () => number;
   /** What a director call may use here at `level` (FR-047); `parts` get their full settings. */
   capabilities?: (level?: Level, parts?: string[]) => Capabilities;
   signal?: AbortSignal;

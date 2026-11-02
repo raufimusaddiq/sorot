@@ -105,6 +105,19 @@ moves.
 - No `setTimeout`, `setInterval` or `requestAnimationFrame` to drive motion.
 - Do not read the clock, the viewport size, or anything that differs between machines.
 
+## Kit parts and your level
+
+- `capabilities` says what this install can do: `levelMeans` is what you may write at this shot's
+  level, `kit` the parts you may use, `kitDetail` their settings and defaults, `renderer` what the
+  machine draws. Use only parts and settings listed there; anything else is sent back.
+- Mount a part from the scene's script, on the shot's timeline:
+  `SorotKitRuntime.mount("name", hostElement, { setting: value }, { tl, start: 0, duration: 3 })`.
+  `start` and `duration` are seconds inside the shot. A part with a `target` setting acts on elements
+  already in the scene (a CSS selector inside the host); one without draws into the host you give it,
+  so give it an empty, absolutely positioned element of its own.
+- The parts are loaded by the root: never add a `<script src>` for them.
+- Below the `free` level, no WebGL of your own (no `getContext("webgl")`, no `THREE`): use a part.
+
 ## Assets and fonts
 
 - **[Sorot]** Use only paths that exist under `assets/` (the request lists them). Reference them

@@ -8,6 +8,7 @@ import { requiresSourcedNumbers, unsourcedIn } from "../facts";
 import type { Concept } from "../novelty";
 import { readVoice, snapToVoice } from "../voice";
 import { chosenStoryline } from "./storylines";
+import { autoLevel } from "./build";
 import type { RunFn, StepContext } from "./types";
 
 /** Does a `use` step come before this plan step in the recipe? Only what earlier steps made may shape the plan. */
@@ -60,6 +61,9 @@ export const run: RunFn = async (ctx) => {
       if (!(err instanceof LlmError) && !(err instanceof DirectorError)) throw err;
     }
   }
+  // each shot's level, as `auto` (or a pin) gives it now: the owner sees it with the plan (FR-042)
+  const level = autoLevel(ctx);
+  plan = { ...plan, shots: plan.shots.map((s) => ({ ...s, level: s.level ?? level })) };
   const revision = (store.genPlansForProject(project.id)[0]?.revision ?? 0) + 1;
   const id = crypto.randomUUID();
   store.saveGenPlan({ id, projectId: project.id, revision, plan: JSON.stringify(plan), changeRequest: null, changeSummary: null, approvedAt: null, createdAt: now() });

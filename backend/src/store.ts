@@ -1,6 +1,6 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type {
-  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, GenAsset, GenEvent, GenExport, GenFact, GenIdea, GenKitPart,
+  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, GenAsset, GenEvent, GenExport, GenFact, GenIdea, GenKitPart, GenModelRecord,
   GenPlan, GenProject, GenRecipeRow, GenVerdict, GenVersion, Job, SocialPost, StageStatus, Video,
 } from "./types";
 
@@ -398,6 +398,23 @@ export class Store {
   getGenKitPart(name: string) { return this.one<GenKitPart>("SELECT * FROM gen_kit_part WHERE name = ?", name); }
   listGenKitParts() { return this.all<GenKitPart>("SELECT * FROM gen_kit_part ORDER BY name"); }
   deleteGenKitPart(name: string) { this.db.query("DELETE FROM gen_kit_part WHERE name = ?").run(name); }
+
+  // ---- generate: gen_model_record (how each model fares per level) ----
+  /** Adds to a model's counts at one level (a row is made on first use). */
+  addGenModelRecord(model: string, level: GenModelRecord["level"], add: Partial<Pick<GenModelRecord, "asked" | "firstPass" | "repaired" | "dropped" | "malformed" | "ms">>, calibratedAt?: string) {
+    const n = (k: keyof typeof add) => Math.max(0, Math.round(add[k] ?? 0));
+    this.db.query(
+      `INSERT INTO gen_model_record (model, level, asked, first_pass, repaired, dropped, malformed, ms, calibrated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(model, level) DO UPDATE SET asked = asked + excluded.asked, first_pass = first_pass + excluded.first_pass, repaired = repaired + excluded.repaired,
+       dropped = dropped + excluded.dropped, malformed = malformed + excluded.malformed, ms = ms + excluded.ms,
+       calibrated_at = COALESCE(excluded.calibrated_at, calibrated_at), updated_at = excluded.updated_at`,
+    ).run(model, level, n("asked"), n("firstPass"), n("repaired"), n("dropped"), n("malformed"), n("ms"), calibratedAt ?? null, now());
+  }
+  genModelRecords(model?: string) {
+    return model
+      ? this.all<GenModelRecord>("SELECT * FROM gen_model_record WHERE model = ? ORDER BY level", model)
+      : this.all<GenModelRecord>("SELECT * FROM gen_model_record ORDER BY model, level");
+  }
 
   // ---- setting ----
   settings(): Record<string, string> {

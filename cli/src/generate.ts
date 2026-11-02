@@ -759,6 +759,51 @@ async function capabilitiesCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
+// ---- models and levels -------------------------------------------------------------
+
+const MODELS = "/api/generate/models";
+const pct = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : "-");
+
+/** Each model's record per level and the level `auto` gives it; `pin <model> <level|auto>` pins one. */
+async function modelsCmd(d: Deps, a: Args): Promise<number> {
+  if (a.positionals[2] === "pin") {
+    const model = need(a, 3, "model");
+    const level = need(a, 4, "level (kit, compose, free or auto)");
+    if (!["kit", "compose", "free", "auto"].includes(level)) throw new UsageError("The level is kit, compose, free or auto");
+    const r = await d.api.put(`${MODELS}/${encodeURIComponent(model)}/level`, { level: level === "auto" ? null : level });
+    if (!json(d, a, r)) d.out(level === "auto" ? `${model} is back on auto (${r.model.auto} now).` : `${model} is pinned to ${level}.`);
+    return 0;
+  }
+  const r = await d.api.get(MODELS);
+  if (json(d, a, r)) return 0;
+  const rows = (r.models as Json[]).flatMap((m) => (m.records.length ? m.records : [{ level: "-", asked: 0, firstPass: 0, repaired: 0, dropped: 0, malformed: 0 }]).map((x: Json) => [
+    `${m.model}${m.model === r.current ? " *" : ""}`, m.pin ?? `auto: ${m.auto}`, x.level, x.asked, pct(x.firstPass, x.asked), pct(x.repaired, x.asked), x.dropped, x.malformed, x.calibratedAt ? when(x.calibratedAt) : "",
+  ]));
+  d.out(table(["MODEL", "LEVEL", "AT", "ASKED", "FIRST PASS", "REPAIRED", "DROPPED", "MALFORMED", "CALIBRATED"], rows));
+  d.out("* the connected model. A model with no record starts at kit: run sorot gen calibrate.");
+  return 0;
+}
+
+/** Measures the connected model at each level (three sample shots each) and waits for the result. */
+async function calibrateCmd(d: Deps, a: Args): Promise<number> {
+  const { run } = await d.api.post(`${MODELS}/calibrate`, str(a, "model") ? { model: str(a, "model") } : {});
+  if (!a.flags.json) d.out(`Calibrating ${run.model}: three sample shots at each level (a few minutes)...`);
+  const deadline = Date.now() + WAIT_MS;
+  for (;;) {
+    const { calibration: c } = await d.api.get(MODELS);
+    if (c?.done || Date.now() > deadline) {
+      if (json(d, a, c)) return c?.error ? 1 : 0;
+      if (c?.error) {
+        d.err(`Calibration failed: ${c.error}`);
+        return 1;
+      }
+      for (const [level, t] of Object.entries((c?.result ?? {}) as Record<string, Json>)) d.out(`  ${level}: ${t.firstPass} first time, ${t.repaired} after a repair, ${t.failed} failed (of ${t.asked})`);
+      return 0;
+    }
+    await d.sleep(d.pollMs);
+  }
+}
+
 /** Passes a step that waits for you (a gate set to "owner"). */
 async function approveStepCmd(d: Deps, a: Args): Promise<number> {
   const id = await projectId(d, need(a, 2, "project"));
@@ -799,6 +844,8 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   "approve-step": approveStepCmd,
   kit: kitCmd,
   capabilities: capabilitiesCmd,
+  models: modelsCmd,
+  calibrate: calibrateCmd,
 };
 
 export async function genCmd(d: Deps, a: Args): Promise<number> {

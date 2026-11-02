@@ -14,22 +14,34 @@ window.SorotKit["text-reveal"] = {
         var node = nodes[i];
         var text = node.nodeValue;
         if (!text.trim()) continue;
-        var parts = s.by === "char" ? text.split("") : s.by === "line" ? [text] : text.split(/(\s+)/);
+        // words (and lines) stay whole; by char, each word is one unbreakable box holding its letters
+        var words = s.by === "line" ? [text] : text.split(/(\s+)/);
         var frag = document.createDocumentFragment();
-        for (var j = 0; j < parts.length; j++) {
-          var p = parts[j];
-          if (!p) continue;
-          if (/^\s+$/.test(p)) { frag.appendChild(document.createTextNode(p)); continue; }
-          var outer = document.createElement("span");
-          outer.style.display = "inline-block";
-          if (s.style === "mask" || s.style === "rise") outer.style.overflow = s.style === "mask" ? "hidden" : "visible";
-          outer.style.verticalAlign = "bottom";
-          var inner = document.createElement("span");
-          inner.style.display = "inline-block";
-          inner.textContent = p;
-          outer.appendChild(inner);
-          frag.appendChild(outer);
-          pieces.push(inner);
+        for (var j = 0; j < words.length; j++) {
+          var w = words[j];
+          if (!w) continue;
+          if (/^\s+$/.test(w)) { frag.appendChild(document.createTextNode(w)); continue; }
+          var box = frag;
+          var letters = [w];
+          if (s.by === "char") {
+            box = document.createElement("span");
+            box.style.display = "inline-block";
+            box.style.whiteSpace = "nowrap";
+            frag.appendChild(box);
+            letters = w.split("");
+          }
+          for (var c = 0; c < letters.length; c++) {
+            var outer = document.createElement("span");
+            outer.style.display = "inline-block";
+            if (s.style === "mask") outer.style.overflow = "hidden";
+            outer.style.verticalAlign = "bottom";
+            var inner = document.createElement("span");
+            inner.style.display = "inline-block";
+            inner.textContent = letters[c];
+            outer.appendChild(inner);
+            box.appendChild(outer);
+            pieces.push(inner);
+          }
         }
         node.parentNode.replaceChild(frag, node);
       }

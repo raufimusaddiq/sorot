@@ -111,6 +111,8 @@ describe("plan step", () => {
     const plans = r.store.genPlansForProject("p1");
     expect(plans.map((x) => [x.revision, x.approvedAt])).toEqual([[2, null], [1, null]]);
     expect(r.store.getGenProject("p1")).toMatchObject({ currentPlanId: plans[0]!.id, title: "Judul dua" });
+    // each shot shows the level `auto` gives it now (no kit here: compose is the floor)
+    expect((JSON.parse(plans[0]!.plan) as { shots: Array<{ level: string }> }).shots.map((x) => x.level)).toEqual(["compose", "compose", "compose"]);
   });
 
   test("the director's effects pass runs unless the step turns it off; a pass that fails leaves the plan as written", async () => {

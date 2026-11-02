@@ -410,6 +410,17 @@ describe("director: scenes", () => {
     expect(userOf(r.requests[2]!).capabilities).toEqual({ level: "compose", kit: [{ name: "shade" }, { name: "camera" }] });
   });
 
+  test("kitShot: one forced submit_shot_kit call at the kit level, checked against the capabilities, with findings when there are some", async () => {
+    const r = rig([json({ shotId: "s02", layers: [{ part: "shade", settings: { strength: 2 }, fromSec: 0, toSec: 3 }] }), json({ shotId: "s02", layers: [{ part: "shade", settings: {}, fromSec: 0, toSec: 3 }] })]);
+    const shade = { name: "shade", version: "1.0.0", does: "lights", runtime: "dom" as const, needs: { gpu: "no" as const }, settings: { strength: { t: "num" as const, min: 0, max: 1 } }, defaults: {}, example: "x" };
+    r.director.capabilities = (q) => ({ level: q.level ?? "compose", kit: [{ name: "shade", does: "lights", runtime: "dom" }] } as never);
+    const answer = await r.director.kitShot({ ...input(), kit: [shade], findings: [{ code: "fix_request", message: "Bigger." }] });
+    expect(answer).toEqual({ shotId: "s02", layers: [{ part: "shade", settings: {}, fromSec: 0, toSec: 3 }], text: [] });
+    expect(r.requests[0]!.tool_choice).toEqual({ type: "function", function: { name: "submit_shot_kit" } });
+    expect(userOf(r.requests[0]!)).toMatchObject({ capabilities: { level: "kit" }, findings: [{ code: "fix_request" }] });
+    expect(JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems).toEqual(["layers[0].settings.strength: must be between 0 and 1"]);
+  });
+
   test("a markdown fence around the file is removed; a step prompt is appended; blocks default to none", async () => {
     const r = rig(["{\"html\": " + JSON.stringify("```html\n" + HTML + "\n```") + "}"]);
     expect(await r.director.scene(input({ step: step({ use: "author", prompt: { mode: "append", text: "Use big type." } }) }))).toBe(HTML);

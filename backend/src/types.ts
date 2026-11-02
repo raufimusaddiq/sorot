@@ -275,6 +275,20 @@ export interface GenVersion {
   shotLevels?: string | null;
 }
 
+/** How one model fares at one level on this install (research R25). */
+export interface GenModelRecord {
+  model: string;
+  level: "kit" | "compose" | "free" | "plan";
+  asked: number;
+  firstPass: number;
+  repaired: number;
+  dropped: number;
+  malformed: number;
+  ms: number;
+  calibratedAt: string | null;
+  updatedAt: string;
+}
+
 /** One installed kit part (built in, or added by the owner). */
 export interface GenKitPart {
   name: string;

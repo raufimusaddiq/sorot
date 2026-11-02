@@ -62,7 +62,7 @@ describe("validatePlan", () => {
   });
 
   test("a shot's look keeps the director's own terms; its kit parts are checked when a kit is given", () => {
-    const look = { description: "a coin lit from the upper left", values: { lightAngleDeg: 300, camera: "isometric" }, parts: [{ part: "shade", settings: { material: "metal" } }, { part: "neon" }] };
+    const look: any = { description: "a coin lit from the upper left", values: { lightAngleDeg: 300, camera: "isometric" }, parts: [{ part: "shade", settings: { material: "metal" } }, { part: "neon" }] };
     const kit = (refs: Array<{ part: string }>, path: string) => refs.filter((r) => r.part !== "shade").map((r, i) => `kit_unknown_part: ${path}[${i}]: "${r.part}"`);
     expect(validatePlan(second((s) => ({ ...s, look }))(samplePlan()), ctx()).plan!.shots[1]!.look).toEqual({ ...look, parts: [look.parts[0], { part: "neon", settings: {} }] });
     expect(validatePlan(second((s) => ({ ...s, look }))(samplePlan()), ctx({ kit })).errors).toEqual(['kit_unknown_part: shot 2 (s02): look.parts[0]: "neon"']);
