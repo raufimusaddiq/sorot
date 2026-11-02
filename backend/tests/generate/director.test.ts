@@ -398,13 +398,13 @@ describe("director: scenes", () => {
     expect(req.max_tokens).toBe(16000);
   });
 
-  test("with a capability description, a scene call gets its level and the full settings of the parts its look names (else of every part); storylines get the summary, plans every part's settings", async () => {
+  test("with a capability description, a scene call gets its level and the full settings of every part it may use; storylines get the summary, plans every part's settings", async () => {
     const r = rig([json({ html: HTML }), json({ html: HTML }), json({ storylines: [story(1, { recommended: true })] }), json(samplePlan())]);
     const asked: Array<{ level?: string; parts?: string[] }> = [];
     r.director.capabilities = (q) => { asked.push(q); return { level: q.level ?? "compose", kit: [{ name: "shade" }, { name: "camera" }], parts: q.parts } as never; };
     const looked = { ...plan, shots: plan.shots.map((s, i) => (i === 1 ? { ...s, look: { description: "lit", values: {}, parts: [{ part: "shade", settings: {} }] } } : s)) };
     await r.director.scene({ ...input(), plan: looked, level: "free" });
-    expect(userOf(r.requests[0]!).capabilities).toEqual({ level: "free", kit: [{ name: "shade" }, { name: "camera" }], parts: ["shade"] });
+    expect(userOf(r.requests[0]!).capabilities).toEqual({ level: "free", kit: [{ name: "shade" }, { name: "camera" }], parts: ["shade", "camera"] });   // every part, not only the look's
     await r.director.scene(input());
     expect(userOf(r.requests[1]!).capabilities.parts).toEqual(["shade", "camera"]);
     await r.director.storylines({ project, step: step(), settings: { count: 1 }, assets: [] });

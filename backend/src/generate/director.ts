@@ -395,13 +395,15 @@ export class Director {
     return kind === "storylines" ? summary : (this.capabilities as (q: CapabilityQuery) => Capabilities)({ parts: summary.kit.map((p) => p.name) });
   }
 
-  /** The scene's parts get their full settings: those the shot's look names, else every part the level may use. */
+  /**
+   * A scene call gets the full settings of every part its level may use: with only the parts the shot's
+   * look named, a real kit-level answer used `shape` (listed, but without its settings), guessed them and
+   * failed every retry (2026-11-02). The whole kit's settings are a few KB.
+   */
   private sceneCapabilities(input: SceneInput): Capabilities | null {
     if (!this.capabilities) return null;
     const level = input.level ?? "compose";
-    const named = (input.plan.shots[input.index]?.look?.parts ?? []).map((p) => p.part);
-    const all = this.capabilities({ level });
-    return this.capabilities({ level, parts: named.length ? named : all.kit.map((p) => p.name) });
+    return this.capabilities({ level, parts: this.capabilities({ level }).kit.map((p) => p.name) });
   }
 
   /** The model that answers, and the one that looks at pictures (null when none is set up). */
