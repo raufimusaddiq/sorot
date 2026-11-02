@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, KenariModel, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, KenariAccount, KenariModel, KenariVoiceModel, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -201,6 +201,21 @@ export class ApiClient {
   /** Validate a candidate LLM connection (not yet saved) with one small real call. */
   async probeLlm(candidate: { baseUrl?: string; model: string; apiKey: string }) {
     return this.request<ConnectionTest>('/api/settings/llm/probe', { method: 'POST', body: JSON.stringify(candidate) });
+  }
+
+  /** The saved Kenari connection's balance, plan quota and usage — null when not connected to Kenari. */
+  async getKenariAccount() {
+    return this.request<{ account: KenariAccount | null; warning?: string }>('/api/settings/llm/kenari-account');
+  }
+
+  /** Kenari's image-generation models, for the image onboarding picker. */
+  async getKenariImageModels() {
+    return this.request<{ models: KenariModel[]; warning?: string }>('/api/settings/image/kenari-models');
+  }
+
+  /** Kenari's text-to-speech models and their voices, for the voice onboarding picker. */
+  async getKenariVoiceModels() {
+    return this.request<{ models: KenariVoiceModel[]; warning?: string }>('/api/settings/voice/kenari-models');
   }
 
   async getGenerateStatus() {

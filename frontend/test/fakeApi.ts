@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, KenariModel, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, KenariModel, KenariVoiceModel, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
 } from '@/types';
 
 export type Candidate = {
@@ -43,6 +43,9 @@ export interface FakeState {
   /** Kenari's live model catalog (GET /api/settings/llm/kenari-models), and what the next probe (POST /api/settings/llm/probe) answers. */
   kenariModels: KenariModel[];
   kenariProbe: ConnectionTest;
+  /** Kenari's image and voice model catalogs (GET /api/settings/{image,voice}/kenari-models). */
+  kenariImageModels: KenariModel[];
+  kenariVoiceModels: KenariVoiceModel[];
   /** Tebar accounts, the draft served for any clip, and posts by clip. */
   accounts: SocialAccount[];
   draft: PublishDraft | null;
@@ -222,6 +225,7 @@ export function emptyState(): FakeState {
     fail: {}, nextVideoId: 'vnew', nextJobId: 'jnew', jobDelayMs: 0, candidatesListAll: false,
     music: [], captions: {}, autoRuns: [],
     settings: makeConnections(), tests: {}, kenariModels: [], kenariProbe: { ok: false, ms: 1, error: 'Not configured' },
+    kenariImageModels: [], kenariVoiceModels: [],
     accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
     genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genRecipes: [makeGenRecipe('quick', true)], genFacts: {}, genIdeas: [], genSteps: [{ type: 'author', gates: ['none'], fields: { repairRounds: { t: 'int', min: 0, max: 5 }, require: { t: 'strs', maxItems: 20 } }, required: [], defaults: {} }, { type: 'render', gates: ['none'], fields: { quality: { t: 'enum', values: ['draft', 'delivery'] } }, required: [], defaults: {} }, { type: 'export', gates: ['none', 'owner'], fields: {}, required: [], defaults: {} }], genValidation: { ok: true, errors: [], warnings: [] }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
   };
@@ -508,6 +512,8 @@ export function installFakeApi(state: FakeState) {
     if (method === 'POST' && (m = path.match(/^\/api\/settings\/(llm|jev|tebar|image|voice|commands)\/test$/))) return ok(state.tests[m[1]!] ?? { ok: false, ms: 1, error: 'Not configured' });
     if (method === 'GET' && path === '/api/settings/llm/kenari-models') return ok({ models: state.kenariModels });
     if (method === 'POST' && path === '/api/settings/llm/probe') return ok(state.kenariProbe);
+    if (method === 'GET' && path === '/api/settings/image/kenari-models') return ok({ models: state.kenariImageModels });
+    if (method === 'GET' && path === '/api/settings/voice/kenari-models') return ok({ models: state.kenariVoiceModels });
     if (method === 'GET' && path === '/api/social/accounts') return ok({ enabled: state.settings.tebar.active, accounts: state.accounts });
     if (method === 'GET' && path === '/api/generate/exports') {
       return ok({ exports: state.genProjects.flatMap((d) => d.exports.map((e) => ({ ...e, projectTitle: d.project.title ?? 'Proyek' }))) });

@@ -4,14 +4,26 @@
 // voice per language), the image service for scene pictures, and the local commands recipes may
 // name. Keys are never shown back; a recipe that needs one of these is unavailable until it is set.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ApiClient } from '@/lib/api';
-import type { ConnectionKind, ConnectionTest, Connections, GenCommand } from '@/types';
+import type { ConnectionKind, ConnectionTest, Connections, GenCommand, KenariModel, KenariVoiceModel } from '@/types';
 import { Toggle } from './ImportOptions';
 import { Window } from './Window';
 
 const label = 'font-pixel text-xs text-fg block mb-1';
 const field = 'field w-full px-2 py-1.5';
+
+// Kenari (kenari.id): this project's default AI provider, also offering an OpenAI-compatible
+// image endpoint and text-to-speech — both already work through the generic fields below with
+// no protocol change; these pickers just make picking a Kenari model/voice a live choice instead
+// of something to type by hand.
+const KENARI_BASE_URL = 'https://kenari.id/v1';
+const KENARI_DEFAULT_IMAGE_MODEL = 'gpt-image-2';
+
+function connectionMode(baseUrl: string | undefined): 'unset' | 'kenari' | 'custom' {
+  if (!baseUrl) return 'unset';
+  return baseUrl === KENARI_BASE_URL ? 'kenari' : 'custom';
+}
 const ENGINE_NOTE: Record<string, string> = {
   elevenlabs: 'ElevenLabs (word times come with the voice)', fish: 'Fish Audio', openai: 'OpenAI-compatible /audio/speech', local: 'Local KittenTTS, on this GPU',
 };
@@ -67,15 +79,42 @@ function VoiceCard({ api, view, onSaved }: { api: ApiClient; view: NonNullable<C
   const value = (k: 'baseUrl' | 'model') => form[k] ?? view[k] ?? '';
   const voiceOf = (code: string) => voices[code] ?? view.voices[code] ?? '';
 
+  // Kenari also speaks the openai engine's exact /audio/speech shape — only relevant while that
+  // engine is picked; any other engine (elevenlabs, fish, local) keeps its own fields unchanged.
+  const [mode, setMode] = useState<'kenari' | 'custom' | null>(null);
+  const [kenariModels, setKenariModels] = useState<KenariVoiceModel[]>([]);
+  const [kenariModel, setKenariModel] = useState('');
+  useEffect(() => {
+    if (view.engine !== 'openai') { setMode(null); return; }
+    const m = connectionMode(view.baseUrl);
+    setMode(m === 'unset' ? null : m);
+  }, [view.engine, view.baseUrl]);
+  useEffect(() => {
+    if (view.engine === 'openai' && mode === 'kenari' && kenariModels.length === 0) {
+      api.getKenariVoiceModels().then((r) => {
+        setKenariModels(r.models);
+        if (r.models[0]) setKenariModel((cur) => cur || r.models[0]!.id);
+      }, () => setKenariModels([]));
+    }
+  }, [view.engine, mode, kenariModels.length, api]);
+  const kenari = view.engine === 'openai' && mode === 'kenari';
+  const kenariVoices = kenariModels.find((m) => m.id === kenariModel)?.voices ?? [];
+
   const patch = (): Record<string, unknown> => {
     const p: Record<string, unknown> = {};
-    for (const k of ['baseUrl', 'model'] as const) if (form[k] !== undefined && form[k] !== (view[k] ?? '')) p[k] = form[k];
+    if (kenari) {
+      if (view.baseUrl !== KENARI_BASE_URL) p.baseUrl = KENARI_BASE_URL;
+      if (kenariModel && view.model !== kenariModel) p.model = kenariModel;
+    } else {
+      for (const k of ['baseUrl', 'model'] as const) if (form[k] !== undefined && form[k] !== (view[k] ?? '')) p[k] = form[k];
+    }
     if (Object.keys(voices).length) p.voices = Object.fromEntries(LANGUAGES.map(([c]) => [c, voiceOf(c)]).filter(([, v]) => v));
     if (key.trim()) p.apiKey = key.trim();
     return p;
   };
   const clear = () => { setForm({}); setVoices({}); setKey(''); };
   const dirty = Object.keys(patch()).length > 0;
+  const switchMode = (m: 'kenari' | 'custom') => { setMode(m); setForm({}); setVoices({}); setKey(''); };
 
   return (
     <Window title="Narration voice" bar="bg-sun" right={view.active ? 'active' : 'off'}>
@@ -92,7 +131,18 @@ function VoiceCard({ api, view, onSaved }: { api: ApiClient; view: NonNullable<C
             ))}
           </select>
         </label>
-        {view.engine !== 'local' && (
+        {view.engine === 'openai' && mode === null && (
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-primary" onClick={() => switchMode('kenari')}>Connect Kenari</button>
+            <button className="btn" onClick={() => switchMode('custom')}>Use a different endpoint</button>
+          </div>
+        )}
+        {view.engine === 'openai' && mode !== null && (
+          <button className="text-xs text-subtle underline -mt-1 text-left" onClick={() => switchMode(kenari ? 'custom' : 'kenari')}>
+            {kenari ? 'Use a different endpoint instead' : 'Use Kenari instead'}
+          </button>
+        )}
+        {view.engine !== 'local' && !kenari && (view.engine !== 'openai' || mode !== null) && (
           <>
             <label>
               <span className={label}>Base URL (optional for ElevenLabs and Fish)</span>
@@ -102,29 +152,49 @@ function VoiceCard({ api, view, onSaved }: { api: ApiClient; view: NonNullable<C
               <span className={label}>Model (optional)</span>
               <input aria-label="Voice model" value={value('model')} onChange={(e) => setForm({ ...form, model: e.target.value })} className={field} />
             </label>
-            <label>
-              <span className={label}>API key</span>
-              <input aria-label="Voice API key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} className={field}
-                placeholder={view.apiKeySet ? `${view.apiKey} (leave empty to keep)` : 'not set'} />
-            </label>
           </>
+        )}
+        {kenari && (
+          <label>
+            <span className={label}>Model</span>
+            <select aria-label="Kenari voice model" className={field} value={kenariModel} onChange={(e) => { setKenariModel(e.target.value); setVoices({}); }}>
+              {kenariModels.length === 0 && <option value="">(loading…)</option>}
+              {kenariModels.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+            </select>
+          </label>
+        )}
+        {view.engine !== 'local' && (view.engine !== 'openai' || mode !== null) && (
+          <label>
+            <span className={label}>API key</span>
+            <input aria-label="Voice API key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} className={field}
+              placeholder={view.apiKeySet ? `${view.apiKey} (leave empty to keep)` : 'not set'} />
+          </label>
         )}
         {view.engine === 'local' && (
           <p className="text-xs text-subtle" role="note">
             KittenTTS speaks English with a built-in voice (Bruno unless you name another). It has no Indonesian voice: for Indonesian, put the path of a 5 to 30 s recording of one speaker in the field below and it is cloned, or use an online engine.
           </p>
         )}
-        {LANGUAGES.map(([code, name]) => (
+        {(view.engine !== 'openai' || mode !== null) && LANGUAGES.map(([code, name]) => (
           <label key={code}>
             <span className={label}>Voice for {name}</span>
-            <input aria-label={`Voice for ${name}`} value={voiceOf(code)} placeholder="voice id" onChange={(e) => setVoices({ ...voices, [code]: e.target.value })} className={field} />
+            {kenari && kenariVoices.length > 0 ? (
+              <select aria-label={`Voice for ${name}`} className={field} value={voiceOf(code)} onChange={(e) => setVoices({ ...voices, [code]: e.target.value })}>
+                <option value="">(model default)</option>
+                {kenariVoices.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            ) : (
+              <input aria-label={`Voice for ${name}`} value={voiceOf(code)} placeholder="voice id" onChange={(e) => setVoices({ ...voices, [code]: e.target.value })} className={field} />
+            )}
           </label>
         ))}
       </div>
-      <div className="flex flex-wrap gap-2 mt-4">
-        <button className="btn btn-primary" disabled={busy || !dirty} onClick={() => save(patch()).then(clear)}>Save</button>
-        <button className="btn" disabled={busy} onClick={runTest}>Test</button>
-      </div>
+      {(view.engine !== 'openai' || mode !== null) && (
+        <div className="flex flex-wrap gap-2 mt-4">
+          <button className="btn btn-primary" disabled={busy || !dirty} onClick={() => save(patch()).then(clear)}>Save</button>
+          <button className="btn" disabled={busy} onClick={runTest}>Test</button>
+        </div>
+      )}
       <Result error={error} test={test} />
     </Window>
   );
@@ -134,34 +204,93 @@ function ImageCard({ api, view, onSaved }: { api: ApiClient; view: NonNullable<C
   const { busy, error, test, save, runTest } = useCard('image', api, onSaved);
   const [form, setForm] = useState<Record<string, string>>({});
   const [key, setKey] = useState('');
+  const [mode, setMode] = useState<'kenari' | 'custom' | null>(() => {
+    const m = connectionMode(view.baseUrl);
+    return m === 'unset' ? null : m;
+  });
+  const [kenariModels, setKenariModels] = useState<KenariModel[]>([]);
+  const [kenariModel, setKenariModel] = useState(KENARI_DEFAULT_IMAGE_MODEL);
   const fields = [['baseUrl', 'Base URL', 'https://…/v1'], ['model', 'Model', 'flux-1'], ['size', 'Size', '1024x1792'], ['style', 'House style (optional)', 'flat, warm colours']] as const;
+  const kenari = mode === 'kenari';
+
+  useEffect(() => {
+    if (kenari && kenariModels.length === 0) api.getKenariImageModels().then((r) => setKenariModels(r.models), () => setKenariModels([]));
+  }, [kenari, kenariModels.length, api]);
+
   const patch = () => {
     const p: Record<string, string> = {};
-    for (const [k] of fields) if (form[k] !== undefined && form[k] !== (view[k] ?? '')) p[k] = form[k]!;
+    if (kenari) {
+      if (view.baseUrl !== KENARI_BASE_URL) p.baseUrl = KENARI_BASE_URL;
+      if (view.model !== kenariModel) p.model = kenariModel;
+      for (const k of ['size', 'style'] as const) if (form[k] !== undefined && form[k] !== (view[k] ?? '')) p[k] = form[k]!;
+    } else {
+      for (const [k] of fields) if (form[k] !== undefined && form[k] !== (view[k] ?? '')) p[k] = form[k]!;
+    }
     if (key.trim()) p.apiKey = key.trim();
     return p;
   };
+  const switchMode = (m: 'kenari' | 'custom') => { setMode(m); setForm({}); setKey(''); };
+  const dirty = Object.keys(patch()).length > 0;
+
   return (
     <Window title="Scene images" bar="bg-lilac" right={view.active ? 'active' : 'off'}>
-      <p className="text-sm text-fg/80 mb-1">Any OpenAI-compatible <code>/images/generations</code> service. A shot that asks for a picture gets one; without this its fallback visual is drawn.</p>
-      <div className="grid gap-3 mt-3">
-        <Toggle checked={view.enabled} onChange={(v) => save({ enabled: v })}><span>Use images</span></Toggle>
-        {fields.map(([k, name, placeholder]) => (
-          <label key={k}>
-            <span className={label}>{name}</span>
-            <input aria-label={`Image ${name}`} value={form[k] ?? view[k] ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [k]: e.target.value })} className={field} />
+      <p className="text-sm text-fg/80 mb-1">Any OpenAI-compatible <code>/images/generations</code> service, Kenari included. A shot that asks for a picture gets one; without this its fallback visual is drawn.</p>
+      {mode === null && (
+        <div className="flex flex-wrap gap-2 mt-3">
+          <button className="btn btn-primary" onClick={() => switchMode('kenari')}>Connect Kenari</button>
+          <button className="btn" onClick={() => switchMode('custom')}>Use a different service</button>
+        </div>
+      )}
+      {mode !== null && (
+        <button className="text-xs text-subtle underline mt-2" onClick={() => switchMode(kenari ? 'custom' : 'kenari')}>
+          {kenari ? 'Use a different service instead' : 'Use Kenari instead'}
+        </button>
+      )}
+      {mode !== null && (
+        <div className="grid gap-3 mt-3">
+          <Toggle checked={view.enabled} onChange={(v) => save({ enabled: v })}><span>Use images</span></Toggle>
+          {kenari ? (
+            <>
+              <label>
+                <span className={label}>Model</span>
+                <select aria-label="Kenari image model" className={field} value={kenariModel} onChange={(e) => setKenariModel(e.target.value)}>
+                  <option value={KENARI_DEFAULT_IMAGE_MODEL}>{KENARI_DEFAULT_IMAGE_MODEL}</option>
+                  {kenariModels.filter((m) => m.id !== KENARI_DEFAULT_IMAGE_MODEL).map((m) => (
+                    <option key={m.id} value={m.id}>{m.id}{m.free ? ' (free)' : ''}</option>
+                  ))}
+                </select>
+              </label>
+              {(['size', 'style'] as const).map((k) => {
+                const [, name, placeholder] = fields.find(([fk]) => fk === k)!;
+                return (
+                  <label key={k}>
+                    <span className={label}>{name}</span>
+                    <input aria-label={`Image ${name}`} value={form[k] ?? view[k] ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [k]: e.target.value })} className={field} />
+                  </label>
+                );
+              })}
+            </>
+          ) : (
+            fields.map(([k, name, placeholder]) => (
+              <label key={k}>
+                <span className={label}>{name}</span>
+                <input aria-label={`Image ${name}`} value={form[k] ?? view[k] ?? ''} placeholder={placeholder} onChange={(e) => setForm({ ...form, [k]: e.target.value })} className={field} />
+              </label>
+            ))
+          )}
+          <label>
+            <span className={label}>API key</span>
+            <input aria-label="Image API key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} className={field}
+              placeholder={view.apiKeySet ? `${view.apiKey} (leave empty to keep)` : 'not set'} />
           </label>
-        ))}
-        <label>
-          <span className={label}>API key</span>
-          <input aria-label="Image API key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} className={field}
-            placeholder={view.apiKeySet ? `${view.apiKey} (leave empty to keep)` : 'not set'} />
-        </label>
-      </div>
-      <div className="flex flex-wrap gap-2 mt-4">
-        <button className="btn btn-primary" disabled={busy || Object.keys(patch()).length === 0} onClick={() => save(patch()).then(() => { setForm({}); setKey(''); })}>Save</button>
-        <button className="btn" disabled={busy} onClick={runTest}>Test</button>
-      </div>
+        </div>
+      )}
+      {mode !== null && (
+        <div className="flex flex-wrap gap-2 mt-4">
+          <button className="btn btn-primary" disabled={busy || !dirty} onClick={() => save(patch()).then(() => { setForm({}); setKey(''); })}>Save</button>
+          <button className="btn" disabled={busy} onClick={runTest}>Test</button>
+        </div>
+      )}
       <Result error={error} test={test} />
     </Window>
   );

@@ -365,6 +365,7 @@ describe('GenerateConnections (Settings)', () => {
     state.settings = generateSettings();
     render(<ConnectionsPanel api={api} />);
     const image = await screen.findByRole('region', { name: 'Scene images' });
+    fireEvent.click(within(image).getByRole('button', { name: 'Use a different service' }));
     fireEvent.change(within(image).getByLabelText('Image Base URL'), { target: { value: 'http://img/v1' } });
     fireEvent.change(within(image).getByLabelText('Image Model'), { target: { value: 'flux' } });
     fireEvent.change(within(image).getByLabelText('Image API key'), { target: { value: 'img-key-9999' } });
@@ -374,6 +375,35 @@ describe('GenerateConnections (Settings)', () => {
     await waitFor(() => expect(sent('PUT', '/api/settings/image')[1]).toEqual({ enabled: false }));
     fireEvent.click(within(image).getByRole('button', { name: 'Test' }));
     expect(await within(image).findByText('Failed: Not configured')).toBeInTheDocument();
+  });
+
+  it('scene images: Kenari offers a fetched model list and saves baseUrl/model together', async () => {
+    state.settings = generateSettings();
+    state.kenariImageModels = [{ id: 'gpt-image-2', free: false }, { id: 'other-image:free', free: true }];
+    render(<ConnectionsPanel api={api} />);
+    const image = await screen.findByRole('region', { name: 'Scene images' });
+    fireEvent.click(within(image).getByRole('button', { name: 'Connect Kenari' }));
+    expect(await within(image).findByRole('option', { name: 'other-image:free (free)' })).toBeInTheDocument();
+    fireEvent.change(within(image).getByLabelText('Kenari image model'), { target: { value: 'other-image:free' } });
+    fireEvent.change(within(image).getByLabelText('Image API key'), { target: { value: 'kn-good' } });
+    fireEvent.click(within(image).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sent('PUT', '/api/settings/image')[0]).toEqual({ baseUrl: 'https://kenari.id/v1', model: 'other-image:free', apiKey: 'kn-good' }));
+  });
+
+  it('narration voice: Kenari (openai engine only) offers fetched models and per-model voices', async () => {
+    state.settings = generateSettings({ voice: { engine: 'openai' } });
+    state.kenariVoiceModels = [{ id: 'gemini-3-1-flash-tts', voices: ['Kore', 'Aoede'] }];
+    render(<ConnectionsPanel api={api} />);
+    const voice = await screen.findByRole('region', { name: 'Narration voice' });
+    fireEvent.click(within(voice).getByRole('button', { name: 'Connect Kenari' }));
+    expect(await within(voice).findByRole('option', { name: 'gemini-3-1-flash-tts' })).toBeInTheDocument();
+    expect(within(voice).queryByLabelText('Voice base URL')).not.toBeInTheDocument();   // auto-filled, no field to type it in
+    fireEvent.change(within(voice).getByLabelText('Voice for Indonesian'), { target: { value: 'Kore' } });
+    fireEvent.change(within(voice).getByLabelText('Voice API key'), { target: { value: 'kn-good' } });
+    fireEvent.click(within(voice).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sent('PUT', '/api/settings/voice')[0]).toEqual({
+      baseUrl: 'https://kenari.id/v1', model: 'gemini-3-1-flash-tts', voices: { id: 'Kore' }, apiKey: 'kn-good',
+    }));
   });
 
   it('custom commands: add, edit and remove rows, save the list; an install that turns them off says so and locks the card', async () => {

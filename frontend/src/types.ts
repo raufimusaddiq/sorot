@@ -122,8 +122,19 @@ export type GenerateStatus = {
 
 export type ConnectionTest = { ok: boolean; ms: number; model?: string; detail?: string; error?: string };
 
-/** One entry from Kenari's live model catalog (GET /api/settings/llm/kenari-models). */
+/** One entry from Kenari's live model catalog (GET /api/settings/{llm,image}/kenari-models). */
 export type KenariModel = { id: string; free: boolean };
+
+/** One Kenari TTS model and its voice ids (GET /api/settings/voice/kenari-models). */
+export type KenariVoiceModel = { id: string; voices: string[] };
+
+/** The saved Kenari connection's balance, plan quota and usage (GET /api/settings/llm/kenari-account). */
+export type KenariAccount = {
+  plan: string | null;
+  windows: Record<string, { budgetRp: number; remainingRp: number; usedFrac: number; resetsAt: string }>;
+  balanceRp: number;
+  usage: { requests: number; promptTokens: number; completionTokens: number };
+};
 
 /** A Tebar account; profileId/profileName name its workspace (null with a single workspace). */
 export type SocialAccount = {
