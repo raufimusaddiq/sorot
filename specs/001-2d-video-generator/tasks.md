@@ -484,3 +484,98 @@ Ship Phase 13 first: it needs no new structure and should show on the next build
 less washed-out). Then the kit (14) and capabilities (15) as one increment the strong model can
 already use at `compose`; then levels (16), which is what makes small local models finish films;
 then motion and look (17); then UI, docs and the SC measurements (18).
+
+## Part 4: The director loop (US10, FR-048 to FR-053)
+
+Design: [plan.md Part 4](plan.md#part-4-the-director-loop-2026-11-02), research R32 to R36 and
+spike S8, the additions at the end of contracts/director.md, api.md and recipe.md, and
+[data-model.md](data-model.md#additions-for-the-director-loop-2026-11-02); design note
+`docs/director-loop.md`. Every task lands with its own tests (constitution III: one test per
+behaviour, table rows, shared fakes in `backend/tests/helpers.ts`: `fakeLlm` `Calls`,
+`fakeHyperframes`). New step settings keep their defaults in code, not in `steps/index.ts`
+DEFAULTS, so existing projects' step hashes don't change.
+
+## Phase 19: Session, roles, one seeing model (FR-048, FR-052, FR-053), built 2026-11-02
+
+**Goal**: a build's scene work is one conversation that the provider's cache covers; each role may
+have its own model; the director's model sees.
+
+**Independent test**: replay a session build's `gen_event` rows: each scene and repair request
+starts with the previous one (84% scene, 89% repair prefix reuse measured on the story build).
+
+- [X] T152 [US10] Shared request fields first: `sceneBase` and `ask` put `capabilities` and the film before the shot's own fields in `backend/src/generate/director.ts`; test that two shots' requests share everything before `"position"` in `backend/tests/generate/director.test.ts` (R32, `4c91448`)
+- [X] T153 [US10] Build session in `backend/src/generate/director.ts` (`askScene`, `sessionFor`, `sessionSystem`, `trim`, `sceneOwn`, `SESSION_TOOLS`, `MAX_SESSIONS` = 4, turns queued one at a time), `SceneInput.session` = the version id passed by `backend/src/generate/steps/{author,check,look}.ts`; `GEN_SESSION` (default on) and `GEN_CONTEXT_TOKENS` ("whole number 20000 to 2000000", default 600000) in `backend/src/config.ts`, `backend/src/llm.ts` and `backend/src/settings.ts` (`llm.contextTokens`); UI field in `frontend/src/components/ConnectionsPanel.tsx`; tests in `director.test.ts` and `vision.test.ts` (FR-048, `3c1ae8a`)
+- [X] T154 [US10] Model per role: `GEN_PLAN_MODEL`, `GEN_SCENE_MODEL`, `GEN_JUDGE_MODEL` ("empty = `llm.model`"), `Llm.modelFor(role)`, `roleOf(kind)` in `director.ts`, Settings `llm.planModel`, `llm.sceneModel`, `llm.judgeModel` and their UI fields; tests (FR-053, `053d706`)
+- [X] T155 [US10] No separate vision model: remove `llmVision`/`llmVisionModel` from `backend/src/config.ts`, `llm.ts` (`see` sends to the call's model) and `settings.ts` (old fields answer 400, saved rows ignored); `Director.canSee` in `director.ts`; `steps/creative.ts`, `steps/look.ts`, `service.ts` follow the LLM; CHANGELOG calls out the contract break (FR-052, R36, `8ba50db`)
+
+## Phase 20: Tool loop (FR-049, R33)
+
+**Goal**: within a shot's turn the director searches and installs HyperFrames blocks and checks its
+draft before it submits, within limits, and every turn still ends in a submit.
+
+**Independent test**: with `fakeLlm` `Calls` that search, install a block, check, then submit, the
+turn's requests show the tool results in order, the scene is accepted, and a model that never
+submits is forced to on step `toolSteps`.
+
+- [ ] T156 Spike S8, part 1 (before T158): measure the provider's token cost of a call with 1, 2 and 3 frames (1080×1920 PNG) from its usage numbers; run ten queries ("a person walking", "a bar chart", "a map of Java", "a house", "a hand pouring", …) through word and tag search on `hyperframes catalog --json`; install `lottie-character-walk` and `product-turntable` into a 9:16 project and render them adapted. Record in `specs/001-2d-video-generator/research.md` under "Spike S8"
+- [ ] T157 [P] [US10] `searchBlocks(catalog, { query, type?, limit? })` in new `backend/src/generate/directorTools.ts`: `query` "≤ 120 chars", `type` "`block` | `component`", `limit` "1..8" (default 5); scores words and tags of name, title, description and tags; returns `{matches: [{name, type, title, description, tags, width, height, duration}]}`; pure, table tests in new `backend/tests/generate/directorTools.test.ts`
+- [ ] T158 [US10] `useBlock(ctx, { name })` in `directorTools.ts`: refused with `{error}` when the recipe's plan step has `blocks: false` or the name isn't in the catalog; otherwise `hyperframes.add(dir, [name])` into the version's project and returns `{name, files, source, cut}` with `source` "≤ 24 KB" (cut with a note, `cut: true`); tests with `fakeHyperframes` in `directorTools.test.ts`
+- [ ] T159 [US10] `checkDraft(ctx, { html }, shot)` in `directorTools.ts`: writes the draft to `compositions/shot-NN.html`, returns `{findings: [{code, severity, message, hint}]}` from `checkScene(html, shot, index, sceneRules(ctx, level))` plus `hyperframes lint` filtered to that file; the author step puts the last accepted file back when a turn ends without an accepted submit; tests in `directorTools.test.ts`
+- [ ] T160 [US10] Tool loop in the session turn in `backend/src/generate/director.ts`: tool definitions per contracts/director.md (`search_blocks`, `use_block`, `look` when wired, `check`) added to `SESSION_TOOLS` in a fixed order (stable prefix); `ChatOptions.toolChoice` allows "auto"; each step runs the handler and appends the tool result; per-turn limits `toolSteps` 8, `search_blocks` 4, `use_block` 2, `look` 2, `check` 3 (past a limit the result is `{"error":"limit reached: submit now"}`); the last allowed step forces the request's submit tool; a handler that throws returns `{"error": message}`; validation and the one retry of `submit_*` as today. Tests with `fakeLlm` `Calls` in `director.test.ts`
+- [ ] T161 [US10] Recipe settings in `backend/src/generate/steps/schema.ts`: `author.toolSteps` (int "0 to 16", default 8 in code; 0 = one forced call as before) and `author.looks` (int "0 to 4", default 2 in code), no DEFAULTS entries; `steps/author.ts` and `steps/check.ts` pass the tool handlers and limits into the scene calls; tests in `backend/tests/generate/steps.test.ts` and `build.test.ts`
+- [ ] T162 [P] [US10] One `gen_event` row per tool call (`kind` = the tool's name, `request` = its arguments, `response` = its result with images replaced by their count, `ms`, `ok`) through `DirectorLog.track` in `director.ts`; test in `director.test.ts`
+
+## Phase 21: Look with a stranger's read (FR-050, R34)
+
+**Goal**: the director sees its own frames and a stranger's account of them, and redraws in the
+same turn; the look step has nothing left to do.
+
+**Independent test**: a draft whose fake frames the stranger reads as "a grey sphere, can't tell
+what it is for" gives a `look_unexplained` must-fix back to the director in the turn, and the next
+submit is accepted; the look step records "looked in the loop".
+
+- [ ] T163 [US10] Extract the look step's question and answer handling into `strangerRead(director, frames, shot)` in `backend/src/generate/look.ts` (a fresh call, only the frames, no plan intent; answer turned into findings by the existing `look.ts` code: `look_unexplained` must-fix, `look_mismatch`, `look_hero_hidden`); `steps/look.ts` uses it; tests in `backend/tests/generate/look.test.ts`
+- [ ] T164 [US10] `look` tool in `directorTools.ts`: writes the draft, `hyperframes.snapshot(dir, { at })` at the shot's absolute times ("1..3" times, seconds inside the shot), runs `strangerRead`, and returns `{findings, seen}` as the tool result followed by a user message carrying the frames as image parts (tool messages are text only); limited by `author.looks`; tests with `fakeHyperframes` and `fakeLlm` in `directorTools.test.ts` and `director.test.ts`
+- [ ] T165 [US10] Look step after the loop: when every shot of the version was looked at in its turn (the session records looked shot indexes), `stepState.look` = `{status: "done", reason: "looked in the loop"}` and no vision call; otherwise as before, in `backend/src/generate/steps/look.ts`; tests in `look.test.ts`
+
+## Phase 22: Compaction (FR-051, R35)
+
+**Goal**: tool results never fill the session, and compaction never changes what came before the
+current turn.
+
+**Independent test**: a turn with two looks and a block source, past a tiny turn budget, keeps only
+the latest frames and one copy of the source; after the submit the turn is one note; every request
+before the turn is byte-for-byte the same.
+
+- [ ] T166 [P] [US10] New `backend/src/generate/compaction.ts` (pure): `estimateTokens(messages)` (text at 3.5 characters a token, an image at 1,500 tokens, corrected from T156); `endTurn(messages, turnStart, note)` replaces the turn's tool exchanges with `user: "tools used: …"` and keeps the task and the accepted `submit_*` call and result; `stubTurn(messages, turnStart, budget)` turns older tool results into `{ "stub": "<kind> #n removed: see #m" }`, keeping the latest look frames, the latest check and one block source. Table tests in new `backend/tests/generate/compaction.test.ts`, including "messages before `turnStart` unchanged"
+- [ ] T167 [US10] Wire compaction into the session turn in `director.ts`: `endTurn` after an accepted submit (the note lists each tool with its count and key argument), `stubTurn` before each step when the turn passes `GEN_TURN_TOKENS`; `trim` uses `estimateTokens`; tests in `director.test.ts`
+- [ ] T168 [P] [US10] `GEN_TURN_TOKENS` (default 60000) in `backend/src/config.ts`, `Llm.genTurnTokens` in `backend/src/llm.ts`, Settings `llm.turnTokens` ("whole number 5000 to 500000") in `backend/src/settings.ts`, and its field in `frontend/src/components/ConnectionsPanel.tsx`; tests in `vision.test.ts` and the frontend jest test
+
+## Phase 23: Measure and document (SC-021 to SC-024)
+
+- [ ] T169 Spike S8, part 2, and quickstart scenario 12: the story brief on GLM with `author.toolSteps: 0`, then 8; record the provider's cache numbers, `look_unexplained` findings, build times, tool calls per kind and any forced submits in `specs/001-2d-video-generator/research.md`; adjust the per-tool limits if the model loops
+- [ ] T170 [P] Docs: `docs/director-loop.md` (status → built, measured numbers), `docs/generate.md` (the turn and its tools), `AGENTS.md` rule line, `CHANGELOG.md` under `## [Unreleased]`
+- [ ] T171 Gates: `cd backend; bun test --coverage; bun run typecheck`, `cd frontend; bun run test; bun run build`, `cd cli; bun test --coverage` all pass with at least 95% line and function coverage (`/test` → OPEN)
+- [ ] T172 SC-022 on the 20-brief set with the fast model: fewer than 1 shot in 10 with a `look_unexplained` finding; record in `research.md`
+
+### Part 4 dependencies
+
+- Phase 19 is done.
+- T156 (spike part 1) before T157 and T166's image estimate.
+- Phase 20: T157, T158, T159 (handlers) → T160 (loop) → T161, T162.
+- Phase 21 needs T160 (the loop) and T163 before T164; T165 after T164.
+- Phase 22: T166 any time; T167 after T160 and T164; T168 alongside.
+- Phase 23 last; T169 needs Phases 20 to 22.
+
+### Parallel opportunities (Part 4)
+
+- T157, T158 and T159 are separate functions in one new file: write them together, test them apart.
+- T162 alongside T161; T166 and T168 alongside Phase 21.
+- T170 alongside T169.
+
+### Strategy
+
+Ship Phase 20 first with `check` and the registry tools: it needs no new rendering and already
+lets the director find a character or a chart. Then the stranger's look (21), which is what fixes
+unnameable drawings, then compaction (22) once looks add images to the session, then measure (23)
+against the 2026-11-02 builds.
