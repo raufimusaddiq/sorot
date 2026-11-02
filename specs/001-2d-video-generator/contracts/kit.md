@@ -9,7 +9,7 @@ The kit raises the floor of quality; it never limits what a director may draw.
 <name>/
   part.json      the manifest (below)
   part.js        one browser script, no build step, no imports from the network
-  example.json   the settings and shot length the example render uses
+  example.json   the settings, shot length (durationSec) and optional markup (placed in the example's stage) the check renders
   (any local files the script needs: textures, fonts, a pinned library)
 ```
 
@@ -54,6 +54,10 @@ window.SorotKit["shade"] = {
   },
 };
 ```
+
+Scenes mount parts through the runtime the root loads (`generator/kit/_runtime.js`):
+`SorotKitRuntime.mount(name, host, settings, { tl, start, duration, seed })` merges the part's
+defaults, builds `ctx` and, when `mount` returns `{ render(t) }`, drives it from a timeline tween.
 
 Rules (the scene determinism rules, R3): no clock, no network, no unseeded randomness, no timers;
 motion lives on `ctx.tl` or in a pure `render(t)`. Heavy setup returns a promise registered on

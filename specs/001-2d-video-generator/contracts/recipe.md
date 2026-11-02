@@ -191,6 +191,9 @@ only when the step that produces it is in the recipe.
 | `technical` | the always-on measure `motion` (jumps and stalls inside shots), tunable thresholds | on |
 | `creative` | Sorot always adds the criteria `finished` and `motion` | |
 
+`require` names a kit part as `kit:<name>` (implementation note, 2026-11-02): other entries in the list
+stay free-form hints, so an older recipe that lists words like `typography` is not made unavailable.
+
 New settings have no schema defaults that join a step's input hash; their defaults live in code,
 so existing projects don't re-run. A recipe naming a kit part the install lacks is unavailable
 with the reason "kit part <name> isn't installed".

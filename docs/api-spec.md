@@ -592,6 +592,11 @@ envelope; `409` means the step is not allowed in the project's current state, `4
 | Recipes | `GET/POST /recipes` · `GET/PUT/DELETE /recipes/{id}` · `POST /recipes/validate\|import` · `GET /recipes/{id}/export` |
 | Ideas and runs | `GET/POST /ideas` · `GET/PATCH/DELETE /ideas/{id}` · `POST /run` · `POST /import-history` |
 | Export and publish | `POST /versions/{id}/export` · `GET /exports` · `GET /exports/{id}/file` · `POST /exports/{id}/publish/draft\|publish` · `GET /exports/{id}/posts` |
+| Kit ([generate-kit.md](generate-kit.md)) | `GET/POST /kit` (POST: multipart `file`, a `.zip` of one part; `400` with `findings` when it doesn't pass) · `GET/DELETE /kit/{name}` (`409` for a built-in) · `GET /kit/{name}/export` (`.zip`) |
+| Levels | `GET /capabilities?level=kit\|compose\|free` (what a director call is told now) · `GET /models` (records, pins, `auto`, the last calibration) · `POST /models/calibrate` (`202`, runs in the background) · `PUT /models/{model}/level` (`{level}` or `{level: null}` for auto) |
+
+Versions carry `kit` (`{version, parts, partVersions}`: the parts the build loaded) and `shotLevels`
+(`{shotId: {planned, built, reason?}}`); plans carry each shot's `level` and `look`. All additive.
 
 A project's `status` is `RUNNING`, `WAITING` (at an owner gate or for your pick or approval), `BUILDING`, `BUILT`,
 `ACCEPTED`, `EXPORTED` or `FAILED`. Publishing a generated export uses the same Tebar flow as

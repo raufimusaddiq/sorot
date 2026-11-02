@@ -328,6 +328,7 @@ describe('GenerateConnections (Settings)', () => {
     await waitFor(() => expect(sent('PUT', '/api/settings/image')[0]).toEqual({ baseUrl: 'http://img/v1', model: 'flux', apiKey: 'img-key-9999' }));
     fireEvent.click(within(image).getByLabelText('Use images'));
     await waitFor(() => expect(sent('PUT', '/api/settings/image')[1]).toEqual({ enabled: false }));
+    await waitFor(() => expect(within(image).getByRole('button', { name: 'Test' })).toBeEnabled());   // the save has come back
     fireEvent.click(within(image).getByRole('button', { name: 'Test' }));
     expect(await within(image).findByText('Failed: Not configured')).toBeInTheDocument();
   });

@@ -457,10 +457,10 @@ the smooth builds of 2026-11-01 give none; CREATIVE answers `finished` and `moti
 
 **Goal**: the owner sees and controls levels and the kit, and the success criteria are measured.
 
-- [ ] T148 [P] [US9] UI: the plan editor shows each shot's look and level (`frontend/src/components/generate/PlanEditor.tsx`); Settings → Generate gets a Kit panel (list, add `.zip`, export, remove) and a Models panel (record, `auto` level, pin, Calibrate) in `frontend/src/components/generate/KitPanel.tsx` and `GenerateConnections.tsx`; types in `frontend/src/types.ts`, fakes in `frontend/test/fakeApi.ts`, jest tests
-- [ ] T149 [P] Docs: `docs/generate.md` (kit, levels, capabilities, motion measure), a new `docs/generate-kit.md` (writing and sharing your own part), `AGENTS.md` rule lines, `CHANGELOG.md` under `## [Unreleased]`
+- [X] T148 [P] [US9] UI: the plan editor shows each shot's look and level (`frontend/src/components/generate/PlanEditor.tsx`); Settings → Generate gets a Kit panel (list, add `.zip`, export, remove) and a Models panel (record, `auto` level, pin, Calibrate) in `frontend/src/components/generate/KitPanel.tsx` and `GenerateConnections.tsx`; types in `frontend/src/types.ts`, fakes in `frontend/test/fakeApi.ts`, jest tests
+- [X] T149 [P] Docs: `docs/generate.md` (kit, levels, capabilities, motion measure), a new `docs/generate-kit.md` (writing and sharing your own part), `AGENTS.md` rule lines, `CHANGELOG.md` under `## [Unreleased]`
 - [ ] T150 Run quickstart scenario 11 on the Docker app with a small local model and a strong hosted model; measure SC-015 to SC-020 on the 20-brief set; record in `specs/001-2d-video-generator/research.md`
-- [ ] T151 Gates: `cd backend; bun test --coverage; bun run typecheck`, `cd frontend; bun run test; bun run build`, `cd cli; bun test --coverage` all pass with at least 95% line and function coverage (`/test` → OPEN)
+- [X] T151 Gates: `cd backend; bun test --coverage; bun run typecheck`, `cd frontend; bun run test; bun run build`, `cd cli; bun test --coverage` all pass with at least 95% line and function coverage (`/test` → OPEN)
 
 ### Part 3 dependencies
 

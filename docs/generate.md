@@ -108,6 +108,53 @@ A shot's `transition` is how it enters from the one before: `cut`, `fade`, `blur
 each shot, so the plan's timing never moves); HyperFrames' shader transition blocks are whole demo
 compositions and cannot sit between shots.
 
+## Kit, levels and capabilities
+
+**The kit** is an open library of drawing and motion parts: browser scripts with a manifest, loaded
+by the root composition like GSAP (offline, the same every render). Built-in parts ship in
+`generator/kit/` (`shade`, `shadow`, `depth`, `camera`, `motion`, `text-reveal`, `particles`,
+`image-place`, and `three` for real 3D); you add your own from a `.zip` and they are checked before
+any director may use them. How to write and share one: [generate-kit.md](generate-kit.md).
+
+**Levels.** Each shot is written at one of three levels:
+
+| Level | The model writes | Sorot does |
+|---|---|---|
+| `kit` | `submit_shot_kit`: which parts, their settings and when each runs | checks the answer, then writes the scene in code (`kitScene.ts`) |
+| `compose` | the scene HTML; mounts parts with `SorotKitRuntime.mount`, adds its own GSAP and 2D canvas | plan-lock, the parts it mounts, no WebGL of its own |
+| `free` | any drawing the contract allows, its own WebGL or Three.js included | the same checks, plus a frame-time budget |
+
+`author.level: auto` (the default) picks from the model's record on this install
+(`gen_model_record`): the highest level where it passed its checks first time in at least 60% of at
+least 8 shots, with at most 10% malformed answers. A model with no record starts at `kit`; **Calibrate**
+(Settings → Generate → Models, or `sorot gen calibrate`) writes three sample shots at each level and
+fills the record at once. A pin wins: the recipe's `author.level`, else the model's pin in Settings.
+`author.maxLevel` caps it. A shot that still fails after its repair rounds, or whose frames take
+longer to draw than the budget, is rebuilt one level down with a `level_drop` (or `frame_budget`)
+should-fix; only a failure at `kit` fails the build. The plan shows each shot's level and you may
+lower it before approving; the version records what each shot was built at.
+
+**The capability description** goes with every planning and scene call: the level and what it
+means, the parts the level may use (one line each for plans; full settings for scenes), the seams,
+what the machine can draw and the frame budget, and which connections are on. It is generated from
+what is installed, never written by hand, and answers are checked against it (an unknown part or
+setting goes back to the director). `GET /api/generate/capabilities?level=` and
+`sorot gen capabilities` show it.
+
+Each shot's **look** is in the plan, in the director's own terms (`description`, exact `values`, and
+the kit `parts` it will use). `values.speed: "fast"` turns on HyperFrames' motion blur for that shot
+when `render.motionBlur` is `auto` (the default; `on` blurs every shot, `off` none).
+
+## Motion
+
+TECHNICAL always measures motion inside each shot from the rendered video: ffmpeg's per-frame luma
+difference (`tblend` + `signalstats`). A frame that changes far more than its neighbours is a
+`motion_jump`; a moving shot that stops for a while and moves again is a `motion_stall`; both carry
+the shot and the moment. The frames next to a seam and hold shots are left out. Defaults
+(`measures.motion.jumpRatio` 6, `stallFrames` 8; must-fix at twice that) come from spike S7. CREATIVE
+always asks two more questions: whether the things in the film read as what they are and look
+finished, and whether the motion moves smoothly and with weight.
+
 ## Retries and failures
 
 A step before the build that failed (a voice that could not be made, say) is never skipped: the
@@ -154,6 +201,7 @@ Recorded in `specs/001-2d-video-generator/research.md`; they are one machine, on
 |---|---|---|
 | S2 | Render speed, 1080×1920, 30 s light scene, RTX 4060 + Ryzen 5 7500F | 25 s draft, 25 s delivery, 24 s with `--gpu` (about 0.8 s per second of video); CPU Docker 19 s / 17 s. A real 60 s narrated film is still to be measured; plan on 6 to 10 s per second until then. |
 | S3 | Local Indonesian voice; ElevenLabs and Fish fixtures | Not done: needs a listening test and keys. Engine is KittenTTS 2; online engines are the Indonesian route. |
+| S7 (CPU) | Motion blur and Three.js cost, 10 s at 1080×1920, 4-core Xeon, no GPU, draft, 2 workers | 2D movers 1.0 s per second of video, with motion blur 3.5 s; six lit Three.js coins (software WebGL) 2.3 s, with blur 3.6 s. CPU installs keep `maxLevel: free`. The RTX 4060 half is still to be measured. |
 | S4 | Does the model write one valid scene? | 10 of 10 scenes passed plan-lock, `lint` and `check` (8 first call, 2 after a repair). Writing them took 1,170 s (about 2 min per shot): authoring is the slow step of a build. |
 
 ---

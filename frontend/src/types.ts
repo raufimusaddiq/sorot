@@ -237,6 +237,10 @@ export type GenShot = {
   id: string; purpose: string; durationSec: number; text: Array<{ role: string; value: string }>;
   visual: { description: string; block: string | null; generatedImage?: { prompt: string; style?: string }; fallbackVisual?: string };
   motion: string; transition: string; audio: string; narration: string | null; hold: boolean;
+  /** The level the shot is written at (kit: from kit parts; compose: the model's scene with parts; free: any drawing). */
+  level?: GenLevel;
+  /** How the shot looks, in the director's terms, with the kit parts it uses. */
+  look?: { description: string; values: Record<string, unknown>; parts?: Array<{ part: string; settings: Record<string, unknown> }> };
 };
 
 export type GenPlan = {
@@ -358,3 +362,20 @@ export type GenEstimate = { draftSec: number; exportSec: number };
 /** What a fix round answers: a new version, or (when the plan's words or timing change) a plan waiting for approval. */
 export type GenFixResult = { version: GenVersion | null; plan: GenPlanRow | null; needsApproval: boolean; summary: string };
 export type GenFixBody = { findingIds?: string[]; note?: string; shotId?: string };
+
+export type GenLevel = 'kit' | 'compose' | 'free';
+
+/** One installed kit part (Settings → Generate → Kit). */
+export type GenKitPart = {
+  name: string; source: 'builtIn' | 'user'; version: string; checkedAt: string | null;
+  manifest: { name: string; does: string; runtime: 'dom' | 'canvas' | 'webgl'; needs: { gpu: 'no' | 'preferred' | 'required' }; example: string; settings: Record<string, unknown>; defaults: Record<string, unknown> };
+};
+
+/** How a model fares at one level on this install. */
+export type GenModelRecord = { model: string; level: GenLevel | 'plan'; asked: number; firstPass: number; repaired: number; dropped: number; malformed: number; ms: number; calibratedAt: string | null };
+
+export type GenModels = {
+  current: string;
+  models: Array<{ model: string; pin: GenLevel | null; auto: GenLevel; records: GenModelRecord[] }>;
+  calibration: { model: string; startedAt: string; done: boolean; error?: string; result?: Partial<Record<GenLevel, { asked: number; firstPass: number; repaired: number; failed: number }>> } | null;
+};

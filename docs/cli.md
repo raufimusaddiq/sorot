@@ -78,6 +78,9 @@ Briefs to finished 2D videos ([generate.md](generate.md); full flags in
 | `gen ideas`, `idea add <BRIEF.md> [--id --slug --facts]`, `idea show <id>` | The idea bank. |
 | `gen run --recipe R [--idea ID]` | An unattended run on the next (or named) idea; exit 0 only when a video was exported. |
 | `gen import-history <file.json>` | Bring in past concepts and ideas. |
+| `gen kit`, `kit show <name>`, `kit add <folder\|.zip>`, `kit export <name> [-o file.zip]`, `kit remove <name>` | The kit parts directors build with; yours are checked (rendered twice) before they are offered. |
+| `gen capabilities [--level kit\|compose\|free]` | What a director call is told on this install. |
+| `gen models`, `models pin <model> <level\|auto>`, `gen calibrate` | Each model's record per level and the level `auto` gives it; pin one; measure the connected model (a few minutes). |
 
 ### Import options
 

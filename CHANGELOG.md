@@ -32,6 +32,17 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
   in parts, and transitions that wouldn't show on the film's colours are refused.
 - Fixes: passing a plan's gate as a step approves the plan; the speech check reads spelled-out and
   digit numbers alike; old effect notes no longer contradict the director's final choice.
+- Any look, any director: a kit of drawing and motion parts (lighting, shadows, depth, camera,
+  motion, text reveal, particles, image placement, and real 3D with Three.js), offline. Add your own
+  parts from a `.zip` (Settings → Generate → Kit, or `sorot gen kit add`); a part is only offered after
+  its example renders twice the same.
+- Director levels: a model with no track record builds shots from kit parts; once it passes its checks
+  often enough it writes scenes itself (Calibrate measures it at once; `sorot gen calibrate`). A shot
+  that fails is rebuilt one level down instead of failing the build. The plan shows each shot's level
+  and look.
+- Smooth motion: a new always-on check finds jumps and stalls inside shots; fast shots can get motion
+  blur (`render.motionBlur`, auto by default; it costs about 3.4× the render time on a CPU), and the
+  judge always asks whether the film looks finished and moves with weight.
 
 ## [1.0.0] — 2026-10-29
 
