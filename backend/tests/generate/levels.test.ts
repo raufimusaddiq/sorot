@@ -39,8 +39,10 @@ describe("model record", () => {
     expect(chooseLevel(choice)).toBe(level as never);
   });
 
-  test("qualifies needs at least 8 shots", () => {
+  test("qualifies needs at least 8 shots, or 3 from a calibration", () => {
     expect([qualifies(undefined), qualifies(r(8, 5)), qualifies(r(7, 7))]).toEqual([false, true, false]);
+    // a calibrated level counts with Calibrate's own three shots
+    expect([qualifies({ ...r(3, 3), calibratedAt: "t" }), qualifies({ ...r(3, 1), calibratedAt: "t" }), qualifies({ ...r(2, 2), calibratedAt: "t" })]).toEqual([true, false, false]);
   });
 });
 

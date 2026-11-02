@@ -15,8 +15,12 @@ import { now as stamp } from "../store";
 // checks first time often enough, with few malformed answers. No record means `kit` until the owner
 // calibrates; a pin (the recipe's or the model's) wins.
 
-/** First guesses (research R25), to be checked in spike S7. */
-export const LEVEL_RULE = { minShots: 8, minFirstPass: 0.6, maxMalformed: 0.1 } as const;
+/**
+ * First guesses (research R25), to be checked in spike S7. A level the owner calibrated counts with
+ * the calibration's own three shots: otherwise Calibrate could never lift a model off `kit` by itself
+ * (found on the first real calibration, 2026-11-02).
+ */
+export const LEVEL_RULE = { minShots: 8, minCalibratedShots: 3, minFirstPass: 0.6, maxMalformed: 0.1 } as const;
 
 export type Outcome = "firstPass" | "repaired" | "dropped" | "malformed" | "failed";
 
@@ -29,8 +33,8 @@ export function recordAnswer(store: Store, model: string, level: GenModelRecord[
 }
 
 /** Does this record show the model can work at its level? */
-export function qualifies(r: Pick<GenModelRecord, "asked" | "firstPass" | "malformed"> | undefined): boolean {
-  if (!r || r.asked < LEVEL_RULE.minShots) return false;
+export function qualifies(r: (Pick<GenModelRecord, "asked" | "firstPass" | "malformed"> & { calibratedAt?: string | null }) | undefined): boolean {
+  if (!r || r.asked < (r.calibratedAt ? LEVEL_RULE.minCalibratedShots : LEVEL_RULE.minShots)) return false;
   return r.firstPass / r.asked >= LEVEL_RULE.minFirstPass && r.malformed / r.asked <= LEVEL_RULE.maxMalformed;
 }
 
@@ -44,7 +48,7 @@ export interface LevelChoice {
   /** The machine's ceiling (a CPU install may be lower). */
   cpuCap?: Level;
   /** The model's records by level. */
-  record: Partial<Record<Level, Pick<GenModelRecord, "asked" | "firstPass" | "malformed">>>;
+  record: Partial<Record<Level, Pick<GenModelRecord, "asked" | "firstPass" | "malformed"> & { calibratedAt?: string | null }>>;
 }
 
 /** The level a shot is written at: a pin (the recipe's, then the model's), else the best level the record earns; never above the caps. */
