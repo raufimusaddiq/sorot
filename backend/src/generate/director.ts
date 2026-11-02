@@ -385,6 +385,16 @@ export class Director {
 
   constructor(private readonly llm: Llm, private readonly log: DirectorLog, private readonly generatorDir: string) {}
 
+  /**
+   * Calls that may name parts with settings (a plan's shot looks) get every usable part's settings: with
+   * the one-line summary alone a real plan invented settings (`fit`, `tiltDeg`, `keyLight`) and failed
+   * its check twice (2026-11-02). Storylines only need the summary.
+   */
+  private planCapabilities(kind: string): Capabilities {
+    const summary = (this.capabilities as (q: CapabilityQuery) => Capabilities)({});
+    return kind === "storylines" ? summary : (this.capabilities as (q: CapabilityQuery) => Capabilities)({ parts: summary.kit.map((p) => p.name) });
+  }
+
   /** The scene's parts get their full settings: those the shot's look names, else every part the level may use. */
   private sceneCapabilities(input: SceneInput): Capabilities | null {
     if (!this.capabilities) return null;
@@ -439,7 +449,7 @@ export class Director {
     const def = TOOLS[kind];
     const name = def.function.name;
     // what this install can do goes with every planning and writing call; scene calls bring their own
-    if (CAPABLE.has(kind) && this.capabilities && !("capabilities" in payload)) payload = { ...payload, capabilities: this.capabilities({}) };
+    if (CAPABLE.has(kind) && this.capabilities && !("capabilities" in payload)) payload = { ...payload, capabilities: this.planCapabilities(kind) };
     const brief = JSON.stringify({ ...payload, task });
     const messages: ChatInput[] = [
       { role: "system", content: this.system(kind, step) },
@@ -738,7 +748,7 @@ export class Director {
     const brief = JSON.stringify({
       plan: { title: plan.title, message: plan.message, look: plan.look, shots: plan.shots.map((s) => ({ id: s.id, purpose: s.purpose, seconds: s.durationSec, text: s.text.map((t) => t.value), visual: s.visual.description, motion: s.motion, transition: s.transition, hold: s.hold })) },
       blocksAllowed: blocksOn,
-      ...(this.capabilities ? { capabilities: this.capabilities({}) } : {}),
+      ...(this.capabilities ? { capabilities: this.planCapabilities("effects") } : {}),
       task: "Choose this film's effects with the tools: a few seams with a transition that has a cause, and light, blur, depth or glow where a shot needs it. Search first, then set. When you are done, answer with one sentence on what you chose.",
     });
     const summary = await this.log.track(
