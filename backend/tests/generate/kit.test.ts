@@ -15,7 +15,7 @@ afterEach(() => {
   tmp = undefined;
 });
 
-const BUILT_INS = ["camera", "depth", "image-place", "motion", "particles", "shade", "shadow", "shape", "text-reveal", "three"];
+const BUILT_INS = ["camera", "depth", "image-place", "iso", "motion", "particles", "shade", "shadow", "shape", "text-reveal", "three"];
 const manifest = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   name: "glow-ring", version: "1.0.0", does: "A ring of light.", runtime: "dom", needs: { gpu: "no" },
   settings: { size: { t: "num", min: 0, max: 1 }, kind: { t: "enum", values: ["soft", "hard"] } }, defaults: { size: 0.5 }, example: "A soft ring.", ...over,
@@ -101,15 +101,17 @@ describe("zip", () => {
 });
 
 describe("root loading", () => {
-  test("the look and defaults come first, then the runtime, then the parts in name order; three brings its library", () => {
-    const m = (name: string) => ({ ...(manifest({ name }) as unknown as KitManifest) });
-    const lines = kitScripts([m("three"), m("shade")], { palette: ["#000000"], keyLightDeg: 300 }, { width: 1080, height: 1920 }, 30);
+  test("the look and defaults come first, then the runtime, Three.js once when a part draws WebGL, then the parts in name order", () => {
+    const m = (name: string, runtime = "dom") => ({ ...(manifest({ name, runtime }) as unknown as KitManifest) });
+    const lines = kitScripts([m("iso", "webgl"), m("shade"), m("three", "webgl")], { palette: ["#000000"], keyLightDeg: 300 }, { width: 1080, height: 1920 }, 30);
     expect(lines.slice(1)).toEqual([
       '<script src="assets/kit/_runtime.js"></script>',
-      '<script src="assets/kit/shade/part.js"></script>',
       '<script src="assets/kit/three/three.min.js"></script>',
+      '<script src="assets/kit/iso/part.js"></script>',
+      '<script src="assets/kit/shade/part.js"></script>',
       '<script src="assets/kit/three/part.js"></script>',
     ]);
+    expect(kitScripts([m("shade")], { palette: [], keyLightDeg: 0 }, { width: 1, height: 1 }, 30).join()).not.toContain("three.min.js");
     expect(lines[0]).toContain('window.SorotKitLook = {"palette":["#000000"],"keyLightDeg":300,"size":{"width":1080,"height":1920},"fps":30}');
     expect(kitScripts([], { palette: [], keyLightDeg: 0 }, { width: 1, height: 1 }, 30)).toEqual([]);
     expect(exampleRoot(m("shade"), { durationSec: 2, settings: { a: "</script>" }, markup: "<b>x</b>" })).toContain('SorotKitRuntime.mount("shade", document.getElementById("stage"), {"a":"\\u003c/script>"}');
@@ -198,7 +200,7 @@ describe("kit API", () => {
   test("capabilities: what a director call is told now, at the level asked; a level that doesn't exist is a 400", async () => {
     rig();
     const c = (await env!.json("GET", "/api/generate/capabilities?level=kit")).body.data.capabilities;
-    expect([c.level, c.kit.map((p: any) => p.name), Object.keys(c.kitDetail)]).toEqual(["kit", BUILT_INS.filter((n) => n !== "three"), BUILT_INS.filter((n) => n !== "three")]);
+    expect([c.level, c.kit.map((p: any) => p.name), Object.keys(c.kitDetail)]).toEqual(["kit", BUILT_INS.filter((n) => !["iso", "three"].includes(n)), BUILT_INS.filter((n) => !["iso", "three"].includes(n))]);
     expect((await env!.json("GET", "/api/generate/capabilities")).body.data.capabilities.level).toBe("compose");
     expect((await env!.json("GET", "/api/generate/capabilities?level=max")).status).toBe(400);
   });

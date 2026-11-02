@@ -23,6 +23,8 @@ export const PART_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 /** The browser runtime every root loads before its parts (ctx, seeded random, mount with defaults). */
 export const KIT_RUNTIME_FILE = "assets/kit/_runtime.js";
 const PART_FILES = ["part.json", "part.js", "example.json"];
+/** The vendored Three.js every WebGL part may use. */
+export const THREE_LIB = "assets/kit/three/three.min.js";
 /** How a recipe's `author.require` names a kit part (other entries are free-form hints). */
 export const KIT_PREFIX = "kit:";
 
@@ -175,10 +177,9 @@ export function kitScripts(parts: KitManifest[], look: KitLook, size: { width: n
   return [
     `<script>window.SorotKitLook = ${scriptJson({ ...look, size, fps })}; window.SorotKitDefaults = ${scriptJson(defaults)};</script>`,
     `<script src="${KIT_RUNTIME_FILE}"></script>`,
-    ...sorted.flatMap((p) => [
-      ...(p.name === "three" ? [`<script src="assets/kit/three/three.min.js"></script>`] : []),
-      `<script src="assets/kit/${esc(p.name)}/part.js"></script>`,
-    ]),
+    // Three.js (vendored with the `three` part) once, before any WebGL part
+    ...(sorted.some((p) => p.runtime === "webgl") ? [`<script src="${THREE_LIB}"></script>`] : []),
+    ...sorted.map((p) => `<script src="assets/kit/${esc(p.name)}/part.js"></script>`),
   ];
 }
 
@@ -290,6 +291,11 @@ export class Kit {
       cpSync(row.path, join(target, name), { recursive: true });
       out.push(JSON.parse(row.manifest) as KitManifest);
     }
+    // a WebGL part draws with the vendored Three.js, which lives with the `three` part
+    if (out.some((m) => m.runtime === "webgl") && !existsSync(join(projectDir, THREE_LIB))) {
+      mkdirSync(join(target, "three"), { recursive: true });
+      cpSync(join(this.builtInDir, "three", "three.min.js"), join(projectDir, THREE_LIB));
+    }
     return out;
   }
 
@@ -376,9 +382,10 @@ export class Kit {
       cpSync(this.config.gsapFile, join(dir, GSAP_FILE));
       cpSync(join(this.builtInDir, "_runtime.js"), join(dir, KIT_RUNTIME_FILE));
       cpSync(partDir, join(dir, "assets", "kit", manifest.name), { recursive: true });
-      if (manifest.name !== "three" && existsSync(join(this.builtInDir, "three", "three.min.js")) && manifest.runtime === "webgl") {
-        // a user's WebGL part may lean on the built-in Three.js
-        cpSync(join(this.builtInDir, "three", "three.min.js"), join(dir, "assets", "kit", "three", "three.min.js"));
+      if (manifest.runtime === "webgl" && !existsSync(join(dir, THREE_LIB))) {
+        // a WebGL part (built in or yours) draws with the vendored Three.js
+        mkdirSync(join(dir, "assets", "kit", "three"), { recursive: true });
+        cpSync(join(this.builtInDir, "three", "three.min.js"), join(dir, THREE_LIB));
       }
       writeFileSync(join(dir, "index.html"), exampleRoot(manifest, example));
 
