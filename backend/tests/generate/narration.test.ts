@@ -212,6 +212,10 @@ describe("voice helpers", () => {
     // a line that would run past the film's end moves earlier, and the one before it makes room
     const late = plan([null, null, "Bunga majemuk membuat uang tumbuh. Mulai dari sekarang."], [13, 13, 4]);
     expect(placeLines(late, lines.slice(0, 2)).map((x) => x.start)).toEqual([24.85, 28]);
+    // speech that only just fits closes its pauses; speech longer than the film stays back to back, never overlapping
+    const silent = plan([null, null, null], [13, 13, 4]);
+    expect(placeLines(silent, [line("a", "x", 14), line("b", "y", 15.9)]).map((x) => x.start)).toEqual([0, 14.1]);
+    expect(placeLines(silent, [line("a", "x", 14), line("b", "y", 16.5)]).map((x) => x.start)).toEqual([0, 14]);
   });
 
   test("a clip's length is its decoded samples over the rate (an MP3 header counts the padding); the header when decoding can't count", async () => {

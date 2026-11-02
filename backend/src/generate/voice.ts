@@ -122,13 +122,25 @@ export function placeLines(plan: Plan, lines: VoiceLine[]): Placed[] {
     cursor = start + line.durationSec + GAP_SEC;
     return { line, start };
   });
-  // every line ends inside the film: a late one moves earlier (and the ones before it, if they'd
-  // overlap) rather than be cut at the end (a real last line ran 0.31 s past a 30 s film, 2026-11-02)
-  let limit = round3(starts.at(-1)! + plan.shots.at(-1)!.durationSec);
-  for (let i = out.length - 1; i >= 0; i--) {
-    const p = out[i]!;
-    if (p.start + p.line.durationSec > limit) p.start = round3(Math.max(0, limit - p.line.durationSec));
-    limit = p.start - GAP_SEC;
+  // every line ends inside the film: a late one moves earlier (and the ones before it), the pauses
+  // between them shrinking as far as needed (a real last line ran 0.31 s past a 30 s film, 2026-11-02).
+  // Lines never overlap: speech longer than the film keeps them back to back and runs past the end.
+  const end = round3(starts.at(-1)! + plan.shots.at(-1)!.durationSec);
+  const late = out.at(-1);
+  if (late && late.start + late.line.durationSec > end) {
+    const order = [...out].sort((a, b) => a.start - b.start);
+    const speech = order.reduce((n, p) => n + p.line.durationSec, 0);
+    const gap = order.length > 1 ? Math.max(0, Math.min(GAP_SEC, (end - speech) / (order.length - 1))) : 0;
+    let limit = end;
+    for (let i = order.length - 1; i >= 0; i--) {
+      const p = order[i]!;
+      if (p.start + p.line.durationSec > limit) p.start = round3(limit - p.line.durationSec) || 0;
+      limit = p.start - gap;
+    }
+    if (order[0]!.start < 0) {
+      let at = 0;
+      for (const p of order) { p.start = round3(at); at += p.line.durationSec; }
+    }
   }
   return out;
 }
