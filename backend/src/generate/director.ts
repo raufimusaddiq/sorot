@@ -533,8 +533,9 @@ export class Director {
         tell(attempt === 0 ? "firstPass" : "repaired", Date.now() - started);
         return { value: result.value, call: reply.call };
       }
-      // not JSON, or (for a scene) not the asked shape: the model's record counts it
-      if (parsed === null || SCENE_KINDS.has(kind)) tell("malformed", 0);
+      // not JSON, or (for a scene) not the asked shape: the model's record counts it, once per ask,
+      // so the malformed share stays a share (a record showed 41 malformed for 28 asks, 2026-11-02)
+      if ((parsed === null || SCENE_KINDS.has(kind)) && attempt === 0) tell("malformed", 0);
       problems = result.errors ?? [];
       messages.push({ role: "user", content: JSON.stringify({ problems, task: `Fix these problems and call ${name} again with the full answer. ${task}` }) });
     }

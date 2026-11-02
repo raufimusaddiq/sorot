@@ -491,7 +491,10 @@ describe("director: scenes", () => {
     const r = rig([json({ html: HTML })]);
     expect((await r.director.repair(input({ html: "x", findings: [] }))).holds).toEqual([]);
     const bad = rig([json({ html: "no" }), json({ holds: [] })]);
+    const told: string[] = [];
+    bad.director.onAnswer = (e) => told.push(e.outcome);
     await expect(bad.director.repair(input({ html: "x", findings: [] }))).rejects.toThrow("didn't pass the checks");
+    expect(told).toEqual(["malformed", "failed"]);   // malformed once per ask, however many tries
   });
 });
 

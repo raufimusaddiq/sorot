@@ -920,6 +920,31 @@ WebGL with SwiftShader (software). Treat these as single measurements.
   and intended?": the spec's "..., and look finished and intended?" asks two things by Sorot's own
   question lint.
 
+### S7 level thresholds: calibration (2026-11-02, T147)
+
+Calibrate (`POST /api/generate/models/calibrate`, three sample shots per level from the fixed
+calibration plan) on the CPU test install, through the Kenari gateway. No local model was reachable
+here; `gemma-4-31b-it` (an open-weights model of the size people run on their own machines) stands
+in for "a small local model", served by the gateway, not locally.
+
+| Model | Time | First pass kit / compose / free | Proven level | `auto` |
+|---|---|---|---|---|
+| deepseek-v4-1-flash | 6.0 min | 3/3, 3/3, 3/3 | kit (older answers) | free |
+| deepseek-v4-flash | 5.7 min | 3/3, 3/3, 3/3 | free | free |
+| gemma-4-31b-it | 41 s | 3/3, 3/3, 3/3 | free | free |
+
+- Every model wrote valid scenes at every level. Calibration measures validity (the scene passes
+  `checkScene` or the kit answer validates), not looks; the CREATIVE and look findings of real
+  builds (GLM, Kimi) are the measure of looks.
+- `auto` is `free` for all three, as the owner's rule says (the director is never held back); the
+  record only reports.
+- deepseek-v4-1-flash stays "proven kit" because its record holds this morning's kit-answer
+  failures: 41 malformed for 28 kit asks. That exposed a counting bug: each malformed *attempt*
+  was counted, so the share could pass 100%. Fixed: a malformed answer counts once per ask
+  (`director.ts`, `converse`). The old rows keep their counts.
+- gemma's 41 s for nine shots is far faster than the others; its scenes were short. Looks were not
+  judged in calibration.
+
 ## Part 4: The director loop (2026-11-02)
 
 Evidence: three real builds on 2026-11-02 (Kimi isometric, GLM isometric, GLM story) and the
