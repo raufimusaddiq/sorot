@@ -4,6 +4,8 @@
 
 **Sorot** (Indonesian for *spotlight*) turns long YouTube or local videos into vertical **9:16 clips** — transcribed, scored, framed on the speaker, captioned word by word, with a ready-to-paste title. Built for **Indonesian**, runs **100% locally** (Jev, an LLM and Tebar are optional online extras). No uploads, no subscriptions, no watermark. 🏠
 
+AI features default to [Kenari](https://kenari.id) — paste one API key and go — but any OpenAI-compatible endpoint works too. 🙏
+
 ```
 📺 video  →  🎙️ Whisper  →  🧠 scoring (+ optional Jev / LLM)  →  📱 9:16 render  →  💬 karaoke captions  →  🚀 post-ready clips
 ```
@@ -16,7 +18,7 @@
 |---|---|
 | 🎙️ **Hears every word** | faster-whisper `large-v3-turbo` with word timestamps — or the video's own YouTube captions |
 | 🧠 **Finds the gold** | 13 weighted signals (hooks, keywords, energy, faces, motion…) rank every moment **PRIMARY / BACKUP / SKIP** |
-| 🤖 **Optional LLM** | Ollama, Groq, OpenRouter or OpenAI writes copy per platform and runs auto-discover; without Jev it also directs — reads the whole video, picks its own moments and hooks, follows your direction ("only the funny parts") — off by default |
+| 🤖 **Optional LLM** | [Kenari](https://kenari.id) by default (one API key, pick a model, done) — or Ollama, Groq, OpenRouter, OpenAI, any OpenAI-compatible endpoint. Writes copy per platform and runs auto-discover; without Jev it also directs — reads the whole video, picks its own moments and hooks, follows your direction ("only the funny parts") — off by default |
 | 🚦 **Jev picks and gates** | [Jev](https://docs.typesafe.ai) answers fixed yes/no questions about every candidate moment (hook, needs context, ending, filler, payoff, risks, fits your direction), then picks the hook line and a title quoted from the clip — in seconds. Without it the LLM director (if any) or the rules decide |
 | 🚀 **Publish via Tebar** | Post to TikTok, Instagram, YouTube, Threads… through [Tebar](https://tebar.app) and pull views/likes back into learning |
 | 🎯 **Speaker in frame** | Face tracking moves the crop with whoever's talking, cutting on scene changes |
@@ -401,6 +403,14 @@ To ship: 📋 [docs/release.md](docs/release.md) — versions, checklist, checki
 
 - 🎯 **Calibrate the gate** on real labelled clips (`bun run jev-eval`) and feed its answers to training as features
 - 💬 **Comments** — Tebar comment inbox with LLM-drafted replies you approve
+
+---
+
+## 🙏 Thanks
+
+Sorot's default AI provider, [Kenari](https://kenari.id), supports this project through the
+Kenari Grant. Kenari stays optional and swappable — the Settings panel and `sorot connect llm`
+always offer a plain OpenAI-compatible endpoint instead, with no Kenari key required.
 
 ---
 

@@ -368,6 +368,32 @@ describe("connect", () => {
     expect(await put("llm", "--reset")).toEqual({ enabled: null, baseUrl: null, model: null, apiKey: null, director: null });
   });
 
+  test("--kenari: validates the key first, defaults the model, saves baseUrl/model/apiKey in one call", async () => {
+    const h = harness({ ...routes, "POST /api/settings/llm/probe": { ok: true, model: "kenari/auto", detail: "OK" } });
+    expect(await h.run("connect", "llm", "--kenari", "--key", "kn-good")).toBe(0);
+    const probe = h.requests.find((r) => r.path === "/api/settings/llm/probe")!;
+    expect(probe.body).toEqual({ model: "kenari/auto", apiKey: "kn-good" });
+    expect(h.requests.at(-1)).toMatchObject({ method: "PUT", path: "/api/settings/llm",
+      body: { baseUrl: "https://kenari.id/v1", model: "kenari/auto", apiKey: "kn-good" } });
+
+    const bad = harness({ ...routes, "POST /api/settings/llm/probe": { ok: false, error: "LLM HTTP 401: invalid key" } });
+    expect(await bad.run("connect", "llm", "--kenari", "--key", "kn-bad")).toBe(1);
+    expect(bad.err[0]).toContain("llm (Kenari): LLM HTTP 401: invalid key");
+    expect(bad.requests.some((r) => r.method === "PUT")).toBeFalse();   // probe failed: nothing saved
+
+    const noKey = harness(routes);
+    expect(await noKey.run("connect", "llm", "--kenari")).toBe(2);
+    expect(noKey.err[0]).toContain("--kenari needs a key");
+  });
+
+  test("the existing flag-driven --base-url/--model/--key path is unaffected by --kenari (SC-003 regression)", async () => {
+    const h = harness(routes);
+    expect(await h.run("connect", "llm", "--base-url", "http://localhost:11434/v1", "--model", "qwen2.5:7b", "--key", "sk-x")).toBe(0);
+    expect(h.requests.some((r) => r.path === "/api/settings/llm/probe")).toBeFalse();   // no probe on the generic path
+    expect(h.requests.at(-1)).toMatchObject({ method: "PUT", path: "/api/settings/llm",
+      body: { baseUrl: "http://localhost:11434/v1", model: "qwen2.5:7b", apiKey: "sk-x" } });
+  });
+
   test.each([
     ["llm", 0, "out", "llm: OK in 420 ms (qwen) — OK"], ["jev", 0, "out", "jev: OK in 80 ms"],
     ["tebar", 1, "err", "tebar: Tebar 401 invalid_api_key: revoked"],

@@ -6,6 +6,23 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 
 ## [Unreleased]
 
+### Kenari as the default AI provider
+- [Kenari](https://kenari.id) is now the project's default LLM connection: paste one API key in
+  Settings or `sorot connect llm --kenari --key -` (or the `sorot connect setup` wizard's "kenari"
+  choice), pick a model from its live catalog or accept the pre-selected `kenari/auto`, and the
+  key is validated before anything is saved. The same connection covers the optional
+  director/review/post-copy calls and Generate's director — one key, both.
+- Still fully optional and swappable: "Use a different provider" reaches the existing
+  OpenAI-compatible `baseUrl`/`model`/`apiKey` fields directly, with no Kenari key ever required,
+  tried, or rejected first; an already-configured different provider is left untouched.
+- The same one-key setup, with a live, pickable model list, is offered for Generate's scene
+  images (`/images/generations`) and narration voice (the `openai` engine's `/audio/speech`) —
+  Kenari was already a drop-in for both existing OpenAI-compatible slots; this just makes picking
+  a Kenari model/voice as easy as picking a chat model.
+- Once connected, the Settings LLM card shows your Kenari plan, balance, quota remaining per
+  window and usage for the period — no need to check kenari.id separately.
+- Thanks to Kenari for supporting Sorot's development through the Kenari Grant.
+
 ### Generate: briefs to finished 2D videos
 - A new mode that makes a short video from a brief, with no source footage: storylines, an approved
   plan, a HyperFrames build, a TECHNICAL (code) and a CREATIVE (fresh judge) verdict, fix rounds, then
