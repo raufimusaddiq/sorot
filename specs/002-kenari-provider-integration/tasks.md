@@ -1,20 +1,18 @@
 ---
 
-description: "Task list for User Story 2 — Skip Kenari or customize it"
+description: "Task list for Kenari as Default AI Provider (US1 + US2 + US3)"
 ---
 
-# Tasks: Kenari as Default AI Provider — User Story 2 (Skip Kenari or customize it)
+# Tasks: Kenari as Default AI Provider
 
 **Input**: Design documents from `/specs/002-kenari-provider-integration/`
-(`plan.md`, `research.md`, `data-model.md`, `contracts/llm-connection.md`, `quickstart.md`)
+(`plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md`)
 
-**Prerequisites**: plan.md (required, scoped to US2), spec.md (required for user story), research.md, data-model.md, contracts/
+**Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Scope**: This plan and its tasks cover **User Story 2 only** (FR-004, FR-008, FR-012; SC-003).
-User Story 1 (Kenari one-key onboarding) and User Story 3 (docs acknowledgment) are **not**
-included — they need their own `/speckit-plan` pass before tasks can be generated for them, since
-this plan's design documents (`research.md`, `data-model.md`, `contracts/`) were scoped only to
-US2 by the preceding `/speckit-plan US2` run.
+**Scope**: Supersedes the earlier US2-only task list. Covers all three user stories in priority
+order: **US1** (P1 — connect with just an API key), **US2** (P2 — skip Kenari or customize it),
+**US3** (P3 — credit Kenari's support).
 
 **Tests**: Included as table-row additions to the project's existing test suites, per
 `AGENTS.md`'s gate ("one test per behaviour... a new case is a table row... before it is a new
@@ -23,26 +21,66 @@ test") — not a separate TDD red/green phase. No new test files are created.
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
-- **[Story]**: User story this task belongs to — all tasks below are `[US2]`
+- **[Story]**: User story this task belongs to — `[US1]`, `[US2]`, `[US3]`
 - File paths are exact, from `plan.md`'s Project Structure
 
 ## Phase 1: Setup
 
-*No setup tasks.* This feature adds no new dependency, package, route, or scaffolding — it
-modifies three files already wired into the existing Bun workspace (`frontend/src/components/
-ConnectionsPanel.tsx`, `cli/src/social.ts`, `cli/src/commands.ts`) plus their existing test
-files. `bun install` at the repo root already covers everything needed.
+*No setup tasks.* No new dependency, package, route-level scaffolding, or project is introduced.
+Every task below modifies a file already wired into the existing Bun workspace (`backend/`,
+`frontend/`, `cli/`) or a root documentation file. `bun install` at the repo root already covers
+everything needed.
 
 ## Phase 2: Foundational
 
-*No foundational/blocking tasks.* The `llm` connection contract (`GET /api/settings`,
-`PUT /api/settings/llm`, `POST /api/settings/llm/test`) and its SQLite-backed `llm.*` fields
-already exist and are unchanged by this plan (`contracts/llm-connection.md`, `data-model.md`).
-User Story 2's tasks can start immediately — there is no shared infrastructure to build first.
+*No foundational/blocking tasks.* US1, US2, and US3 touch the same `llm` connection surface but
+are independently addable branches/content on it, not a shared prerequisite layer — the existing
+`llm.*` settings fields and `PUT /api/settings/llm` contract they all build on already exist
+unchanged (`contracts/llm-connection.md`). Each story's own first task sets up what only that
+story needs.
 
 ---
 
-## Phase 3: User Story 2 - Skip Kenari or customize it (Priority: P2)
+## Phase 3: User Story 1 - Connect with just an API key (Priority: P1) 🎯 MVP
+
+**Goal**: A user turns on AI-assisted director/review/post-copy (and, by construction, Generate's
+director — `research.md` §9) by pasting one Kenari API key, in the UI or the CLI, picking a model
+from Kenari's live catalog (or accepting the pre-selected `kenari/auto` default) — no endpoint to
+type, no guesswork about whether the key works before saving.
+
+**Independent Test**: Enter only a valid Kenari API key (UI or CLI) on a machine with no prior AI
+configuration; confirm the model list loads, the key validates before saving, and
+`GET /api/settings` afterward shows `llm.active: true` with Kenari's base URL. Repeat with an
+invalid key and confirm a clear error, nothing saved.
+
+### Implementation for User Story 1 — Backend (`settings.ts`, `app.ts`)
+
+- [ ] T001 [US1] Add `KENARI_BASE_URL = "https://kenari.id/v1"` and `KENARI_DEFAULT_MODEL = "kenari/auto"` constants in `backend/src/settings.ts`, per `data-model.md`'s "connection mode" and "Kenari Model Catalog" sections.
+- [ ] T002 [US1] Add an injected `fetchFn: typeof fetch = fetch` (and reuse the existing `retryWaitMs` convention) to `ConnectionSettings`'s constructor in `backend/src/settings.ts`, and pass the same `httpFetch`/`deps.retryWaitMs` already used for `new Llm(config, httpFetch, deps.retryWaitMs)` (`backend/src/app.ts:60`) into `new ConnectionSettings(...)` at its construction site in `backend/src/app.ts` — required so `probe()` (T003) never makes a real network call under test, per Constitution III and `research.md` §8's "New testability requirement". Depends on T001.
+- [ ] T003 [US1] Implement `ConnectionSettings.probe(candidate: { baseUrl?: string; model: string; apiKey: string }): Promise<TestResult>` in `backend/src/settings.ts`: validate `model` (`text`, ≤ 300 chars) and `apiKey` (`secret`, no whitespace, ≤ 500 chars) with the existing `validate()` helper (400 on failure); build a throwaway `Llm` instance from `{ llmBaseUrl: candidate.baseUrl ?? KENARI_BASE_URL, llmModel: candidate.model, llmApiKey: candidate.apiKey, llmTimeoutSec: this.config.llmTimeoutSec }` using the injected `fetchFn`/`retryWaitMs` from T002; call `.chat([{ role: 'user', content: 'Reply with the single word OK.' }], { temperature: 0 })` exactly as `test()`'s existing `llm` branch does; return `{ ok: true, ms, model: candidate.model, detail }` or `{ ok: false, ms, error }` from a caught `LlmError`, per `contracts/llm-probe.md`. Never persists, never echoes `apiKey` back. Depends on T002.
+- [ ] T004 [US1] Implement `ConnectionSettings.kenariModels(): Promise<{ models: { id: string; free: boolean }[]; warning?: string }>` in `backend/src/settings.ts`: `fetch(`${KENARI_BASE_URL}/models`)` via the injected `fetchFn` (no key needed — Kenari's `GET /v1/models` is public), map each catalog entry to `{ id, free: !!entry.pricing?.free }`; on any fetch/parse failure, return `{ models: [], warning: <short message> }` rather than throwing, per `contracts/kenari-models.md`'s "Error handling". Depends on T001, T002.
+- [ ] T005 [US1] Wire `GET /api/settings/llm/kenari-models` → `ok(await settings.kenariModels())` and `POST /api/settings/llm/probe` → `ok(await settings.probe(await c.body()))` in `backend/src/app.ts`, next to the existing `/api/settings*` routes (`app.ts:157-160`). Depends on T003, T004.
+- [ ] T006 [US1] Add rows to `backend/tests/social.test.ts` (fake `fetchFn` injected per Constitution III, consistent with existing `Llm`/`Jev`/`Tebar` fakes in `backend/tests/helpers.ts`): (a) `probe()` with a candidate that gets an OK chat reply returns `{ ok: true, model, detail }`; (b) `probe()` with a candidate that gets a 401 returns `{ ok: false, error }` and nothing is written to the `setting` table; (c) `probe()` with a missing `model`/`apiKey` returns 400; (d) `kenariModels()` maps a fake `/v1/models` response to `{ models: [{id, free}, …] }`; (e) `kenariModels()` on a fetch failure returns `{ models: [], warning }` instead of throwing. Depends on T003, T004, T005.
+
+### Implementation for User Story 1 — Frontend (`ConnectionsPanel.tsx`, `lib/api.ts`)
+
+- [ ] T007 [P] [US1] Add `getKenariModels()` (`GET /api/settings/llm/kenari-models`) and `probeLlm(candidate: { model: string; apiKey: string })` (`POST /api/settings/llm/probe`) methods to `ApiClient` in `frontend/src/lib/api.ts`, mirroring the existing `getSettings()`/`updateSettings()`/`testConnection()` methods (`api.ts:183-194`).
+- [ ] T008 [US1] In the `llm` `ConnectionCard`'s Kenari branch (`frontend/src/components/ConnectionsPanel.tsx` — the sibling of US2's "Use a different provider" branch), call `api.getKenariModels()` on selecting Kenari, render a model `<select>` populated from the result with `kenari/auto` pre-selected (falling back to a typed `kenari/auto` option if the fetch returned a `warning`/empty list), and an API key input. Depends on T007.
+- [ ] T009 [US1] Wire a "Test key" action in the Kenari branch that calls `api.probeLlm({ model: selectedModel, apiKey })`, shows the same success/error rendering the card already uses for `test`/`error` (`ConnectionCard`'s existing `test`/`error` state), and only enables "Save" once the probe succeeds; "Save" then calls the existing `save(patchOf())` → `PUT /api/settings/llm` with `{ baseUrl: KENARI_BASE_URL, model: selectedModel, apiKey }` — no new save path. Depends on T008.
+- [ ] T010 [US1] Add rows to `frontend/src/components/__tests__/social.test.tsx`: (a) selecting the Kenari branch fetches and shows the model list with `kenari/auto` pre-selected; (b) entering a key and testing it calls `probeLlm` and renders success; (c) a failed probe shows the error and leaves "Save" disabled; (d) saving after a successful probe calls `updateSettings('llm', { baseUrl: KENARI_BASE_URL, model, apiKey })`. Depends on T007, T008, T009.
+
+### Implementation for User Story 1 — CLI (`api.ts`, `social.ts`, `commands.ts`)
+
+- [ ] T011 [P] [US1] Add `getKenariModels()` and `probeLlm(candidate)` methods to the `Api` class in `cli/src/api.ts`, mirroring T007's frontend methods against the same two endpoints.
+- [ ] T012 [US1] In `setupCmd`'s `llm` step (`cli/src/social.ts`), implement the "kenari" branch of the choice prompt added for US2 (T0xx below): fetch `getKenariModels()`, ask for the API key via `ask(..., true)` (`cli/src/prompt.ts`), call `probeLlm({ model: KENARI_DEFAULT_MODEL or a user-picked id, apiKey })`, report the result the same way the step already reports `test()` results, then `PUT /api/settings/llm` with `{ baseUrl: KENARI_BASE_URL, model, apiKey }` on success. Depends on T011.
+- [ ] T013 [US1] Add a `--kenari` flag to `connectCmd`'s `llm` handling in `cli/src/commands.ts` (`sorot connect llm --kenari --key -`): defaults `baseUrl` to `KENARI_BASE_URL` and `model` to `KENARI_DEFAULT_MODEL` unless `--model` is also given, calls `probeLlm` then `PUT /api/settings/llm`, entirely non-interactively — mirrors the existing `--base-url`/`--model`/`--key` flag path. Depends on T011.
+- [ ] T014 [US1] Add rows to `cli/tests/social.test.ts` (the `setupCmd` `llm` step's kenari branch: key → fetched models → probe → save) and `cli/tests/commands.test.ts` (`sorot connect llm --kenari --key -` completes non-interactively and PUTs the expected body). Depends on T012, T013.
+
+**Checkpoint**: User Story 1 is fully functional and independently testable — a fresh install can go from nothing to Kenari-backed AI assistance with one key, in the UI or the CLI, with a clear pre-save validation step.
+
+---
+
+## Phase 4: User Story 2 - Skip Kenari or customize it (Priority: P2)
 
 **Goal**: A user can reach and fully use the existing general/custom AI provider form (base URL,
 model, API key) directly, in one click or one CLI step, without ever entering, trying, or
@@ -56,26 +94,43 @@ flow and confirm the saved values are shown unchanged, not a Kenari prompt.
 
 ### Implementation for User Story 2 — Frontend (`ConnectionsPanel.tsx`)
 
-- [ ] T001 [P] [US2] Add a `KENARI_BASE_URL` constant and a `connectionMode(baseUrl: string): 'unset' | 'kenari' | 'custom'` helper in `frontend/src/components/ConnectionsPanel.tsx`, implementing the mode table in `data-model.md` ("Derived, non-persisted concept: connection mode"): empty `baseUrl` → `"unset"`; `baseUrl` equal to `KENARI_BASE_URL` → `"kenari"`; anything else → `"custom"`.
-- [ ] T002 [US2] In the `llm` `ConnectionCard` (`frontend/src/components/ConnectionsPanel.tsx`), add a two-option choice ("Connect Kenari" / "Use a different provider") rendered above the existing `baseUrl`/`model`/`apiKey` fields, initialized from `connectionMode(view.baseUrl)` via T001 so a returning user with a saved non-Kenari `baseUrl` lands on "Use a different provider" by default (FR-008), while a first-run user (`"unset"`) sees both options with neither pre-selected. Depends on T001.
-- [ ] T003 [US2] Wire "Use a different provider" to reveal exactly the card's existing `baseUrl`/`model`/`apiKey` fields unchanged, and confirm `save(patchOf())` still PUTs only the fields the user actually edited to `PUT /api/settings/llm` — no Kenari-specific field is ever added to the request body (FR-012; `contracts/llm-connection.md` "Non-goals for US2"). Depends on T002.
-- [ ] T004 [US2] Add rows to `frontend/src/components/__tests__/social.test.tsx` for the `llm` card: (a) with `view.baseUrl` empty, "Use a different provider" is reachable and selecting it requires no API key input of any kind before the existing fields appear; (b) with `view.baseUrl` set to a non-Kenari URL, the card renders directly with those saved values on mount, not the choice screen; (c) saving the general-provider fields calls `api.updateSettings('llm', patch)` with only `baseUrl`/`model`/`apiKey` keys present in `patch`. Depends on T001, T002, T003.
+- [ ] T015 [P] [US2] Add a `connectionMode(baseUrl: string): 'unset' | 'kenari' | 'custom'` helper in `frontend/src/components/ConnectionsPanel.tsx`, using the `KENARI_BASE_URL` constant (T007's package can reuse T001's value via a shared literal, since frontend and backend share no runtime module): empty `baseUrl` → `"unset"`; equal to `KENARI_BASE_URL` → `"kenari"`; else → `"custom"`, per `data-model.md`'s mode table.
+- [ ] T016 [US2] In the `llm` `ConnectionCard`, add a two-option choice ("Connect Kenari" / "Use a different provider") rendered above the existing `baseUrl`/`model`/`apiKey` fields, initialized from `connectionMode(view.baseUrl)` (T015) so a returning user with a saved non-Kenari `baseUrl` lands on "Use a different provider" by default (FR-008), while a first-run user (`"unset"`) sees both options with neither pre-selected. Depends on T015.
+- [ ] T017 [US2] Wire "Use a different provider" to reveal exactly the card's existing `baseUrl`/`model`/`apiKey` fields unchanged, confirming `save(patchOf())` still PUTs only the fields the user actually edited to `PUT /api/settings/llm` — no Kenari-specific field is ever added (FR-012; `contracts/llm-connection.md` "Non-goals"). Depends on T016.
+- [ ] T018 [US2] Add rows to `frontend/src/components/__tests__/social.test.tsx` for the `llm` card: (a) with `view.baseUrl` empty, "Use a different provider" is reachable with no API key input required before the existing fields appear; (b) with `view.baseUrl` set to a non-Kenari URL, the card renders directly with those saved values, not the choice screen; (c) saving the general-provider fields sends only `baseUrl`/`model`/`apiKey` keys. Depends on T015, T016, T017.
 
 ### Implementation for User Story 2 — CLI (`social.ts`, `commands.ts`, `prompt.ts`)
 
-- [ ] T005 [P] [US2] Add the same `KENARI_BASE_URL` constant and a `connectionMode(baseUrl: string)` helper in `cli/src/social.ts`, mirroring T001 (duplicated per `plan.md`'s Structure Decision — `frontend` and `cli` share no runtime module).
-- [ ] T006 [US2] In `setupCmd`'s loop over `SETUP` (`cli/src/social.ts`), for the `llm` step only, insert one new choice question via `ask()` (`cli/src/prompt.ts`) before the existing `for (const [field, question, fallback] of step.fields)` loop: pressing Enter (empty answer) proceeds straight into that existing field loop unchanged, asking nothing Kenari-related. Depends on T005.
-- [ ] T007 [US2] Add rows to `cli/tests/social.test.ts` for `setupCmd`'s `llm` step: (a) answering Enter at the new choice prompt proceeds directly to the existing `Base URL`/`Model`/API-key questions with no Kenari key requested; (b) the resulting `PUT /api/settings/llm` call carries only the fields the existing `llm` step already sends (`baseUrl`, `model`, `apiKey`), confirming no Kenari-specific field was added. Depends on T005, T006.
-- [ ] T008 [US2] Add a row to `cli/tests/commands.test.ts` confirming `sorot connect llm --base-url <url> --model <m> --key -` (`cli/src/commands.ts`'s `connectCmd`) still completes non-interactively in one call, unaffected by the new `setupCmd` prompt from T006 — this is the SC-003 "one CLI command" regression check. Depends on T006.
+- [ ] T019 [P] [US2] Add a `connectionMode(baseUrl: string)` helper in `cli/src/social.ts`, mirroring T015.
+- [ ] T020 [US2] In `setupCmd`'s loop over `SETUP` (`cli/src/social.ts`), for the `llm` step only, insert one new choice question via `ask()` (`cli/src/prompt.ts`) before the existing field loop: pressing Enter (empty answer) proceeds straight into that existing `baseUrl`/`model` field loop unchanged; typing "kenari" invokes US1's branch (T012). Depends on T019.
+- [ ] T021 [US2] Add rows to `cli/tests/social.test.ts` for `setupCmd`'s `llm` step: (a) answering Enter at the new choice prompt proceeds directly to the existing `Base URL`/`Model`/API-key questions with no Kenari key requested; (b) the resulting `PUT /api/settings/llm` call carries only the fields the existing `llm` step already sends. Depends on T019, T020.
+- [ ] T022 [US2] Add a row to `cli/tests/commands.test.ts` confirming `sorot connect llm --base-url <url> --model <m> --key -` still completes non-interactively in one call, unaffected by the new `setupCmd` prompt (T020) or the new `--kenari` flag (T013) — the SC-003 "one CLI command" regression check. Depends on T020.
 
-**Checkpoint**: User Story 2 is fully functional and independently testable — both the UI card and the CLI wizard let a user skip straight to the general provider form, and the flag-driven CLI command is untouched.
+**Checkpoint**: User Stories 1 AND 2 both work independently — Kenari onboarding and the general-provider skip path co-exist on the same `llm` card/step without either blocking the other.
 
 ---
 
-## Phase 4: Polish & Cross-Cutting Concerns
+## Phase 5: User Story 3 - Credit Kenari's support (Priority: P3)
 
-- [ ] T009 [P] Walk through `specs/002-kenari-provider-integration/quickstart.md`'s UI and CLI validation steps (Scenarios 1, 3, 4) end-to-end against a running local backend, and note any deviation. Depends on T004, T007, T008.
-- [ ] T010 Run the full gate and confirm 100% pass, ≥95% line/function coverage, zero type errors: `cd backend && bun test --coverage && bun run typecheck`; `cd frontend && bun run test`; `cd cli && bun test --coverage` (Constitution III — non-negotiable). Depends on T009.
+**Goal**: The project's public documentation acknowledges Kenari's support grant, with a link to
+kenari.id, landing in the same change that ships the integration.
+
+**Independent Test**: Read `README.md` and `CHANGELOG.md` and find a short, linked acknowledgment
+of Kenari's support.
+
+### Implementation for User Story 3 — Docs
+
+- [ ] T023 [P] [US3] Add a short line crediting Kenari's support, linking to kenari.id, in `README.md` near the existing "🤖 Optional LLM" feature-table row or the intro paragraph's "Jev, an LLM and Tebar are optional online extras" sentence, per `research.md` §11.
+- [ ] T024 [P] [US3] Add an entry under the existing `## [Unreleased]` section of `CHANGELOG.md`, matching the style of the current feature entries (e.g. `### Generate: briefs to finished 2D videos`), describing the Kenari integration (US1 one-key onboarding, US2 general-provider path) and the acknowledgment together.
+
+**Checkpoint**: All three user stories are independently functional — Kenari onboarding, the general-provider skip path, and the public acknowledgment.
+
+---
+
+## Phase 6: Polish & Cross-Cutting Concerns
+
+- [ ] T025 [P] Walk through `specs/002-kenari-provider-integration/quickstart.md`'s UI and CLI validation steps for all three stories, plus the "Generate also defaults to Kenari" check (no separate setup needed, per `research.md` §9), end-to-end against a running local backend; note any deviation. Depends on T006, T010, T014, T018, T021, T022, T023, T024.
+- [ ] T026 Run the full gate and confirm 100% pass, ≥95% line/function coverage, zero type errors: `cd backend && bun test --coverage && bun run typecheck`; `cd frontend && bun run test`; `cd cli && bun test --coverage` (Constitution III — non-negotiable). Depends on T025.
 
 ---
 
@@ -84,54 +139,92 @@ flow and confirm the saved values are shown unchanged, not a Kenari prompt.
 ### Phase Dependencies
 
 - **Setup (Phase 1)**: None — empty, nothing to start.
-- **Foundational (Phase 2)**: None — empty, nothing blocks User Story 2.
-- **User Story 2 (Phase 3)**: Can start immediately.
-- **Polish (Phase 4)**: Depends on Phase 3 being complete.
+- **Foundational (Phase 2)**: None — empty, nothing blocks any user story.
+- **User Story 1 (Phase 3)**: Can start immediately. Highest priority (P1) — MVP.
+- **User Story 2 (Phase 4)**: Can start immediately, independent of US1's completion, but its CLI choice prompt (T020) is the entry point into US1's CLI branch (T012) once both exist — see "Within/Across Stories" below.
+- **User Story 3 (Phase 5)**: Can start immediately, fully independent (docs-only).
+- **Polish (Phase 6)**: Depends on all three stories being complete.
+
+### Within User Story 1
+
+- Backend: T001 → T002 → {T003, T004} → T005 → T006.
+- Frontend: T007 → T008 → T009 → T010 (T007 can start in parallel with the backend track; T008 needs T005's routes live to call against in a real run, though tests (T010) use fakes).
+- CLI: T011 → T012 / T013 → T014 (T011 can start in parallel with backend/frontend tracks).
 
 ### Within User Story 2
 
-- Frontend track: T001 → T002 → T003 → T004.
-- CLI track: T005 → T006 → {T007, T008} (T007 and T008 both depend on T006 but not on each other).
-- The frontend track and the CLI track touch entirely different files/packages and can proceed in parallel with each other.
+- Frontend: T015 → T016 → T017 → T018.
+- CLI: T019 → T020 → {T021, T022}.
+
+### Across Stories
+
+- T020 (US2's CLI choice prompt, "type kenari to branch") and T012 (US1's kenari branch
+  implementation) touch the same function in `cli/src/social.ts` — implement T012 before or
+  alongside T020 to avoid rework, even though they're in different story phases. The frontend
+  equivalent has no such ordering constraint: T008/T009 (US1's Kenari branch) and T016/T017
+  (US2's "different provider" branch) are separate conditional branches inside the same card and
+  can be built in either order.
+- T022 (US2's regression check) also guards against T013 (US1's new `--kenari` flag) leaking
+  into the existing flag-only command — written after both T013 and T020 exist.
 
 ### Parallel Opportunities
 
-- T001 (frontend helper) and T005 (CLI helper) can run in parallel — different packages, no shared state.
-- T007 and T008 can run in parallel once T006 is done — different test files.
-- The whole frontend track (T001–T004) can run in parallel with the whole CLI track (T005–T008) if staffed by two people/agents.
+- T001/T007/T011 (the three per-package starting points — backend constants, frontend API
+  methods, CLI API methods) can all run in parallel.
+- T015 and T019 (US2's frontend/CLI mode helpers) can run in parallel with each other and with
+  US1's tasks, since they touch different files.
+- T023 and T024 (US3, docs-only) can run in parallel with everything — no code dependency at all.
 
 ---
 
-## Parallel Example: User Story 2
+## Parallel Example: Starting All Three Stories Together
 
 ```bash
-# Start both tracks' foundation helpers together:
-Task: "Add KENARI_BASE_URL + connectionMode() in frontend/src/components/ConnectionsPanel.tsx"   # T001
-Task: "Add KENARI_BASE_URL + connectionMode() in cli/src/social.ts"                               # T005
+# Kick off each story's independent starting point at once:
+Task: "Add KENARI_BASE_URL/KENARI_DEFAULT_MODEL constants in backend/src/settings.ts"              # T001 [US1]
+Task: "Add connectionMode() helper in frontend/src/components/ConnectionsPanel.tsx"                 # T015 [US2]
+Task: "Add a Kenari acknowledgment line in README.md"                                               # T023 [US3]
 
-# Once each track's prompt/choice work (T002-T003 / T006) lands, run its tests in parallel with the other track's tests:
-Task: "Add social.test.tsx rows for the llm card's skip/default behavior"        # T004
-Task: "Add social.test.ts + commands.test.ts rows for setupCmd's llm step"       # T007, T008
+# Once T001/T002 land, the three US1 tracks fan out:
+Task: "Implement ConnectionSettings.probe() in backend/src/settings.ts"                             # T003
+Task: "Add getKenariModels()/probeLlm() to ApiClient in frontend/src/lib/api.ts"                     # T007
+Task: "Add getKenariModels()/probeLlm() to Api in cli/src/api.ts"                                    # T011
 ```
 
 ---
 
 ## Implementation Strategy
 
-### Single increment (US2 is the whole scope of this plan)
+### MVP First (User Story 1 Only)
 
 1. Confirm Phase 1/2 are empty (nothing to build first).
-2. Implement the frontend track (T001–T004) and CLI track (T005–T008), in parallel if staffed.
-3. **STOP and VALIDATE**: run `quickstart.md`'s steps (T009) and the full test gate (T010).
-4. Done — User Story 2 ships independently of User Story 1 and User Story 3, which are separately planned and tasked later.
+2. Complete Phase 3 (US1): backend probe/model-catalog endpoints, frontend Kenari branch, CLI
+   Kenari branch.
+3. **STOP and VALIDATE**: run the US1 portion of `quickstart.md` and the full test gate.
+4. Ship — a user can already connect Kenari with one key. US2 (skip/customize) and US3
+   (acknowledgment) are valuable but not required for this to be useful.
+
+### Incremental Delivery
+
+1. Phase 3 (US1) → validate → ship (MVP: Kenari onboarding works).
+2. Phase 4 (US2) → validate → ship (the general-provider path stays fully reachable alongside it).
+3. Phase 5 (US3) → ship (docs credit lands, typically bundled with whichever of the above merges
+   first, since it has no code dependency).
+4. Phase 6 (Polish): full quickstart + gate run once all three are in.
+
+### Parallel Team Strategy
+
+With three people/agents: one takes US1 (the largest story — backend + frontend + CLI), one takes
+US2, one takes US3. Coordinate only on the two points noted under "Across Stories" above
+(`cli/src/social.ts`'s `llm` step, and the US2 regression check T022).
 
 ---
 
 ## Notes
 
 - [P] tasks touch different files with no unmet dependency.
-- No new files, endpoints, or persisted fields are introduced anywhere in this task list — every
-  task modifies an existing file named in `plan.md`'s Project Structure.
+- No new persisted fields; two new, purely additive backend routes
+  (`GET /api/settings/llm/kenari-models`, `POST /api/settings/llm/probe`) — see
+  `contracts/kenari-models.md` and `contracts/llm-probe.md`.
 - Commit after each task or logical group, per repository convention.
-- Stop at the Phase 3 checkpoint to validate User Story 2 independently before touching anything
-  else.
+- Stop at each phase checkpoint to validate that story independently before moving to the next.
