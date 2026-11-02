@@ -1,8 +1,11 @@
-# Contract: `llm` AI Provider Connection (US2 scope)
+# Contract: `llm` AI Provider Connection (unchanged by this feature)
 
-US2 makes **no change** to this contract. It is documented here so implementers can see exactly
-what "the general provider form" means on the wire, and confirm the skip/choice affordance stays
-purely a client-side (UI/CLI) decision in front of it.
+Neither US1 nor US2 changes this contract. It is documented here so implementers can see exactly
+what "the general provider form" means on the wire, and confirm every onboarding path — Kenari
+(US1) or general/custom (US2) — ends at the same unchanged `PUT /api/settings/llm` call. The two
+genuinely new endpoints Kenari onboarding needs (candidate validation, model listing) are
+documented separately in `llm-probe.md` and `kenari-models.md` — they exist only to help a client
+decide what to send here; they never replace this call.
 
 Full reference: `docs/api-spec.md` §"GET /api/settings", §"PUT /api/settings/{llm|jev|tebar}",
 §"POST /api/settings/{kind}/test".
@@ -46,9 +49,8 @@ Unchanged: `{ "ok": true, "ms": 412, "model": "…", "detail": "…" }` or
 the Kenari path (US1, out of scope) and the general-provider path (US2) identically — it only
 exercises whatever `baseUrl`/`model`/`apiKey` are currently saved, regardless of their origin.
 
-## Non-goals for US2
+## Non-goals
 
-- No `llm.provider` or `llm.mode` field is added to this contract (see `research.md` §1, §3).
-- No new endpoint (e.g. a Kenari-specific `/api/settings/llm/kenari`) is introduced by this plan;
-  if US1 needs one for key validation or model-catalog fetching, it is defined in that story's
-  own plan, not here.
+- No `llm.provider` or `llm.mode` field is added to this contract (see `research.md` §3).
+- This contract itself never gains a Kenari-specific parameter. Key validation and model-catalog
+  fetching are separate, additive endpoints — see `llm-probe.md` and `kenari-models.md`.
