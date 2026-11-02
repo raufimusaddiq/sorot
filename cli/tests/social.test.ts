@@ -165,15 +165,59 @@ describe("connect setup", () => {
       "POST /api/settings/llm/test": { ok: true }, "GET /api/social/accounts": { enabled: true, accounts: ACCOUNTS },
     });
     h.state.tty = true;
-    h.state.answers = ["", "ts_key", "", "", "qwen", "", "y", "tb_live_k"];
+    h.state.answers = ["", "ts_key", "", "", "", "qwen", "", "y", "tb_live_k"];
     expect(await h.run("connect", "setup")).toBe(0);
-    expect(h.state.asked).toEqual(["Set it up? [Y/n] ", "[secret] API key: ", "Set it up? [Y/n] ", "Base URL [http://localhost:11434/v1]: ",
+    expect(h.state.asked).toEqual(["Set it up? [Y/n] ", "[secret] API key: ", "Set it up? [Y/n] ",
+      "Kenari (just an API key) or a different provider? [kenari/different, Enter = different]: ", "Base URL [http://localhost:11434/v1]: ",
       "Model: ", "[secret] API key (Enter for none): ", "Connected. Change it? [y/N] ", "[secret] API key (Enter keeps the saved one): "]);
     expect(h.requests.filter((r) => r.method === "PUT").map((r) => [r.path, r.body])).toEqual([
       ["/api/settings/jev", { apiKey: "ts_key" }], ["/api/settings/llm", { baseUrl: "http://localhost:11434/v1", model: "qwen" }],
       ["/api/settings/tebar", { apiKey: "tb_live_k" }]]);
     expect(h.text()).toContain("✓ Jev: OK (jev-1.14.0) — answered 0.97");
     expect(h.text()).toContain("✗ Tebar: Tebar 403 insufficient_scope");
+  });
+
+  test("the LLM step's Kenari branch: fetches models, validates the key before saving, backs out on a bad key", async () => {
+    const h = harness({
+      "GET /api/settings": settings, "GET /api/settings/llm/kenari-models": { models: [{ id: "kenari/auto", free: false }, { id: "step-3-7-flash:free", free: true }] },
+      "POST /api/settings/llm/probe": { ok: false, error: "LLM HTTP 401: invalid key" }, "PUT /api/settings/jev": {}, "PUT /api/settings/tebar": {},
+      "POST /api/settings/jev/test": { ok: true }, "POST /api/settings/tebar/test": { ok: true }, "GET /api/social/accounts": { enabled: true, accounts: [] },
+    });
+    h.state.tty = true;
+    h.state.answers = ["n", "", "kenari", "", "kn-bad", "n"];
+    expect(await h.run("connect", "setup")).toBe(0);
+    expect(h.state.asked).toContain("Kenari (just an API key) or a different provider? [kenari/different, Enter = different]: ");
+    expect(h.state.asked).toContain("Model [kenari/auto]: ");
+    expect(h.state.asked).toContain("[secret] Kenari API key: ");
+    expect(h.requests.some((r) => r.method === "PUT" && r.path === "/api/settings/llm")).toBeFalse();   // probe failed: nothing saved
+    expect(h.err.join("\n")).toContain("✗ the LLM (Kenari): LLM HTTP 401: invalid key");
+  });
+
+  test("the LLM step's Kenari branch: a working key saves baseUrl/model/apiKey together, no field typed by hand", async () => {
+    const h = harness({
+      "GET /api/settings": settings, "GET /api/settings/llm/kenari-models": { models: [] },
+      "POST /api/settings/llm/probe": { ok: true, model: "kenari/auto", detail: "OK" }, "PUT /api/settings/llm": {},
+      "PUT /api/settings/jev": {}, "PUT /api/settings/tebar": {}, "POST /api/settings/jev/test": { ok: true }, "POST /api/settings/tebar/test": { ok: true },
+      "GET /api/social/accounts": { enabled: true, accounts: [] },
+    });
+    h.state.tty = true;
+    h.state.answers = ["n", "", "kenari", "", "kn-good", "n"];
+    expect(await h.run("connect", "setup")).toBe(0);
+    expect(h.requests.filter((r) => r.method === "PUT").map((r) => [r.path, r.body])).toEqual([
+      ["/api/settings/llm", { baseUrl: "https://kenari.id/v1", model: "kenari/auto", apiKey: "kn-good" }],
+    ]);
+    expect(h.text()).toContain("✓ the LLM (Kenari): OK (kenari/auto) — OK");
+  });
+
+  test("an already-connected Kenari llm is labeled as such when sorot connect setup is re-run", async () => {
+    const h = harness({
+      "GET /api/settings": { ...settings, jev: { active: true }, llm: { active: true, baseUrl: "https://kenari.id/v1", model: "kenari/auto" } },
+      "GET /api/social/accounts": { enabled: true, accounts: [] },
+    });
+    h.state.tty = true;
+    h.state.answers = ["n", "n", "n"];
+    expect(await h.run("connect", "setup")).toBe(0);
+    expect(h.state.asked).toContain("Connected (Kenari). Change it? [y/N] ");
   });
 
   test("skips, keeps, and needs a terminal", async () => {

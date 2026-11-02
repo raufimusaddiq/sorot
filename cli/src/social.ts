@@ -11,6 +11,18 @@ import { table, truncate, when } from "./format";
 
 const GATE_BLOCK = "Held back by the quality gate";
 
+// Kenari (kenari.id): this project's default AI provider — one API key, no endpoint to type.
+// Still fully optional and swappable: typing nothing at the choice prompt below reaches the
+// same baseUrl/model fields this step has always had, untouched.
+export const KENARI_BASE_URL = "https://kenari.id/v1";
+export const KENARI_DEFAULT_MODEL = "kenari/auto";
+
+/** Unset: nothing saved yet. Kenari: the saved baseUrl is Kenari's. Custom: anything else. */
+export function connectionMode(baseUrl: string | undefined): "unset" | "kenari" | "custom" {
+  if (!baseUrl) return "unset";
+  return baseUrl === KENARI_BASE_URL ? "kenari" : "custom";
+}
+
 /** Connected Tebar accounts; an error that says how to connect when it isn't. */
 async function tebarAccounts(d: Deps): Promise<Json[]> {
   const r = await d.api.get("/api/social/accounts");
@@ -193,6 +205,24 @@ const SETUP: Array<{ kind: string; name: string; about: string; fields: Array<[f
   { kind: "tebar", name: "Tebar", about: "posts clips to TikTok, Instagram, YouTube… and brings their numbers back (a read + write key from tebar.app; paid plan)", fields: [] },
 ];
 
+/**
+ * The LLM step's "kenari" branch: fetch Kenari's live model catalog, ask for the key, validate
+ * it with `probe()` before saving anything, then save. Leaves everything untouched on failure or
+ * on an empty key (the caller already fell through here on an explicit "kenari" choice, so a
+ * blank key here just backs out rather than defaulting to the generic field loop).
+ */
+async function kenariLlmSetup(d: Deps): Promise<void> {
+  const { models } = (await d.api.get("/api/settings/llm/kenari-models")) as { models: Array<{ id: string; free: boolean }> };
+  if (models.length) d.out(`Kenari models: ${models.map((m) => m.id + (m.free ? " (free)" : "")).join(", ")}`);
+  const model = (await d.ask(`Model [${KENARI_DEFAULT_MODEL}]: `)) || KENARI_DEFAULT_MODEL;
+  const apiKey = await d.ask("Kenari API key: ", true);
+  if (!apiKey) { d.out("No key entered — Kenari not connected."); return; }
+  const probe = await d.api.post("/api/settings/llm/probe", { model, apiKey });
+  if (!probe.ok) { d.err(`✗ the LLM (Kenari): ${probe.error}`); return; }
+  await d.api.put("/api/settings/llm", { baseUrl: KENARI_BASE_URL, model, apiKey });
+  d.out(`✓ the LLM (Kenari): OK (${probe.model})${probe.detail ? ` — ${probe.detail}` : ""}`);
+}
+
 /** sorot connect setup: Jev, then the LLM, then Tebar — ask, save, test. */
 export async function setupCmd(d: Deps): Promise<number> {
   if (!d.isTTY) throw new UsageError("sorot connect setup asks questions: run it in a terminal, or use sorot connect <llm|jev|tebar> --key -");
@@ -200,9 +230,15 @@ export async function setupCmd(d: Deps): Promise<number> {
   d.out("Set up what Sorot can connect to. Enter skips; keys are hidden and never shown back.");
   for (const step of SETUP) {
     const now = settings[step.kind] as Json;
+    const mode = step.kind === "llm" ? connectionMode(now.baseUrl as string | undefined) : null;
     d.out(`\n${step.name[0]!.toUpperCase()}${step.name.slice(1)}: ${step.about}.`);
-    const go = now.active ? /^y(es)?$/i.test(await d.ask(`Connected. Change it? [y/N] `)) : !/^n(o)?$/i.test(await d.ask(`Set it up? [Y/n] `));
+    const connectedLabel = mode === "kenari" ? "Connected (Kenari)." : mode === "custom" ? "Connected (custom)." : "Connected.";
+    const go = now.active ? /^y(es)?$/i.test(await d.ask(`${connectedLabel} Change it? [y/N] `)) : !/^n(o)?$/i.test(await d.ask(`Set it up? [Y/n] `));
     if (!go) continue;
+    if (step.kind === "llm") {
+      const choice = await d.ask("Kenari (just an API key) or a different provider? [kenari/different, Enter = different]: ");
+      if (/^k/i.test(choice)) { await kenariLlmSetup(d); continue; }
+    }
     const patch: Json = {};
     for (const [field, question, fallback] of step.fields) {
       const current = (now[field] as string) || fallback || "";
