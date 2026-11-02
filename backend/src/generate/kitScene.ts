@@ -35,11 +35,29 @@ export function validateKitShot(parsed: unknown, shot: Shot, caps: Capabilities 
     };
   });
   if (caps) errors.push(...checkPartRefs(layers, caps, kit, "layers").map((p) => p.message));
+  // a target must exist in the scene Sorot writes: the text, or what a drawing part makes (a real answer
+  // aimed motion and light at ".petal", which a kit scene doesn't have, and the shots came out bare)
+  const targets = kitTargets(shot, layers.map((l) => l.part));
+  layers.forEach((l, i) => {
+    const t = l.settings.target;
+    if (typeof t === "string" && t.trim() && !targets.includes(t.trim())) {
+      errors.push(`layers[${i}].settings.target: "${t}" isn't in a kit scene; use one of ${targets.map((x) => `"${x}"`).join(", ")} (empty = the whole shot)`);
+    }
+  });
   const planned = new Set(shot.text.map((t) => t.value.replace(/\s+/g, " ").trim()));
   const text = (Array.isArray(o.text) ? o.text : []).filter(isObj).map((t) => ({ role: typeof t.role === "string" ? t.role : "body", value: typeof t.value === "string" ? t.value : "" }));
   for (const t of text) if (!planned.has(t.value.replace(/\s+/g, " ").trim())) errors.push(`text "${t.value}" isn't one of the shot's planned lines (${[...planned].map((p) => `"${p}"`).join(", ") || "none"})`);
   return errors.length ? { errors } : { value: { shotId: shot.id, layers, text } };
 }
+
+/** What a kit-level part may target: the shot's text (all, or one role), and the elements a drawing part in the answer makes. */
+export function kitTargets(shot: Shot, parts: string[]): string[] {
+  const roles = [...new Set(shot.text.map((t) => roleClass(t.role)))];
+  const drawn = [...new Set(parts.filter((p) => DRAWING_PARTS.includes(p)))];
+  return [".k-text", ".k-text > *", ...roles.map((r) => `.${r}`), ...drawn.map((p) => `[data-kit="${p}"]`)];
+}
+/** Built-in parts that draw elements others may act on (each marks them data-kit="<name>"). */
+const DRAWING_PARTS = ["shape", "image-place", "particles"];
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const HEX = /^#[0-9a-fA-F]{3,8}$/;

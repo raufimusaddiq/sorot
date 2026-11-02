@@ -3,8 +3,11 @@ import type { Plan } from "./planSchema";
 import { shotStarts } from "./composer";
 
 // The `motion` measure (research R28, FR-040): whether things move smoothly, from the rendered video,
-// in code. ffmpeg gives the mean luma difference between each frame and the next (tblend difference +
-// signalstats YAVG). Inside each shot (the frames next to a seam left out):
+// in code. ffmpeg gives, for each frame and the next, how much of the picture changed clearly: the
+// pixels whose brightness moved by more than 24 levels (tblend difference, a threshold, then
+// signalstats YAVG, so 255 = every pixel). A uniform shift of a level or two (Chrome repainting a
+// gradient) changes nothing clearly, and counted as a jump on the first real film before the
+// threshold. Inside each shot (a transition's frames left out):
 // - a jump is a frame whose change is far above its neighbours' (an element teleporting for a frame);
 // - a stall is a moving shot that freezes for a while and then moves again.
 // ffmpeg's own scene score and freezedetect were tried first: both round a small element's motion to
@@ -26,14 +29,18 @@ export interface MotionSettings {
  * its neighbours; the smooth renders (fast expo.out 2D moves, a Three.js orbit, a slow constant move)
  * stayed at or under 2×. A jump or stall twice the threshold is a must-fix.
  */
-export const MOTION_DEFAULTS: MotionSettings = { jumpRatio: 6, minJump: 1, stallFrames: 8, still: 0.03 };
+export const MOTION_DEFAULTS: MotionSettings = { jumpRatio: 6, minJump: 0.5, stallFrames: 8, still: 0.03 };
 const NEIGHBOURS = 4;
 const SEAM_FRAMES = 2;
 
 /** The ffmpeg arguments that print one YAVG per frame pair. */
 export const frameDiffArgs = (file: string) => [
-  "-v", "error", "-i", file, "-an", "-vf", "tblend=all_mode=difference,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-",
+  "-v", "error", "-i", file, "-an", "-vf",
+  "format=gray,tblend=all_mode=difference,lutyuv=y='if(gt(val\\,24)\\,255\\,0)',signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-",
 ];
+
+/** How long a transition reaches into the shots on either side (transitions.ts: at most 0.4 s, a fifth of the shorter shot). */
+const seamReach = (transition: string | undefined, before: number, after: number) => (!transition || transition === "cut" ? 0 : Math.min(0.4, 0.2 * Math.min(before, after)));
 
 /** YAVG per frame pair: entry i is the change from frame i to frame i + 1. */
 export function parseFrameDiffs(out: string): number[] {
@@ -54,9 +61,12 @@ export function motionFindings(diffs: number[], plan: Plan, fps: number, setting
   const starts = shotStarts(plan);
   const found: NewFinding[] = [];
   plan.shots.forEach((shot, k) => {
-    // pair i is the change into frame i + 1, at (i + 1) / fps
-    const from = Math.round(starts[k]! * fps) + SEAM_FRAMES;
-    const to = Math.min(diffs.length, Math.round((starts[k]! + shot.durationSec) * fps) - 1 - SEAM_FRAMES);
+    // pair i is the change into frame i + 1, at (i + 1) / fps; a transition's own frames are the seam's, not the shot's
+    const next = plan.shots[k + 1];
+    const inReach = k > 0 ? seamReach(shot.transition, plan.shots[k - 1]!.durationSec, shot.durationSec) : 0;
+    const outReach = next ? seamReach(next.transition, shot.durationSec, next.durationSec) : 0;
+    const from = Math.round((starts[k]! + inReach) * fps) + SEAM_FRAMES;
+    const to = Math.min(diffs.length, Math.round((starts[k]! + shot.durationSec - outReach) * fps) - 1 - SEAM_FRAMES);
     if (to - from < 3) return;
     const at = (i: number) => round2((i + 1) / fps);
 

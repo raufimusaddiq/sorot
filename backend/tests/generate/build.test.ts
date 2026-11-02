@@ -108,6 +108,19 @@ describe("director levels", () => {
     await expect(STEPS.author.run(r.ctxFor("author", {}, withKit(r)))).rejects.toThrow("Shot s01 couldn't be built at any level, not even from kit parts");
   });
 
+  test("the check step fixes a kit-level shot as kit parts, never as the model's own HTML", async () => {
+    const r = rig([kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03"), kitAnswer("s02")], {
+      lint: (() => { let n = 0; return () => (n++ === 0 ? lint(finding("bad_markup", "error", { file: "compositions/shot-02.html" })) : lint()); })(),
+      check: () => check(),
+    });
+    const k = withKit(r);
+    await STEPS.author.run(r.ctxFor("author", {}, k));
+    await STEPS.check.run(r.ctxFor("check", { rounds: 1 }, k));
+    expect(r.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_shot_kit", "submit_shot_kit", "submit_shot_kit", "submit_shot_kit"]);
+    expect(JSON.parse(r.requests[3]!.messages.at(-1)!.content).findings).toMatchObject([{ code: "bad_markup" }]);
+    expect(scenes(r.dir)[1]).toContain('SorotKitRuntime.mount("particles", layers[0]');
+  });
+
   test("a heavy shot over the frame budget is rebuilt one level down by the check step", async () => {
     const heavy = html(1, SAMPLE_TITLES[1], "<script>document.createElement('canvas').getContext('webgl');</script>");
     const r = rig([html(0), heavy, html(2), html(1)], { check: () => check() }, { shots: samplePlan().shots.map((s: any) => ({ ...s, level: "free" })) });

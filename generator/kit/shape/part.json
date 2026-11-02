@@ -1,0 +1,24 @@
+{
+  "name": "shape",
+  "version": "1.0.0",
+  "does": "Draws a subject from simple lit shapes (circle, coin, petal, leaf, star, bar, ring, arrow...) laid out as one, a row, grid, ring, stack or scatter, growing in one by one.",
+  "runtime": "dom",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "kind": { "t": "enum", "values": ["circle", "coin", "ring", "square", "rounded", "petal", "leaf", "star", "bar", "arrow", "drop", "heart"] },
+    "count": { "t": "int", "min": 1, "max": 60 },
+    "arrange": { "t": "enum", "values": ["single", "row", "column", "grid", "radial", "stack", "scatter", "growth"] },
+    "size": { "t": "num", "min": 0.02, "max": 0.9 },
+    "x": { "t": "num", "min": 0, "max": 1 },
+    "y": { "t": "num", "min": 0, "max": 1 },
+    "spread": { "t": "num", "min": 0, "max": 1 },
+    "color": { "t": "str", "max": 30 },
+    "grow": { "t": "enum", "values": ["none", "pop", "rise", "bloom", "fill"] },
+    "at": { "t": "num", "min": 0, "max": 90 },
+    "stagger": { "t": "num", "min": 0, "max": 1 },
+    "length": { "t": "num", "min": 0.1, "max": 5 },
+    "rotate": { "t": "num", "min": -360, "max": 360 }
+  },
+  "defaults": { "kind": "circle", "count": 1, "arrange": "single", "size": 0.3, "x": 0.5, "y": 0.5, "spread": 0.5, "color": "", "grow": "pop", "at": 0, "stagger": 0.08, "length": 0.6, "rotate": 0 },
+  "example": "A flower: eight petals in a ring that bloom one by one: {\"kind\": \"petal\", \"count\": 8, \"arrange\": \"radial\", \"grow\": \"bloom\"}."
+}

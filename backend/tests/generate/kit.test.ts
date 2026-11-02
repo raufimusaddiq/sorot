@@ -15,7 +15,7 @@ afterEach(() => {
   tmp = undefined;
 });
 
-const BUILT_INS = ["camera", "depth", "image-place", "motion", "particles", "shade", "shadow", "text-reveal", "three"];
+const BUILT_INS = ["camera", "depth", "image-place", "motion", "particles", "shade", "shadow", "shape", "text-reveal", "three"];
 const manifest = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   name: "glow-ring", version: "1.0.0", does: "A ring of light.", runtime: "dom", needs: { gpu: "no" },
   settings: { size: { t: "num", min: 0, max: 1 }, kind: { t: "enum", values: ["soft", "hard"] } }, defaults: { size: 0.5 }, example: "A soft ring.", ...over,

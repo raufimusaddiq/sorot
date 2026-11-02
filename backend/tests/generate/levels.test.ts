@@ -56,6 +56,7 @@ describe("kit-level shots", () => {
     ["times outside the shot", { shotId: "s02", layers: [layer("shade", {}, 1, 9)] }, "must lie inside the shot's 4 s"],
     ["a part the level hides", { shotId: "s02", layers: [layer("three")] }, '"three" (webgl) isn\'t allowed at the kit level'],
     ["a setting the part lacks", { shotId: "s02", layers: [layer("shade", { glow: 1 })] }, 'shade has no setting "glow"'],
+    ["a target a kit scene doesn't have", { shotId: "s02", layers: [layer("shade", { target: ".petal" })] }, '"\.petal" isn\'t in a kit scene; use one of ".k-text", ".k-text > *", ".t-title", ".t-body"'.replace(/\\/g, "")],
     ["a line that isn't planned", { shotId: "s02", layers: [layer("shade")], text: [{ role: "title", value: "Kaya raya" }] }, 'text "Kaya raya" isn\'t one of the shot\'s planned lines'],
   ])("an answer with %s is sent back", (_name, answer, message) => {
     expect(validateKitShot(answer, shot, caps("kit"), KIT).errors!.join("\n")).toContain(message);

@@ -7,6 +7,7 @@ import { planHasSound } from "../technical";
 import { buildTarget, levelOfShot, readScene, readShotLevels, sceneAssets, sceneRules, shotIndexOf } from "./build";
 import { levelDrop, partsInScene, shotWriter } from "./author";
 import { levelBelow } from "../capabilities";
+import { writeKitScene } from "../kitScene";
 import { recordAnswer } from "../levels";
 import type { KitManifest } from "../kit";
 import type { Plan } from "../planSchema";
@@ -169,13 +170,20 @@ export const run: RunFn = async (ctx) => {
     if (!shots.length || round >= rounds) break;
     for (const i of shots) {
       const mine = todo.filter((f) => f.shot === i);
-      const out = await ctx.director.repair({
-        project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, html: readScene(dir, i) ?? "", level: levelOfShot(ctx, plan, i),
-        findings: mine.map((f) => ({ code: f.code, message: f.message, hint: f.hint })),
-      });
-      writeFileSync(join(dir, shotFile(i)), out.html);
+      const level = levelOfShot(ctx, plan, i);
+      const input = { project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level };
+      const findings = mine.map((f) => ({ code: f.code, message: f.message, hint: f.hint }));
+      if (level === "kit") {
+        // a kit-level shot is fixed as kit parts, never rewritten as the model's own HTML (a real repair did that)
+        const kit = ctx.kit?.manifests() ?? [];
+        const answer = await ctx.director.kitShot({ ...input, kit, findings });
+        writeFileSync(join(dir, shotFile(i)), writeKitScene({ plan, index: i, ...size, answer, kit }));
+      } else {
+        const out = await ctx.director.repair({ ...input, html: readScene(dir, i) ?? "", findings });
+        writeFileSync(join(dir, shotFile(i)), out.html);
+        if (mode === "fix-or-hold") for (const h of out.holds) held.set(`${i}:${h.code}`, h.reason);
+      }
       used.set(i, (used.get(i) ?? 0) + 1);
-      if (mode === "fix-or-hold") for (const h of out.holds) held.set(`${i}:${h.code}`, h.reason);
     }
     ctx.progress(((round + 1) / rounds) * 100);
   }

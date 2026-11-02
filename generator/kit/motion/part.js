@@ -2,20 +2,22 @@
 // shorter than an arrival), an optional precomputed spring and an arc path. Pure functions of time.
 window.SorotKit = window.SorotKit || {};
 window.SorotKit["motion"] = {
-  // A damped spring as an ease: settles at 1, overshoots a little. Precomputed, so every frame is the same.
+  // A damped spring as an ease: simulated once until it settles, then that time is stretched over the
+  // move, so the overshoot and settle fill the whole move (an earlier table ran 4 s of simulation into
+  // the move and popped in its first two frames).
   spring: function (damping, stiffness) {
-    var steps = 240, table = [];
-    var x = 0, v = 0, dt = 1 / 60;
-    for (var i = 0; i <= steps; i++) {
-      table.push(x);
+    var x = 0, v = 0, dt = 1 / 240, table = [0];
+    for (var i = 0; i < 4800; i++) {
       var a = stiffness * (1 - x) - damping * v;
       v += a * dt; x += v * dt;
+      table.push(x);
+      if (i > 24 && Math.abs(1 - x) < 0.001 && Math.abs(v) < 0.01) break;
     }
-    var last = table[steps];
+    var steps = table.length - 1;
     return function (p) {
-      var f = Math.max(0, Math.min(1, p)) * steps, i = Math.floor(f), r = f - i;
-      var y = i >= steps ? last : table[i] + (table[i + 1] - table[i]) * r;
-      return p >= 1 ? 1 : y / last;
+      if (p >= 1) return 1;
+      var f = Math.max(0, p) * steps, k = Math.floor(f), r = f - k;
+      return table[k] + (table[k + 1] - table[k]) * r;
     };
   },
   mount: function (host, s, ctx) {

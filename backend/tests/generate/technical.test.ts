@@ -176,7 +176,7 @@ describe("technical step", () => {
     const exec: ExecFn = async (cmd, args) => {
       calls.push([cmd, ...args]);
       if (cmd.includes("ffprobe")) return opts.media?.probe === null ? { ...procOk(), exitCode: 1 } : procOk(JSON.stringify(opts.media?.probe ?? probeOf({ audio: true })));
-      if (args.some((a) => a.startsWith("tblend"))) return procOk(opts.media?.diffs ?? "");
+      if (args.some((a) => a.includes("tblend"))) return procOk(opts.media?.diffs ?? "");
       return { ...procOk(), stderr: opts.media?.volume ?? "mean_volume: -20.0 dB\nmax_volume: -3.0 dB" };
     };
     const { llm } = fakeLlm([]);
