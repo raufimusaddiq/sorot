@@ -4,7 +4,7 @@ import { checkScene, shotFile, shotStarts, sizeFor } from "../composer";
 import { saveFindings, type NewFinding, type Severity } from "../findings";
 import { HyperframesError, type HfFinding } from "../hyperframes";
 import { planHasSound } from "../technical";
-import { buildTarget, readScene, sceneAssets, shotIndexOf } from "./build";
+import { buildTarget, levelOfShot, readScene, sceneAssets, sceneRules, shotIndexOf } from "./build";
 import { sceneFindings } from "./author";
 import type { RunFn } from "./types";
 
@@ -14,6 +14,11 @@ import type { RunFn } from "./types";
 
 /** Only Studio's editing aids: nothing a render or a viewer sees. */
 const IGNORED = new Set(["studio_missing_editable_id"]);
+/**
+ * Chrome's own notes about reading WebGL pixels back for the frame capture: they come from how
+ * HyperFrames captures a canvas, not from anything a scene does, and no repair can remove them.
+ */
+const CAPTURE_NOISE = /GL Driver Message .*GPU stall due to ReadPixels/;
 /** A shot the plan marks as a hold is meant to stand still. */
 const HOLD_CODES = new Set(["sweep_static", "dead_stretch"]);
 /** HyperFrames says a film has no sound bed; a plan without sound meant that. */
@@ -40,7 +45,7 @@ export function grouped<T extends Found>(found: T[]): T[] {
 async function collect(ctx: Parameters<RunFn>[0], dir: string, starts: number[], durations: number[]): Promise<Found[]> {
   const { hyperframes: hf, signal } = ctx;
   const map = (f: HfFinding): Found | null => {
-    if (f.severity === "info" || IGNORED.has(f.code)) return null;
+    if (f.severity === "info" || IGNORED.has(f.code) || (f.code === "console_warning" && CAPTURE_NOISE.test(f.message))) return null;
     return {
       shot: shotIndexOf(f, starts, durations), code: f.code, severity: f.severity, message: f.message, hint: f.fixHint, time: f.time,
     };
@@ -81,7 +86,7 @@ export const run: RunFn = async (ctx) => {
   for (let round = 0; ; round++) {
     found = grouped(await collect(ctx, dir, starts, durations));
     // the plan's own rules count too: a scene that lost its text is repaired with the lint findings
-    const planLock = plan.shots.flatMap((shot, i) => checkScene(readScene(dir, i) ?? "", shot, i, { assets }).map((c): Found => ({ shot: i, code: c.code, severity: "error", message: c.message, hint: c.hint })));
+    const planLock = plan.shots.flatMap((shot, i) => checkScene(readScene(dir, i) ?? "", shot, i, sceneRules(ctx, levelOfShot(ctx, plan, i))).map((c): Found => ({ shot: i, code: c.code, severity: "error", message: c.message, hint: c.hint })));
     const todo = [...repairs(found), ...planLock];
     const shots = [...new Set(todo.map((f) => f.shot as number))].filter((i) => (used.get(i) ?? 0) < rounds);
     if (!shots.length || round >= rounds) break;
@@ -108,6 +113,6 @@ export const run: RunFn = async (ctx) => {
   });
   saveFindings(dir, "check", report);
   // what the author step left is only what is still wrong now
-  saveFindings(dir, "author", plan.shots.flatMap((shot, i) => sceneFindings(plan, i, checkScene(readScene(dir, i) ?? "", shot, i, { assets }))));
+  saveFindings(dir, "author", plan.shots.flatMap((shot, i) => sceneFindings(plan, i, checkScene(readScene(dir, i) ?? "", shot, i, sceneRules(ctx, levelOfShot(ctx, plan, i))))));
   return { status: "done", outputRef: dir };
 };

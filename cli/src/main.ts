@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { Api, ApiError } from "./api";
 import { parseArgs, UsageError } from "./args";
 import { COMMANDS, type Deps } from "./commands";
@@ -152,6 +152,10 @@ export function realDeps(): Omit<Deps, "api"> {
       // Windows editors (Notepad, PowerShell 5.1) may start a UTF-8 file with a byte-order mark: JSON.parse refuses it.
       readText: (p) => readFileSync(p, "utf8").replace(/^﻿/, ""),
       writeText: (p, text) => writeFileSync(p, text),
+      list: (p) => {
+        if (!existsSync(p) || !statSync(p).isDirectory()) return null;
+        return (readdirSync(p, { recursive: true }) as string[]).map((f) => f.split(sep).join("/")).filter((f) => statSync(join(p, f)).isFile()).sort();
+      },
       tempPath: (name) => join(tmpdir(), `sorot-${process.pid}-${name}`),
       // Streamed by hand: Bun 1.3.12's Bun.write(path, response) never
       // finishes on the backend's file responses (spins at 100% CPU).

@@ -1,0 +1,18 @@
+{
+  "name": "three",
+  "version": "1.0.0",
+  "does": "Real 3D with Three.js (r159, offline): lit shapes (cube, sphere, torus, coin, cylinder) in a seeded arrangement with a camera move; free-level scenes can build their own scene from it.",
+  "runtime": "webgl",
+  "needs": { "gpu": "preferred" },
+  "settings": {
+    "shape": { "t": "enum", "values": ["cube", "sphere", "torus", "coin", "cylinder"] },
+    "count": { "t": "int", "min": 1, "max": 40 },
+    "material": { "t": "enum", "values": ["matte", "gloss", "metal"] },
+    "color": { "t": "str", "max": 30 },
+    "spin": { "t": "num", "min": 0, "max": 4 },
+    "camera": { "t": "enum", "values": ["static", "orbit", "dolly-in", "dolly-out"] },
+    "spread": { "t": "num", "min": 0, "max": 10 }
+  },
+  "defaults": { "shape": "coin", "count": 1, "material": "metal", "color": "", "spin": 0.5, "camera": "orbit", "spread": 3 },
+  "example": "One gold coin turning slowly while the camera orbits it: {\"shape\": \"coin\", \"material\": \"metal\", \"color\": \"#d4a017\"}."
+}

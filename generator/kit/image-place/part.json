@@ -1,0 +1,19 @@
+{
+  "name": "image-place",
+  "version": "1.0.0",
+  "does": "Places an image from assets/ as a lit card, a circle or a cut-out, with an optional soft or contact shadow and a tilt.",
+  "runtime": "dom",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "asset": { "t": "str", "max": 200 },
+    "as": { "t": "enum", "values": ["card", "circle", "cutout"] },
+    "width": { "t": "num", "min": 0.1, "max": 1 },
+    "x": { "t": "num", "min": 0, "max": 1 },
+    "y": { "t": "num", "min": 0, "max": 1 },
+    "tilt": { "t": "num", "min": -30, "max": 30 },
+    "shadow": { "t": "enum", "values": ["none", "soft", "contact"] },
+    "light": { "t": "bool" }
+  },
+  "defaults": { "asset": "", "as": "card", "width": 0.7, "x": 0.5, "y": 0.45, "tilt": 0, "shadow": "soft", "light": true },
+  "example": "A product photo as a tilted card with a soft shadow: {\"asset\": \"assets/photo.png\", \"as\": \"card\", \"tilt\": -6}."
+}

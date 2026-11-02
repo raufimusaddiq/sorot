@@ -269,6 +269,24 @@ export interface GenVersion {
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
+  /** JSON `{version, parts}`: the kit parts the build loaded (null before any). */
+  kit?: string | null;
+  /** JSON `{shotId: {planned, built, reason}}`: the level each shot was planned at and built at. */
+  shotLevels?: string | null;
+}
+
+/** One installed kit part (built in, or added by the owner). */
+export interface GenKitPart {
+  name: string;
+  source: "builtIn" | "user";
+  version: string;
+  /** The validated part.json. */
+  manifest: string;
+  /** The folder holding the part. */
+  path: string;
+  checkedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GenVerdict {

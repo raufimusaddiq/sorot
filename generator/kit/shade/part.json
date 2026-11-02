@@ -1,0 +1,15 @@
+{
+  "name": "shade",
+  "version": "1.0.0",
+  "does": "Lights any shape from the film's key light: a body gradient, a highlight and a rim, by material.",
+  "runtime": "dom",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "target": { "t": "str", "max": 120 },
+    "material": { "t": "enum", "values": ["matte", "gloss", "metal", "glass", "paper"] },
+    "strength": { "t": "num", "min": 0, "max": 1 },
+    "color": { "t": "str", "max": 30 }
+  },
+  "defaults": { "target": "", "material": "matte", "strength": 0.6, "color": "" },
+  "example": "A circle lit from the upper left as a metal coin: {\"target\": \".coin\", \"material\": \"metal\"}."
+}

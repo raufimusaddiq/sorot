@@ -23,6 +23,8 @@ import { ImageClient } from "./images";
 import { Narrator } from "./narration";
 import { findPreset, loadPresets } from "./presets";
 import { IdeaBank, type IdeaFlags } from "./ideas";
+import { Kit, requiredParts } from "./kit";
+import { capabilitiesFor, CPU_MAX_LEVEL, recipeMaxLevel, type Capabilities, type Level } from "./capabilities";
 import { RecipeBook } from "./recipes";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
 import { settingsOf } from "./steps";
@@ -88,6 +90,7 @@ export class GenerateService {
   readonly queue: BuildQueue;
   readonly recipes: RecipeBook;
   readonly ideas: IdeaBank;
+  readonly kit: Kit;
   private doctorCache: { at: number; result: { ok: boolean; reason?: string } } | null = null;
   private catalogCache: Array<{ name: string; tags: string[]; type?: string; description?: string }> | null = null;
   /** Work running in the background, by project. */
@@ -110,6 +113,8 @@ export class GenerateService {
     this.assets = new Assets(config, store);
     this.recipes = new RecipeBook(store);
     this.ideas = new IdeaBank(store);
+    this.kit = new Kit(config, store, hyperframes, exec);
+    this.director.capabilities = (q) => this.capabilities(q.level, q.parts);
     this.runner = new Runner(store, this.log, {
       connected: (c) => this.connected(c),
       directorGate: (ctx, result) => this.decide(ctx.project, ctx.step, result.outputRef),
@@ -123,6 +128,8 @@ export class GenerateService {
       web,
       config,
       catalog: () => this.catalog(),
+      kit: this.kit,
+      capabilities: (level, parts) => this.capabilities(level, parts),
     });
     this.queue = new BuildQueue({
       concurrency: config.genConcurrency, pollMs: 5000, blocked: () => clipJobBusy(store),
@@ -141,6 +148,7 @@ export class GenerateService {
   /** Startup: example recipes into the database; what was running when the server stopped is marked interrupted. */
   start() {
     seedRecipes(this.store, `${this.config.generatorDir}/recipes`);
+    this.kit.syncBuiltIns();
     this.runner.recoverInterrupted();
     for (const v of this.store.genVersionsByStatus("QUEUED")) this.queue.enqueue(v.id);
   }
@@ -157,6 +165,21 @@ export class GenerateService {
       image: c.imageEnabled && !!c.imageBaseUrl && !!c.imageModel && !!c.imageApiKey,
       voiceEngines: this.narrator.engines, dataSources: c.dataSources.map((x) => x.name), commands: c.commandsEnabled ? c.commands.map((x) => x.name) : [],
     };
+  }
+
+  /** The highest level this machine offers (a recipe may lower it further). */
+  get machineMaxLevel(): Level { return this.compute === "cpu" ? CPU_MAX_LEVEL : "free"; }
+
+  /** What a director call is told right now (FR-047): the kit, the level, the renderer, the connections. */
+  capabilities(level: Level = "compose", parts?: string[]): Capabilities {
+    return capabilitiesFor({
+      level, parts, kit: this.kit.manifests(), config: this.config, connected: (c) => this.connected(c), maxLevel: this.machineMaxLevel,
+    });
+  }
+
+  /** What a plan's shot looks are checked against: the kit at the highest level the recipe allows. */
+  private kitFor(recipe: Recipe) {
+    return { capabilities: this.capabilities(recipeMaxLevel(recipe)), kit: this.kit.manifests() };
   }
 
   connected(name: string): boolean {
@@ -294,6 +317,11 @@ export class GenerateService {
       if (step.use === "images") needs(step, c.image, "needs the image connection in Settings");
       if (step.use === "look" || (step.use === "creative" && w.vision === "on")) needs(step, c.vision, "needs a vision-capable model in Settings");
       if (step.use === "command") needs(step, c.commands.includes(w.name as string), `the command "${String(w.name)}" isn't registered in Settings`);
+      if (step.use === "author") {
+        // `kit:<name>` names a kit part; a part this install lacks means the recipe can't run here (FR-039)
+        const installed = new Set(this.kit.list().map((p) => p.name));
+        for (const name of requiredParts(w.require)) if (!installed.has(name)) reasons.push(`${step.id ?? step.use}: kit part ${name} isn't installed`);
+      }
       if (step.use === "facts" && Array.isArray(w.sources)) {
         for (const s of w.sources as string[]) needs(step, c.dataSources.includes(s), `the data source "${s}" isn't set up in Settings`);
       }
@@ -619,7 +647,7 @@ export class GenerateService {
 
   private async checkPlan(p: GenProject, raw: unknown) {
     const catalog = (await this.catalog()).map((b) => b.name);
-    const check = validatePlan(raw, planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog }));
+    const check = validatePlan(raw, planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog, ...this.kitFor(parseRecipe(p)) }));
     if (!check.ok) throw new HttpError(400, `The plan doesn't pass: ${check.errors.join("; ")}`);
     return check.plan as Plan;
   }
@@ -654,7 +682,7 @@ export class GenerateService {
     const recipe = parseRecipe(p);
     const planStep = recipe.steps.find((s) => s.use === "plan") as RecipeStep;
     const catalog = (await this.catalog()).map((b) => b.name);
-    const planCtx = planContext({ project: p, recipe, assets: this.store.genAssetsForProject(id), connected: (c) => this.connected(c), catalog });
+    const planCtx = planContext({ project: p, recipe, assets: this.store.genAssetsForProject(id), connected: (c) => this.connected(c), catalog, ...this.kitFor(recipe) });
     const out = await this.director.revise({ project: p, step: planStep, current: JSON.parse(current.plan) as Plan, request: text, planCtx });
     return { plan: this.savePlan(p, out.plan, { request: text, summary: out.changeSummary }), changeSummary: out.changeSummary };
   }
@@ -801,7 +829,7 @@ export class GenerateService {
 
   private async planContextOf(p: GenProject) {
     const catalog = (await this.catalog()).map((b) => b.name);
-    return planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog });
+    return planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog, ...this.kitFor(parseRecipe(p)) });
   }
 
   /**

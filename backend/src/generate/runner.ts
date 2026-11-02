@@ -50,6 +50,9 @@ export interface RunnerDeps {
   web?: FactWeb;
   config: AppConfig;
   catalog: StepContext["catalog"];
+  /** The installed kit (absent in tests that don't use it). */
+  kit?: StepContext["kit"];
+  capabilities?: StepContext["capabilities"];
   /** The step library; tests pass stubs. */
   steps?: Record<StepType, StepModule>;
 }
@@ -311,7 +314,7 @@ export class Runner {
   private context(project: GenProject, version: GenVersion | null, recipe: Recipe, step: RecipeStep, signal?: AbortSignal): StepContext {
     return {
       project, version, recipe, step, signal, store: this.store, log: this.log,
-      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, runScript: this.deps.runScript, narrator: this.deps.narrator, images: this.deps.images, web: this.deps.web, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog,
+      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, runScript: this.deps.runScript, narrator: this.deps.narrator, images: this.deps.images, web: this.deps.web, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog, kit: this.deps.kit, capabilities: this.deps.capabilities,
       settings: settingsOf(step.use, step.with),
       progress: (percent) => { if (version) this.store.updateGenVersion(version.id, { progress: Math.max(0, Math.min(100, Math.round(percent))) }); },
     };

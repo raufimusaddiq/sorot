@@ -59,6 +59,9 @@ const DEFAULT_TIMEOUT_MS: Record<string, number> = {
 /** Planning figure from the reference runs (R11): ~10 s of render per second of video at 30 fps. */
 const RENDER_SEC_PER_VIDEO_SEC = 15;
 
+/** The planning figure itself: seconds of render allowed per second of video at 30 fps. */
+export const renderTimeoutBudget = () => RENDER_SEC_PER_VIDEO_SEC;
+
 /** Time limit for a render of `durationSec` seconds at `fps`: scales with length and frame rate, never below 10 min. */
 export function renderTimeoutMs(durationSec: number, fps: number): number {
   return Math.max(10 * MINUTE, Math.ceil(durationSec * RENDER_SEC_PER_VIDEO_SEC * (fps / 30)) * 1000);

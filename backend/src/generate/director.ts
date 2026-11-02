@@ -10,6 +10,7 @@ import { shotFile, shotId } from "./composer";
 import { checkEffects, validatePlan, type Plan, type PlanContext } from "./planSchema";
 import { contrastOf, SEAM_MIN_CONTRAST, seamColour, TRANSITIONS, TRANSITION_NAMES, transitionKind } from "./transitions";
 import type { RecipeStep } from "./recipe";
+import type { Capabilities, Level } from "./capabilities";
 
 // The bounded LLM director (contracts/director.md). Every call is one request and one TOOL CALL:
 // the model must call one function whose arguments are the answer, so a reasoning model can't
@@ -285,7 +286,14 @@ export interface SceneInput {
   assets: string[];
   /** Installed registry blocks the shot uses: name -> its source, as examples to follow. */
   blocks?: Record<string, string>;
+  /** The level the shot is written at (default compose). */
+  level?: Level;
 }
+
+/** A capability query: the call's level and the parts whose full settings it gets (none for plan calls). */
+export interface CapabilityQuery { level?: Level; parts?: string[] }
+/** The calls that are told what this install can do (FR-047). */
+const CAPABLE: ReadonlySet<string> = new Set(["storylines", "plan", "outline", "specs", "revise", "scene", "repair", "fix"]);
 
 /** The scene's HTML from a call's arguments; a model sometimes wraps it in a markdown fence. */
 function htmlOf(parsed: unknown): { value?: string; errors?: string[] } {
@@ -339,7 +347,19 @@ export class Director {
   private guide: string | null = null;
   private contract: string | null = null;
 
+  /** The capability description for a call; set by the service (null: calls go without it). */
+  capabilities: ((q: CapabilityQuery) => Capabilities) | null = null;
+
   constructor(private readonly llm: Llm, private readonly log: DirectorLog, private readonly generatorDir: string) {}
+
+  /** The scene's parts get their full settings: those the shot's look names, else every part the level may use. */
+  private sceneCapabilities(input: SceneInput): Capabilities | null {
+    if (!this.capabilities) return null;
+    const level = input.level ?? "compose";
+    const named = (input.plan.shots[input.index]?.look?.parts ?? []).map((p) => p.part);
+    const all = this.capabilities({ level });
+    return this.capabilities({ level, parts: named.length ? named : all.kit.map((p) => p.name) });
+  }
 
   /** The model that answers, and the one that looks at pictures (null when none is set up). */
   get model(): string { return this.llm.model; }
@@ -385,6 +405,8 @@ export class Director {
   ): Promise<T> {
     const def = TOOLS[kind];
     const name = def.function.name;
+    // what this install can do goes with every planning and writing call; scene calls bring their own
+    if (CAPABLE.has(kind) && this.capabilities && !("capabilities" in payload)) payload = { ...payload, capabilities: this.capabilities({}) };
     const brief = JSON.stringify({ ...payload, task });
     const messages: ChatInput[] = [
       { role: "system", content: this.system(kind, step) },
@@ -673,6 +695,7 @@ export class Director {
     const brief = JSON.stringify({
       plan: { title: plan.title, message: plan.message, look: plan.look, shots: plan.shots.map((s) => ({ id: s.id, purpose: s.purpose, seconds: s.durationSec, text: s.text.map((t) => t.value), visual: s.visual.description, motion: s.motion, transition: s.transition, hold: s.hold })) },
       blocksAllowed: blocksOn,
+      ...(this.capabilities ? { capabilities: this.capabilities({}) } : {}),
       task: "Choose this film's effects with the tools: a few seams with a transition that has a cause, and light, blur, depth or glow where a shot needs it. Search first, then set. When you are done, answer with one sentence on what you chose.",
     });
     const summary = await this.log.track(
@@ -711,6 +734,7 @@ export class Director {
       compositionId: shotId(index), file: shotFile(index), size: { width: input.width, height: input.height },
       film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, position: index + 1, of: plan.shots.length },
       assets: input.assets, fonts: plan.look.fonts, blocks: input.blocks ?? {},
+      ...(this.capabilities ? { capabilities: this.sceneCapabilities(input) } : {}),
     };
   }
 

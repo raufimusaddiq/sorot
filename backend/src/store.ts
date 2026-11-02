@@ -1,6 +1,6 @@
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type {
-  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, GenAsset, GenEvent, GenExport, GenFact, GenIdea,
+  Clip, ClipFeedback, ClipScore, DiscoveredVideo, DiscoveryChannel, GenAsset, GenEvent, GenExport, GenFact, GenIdea, GenKitPart,
   GenPlan, GenProject, GenRecipeRow, GenVerdict, GenVersion, Job, SocialPost, StageStatus, Video,
 } from "./types";
 
@@ -9,7 +9,7 @@ type Table =
   | "video" | "job" | "stage_status" | "clip" | "clip_score"
   | "clip_feedback" | "discovered_video" | "discovery_channel" | "social_post"
   | "gen_project" | "gen_plan" | "gen_version" | "gen_verdict" | "gen_asset" | "gen_export" | "gen_event"
-  | "gen_recipe" | "gen_fact" | "gen_idea";
+  | "gen_recipe" | "gen_fact" | "gen_idea" | "gen_kit_part";
 
 const COLUMNS = {
   video: [
@@ -64,6 +64,7 @@ COLUMNS.gen_plan = ["id", "project_id", "revision", "plan", "change_request", "c
 COLUMNS.gen_version = [
   "id", "project_id", "plan_id", "number", "parent_version_id", "status", "step", "progress", "project_dir",
   "render_kind", "draft_path", "step_state", "hyperframes_version", "build_ms", "error_message", "created_at", "updated_at",
+  "kit", "shot_levels",
 ];
 COLUMNS.gen_verdict = ["id", "version_id", "kind", "status", "findings", "judged_by", "inputs", "created_at"];
 COLUMNS.gen_asset = ["id", "project_id", "kind", "origin", "path", "shot_id", "prompt_hash", "meta", "created_at"];
@@ -74,6 +75,7 @@ COLUMNS.gen_fact = [
   "id", "project_id", "idea_id", "claim", "value", "source_url", "status", "original_value", "evidence", "added_by",
   "created_at", "updated_at",
 ];
+COLUMNS.gen_kit_part = ["name", "source", "version", "manifest", "path", "checked_at", "created_at", "updated_at"];
 COLUMNS.gen_idea = ["id", "slug", "brief", "flags", "status", "project_id", "created_at", "updated_at"];
 
 /** gen_event.response is capped: the director log keeps the start of a long answer. */
@@ -108,12 +110,12 @@ export class Store {
     return fromRow<T>(this.db.query(sql).get(...params) as Row | null);
   }
 
-  private upsert<T extends object>(table: Table, obj: T): T {
+  private upsert<T extends object>(table: Table, obj: T, key = "id"): T {
     const cols = COLUMNS[table];
     const rec = obj as Row;
     const sql =
       `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")}) ` +
-      `ON CONFLICT(id) DO UPDATE SET ${cols.filter((c) => c !== "id").map((c) => `${c} = excluded.${c}`).join(", ")}`;
+      `ON CONFLICT(${key}) DO UPDATE SET ${cols.filter((c) => c !== key).map((c) => `${c} = excluded.${c}`).join(", ")}`;
     this.db.query(sql).run(...cols.map((c) => (rec[toCamel(c)] ?? null) as SQLQueryBindings));
     return obj;
   }
@@ -390,6 +392,12 @@ export class Store {
   listGenIdeas() { return this.all<GenIdea>("SELECT * FROM gen_idea ORDER BY created_at"); }
   updateGenIdea(id: string, fields: Partial<GenIdea>) { this.patch("gen_idea", id, { ...fields, updatedAt: now() }); }
   deleteGenIdea(id: string) { this.db.query("DELETE FROM gen_idea WHERE id = ?").run(id); }
+
+  // ---- generate: gen_kit_part (the installed kit) ----
+  saveGenKitPart(p: GenKitPart) { return this.upsert("gen_kit_part", p, "name"); }
+  getGenKitPart(name: string) { return this.one<GenKitPart>("SELECT * FROM gen_kit_part WHERE name = ?", name); }
+  listGenKitParts() { return this.all<GenKitPart>("SELECT * FROM gen_kit_part ORDER BY name"); }
+  deleteGenKitPart(name: string) { this.db.query("DELETE FROM gen_kit_part WHERE name = ?").run(name); }
 
   // ---- setting ----
   settings(): Record<string, string> {

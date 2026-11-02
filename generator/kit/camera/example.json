@@ -1,0 +1,2 @@
+{ "durationSec": 3, "settings": { "projection": "isometric", "move": "dolly-in", "target": ".city" },
+  "markup": "<div class=\"city\" style=\"position:absolute;left:240px;top:660px;width:600px;height:600px;background:#2b3a55\"><div style=\"position:absolute;left:60px;top:60px;width:200px;height:200px;background:#f2b134\"></div><div style=\"position:absolute;left:340px;top:300px;width:200px;height:240px;background:#ed6a5a\"></div></div>" }

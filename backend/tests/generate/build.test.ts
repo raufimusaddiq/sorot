@@ -8,6 +8,7 @@ import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { readFindings } from "../../src/generate/findings";
 import { Hyperframes } from "../../src/generate/hyperframes";
+import { Kit } from "../../src/generate/kit";
 import { Llm } from "../../src/llm";
 import type { ExecFn } from "../../src/runner";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
@@ -90,6 +91,22 @@ describe("author step", () => {
     expect(readFileSync(join(r.dir, "assets/voice-l2.mp3"), "utf-8")).toBe("voice-l2");
     expect(root).toContain('id="music" class="clip" src="assets/bed.mp3" data-start="0" data-duration="30" data-track-index="1" data-volume="0.03"');
     expect(readFindings(r.dir)).toMatchObject([{ severity: "polish", code: "image_fallback", shotId: "s01", source: "author" }]);
+  });
+
+  test("the root loads the kit parts the recipe requires, the plan's looks name and the scenes mount; the version records them", async () => {
+    const mount = `<script>SorotKitRuntime.mount("particles", document.body, {}, { tl: gsap.timeline(), duration: 2 }); SorotKit["neon"];</script>`;
+    const r = rig([html(0), html(1, SAMPLE_TITLES[1], mount), html(2)]);
+    const looked = { ...r.plan, shots: r.plan.shots.map((s, i) => (i === 0 ? { ...s, look: { description: "lit coin", values: { lightAngleDeg: 290 }, parts: [{ part: "shade", settings: {} }] } } : s)) };
+    r.store.saveGenPlan({ ...r.store.getGenPlan("pl1")!, plan: JSON.stringify(looked) });
+    const kit = new Kit(r.config, r.store, new Hyperframes(r.config, r.fake.exec), r.fake.exec);
+    kit.syncBuiltIns();
+    await STEPS.author.run(r.ctxFor("author", { require: ["kit:camera", "typography"] }, { kit }));
+    const root = readFileSync(join(r.dir, "index.html"), "utf-8");
+    expect([...root.matchAll(/assets\/kit\/([\w-]+)\/part\.js/g)].map((m) => m[1])).toEqual(["camera", "particles", "shade"]);
+    expect(root).toContain('"keyLightDeg":290');
+    expect(existsSync(join(r.dir, "assets/kit/_runtime.js")) && existsSync(join(r.dir, "assets/kit/particles/part.js"))).toBe(true);
+    // "neon" isn't installed: nothing to load (the scene check reports it)
+    expect(JSON.parse(r.store.getGenVersion("v1")!.kit!)).toMatchObject({ parts: ["camera", "particles", "shade"], partVersions: { shade: "1.0.0" } });
   });
 
   test("lays out the project, then writes one scene per shot", async () => {
@@ -358,9 +375,12 @@ describe("check step", () => {
     expect(readFindings(withSound.dir)[0]).toMatchObject({ code: "film_silent", state: "open", severity: "should-fix" });
   });
 
-  test("Studio-only warnings and info are dropped", async () => {
+  test("Studio-only warnings, Chrome's WebGL capture notes and info are dropped", async () => {
     const r = await built({
-      lint: answers(lint(finding("studio_missing_editable_id", "warning", { selector: '[data-composition-id="shot-01"]' }), finding("note", "info"))),
+      lint: answers(lint(
+        finding("studio_missing_editable_id", "warning", { selector: '[data-composition-id="shot-01"]' }), finding("note", "info"),
+        { ...finding("console_warning", "warning"), message: "[.WebGL-0x1]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels" },
+      )),
     });
     await STEPS.check.run(r.ctxFor("check"));
     expect(readFindings(r.dir)).toEqual([]);

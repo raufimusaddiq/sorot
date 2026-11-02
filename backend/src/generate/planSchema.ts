@@ -34,6 +34,18 @@ export interface Shot {
   motionPlan?: MotionStep[];
   /** Light, blur, depth and glow as exact values, chosen by the director for this shot. */
   effects?: ShotEffects;
+  /** How the shot looks, in the director's own terms, with the kit parts it will use (FR-041). */
+  look?: ShotLook;
+  /** The level the plan expects the shot to be written at (kit, compose, free; FR-042). */
+  level?: string;
+}
+
+export interface ShotLook {
+  description: string;
+  /** Exact values in whatever terms the shot needs (colours, angles, sizes, timings). */
+  values: Record<string, unknown>;
+  /** Kit parts and their settings; checked against the installed kit. */
+  parts?: Array<{ part: string; settings: Record<string, unknown> }>;
 }
 
 export interface ShotEffects {
@@ -116,6 +128,38 @@ export interface PlanContext {
   fps?: number;
   /** A factual recipe (`sourcedNumbers`): the numbers in these texts that no verified fact or the brief states. */
   unsourced?: (texts: string[]) => string[];
+  /** Checks kit part references (`look.parts`) against the capability description: one message each (FR-045, FR-047). */
+  kit?: (refs: Array<{ part: string; settings: Record<string, unknown> }>, path: string) => string[];
+}
+
+const MAX_LOOK_VALUES = 2000;
+
+/** A shot's look: the director's own description and values, and the kit parts it names (FR-041). */
+export function checkShotLook(raw: unknown, path: string, errors: string[], kit?: PlanContext["kit"]): ShotLook | undefined {
+  if (!isObj(raw)) {
+    errors.push(`${path}: must be an object {description, values, parts?}`);
+    return undefined;
+  }
+  const description = str(raw.description);
+  if (!description) errors.push(`${path}.description: say what the shot looks like`);
+  if (description.length > 400) errors.push(`${path}.description: at most 400 characters`);
+  const values = isObj(raw.values) ? raw.values : {};
+  if (raw.values !== undefined && !isObj(raw.values)) errors.push(`${path}.values: an object of exact values`);
+  if (JSON.stringify(values).length > MAX_LOOK_VALUES) errors.push(`${path}.values: keep it under ${MAX_LOOK_VALUES} characters`);
+  const look: ShotLook = { description, values };
+  if (raw.parts !== undefined) {
+    if (!Array.isArray(raw.parts) || raw.parts.length > 8) errors.push(`${path}.parts: a list of at most 8 {part, settings}`);
+    else {
+      const parts = raw.parts.map((p, i) => {
+        const o = isObj(p) ? p : {};
+        if (!str(o.part)) errors.push(`${path}.parts[${i}]: name the part`);
+        return { part: str(o.part), settings: isObj(o.settings) ? o.settings : {} };
+      });
+      if (kit) errors.push(...kit(parts, `${path}.parts`));
+      look.parts = parts;
+    }
+  }
+  return look;
 }
 
 export interface PlanCheck {
@@ -210,10 +254,11 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     const transition = i === 0 ? "cut" : transitionKind(str(o.transition));
     if (transition === null) errors.push(`${at} (${id}): transition "${str(o.transition)}" isn't one Sorot can build; use one of ${TRANSITION_NAMES.join(", ")}`);
     const effects = o.effects === undefined || o.effects === null ? undefined : checkEffects(o.effects, `${at} (${id}): effects`, errors);
+    const shotLook = o.look === undefined || o.look === null ? undefined : checkShotLook(o.look, `${at} (${id}): look`, errors, ctx.kit);
     return {
       id, purpose: str(o.purpose) || "beat", durationSec: round1(durationSec), text, visual, motion: str(o.motion),
       transition: transition ?? "cut", audio: str(o.audio), narration, hold: o.hold === true,
-      ...(effects ? { effects } : {}),
+      ...(effects ? { effects } : {}), ...(shotLook ? { look: shotLook } : {}),
     };
   });
 

@@ -1,0 +1,2 @@
+{ "durationSec": 2, "settings": { "target": ".coin", "material": "metal", "color": "#d4a017" },
+  "markup": "<div class=\"coin\" style=\"position:absolute;left:340px;top:760px;width:400px;height:400px;border-radius:50%\"></div>" }

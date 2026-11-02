@@ -1,0 +1,2 @@
+{ "durationSec": 3, "settings": { "direction": "left", "amount": 160 },
+  "markup": "<div data-depth=\"1\" style=\"position:absolute;left:-100px;top:900px;width:1300px;height:500px;border-radius:50% 50% 0 0;background:#5b6c8f\"></div><div data-depth=\"0.5\" style=\"position:absolute;left:-200px;top:1150px;width:1500px;height:500px;border-radius:50% 50% 0 0;background:#3d4a66\"></div><div data-depth=\"0\" style=\"position:absolute;left:-100px;top:1450px;width:1300px;height:600px;border-radius:50% 50% 0 0;background:#22293a\"></div>" }

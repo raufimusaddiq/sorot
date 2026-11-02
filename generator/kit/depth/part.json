@@ -1,0 +1,14 @@
+{
+  "name": "depth",
+  "version": "1.0.0",
+  "does": "Gives layered depth: children marked data-depth (0 near to 1 far) drift at their own speed (parallax) and far layers fade into the ground.",
+  "runtime": "dom",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "direction": { "t": "enum", "values": ["left", "right", "up", "down"] },
+    "amount": { "t": "num", "min": 0, "max": 400 },
+    "haze": { "t": "num", "min": 0, "max": 1 }
+  },
+  "defaults": { "direction": "left", "amount": 120, "haze": 0.35 },
+  "example": "Three hills at depths 0, 0.5 and 1 drifting left: {\"direction\": \"left\", \"amount\": 160}."
+}

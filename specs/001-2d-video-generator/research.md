@@ -870,3 +870,28 @@ seams are cuts", reversing the phase 12 text).
 | Cost of motion blur and of WebGL/Three.js scenes on the RTX 4060 and on CPU | Render seconds per video second recorded; `maxLevel` default for CPU installs chosen |
 | Thresholds for `motion` (jump, stall) on today's builds | No finding on the smooth builds, a finding on a planted jump |
 | Level thresholds (R25) | Calibration of both deepseek models and one small local model recorded; their levels look right |
+
+### S7 cost, CPU half (2026-11-02)
+
+One run each, native Linux (not the Docker image), 4-core Intel Xeon 2.1 GHz, no GPU, 16 GB;
+HyperFrames 0.8.223, `render -q draft -f 30 -w 2`, 10 s at 1080×1920 (300 frames). Chrome drew
+WebGL with SwiftShader (software). Treat these as single measurements.
+
+| Scene | Render | Seconds per video second |
+|---|---|---|
+| Six 2D cards darting across every 0.5 s (fast `expo.out` moves) | 10.3 s | 1.0 |
+| The same with `data-motion-blur="on"` (default samples) | 34.8 s | 3.5 |
+| `three` kit part: six lit metal coins, orbiting camera | 22.5 s | 2.3 |
+| The same with `data-motion-blur="on"` and `data-motion-blur-events="on"` | 36.2 s | 3.6 |
+
+- Motion blur costs about 3.4× on 2D movers: worth it only on shots the plan marks fast
+  (`render.motionBlur: auto`). On a WebGL canvas HyperFrames falls back to its filter blur (its log:
+  "html-in-canvas captures [WebGL] frozen (Chrome 152)").
+- Software WebGL is affordable for a simple 3D shot (2.3 s per second, far inside the 15 s planning
+  figure), so **CPU installs keep `maxLevel: free`** (`CPU_MAX_LEVEL`); a heavier shot is caught by the
+  frame budget (T139) and dropped a level.
+- Chrome logs "GPU stall due to ReadPixels" console warnings for a WebGL canvas; they come from the
+  frame capture, so the check step drops them.
+- The nine built-in parts each rendered their example twice with identical frames (framemd5) on this
+  machine, which is the check a user part must pass.
+- Still open: the same four scenes on the RTX 4060 Docker app.

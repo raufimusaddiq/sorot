@@ -6,6 +6,7 @@ import type { Json } from "./api";
 import { has, num, str, UsageError, type Args } from "./args";
 import { json, need, type Deps } from "./commands";
 import { short, table, truncate, when } from "./format";
+import { zipStored } from "./zip";
 
 const BASE = "/api/generate/projects";
 const WORKING = ["RUNNING", "BUILDING"];
@@ -667,6 +668,97 @@ async function recipeCmd(d: Deps, a: Args): Promise<number> {
   }
 }
 
+// ---- the kit -----------------------------------------------------------------------
+
+const KIT = "/api/generate/kit";
+
+/** A part folder as a .zip (the folder at the top), or the bytes of a .zip as given. */
+function partZip(d: Deps, ref: string): { name: string; bytes: Uint8Array } {
+  const path = resolve(d.cwd, ref);
+  const files = d.fs.list(path);
+  if (files) {
+    if (!files.includes("part.json")) throw new UsageError(`${ref} has no part.json: is it a kit part folder?`);
+    const top = basename(path);
+    return { name: `${top}.zip`, bytes: zipStored(files.map((f) => ({ path: `${top}/${f}`, data: d.fs.read(join(path, f)) }))) };
+  }
+  if (!d.fs.exists(path)) throw new UsageError(`Not found: ${ref}`);
+  if (!/\.zip$/i.test(ref)) throw new UsageError("Give a part folder or a .zip of one");
+  return { name: basename(ref), bytes: d.fs.read(path) };
+}
+
+const printPart = (d: Deps, p: Json) => {
+  d.out(`${p.name} ${p.version} (${p.source === "builtIn" ? "built in" : "yours"}, ${p.manifest.runtime}${p.manifest.needs.gpu === "no" ? "" : `, GPU ${p.manifest.needs.gpu}`})`);
+  d.out(`  ${p.manifest.does}`);
+  d.out(`  Example: ${p.manifest.example}`);
+  const settings = Object.entries(p.manifest.settings as Record<string, Json>);
+  if (!settings.length) return;
+  d.out("  Settings:");
+  for (const [k, f] of settings) {
+    const range = f.t === "enum" ? (f.values as string[]).join(" | ") : f.t === "int" || f.t === "num" ? `${f.min} to ${f.max}` : f.t;
+    const def = p.manifest.defaults[k];
+    d.out(`    ${k}: ${range}${def === undefined ? "" : ` (default ${JSON.stringify(def)})`}`);
+  }
+};
+
+/** The kit parts: list, show, add (validated and rendered twice by the server), export, remove. */
+async function kitCmd(d: Deps, a: Args): Promise<number> {
+  const action = a.positionals[2] ?? "list";
+  const arg = (i: number, what: string) => need(a, i, what);
+  switch (action) {
+    case "list": {
+      const { parts } = await d.api.get(KIT);
+      if (json(d, a, parts)) return 0;
+      d.out(table(["PART", "VER", "RUNTIME", "KIND", "DOES"], (parts as Json[]).map((p) => [
+        p.name, p.version, p.manifest.runtime, p.source === "builtIn" ? "built in" : "yours", truncate(p.manifest.does, 60),
+      ])));
+      return 0;
+    }
+    case "show": {
+      const { part } = await d.api.get(`${KIT}/${arg(3, "part name")}`);
+      if (!json(d, a, part)) printPart(d, part);
+      return 0;
+    }
+    case "add": {
+      const zip = partZip(d, arg(3, "part folder or .zip"));
+      const form = new FormData();
+      form.set("file", new File([zip.bytes], zip.name, { type: "application/zip" }));
+      if (!a.flags.json) d.out("Checking the part: its example renders twice and must come out the same...");
+      const { part } = await d.api.upload(KIT, form);
+      if (!json(d, a, part)) d.out(`Added ${part.name} ${part.version}. Directors are offered it from their next call.`);
+      return 0;
+    }
+    case "export": {
+      const name = arg(3, "part name");
+      const out = resolve(d.cwd, str(a, "out") ?? `${name}.zip`);
+      const bytes = await d.fs.write(out, await d.api.raw(`${KIT}/${name}/export`));
+      if (!json(d, a, { path: out, bytes })) d.out(`Saved ${out}`);
+      return 0;
+    }
+    case "remove": {
+      const name = arg(3, "part name");
+      await d.api.delete(`${KIT}/${name}`);
+      if (!json(d, a, { deleted: true })) d.out(`Removed ${name}. A recipe that names it shows as unavailable until it is added again.`);
+      return 0;
+    }
+    default:
+      throw new UsageError("Use: sorot gen kit [list] | show <name> | add <folder|.zip> | export <name> [-o file.zip] | remove <name>");
+  }
+}
+
+/** What a director call is told on this install (the kit, the level, the renderer, the connections). */
+async function capabilitiesCmd(d: Deps, a: Args): Promise<number> {
+  const level = str(a, "level") ?? "compose";
+  const { capabilities: c } = await d.api.get(`/api/generate/capabilities?level=${encodeURIComponent(level)}`);
+  if (json(d, a, c)) return 0;
+  d.out(`Level ${c.level}: ${c.levelMeans}`);
+  d.out(`Renderer: HyperFrames ${c.renderer.hyperframes} · draws ${(c.renderer.runtimes as string[]).join(", ")} · ${c.renderer.gpu ? "GPU" : "CPU"} · frame budget ${c.renderer.frameBudgetMs} ms`);
+  d.out(`Connections: image ${onOff(c.connections.image)} · voice ${onOff(c.connections.voice)} · vision ${onOff(c.connections.vision)}`);
+  d.out(`Seams: ${(c.seams as string[]).join(", ")}`);
+  d.out(`Kit (${(c.kit as Json[]).length} parts at this level):`);
+  for (const p of c.kit as Json[]) d.out(`  ${p.name} (${p.runtime}): ${p.does}`);
+  return 0;
+}
+
 /** Passes a step that waits for you (a gate set to "owner"). */
 async function approveStepCmd(d: Deps, a: Args): Promise<number> {
   const id = await projectId(d, need(a, 2, "project"));
@@ -705,6 +797,8 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   recipes: recipesCmd,
   recipe: recipeCmd,
   "approve-step": approveStepCmd,
+  kit: kitCmd,
+  capabilities: capabilitiesCmd,
 };
 
 export async function genCmd(d: Deps, a: Args): Promise<number> {

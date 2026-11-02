@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { checkScene, shotFile, sizeFor } from "../composer";
 import { saveFindings, type NewFinding } from "../findings";
 import { beatTimes, expectations, lookFindings } from "../look";
-import { buildTarget, readScene, sceneAssets } from "./build";
+import { buildTarget, levelOfShot, readScene, sceneAssets, sceneRules } from "./build";
 import type { RunFn, StepContext } from "./types";
 
 const MIME: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png" };
@@ -49,7 +49,7 @@ export const run: RunFn = async (ctx) => {
         project: ctx.project, step: ctx.step, plan, index, ...size, assets, html,
         findings: found.filter((f) => f.shotId === id).map((f) => ({ code: f.code, message: f.description, hint: f.suggestedFix })),
       });
-      if (checkScene(fixed.html, plan.shots[index]!, index, { assets }).length === 0) writeFileSync(join(dir, shotFile(index)), fixed.html);
+      if (checkScene(fixed.html, plan.shots[index]!, index, sceneRules(ctx, levelOfShot(ctx, plan, index))).length === 0) writeFileSync(join(dir, shotFile(index)), fixed.html);
     }
   }
   saveFindings(dir, "look", found);

@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
-import { buildRoot, bundledFontFaces, checkScene, GSAP_FILE, shotFile, sizeFor, type FontFace, type SceneIssue } from "../composer";
+import { buildRoot, bundledFontFaces, checkScene, GSAP_FILE, kitLookOf, shotFile, sizeFor, type ComposeInput, type FontFace, type SceneIssue } from "../composer";
+import { kitScripts, PART_NAME, requiredParts, type KitManifest } from "../kit";
 import { editApplied, markEditApplied, readFix } from "../fixes";
 import { saveFindings, type NewFinding } from "../findings";
 import { mapPool } from "../../pool";
@@ -8,7 +9,7 @@ import { LlmError } from "../../llm";
 import { BUNDLED_FONTS } from "../planContext";
 import type { Plan } from "../planSchema";
 import { placeLines, readVoice } from "../voice";
-import { buildTarget, readScene, sceneAssets } from "./build";
+import { buildTarget, levelOfShot, readScene, readShotLevels, sceneAssets, sceneRules } from "./build";
 import { readImageFailures } from "./images";
 import { gainOf, readMusic } from "./music";
 import type { RunFn, StepContext } from "./types";
@@ -16,8 +17,31 @@ import type { RunFn, StepContext } from "./types";
 const BLOCK_SNIPPET_CHARS = 6000;
 const MUSIC_VOLUME = 0.12;
 
-/** Lays out the version's HyperFrames project: folder, local GSAP, fonts, the owner's files, blocks, and the root composition. */
-export async function prepareProject(ctx: StepContext, dir: string, plan: Plan): Promise<{ blocks: Record<string, string> }> {
+const KIT_CALL = /SorotKit(?:Runtime\s*\.\s*mount\s*\(\s*|\s*\[\s*)["']([a-z0-9][a-z0-9-]{0,39})["']/g;
+
+/** The kit parts a scene mounts (`SorotKitRuntime.mount("x", ...)` or `SorotKit["x"]`). */
+export const partsInScene = (html: string): string[] => [...new Set([...html.matchAll(KIT_CALL)].map((m) => m[1] as string))].sort();
+
+/**
+ * The kit parts the plan and the recipe name: `kit:<name>` (or an installed part's own name) in the
+ * author step's `require`, and each shot's look.
+ */
+export function plannedParts(plan: Plan, required: unknown, installed: Set<string>): string[] {
+  const plain = Array.isArray(required) ? required.filter((r): r is string => typeof r === "string" && PART_NAME.test(r) && installed.has(r)) : [];
+  const named = [...requiredParts(required), ...plain, ...plan.shots.flatMap((s) => (s.look?.parts ?? []).map((p) => p.part))];
+  return [...new Set(named)].sort();
+}
+
+export interface Prepared {
+  blocks: Record<string, string>;
+  /** Rewrites the root with these kit parts loaded (copied into assets/kit/); returns their manifests. */
+  writeRoot: (parts: string[]) => KitManifest[];
+  /** The installed parts the plan and the recipe name, loaded by the root as first written. */
+  planned: string[];
+}
+
+/** Lays out the version's HyperFrames project: folder, local GSAP, fonts, the owner's files, blocks, the kit parts, and the root composition. */
+export async function prepareProject(ctx: StepContext, dir: string, plan: Plan): Promise<Prepared> {
   const { config, project, store } = ctx;
   if (!existsSync(join(dir, "hyperframes.json"))) {
     mkdirSync(dirname(dir), { recursive: true });
@@ -72,11 +96,36 @@ export async function prepareProject(ctx: StepContext, dir: string, plan: Plan):
   }) : null;
 
   const size = sizeFor(project.format, ctx.recipe.output);
-  writeFileSync(join(dir, "index.html"), buildRoot({
+  const rootInput: ComposeInput = {
     plan, ...size, fonts: [...bundled, ...uploaded], music: track ? { path: track.path, volume: Math.round((config.bgmVolume ?? MUSIC_VOLUME) * duck * 1000) / 1000 } : null, voice,
-  }));
-  return { blocks };
+  };
+  const installed = new Set((ctx.kit?.manifests() ?? []).map((m) => m.name));
+  const writeRoot = (parts: string[]) => {
+    const manifests = ctx.kit && parts.length ? ctx.kit.copyInto(dir, parts) : [];
+    writeFileSync(join(dir, "index.html"), buildRoot({ ...rootInput, kit: kitScripts(manifests, kitLookOf(plan), size, ctx.recipe.output.fps) }));
+    return manifests;
+  };
+  const required = ctx.step.use === "author" ? ctx.settings.require : ctx.recipe.steps.find((s) => s.use === "author")?.with?.require;
+  const planned = plannedParts(plan, required, installed).filter((n) => installed.has(n));
+  writeRoot(planned);
+  return { blocks, writeRoot, planned };
 }
+
+/** After the scenes are written: the root loads every installed part a scene mounts, and the version records them. */
+export function settleKit(ctx: StepContext, dir: string, plan: Plan, prepared: Prepared): string[] {
+  const installed = new Set((ctx.kit?.manifests() ?? []).map((m) => m.name));
+  const mounted = plan.shots.flatMap((_, i) => partsInScene(readScene(dir, i) ?? ""));
+  const used = [...new Set([...prepared.planned, ...mounted])].filter((n) => installed.has(n)).sort();
+  const manifests = used.join() === prepared.planned.join() ? null : prepared.writeRoot(used);
+  if (ctx.version) {
+    const versions = Object.fromEntries((manifests ?? ctx.kit?.manifests().filter((m) => used.includes(m.name)) ?? []).map((m) => [m.name, m.version]));
+    ctx.store.updateGenVersion(ctx.version.id, { kit: used.length ? JSON.stringify({ version: KIT_FORMAT, parts: used, partVersions: versions }) : null });
+  }
+  return used;
+}
+
+/** The kit contract the build was written against (contracts/kit.md). */
+export const KIT_FORMAT = "1";
 
 /** The checks' leftovers as findings: a plan rule a scene still breaks is must-fix. */
 export const sceneFindings = (plan: Plan, shotIndex: number, issues: SceneIssue[]): NewFinding[] =>
@@ -92,19 +141,23 @@ export const sceneFindings = (plan: Plan, shotIndex: number, issues: SceneIssue[
 export const run: RunFn = async (ctx) => {
   const { dir, plan } = buildTarget(ctx);
   const rounds = Number(ctx.settings.repairRounds);
-  const { blocks } = await prepareProject(ctx, dir, plan);
+  const prepared = await prepareProject(ctx, dir, plan);
+  const { blocks } = prepared;
   const size = sizeFor(ctx.project.format, ctx.recipe.output);
   const assets = sceneAssets(ctx);
   let written = 0;
   const edits = new Map((readFix(dir)?.edits ?? []).map((e) => [e.shotId, e]));
 
+  const levels = readShotLevels(ctx);
   const writeShot = async ({ shot, i }: { shot: Plan["shots"][number]; i: number }): Promise<NewFinding[]> => {
+    const level = levelOfShot(ctx, plan, i, levels);
+    const rules = sceneRules(ctx, level);
     const input = {
-      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets,
+      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level,
       blocks: shot.visual.block && blocks[shot.visual.block] ? { [shot.visual.block]: blocks[shot.visual.block] as string } : {},
     };
     let html = readScene(dir, i);
-    let issues = html === null ? [] : checkScene(html, shot, i, { assets });
+    let issues = html === null ? [] : checkScene(html, shot, i, rules);
     // a fix round: this shot's scene (copied from the version being fixed) changes as the edit says
     const edit = edits.get(shot.id);
     const fixing = html !== null && edit !== undefined && !editApplied(dir, shot.id);
@@ -115,10 +168,10 @@ export const run: RunFn = async (ctx) => {
           ...input, html: html as string, findings: [{ code: "fix_request", message: edit.instruction }, ...(edit.findings ?? []), ...issues],
         })).html;
       } else html = await ctx.director.scene(input);
-      issues = checkScene(html, shot, i, { assets });
+      issues = checkScene(html, shot, i, rules);
       for (let n = 0; issues.length && n < rounds; n++) {
         html = (await ctx.director.repair({ ...input, html, findings: issues })).html;
-        issues = checkScene(html, shot, i, { assets });
+        issues = checkScene(html, shot, i, rules);
       }
       writeFileSync(join(dir, shotFile(i)), html);
       if (fixing) markEditApplied(dir, shot.id);
@@ -146,6 +199,7 @@ export const run: RunFn = async (ctx) => {
   for (const f of readImageFailures(ctx)) {
     left.push({ severity: "polish", shotId: f.shotId, code: "image_fallback", description: `The image for ${f.shotId} could not be made (${f.reason}); the shot uses its fallback visual.`, suggestedFix: "Upload an image for the shot, or try again.", state: "open", rule: "images" });
   }
+  settleKit(ctx, dir, plan, prepared);
   saveFindings(dir, "author", left);
   return { status: "done", outputRef: dir };
 };

@@ -2,6 +2,7 @@ import { now } from "../../store";
 import { LlmError } from "../../llm";
 import { DirectorError } from "../director";
 import { planContext } from "../planContext";
+import { recipeMaxLevel } from "../capabilities";
 import { parseRecipe } from "../recipe";
 import { requiresSourcedNumbers, unsourcedIn } from "../facts";
 import type { Concept } from "../novelty";
@@ -27,7 +28,11 @@ export const run: RunFn = async (ctx) => {
   const { project, store } = ctx;
   const assets = store.genAssetsForProject(project.id);
   const catalog = await ctx.catalog();
-  const planCtx = planContext({ project, recipe: parseRecipe(project), assets, connected: ctx.connected, catalog: catalog.map((b) => b.name) });
+  const recipe = parseRecipe(project);
+  const planCtx = planContext({
+    project, recipe, assets, connected: ctx.connected, catalog: catalog.map((b) => b.name),
+    ...(ctx.capabilities && ctx.kit ? { capabilities: ctx.capabilities(recipeMaxLevel(recipe)), kit: ctx.kit.manifests() } : {}),
+  });
   // A factual recipe: an unsourced number goes back to the director to repair, rather than failing the step.
   if (requiresSourcedNumbers(ctx.recipe)) planCtx.unsourced = (texts) => unsourcedIn(texts, project.brief, store.genFactsForProject(project.id));
   const voice = project.narration === 1 && before(ctx, "voice") ? readVoice(ctx.config, project.id) : null;

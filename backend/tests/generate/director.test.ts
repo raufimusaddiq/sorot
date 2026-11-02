@@ -397,6 +397,19 @@ describe("director: scenes", () => {
     expect(req.max_tokens).toBe(16000);
   });
 
+  test("with a capability description, a scene call gets its level and the full settings of the parts its look names (else of every part); plan calls get the summary", async () => {
+    const r = rig([json({ html: HTML }), json({ html: HTML }), json({ storylines: [story(1, { recommended: true })] })]);
+    const asked: Array<{ level?: string; parts?: string[] }> = [];
+    r.director.capabilities = (q) => { asked.push(q); return { level: q.level ?? "compose", kit: [{ name: "shade" }, { name: "camera" }], parts: q.parts } as never; };
+    const looked = { ...plan, shots: plan.shots.map((s, i) => (i === 1 ? { ...s, look: { description: "lit", values: {}, parts: [{ part: "shade", settings: {} }] } } : s)) };
+    await r.director.scene({ ...input(), plan: looked, level: "free" });
+    expect(userOf(r.requests[0]!).capabilities).toEqual({ level: "free", kit: [{ name: "shade" }, { name: "camera" }], parts: ["shade"] });
+    await r.director.scene(input());
+    expect(userOf(r.requests[1]!).capabilities.parts).toEqual(["shade", "camera"]);
+    await r.director.storylines({ project, step: step(), settings: { count: 1 }, assets: [] });
+    expect(userOf(r.requests[2]!).capabilities).toEqual({ level: "compose", kit: [{ name: "shade" }, { name: "camera" }] });
+  });
+
   test("a markdown fence around the file is removed; a step prompt is appended; blocks default to none", async () => {
     const r = rig(["{\"html\": " + JSON.stringify("```html\n" + HTML + "\n```") + "}"]);
     expect(await r.director.scene(input({ step: step({ use: "author", prompt: { mode: "append", text: "Use big type." } }) }))).toBe(HTML);

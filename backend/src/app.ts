@@ -14,6 +14,8 @@ import { fetchPageText } from "./generate/facts";
 import { ImageClient } from "./generate/images";
 import { Narrator } from "./generate/narration";
 import { GenerateService } from "./generate/service";
+import { KitError } from "./generate/kit";
+import { isLevel } from "./generate/capabilities";
 import { stepLibrary } from "./generate/recipes";
 import { ideaView, planView, projectView, recipeView, verdictView, versionView } from "./generate/views";
 import { HttpError, corsHeaders, fail, ok, Router, serveFile, serveStatic, withHeaders, type Body } from "./http";
@@ -443,6 +445,33 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   router.on("GET", "/api/generate/recipes/:id/export", (c) => {
     const recipe = generate.recipes.export(c.params.id as string);
     return new Response(JSON.stringify(recipe, null, 2), { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="${recipe.id}.json"` } });
+  });
+  // ---- generate: the kit (contracts/kit.md) ----
+  router.on("GET", "/api/generate/kit", () => ok({ parts: generate.kit.list() }));
+  router.on("GET", "/api/generate/kit/:name", (c) => ok({ part: generate.kit.get(c.params.name as string) }));
+  router.on("POST", "/api/generate/kit", async (c) => {
+    const form = await c.req.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!form || !(file instanceof File)) return fail(400, "Send the part as a .zip in the multipart field \"file\"");
+    try {
+      return ok({ part: await generate.kit.add({ zip: new Uint8Array(await file.arrayBuffer()) }, c.req.signal) }, 201);
+    } catch (e) {
+      if (e instanceof KitError) return Response.json({ status: "error", error: e.message, findings: e.findings }, { status: e.status });
+      throw e;
+    }
+  });
+  router.on("DELETE", "/api/generate/kit/:name", (c) => {
+    generate.kit.remove(c.params.name as string);
+    return ok({ deleted: true });
+  });
+  router.on("GET", "/api/generate/capabilities", (c) => {
+    const level = c.url.searchParams.get("level") ?? "compose";
+    if (!isLevel(level)) return fail(400, "level must be kit, compose or free");
+    return ok({ capabilities: generate.capabilities(level, generate.kit.list().map((p) => p.name)) });
+  });
+  router.on("GET", "/api/generate/kit/:name/export", (c) => {
+    const name = c.params.name as string;
+    return new Response(generate.kit.export(name), { headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="${name}.zip"` } });
   });
   router.on("POST", "/api/generate/projects/:id/steps/:stepId/approve", (c) =>
     ok({ project: projectView(generate.approveStep(c.params.id as string, c.params.stepId as string)) }));

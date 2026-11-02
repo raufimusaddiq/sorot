@@ -122,6 +122,21 @@ describe("scene checks (plan-lock)", () => {
     expect(codes(html)).toContain(code);
   });
 
+  test.each<[string, string, "kit" | "compose" | "free", boolean, string[]]>([
+    // a mount in the scene's script, the level, whether the machine draws WebGL → the codes found
+    ["an allowed part", `SorotKitRuntime.mount("shade", el, {}, { tl, duration: 2 });`, "compose", true, []],
+    ["a part that isn't installed", `SorotKit["neon"].mount(el, {}, ctx);`, "compose", true, ["kit_unknown_part"]],
+    ["the three part below free", `SorotKitRuntime.mount('three', el, {}, { tl, duration: 2 });`, "compose", true, ["kit_not_allowed"]],
+    ["WebGL of its own at compose", `el.getContext("webgl2");`, "compose", true, ["scene_webgl_not_allowed"]],
+    ["Three.js of its own at free", `const s = new THREE.Scene();`, "free", true, []],
+    ["WebGL at free on a machine without it", `el.getContext("webgl");`, "free", false, ["scene_webgl_not_allowed"]],
+    ["a 2D canvas at compose", `el.getContext("2d");`, "compose", true, []],
+  ])("kit rules: %s", (_name, js, level, webgl, found) => {
+    const allowed = level === "free" && webgl ? ["shade", "three"] : ["shade"];
+    const html = scene(0, "Bunga berbunga?").replace("tl.fromTo", `const el = document.body; ${js} tl.fromTo`);
+    expect(checkScene(html, shot, 0, { assets: [], kit: { installed: ["shade", "three"], allowed, level, webgl } }).map((i) => i.code)).toEqual(found);
+  });
+
   test("assets that exist are fine, however they are referenced; the hint lists what exists", () => {
     const html = scene(0, "Bunga berbunga?", '<img src="assets/ab-logo.png"><div style="background:url(assets/ab-bg.png)"></div>');
     expect(codes(html, ["assets/ab-logo.png", "assets/ab-bg.png"])).toEqual([]);

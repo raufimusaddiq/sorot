@@ -1,0 +1,17 @@
+{
+  "name": "particles",
+  "version": "1.0.0",
+  "does": "Seeded particles drawn on one canvas: dots, sparks, snow, confetti or bubbles, the same on every render.",
+  "runtime": "canvas",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "kind": { "t": "enum", "values": ["dots", "sparks", "snow", "confetti", "bubbles"] },
+    "count": { "t": "int", "min": 1, "max": 300 },
+    "size": { "t": "num", "min": 1, "max": 40 },
+    "speed": { "t": "num", "min": 0, "max": 2 },
+    "color": { "t": "str", "max": 30 },
+    "area": { "t": "enum", "values": ["full", "top", "bottom"] }
+  },
+  "defaults": { "kind": "snow", "count": 80, "size": 6, "speed": 0.6, "color": "", "area": "full" },
+  "example": "Gentle snow over the whole frame: {\"kind\": \"snow\", \"count\": 120}."
+}
