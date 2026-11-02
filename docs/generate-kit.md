@@ -51,7 +51,7 @@ glow-ring/
 window.SorotKit = window.SorotKit || {};
 window.SorotKit["glow-ring"] = {
   mount(host, s, ctx) {
-    // ctx: { tl, start, duration, fps, rand, look: { palette, keyLightDeg }, size: { width, height } }
+    // ctx: { tl, start, duration, fps, rand, look: { palette, keyLightDeg }, size: { width, height } } (size = the host's box, else the frame)
     const ring = document.createElement("div");
     ring.style.cssText = `position:absolute;left:50%;top:40%;width:${400 * s.size}px;height:${400 * s.size}px;` +
       `margin:-${200 * s.size}px;border-radius:50%;background:radial-gradient(circle, ${s.color || ctx.look.palette[2]} 0%, transparent 70%)`;

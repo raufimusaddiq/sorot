@@ -61,6 +61,9 @@
       for (k in defaults) merged[k] = defaults[k];
       for (k in settings || {}) merged[k] = settings[k];
       var c = this.ctx(opts);
+      // a part draws into its host's box: a 3D part mounted in a picture zone below the text filled
+      // the whole frame from the zone's top and ran off the bottom (2026-11-02); no box = the frame
+      if (host && host.clientWidth > 0 && host.clientHeight > 0) c.size = { width: host.clientWidth, height: host.clientHeight };
       var out = part.mount(host, merged, c);
       if (out && typeof out.render === "function") {
         var clock = { t: 0 };
