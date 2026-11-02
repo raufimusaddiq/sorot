@@ -120,8 +120,8 @@ of Kenari's support.
 
 ### Implementation for User Story 3 — Docs
 
-- [ ] T023 [P] [US3] Add a short line crediting Kenari's support, linking to kenari.id, in `README.md` near the existing "🤖 Optional LLM" feature-table row or the intro paragraph's "Jev, an LLM and Tebar are optional online extras" sentence, per `research.md` §11.
-- [ ] T024 [P] [US3] Add an entry under the existing `## [Unreleased]` section of `CHANGELOG.md`, matching the style of the current feature entries (e.g. `### Generate: briefs to finished 2D videos`), describing the Kenari integration (US1 one-key onboarding, US2 general-provider path) and the acknowledgment together.
+- [X] T023 [P] [US3] Add a short line crediting Kenari's support, linking to kenari.id, in `README.md` near the existing "🤖 Optional LLM" feature-table row or the intro paragraph's "Jev, an LLM and Tebar are optional online extras" sentence, per `research.md` §11.
+- [X] T024 [P] [US3] Add an entry under the existing `## [Unreleased]` section of `CHANGELOG.md`, matching the style of the current feature entries (e.g. `### Generate: briefs to finished 2D videos`), describing the Kenari integration (US1 one-key onboarding, US2 general-provider path) and the acknowledgment together.
 
 **Checkpoint**: All three user stories are independently functional — Kenari onboarding, the general-provider skip path, and the public acknowledgment.
 
@@ -129,8 +129,8 @@ of Kenari's support.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T025 [P] Walk through `specs/002-kenari-provider-integration/quickstart.md`'s UI and CLI validation steps for all three stories, plus the "Generate also defaults to Kenari" check (no separate setup needed, per `research.md` §9), end-to-end against a running local backend; note any deviation. Depends on T006, T010, T014, T018, T021, T022, T023, T024.
-- [ ] T026 Run the full gate and confirm 100% pass, ≥95% line/function coverage, zero type errors: `cd backend && bun test --coverage && bun run typecheck`; `cd frontend && bun run test`; `cd cli && bun test --coverage` (Constitution III — non-negotiable). Depends on T025.
+- [X] T025 [P] Walk through `specs/002-kenari-provider-integration/quickstart.md`'s UI and CLI validation steps for all three stories, plus the "Generate also defaults to Kenari" check (no separate setup needed, per `research.md` §9), end-to-end against a running local backend; note any deviation. Depends on T006, T010, T014, T018, T021, T022, T023, T024.
+- [X] T026 Run the full gate and confirm 100% pass, ≥95% line/function coverage, zero type errors: `cd backend && bun test --coverage && bun run typecheck`; `cd frontend && bun run test`; `cd cli && bun test --coverage` (Constitution III — non-negotiable). Depends on T025.
 
 ---
 
