@@ -236,6 +236,16 @@ export function probeFindings(data: ProbeData, plan: Plan, settings: Partial<Pro
       hint: "Start the reveal fully hidden (wholly outside its mask, or clipped to nothing) or show the text whole on the first frame.",
     });
   }
+  // 5. the film's first frame shows none of the opening shot's planned words: a viewer scrolling past
+  // sees an empty card (a real film opened on a bare glow and its title arrived later, 2026-11-02)
+  const opening = data.frames.find((f) => f.first && shotOf(f.c, n) === 0);
+  if (opening && plan.shots[0]?.text?.length && !opening.texts.some((t) => t.o > HIDDEN && t.v >= s.wholeShare)) {
+    found.push({
+      shot: 0, code: "first_frame_no_text", severity: "warning", time: round2(opening.t),
+      message: `The film's first frame shows none of the opening shot's words (${plan.shots[0].text.map((t) => `"${t.value}"`).join(", ")}): a viewer deciding whether to stop sees an empty frame.`,
+      hint: "Show the opening line (or the title) whole on the first frame, and move from there; reveal later lines after it.",
+    });
+  }
   return found;
 }
 

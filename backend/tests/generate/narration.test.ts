@@ -12,7 +12,7 @@ import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import { speechFindings, voiceRouteFindings } from "../../src/generate/technical";
-import { alignWords, placeLines, readVoice, snapToVoice, wordErrorRate, wordsOf, writeVoice, type VoiceLine, speechWords } from "../../src/generate/voice";
+import { alignWords, audioSeconds, placeLines, readVoice, snapToVoice, wordErrorRate, wordsOf, writeVoice, type VoiceLine, speechWords } from "../../src/generate/voice";
 import type { ExecFn } from "../../src/runner";
 import { Store } from "../../src/store";
 import { fakeLlm, procOk, quickRecipe, samplePlan } from "../helpers";
@@ -107,7 +107,7 @@ describe("voice step", () => {
     expect(r.progress).toEqual([50, 100]);
     expect(STEPS.voice.inputKey!(r.ctxFor("voice"))).toContain("alloy");
     await STEPS.voice.run(r.ctxFor("voice"));
-    expect(r.seen.filter((a) => a.includes("format=duration"))).toHaveLength(4);   // measured again, spoken from the cache
+    expect(r.seen.filter((a) => a.includes("format=duration:stream=sample_rate"))).toHaveLength(4);   // measured again, spoken from the cache
   });
 
   test("with ElevenLabs the word times come along and the voiceover counts as timed", async () => {
@@ -209,6 +209,16 @@ describe("voice helpers", () => {
     expect(placeLines(p, lines).map((x) => [x.line.id, x.start])).toEqual([["l1", 0], ["l2", 3.15], ["l3", 5.3]]);
     const second = plan([null, "mulai dari SEKARANG!", null]);
     expect(placeLines(second, lines.slice(1)).map((x) => x.start)).toEqual([10, 12.15]);
+    // a line that would run past the film's end moves earlier, and the one before it makes room
+    const late = plan([null, null, "Bunga majemuk membuat uang tumbuh. Mulai dari sekarang."], [13, 13, 4]);
+    expect(placeLines(late, lines.slice(0, 2)).map((x) => x.start)).toEqual([24.85, 28]);
+  });
+
+  test("a clip's length is its decoded samples over the rate (an MP3 header counts the padding); the header when decoding can't count", async () => {
+    const run = (decoded: string): ExecFn => async (_cmd, args) =>
+      procOk(args.includes("-af") ? decoded : JSON.stringify({ format: { duration: "6.312" }, streams: [{ sample_rate: "24000" }] }));
+    expect(await audioSeconds(run("lavfi.astats.Overall.Number_of_samples=1000\nlavfi.astats.Overall.Number_of_samples=150000.000000\n"), "ffmpeg", "a.mp3")).toBe(6.25);
+    expect(await audioSeconds(run(""), "ffmpeg", "a.mp3")).toBe(6.312);
   });
 
   test("timingFrom voice: a shot lasts as long as its lines plus a breath; others keep their length", () => {

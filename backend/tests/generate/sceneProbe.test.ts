@@ -57,6 +57,13 @@ describe("scene probe", () => {
     expect(codes(d) as unknown[]).toEqual(found);
   });
 
+  test("the film's first frame must show an opening line whole: hidden or half-revealed is an empty first frame", () => {
+    const titled = { shots: [{ ...plan(6).shots[0], text: [{ role: "title", value: "Rumah kita" }] }] } as unknown as Plan;
+    expect(codes({ frames: [moment(0, { v: 0 }, null, true)] }, titled)).toEqual([["first_frame_no_text", "warning", 0, 0]]);
+    expect(codes({ frames: [moment(0, { o: 0 }, null, true), moment(0.5, {}, null)] }, titled).map((c) => c[0])).toEqual(["first_frame_no_text"]);
+    expect(codes({ frames: [moment(0, {}, null, true)] }, titled)).toEqual([]);
+  });
+
   test("the page looks at each first frame after a cut and at moments clear of the seams", () => {
     expect(probeConfig(plan(2, [2, "push"], 2), 30, { moments: 1 })).toEqual({
       fps: 30, fadeMaxSec: 0.3,

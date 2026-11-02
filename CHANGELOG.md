@@ -79,6 +79,9 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
 - Generate checks each scene in the browser before rendering and sends the director back what it finds: a
   whole-scene swap in under 0.3 s, a part and the scene moving the same thing at once, text sitting on a
   drawn object, and text cut off on a shot's first frame. Kit parts draw inside the box they are mounted in.
+- Generate narration: each voice line's slot is its decoded length (an MP3's header counted ~0.06 s of
+  padding), and a line that would run past the film's end moves earlier instead of being cut. The check
+  step also flags a film whose first frame shows none of the opening shot's words.
 
 ### Import and transcription
 - YouTube URL or local file, whole or a time range (`--from 13:25 --to 25:00`). A short range is copied
