@@ -172,7 +172,7 @@ describe("creative step", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   function rig(opts: {
-    jev?: ReturnType<typeof fakeJev>["jev"]; replies?: Parameters<typeof fakeLlm>[0]; vision?: string; mode?: string; criteria?: Criterion[]; handlers?: Record<string, HfHandler>;
+    jev?: ReturnType<typeof fakeJev>["jev"]; replies?: Parameters<typeof fakeLlm>[0]; vision?: string; llmOff?: boolean; mode?: string; criteria?: Criterion[]; handlers?: Record<string, HfHandler>;
   } = {}) {
     tmp = mkdtempSync(join(tmpdir(), "vc-creative-"));
     const store = new Store(openDatabase(":memory:"));
@@ -201,9 +201,9 @@ describe("creative step", () => {
       const call = { id: "c1", type: "function", function: { name: body.tool_choice.function.name, arguments: reply } };
       return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] } }] });
     }) as unknown as typeof fetch;
-    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "text-model", llmApiKey: "", llmTimeoutSec: 5, llmVisionModel: opts.vision ?? "" }, fetchFn, 0);
+    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "text-model", llmApiKey: "", llmTimeoutSec: 5, llmEnabled: !opts.llmOff }, fetchFn, 0);
     const fake = fakeHyperframes(opts.handlers ?? {});
-    const step = { ...recipe.steps.find((s) => s.use === "creative")!, with: { ...(opts.criteria ? { criteria: opts.criteria } : {}), ...(opts.mode ? { vision: opts.mode } : {}) } };
+    const step = { ...recipe.steps.find((s) => s.use === "creative")!, with: { ...(opts.criteria ? { criteria: opts.criteria } : {}), vision: opts.mode ?? (opts.vision ? "auto" : "off") } };   // the LLM's own model sees; `vision` only says whether to show it the frames
     const ctx = {
       project: store.getGenProject("p1")!, version: store.getGenVersion("v1")!, recipe, step, settings: settingsOf("creative", step.with), store,
       log: new DirectorLog(store), director: new Director(llm, new DirectorLog(store), "../generator"), hyperframes: new Hyperframes(loadConfig({}), fake.exec),
@@ -296,22 +296,22 @@ describe("creative step", () => {
     },
   };
 
-  test("with Jev and a vision model, what only the frames show (finished, motion) goes to the vision judge and the rest to Jev", async () => {
+  test("with Jev and a model that sees, what only the frames show (finished, motion) goes to the vision judge and the rest to Jev", async () => {
     const { jev, requests } = fakeJev(() => noulA(0.95));
     const r = rig({ jev, vision: "vl-model", replies: [judgeYes(["finished", "motion"], [])], criteria: [crit("opening")], handlers: sheets });
     await STEPS.creative.run(r.ctx);
     expect(Object.keys(requests[0]!.questions)).not.toContain("finished");
     expect(JSON.parse(r.requests[0]!.messages[1].content[0].text).criteria.map((c: any) => c.id)).toEqual(["finished", "motion"]);
-    expect(r.verdict().judgedBy).toBe("jev:jev-1.14.0 + llm-vision:vl-model");
+    expect(r.verdict().judgedBy).toBe("jev:jev-1.14.0 + llm-vision:text-model");
   });
 
-  test("vision: with a vision model the judge gets HyperFrames' review sheets as pictures and the verdict says so; the sheets are kept with the version", async () => {
+  test("vision: the judge (the LLM's own model) gets HyperFrames' review sheets as pictures and the verdict says so; the sheets are kept with the version", async () => {
     const r = rig({ vision: "vl-model", replies: [LLM_PASS], criteria: [crit("opening"), crit("pace")], handlers: sheets });
     await STEPS.creative.run(r.ctx);
-    expect(r.verdict()).toMatchObject({ judgedBy: "llm-vision:vl-model" });
+    expect(r.verdict()).toMatchObject({ judgedBy: "llm-vision:text-model" });
     expect(JSON.parse(r.verdict().inputs!).pictures).toBe(2);
     const req = r.requests[0]!;
-    expect(req.model).toBe("vl-model");
+    expect(req.model).toBe("text-model");
     const urls = req.messages[1].content.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url);
     expect(urls).toEqual([`data:image/jpeg;base64,${Buffer.from("BEATS").toString("base64")}`, `data:image/jpeg;base64,${Buffer.from("PHONE").toString("base64")}`]);
     expect(JSON.parse(req.messages[1].content[0].text).pictures).toBe(2);
@@ -344,9 +344,9 @@ describe("creative step", () => {
     expect(off.ctx.hyperframes).toBeDefined();
   });
 
-  test("vision: on without a vision model is an error, not a silent downgrade; a cancelled snapshot is not swallowed", async () => {
-    const r = rig({ mode: "on", replies: [LLM_PASS] });
-    await expect(STEPS.creative.run(r.ctx)).rejects.toThrow("needs a vision model");
+  test("vision: on without the LLM is an error, not a silent downgrade; a cancelled snapshot is not swallowed", async () => {
+    const r = rig({ mode: "on", llmOff: true, replies: [LLM_PASS] });
+    await expect(STEPS.creative.run(r.ctx)).rejects.toThrow("needs the LLM to look at the frames");
     expect(r.requests).toHaveLength(0);
     const cancelled = rig({ vision: "vl-model", replies: [LLM_PASS], handlers: { snapshot: () => ({ exitCode: 137, stdout: "", stderr: "", timedOut: false, aborted: true }) } });
     await expect(STEPS.creative.run(cancelled.ctx)).rejects.toThrow("cancelled");

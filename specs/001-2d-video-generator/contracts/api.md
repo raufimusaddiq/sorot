@@ -97,7 +97,7 @@ cancel) is unchanged (Principle VI).
   (Fish: `model` goes in an HTTP header)
 - `data`: `{sources: [{name, kind: "sqlite", path}]}`, read-only data sources for facts research
 - `commands`: `{commands: [{name, cmd, args[], timeoutSec}]}`, local check commands that recipes may name (off in hosted installs unless the admin enables them)
-- `llm.vision`: bool, `llm.visionModel`: text (empty = the main model)
+- (removed 2026-11-02: `llm.vision`, `llm.visionModel`; the LLM's own model sees)
 - `llm.genMaxTokens`: whole number 256 to 200000, the output budget of each Generate director call (env `GEN_LLM_MAX_TOKENS`, default 32000; a form may send it as text)
 
 `image` and `voice` get `/api/settings/:kind/test`, like `llm`, `jev` and `tebar`.

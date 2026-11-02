@@ -37,7 +37,7 @@ user: {request, shot fields, task}
 | --- | --- | --- | --- |
 | `search_blocks` | `query` (≤ 120 chars), `type?` `block`\|`component`, `limit?` ≤ 8 | name, type, title, description, tags, size, duration of the best matches in the cached catalog (word and tag match, no embeddings) | 4 |
 | `use_block` | `name` | installs it (`hyperframes add`), returns its files and its source (≤ 24 KB, the rest cut with a note) | 2; refused when the recipe's plan step has `blocks: false` |
-| `look` | `html` (the draft), `times` (1–3 s inside the shot) | the frames as images, and a stranger's read of them as findings (see Vision) | 2 (`author.looks`); offered when a model can see (the director's, or `LLM_VISION_MODEL`) |
+| `look` | `html` (the draft), `times` (1–3 s inside the shot) | the frames as images, and a stranger's read of them as findings (see Vision) | 2 (`author.looks`) |
 | `check` | `html` (the draft) | Sorot's scene rules (`checkScene`) and HyperFrames `lint` for this shot: code, severity, message, hint | 3 |
 | `submit_*` | as today | `{accepted}` or the problems (one more try, as today) | ends the turn |
 
@@ -52,8 +52,8 @@ user: {request, shot fields, task}
 
 ## Vision: who looks at what
 
-One model sees, by default: **the director's own (scene) model.** `LLM_VISION_MODEL` stops being a
-second model to run; it stays only as an optional override (a text-only director, or a different eye).
+One model sees: **the director's own model.** There is no separate vision model (`LLM_VISION` and
+`LLM_VISION_MODEL` are removed, 2026-11-02): a Generate director must reason and see.
 
 - **`look` = the look check, moved into the loop.** The look step's value is that it looks *as a
   stranger*: a call that doesn't know what the shot meant describes what it sees, lists the objects,
@@ -61,14 +61,12 @@ second model to run; it stays only as an optional override (a text-only director
   (`look_unexplained` must-fix, `look_mismatch`, `look_hero_hidden`). The director can't be that
   stranger for its own drawing, so `look` does both in one tool call:
   1. renders the frames (HyperFrames `snapshot --at`);
-  2. asks a **fresh** vision call (no session history, no plan intent, only the frames) the look
+  2. asks a **fresh** call to the same model (no session history, no plan intent, only the frames) the look
      step's questions;
   3. returns to the director the frames as images **and** the stranger's answer turned into findings
      by the same code as today (`look.ts`).
-  The director redraws in the same turn, before it submits. The separate look step is retired: a
-  build whose director can see records "looked in the loop" for each shot instead.
-- **A director that can't see** gets the stranger's answer as text only (frames go to
-  `LLM_VISION_MODEL` when one is set); with no seeing model at all, `look` is not offered.
+  The director redraws in the same turn, before it submits. The separate look step is retired;
+  the build records "looked in the loop" for each shot.
 - **The CREATIVE verdict keeps a fresh judge** (constitution: two verdicts, neither can be turned
   off): a new conversation without the director's history, so the author never grades its own work.
   Same model by default (`GEN_JUDGE_MODEL` overrides). One call per build.

@@ -73,7 +73,7 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
   `GEN_SCENE_MODEL`, `GEN_JUDGE_MODEL`), e.g. a strong planner and judge with a cheap scene writer.
 - Generate fixes from a real isometric film: the camera part no longer tilts an already isometric `iso`/`three`
   diorama a second time; the wipe band takes the palette's accent, not the ink; `text-reveal` by line keeps the
-  space before a styled word; a plan can't promise music when no track is uploaded; with a vision model the
+  space before a styled word; a plan can't promise music when no track is uploaded; with pictures on the
   CREATIVE judge looks at the frames for "finished" and "motion" (Jev, reading text, passed a broken film);
   scene calls carry a worked example shot.
 - Generate checks each scene in the browser before rendering and sends the director back what it finds: a
@@ -82,6 +82,8 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
 - Generate narration: each voice line's slot is its decoded length (an MP3's header counted ~0.06 s of
   padding), and a line that would run past the film's end moves earlier instead of being cut. The check
   step also flags a film whose first frame shows none of the opening shot's words.
+- Removed `LLM_VISION` and `LLM_VISION_MODEL` (Settings → LLM vision fields): the director's model reasons
+  and sees, and every call with pictures goes to the model of its role.
 - Generate writes a build's scenes and repairs in one director session: the film and the parts are sent
   once, each shot sees the ones before it (one film, not seven), and every request extends the last so the
   provider's prompt cache covers almost all of it. `GEN_CONTEXT_TOKENS` (Settings → LLM, default 600000)

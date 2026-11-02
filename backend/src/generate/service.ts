@@ -175,7 +175,7 @@ export class GenerateService {
   connections(): ConnectionState {
     const c = this.config;
     return {
-      llm: this.llm.enabled, jev: this.jev.enabled, vision: this.llm.visionModel !== null,
+      llm: this.llm.enabled, jev: this.jev.enabled, vision: this.llm.enabled,
       image: c.imageEnabled && !!c.imageBaseUrl && !!c.imageModel && !!c.imageApiKey,
       voiceEngines: this.narrator.engines, dataSources: c.dataSources.map((x) => x.name), commands: c.commandsEnabled ? c.commands.map((x) => x.name) : [],
     };
@@ -369,7 +369,7 @@ export class GenerateService {
         else needs(step, engine ? c.voiceEngines.includes(engine) : c.voiceEngines.length > 0, "no voice engine is set up in Settings");
       }
       if (step.use === "images") needs(step, c.image, "needs the image connection in Settings");
-      if (step.use === "look" || (step.use === "creative" && w.vision === "on")) needs(step, c.vision, "needs a vision-capable model in Settings");
+      if (step.use === "look" || (step.use === "creative" && w.vision === "on")) needs(step, c.vision, "needs the LLM in Settings (its model looks at the frames)");
       if (step.use === "command") needs(step, c.commands.includes(w.name as string), `the command "${String(w.name)}" isn't registered in Settings`);
       if (step.use === "author") {
         // `kit:<name>` names a kit part; a part this install lacks means the recipe can't run here (FR-039)

@@ -83,7 +83,7 @@ function rig(replies: string[], over: { vision?: string; handlers?: Record<strin
     const next = queue.shift() ?? "";
     return Response.json({ choices: [{ message: { role: "assistant", content: "", tool_calls: [{ id: "c", type: "function", function: { name: body.tool_choice?.function?.name, arguments: next } }] } }] });
   }) as unknown as typeof fetch;
-  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "text", llmApiKey: "", llmTimeoutSec: 5, llmVisionModel: over.vision === undefined ? "vl-model" : over.vision }, fetchFn, 0);
+  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "text", llmApiKey: "", llmTimeoutSec: 5, llmEnabled: over.vision !== "" }, fetchFn, 0);
   const snaps: number[][] = [];
   const fake = fakeHyperframes({
     snapshot: (args) => {
@@ -107,12 +107,12 @@ function rig(replies: string[], over: { vision?: string; handlers?: Record<strin
 }
 
 describe("look step", () => {
-  test("shows the vision model one picture per shot, in shot order, without asking for anything the stranger shouldn't know first", async () => {
+  test("shows the LLM's model one picture per shot, in shot order, without asking for anything the stranger shouldn't know first", async () => {
     const r = rig([CLEAN], { settings: { rounds: 0 } });
     expect(await STEPS.look.run(r.ctx)).toEqual({ status: "done", outputRef: "0 findings" });
     expect(r.snaps).toEqual([[0.3, 10.3, 20.3]]);
     const req = r.requests[0]!;
-    expect(req.model).toBe("vl-model");
+    expect(req.model).toBe("text");
     expect(req.tool_choice.function.name).toBe("submit_look");
     const parts = req.messages[1].content;
     expect(parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url)).toEqual([0, 1, 2].map((i) => `data:image/png;base64,${Buffer.from(`PIC${i}`).toString("base64")}`));
@@ -161,8 +161,8 @@ describe("look step", () => {
     expect(gone.requests).toHaveLength(2);
   });
 
-  test("it needs a vision model, and says how to skip the step when there is none", async () => {
-    await expect(STEPS.look.run(rig([], { vision: "" }).ctx)).rejects.toThrow("needs a vision model");
+  test("it needs the LLM (its model looks), and says how to skip the step when there is none", async () => {
+    await expect(STEPS.look.run(rig([], { vision: "" }).ctx)).rejects.toThrow("needs the LLM");
   });
 
   test("a shot the model leaves out is asked about again", async () => {

@@ -103,7 +103,8 @@ on the same property at once), `text_over_object` (≥ 30% of a text on a drawn 
 `first_frame_no_text` (the film's first frame shows none of the opening shot's planned words). The faults
 come from real Kimi and GLM films on 2026-11-02; HyperFrames' own lint and layout checks missed them.
 
-**CREATIVE** is a fresh judge answering the recipe's criteria. With a vision model, what only the
+**CREATIVE** is a fresh judge answering the recipe's criteria. The LLM's own model sees (there is no
+separate vision model). With pictures on (`vision`, default auto), what only the
 frames can show (`finished`, `motion`) goes to the LLM judge with the review sheets; Jev answers the
 rest first (it reads text: on 2026-11-02 it passed a film whose world was tilted on its side); what
 Jev doesn't answer goes to the LLM judge too. Sorot always adds a main-message question and a "does it feel flat" risk; a recipe's `fail: "main"` marks which

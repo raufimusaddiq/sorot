@@ -276,7 +276,15 @@ export function fakeHyperframes(handlers: Record<string, HfHandler> = {}) {
     catalog: () => procOk(JSON.stringify([{ name: "data-chart", type: "block", title: "Data chart", description: "d", tags: ["chart"] }])),
     lint: () => procOk(hfFixture("lint-ok")),
     check: () => procOk(hfFixture("check-ok")),
-    snapshot: () => procOk(hfFixture("snapshot-review")),
+    // the captured output, with its frames written into the project (a model that sees gets real files)
+    snapshot: (args) => {
+      const real = JSON.parse(hfFixture("snapshot-review")) as { outputDir: string; frames: Array<{ path: string }> };
+      const out = join(args[1] as string, ".hyperframes", "artifacts", "snapshots", "test");
+      mkdirSync(out, { recursive: true });
+      const frames = real.frames.map((f) => ({ ...f, path: join(out, f.path.split(/[\\/]/).pop() as string) }));
+      for (const f of frames) writeFileSync(f.path, "png");
+      return procOk(JSON.stringify({ ...real, outputDir: out, frames }));
+    },
     render: (args) => {
       const out = argAfter(args, "-o");
       mkdirSync(dirname(out), { recursive: true });

@@ -25,7 +25,7 @@ async function frames(ctx: StepContext, dir: string, times: number[]): Promise<s
  */
 export const run: RunFn = async (ctx) => {
   const { dir, plan } = buildTarget(ctx);
-  if (!ctx.director.visionModel) throw new Error("The look step needs a vision model: set one up in Settings, or give the step `when: connection:vision`");
+  if (!ctx.director.canSee) throw new Error("The look step needs the LLM (its model looks at the frames): connect it in Settings, or give the step `when: connection:vision`");
   const rounds = Number(ctx.settings.rounds);
   const audit = ctx.settings.audit !== false;
   const defaults = ((ctx.recipe.rules?.defaultsAudit as string[] | undefined) ?? []).slice(0, 20);

@@ -51,8 +51,8 @@ export const run: RunFn = async (ctx) => {
   const asked = { projectId: project.id, versionId: version!.id, kind: "judge" };
 
   const mode = String(ctx.settings.vision);
-  if (mode === "on" && !ctx.director.visionModel) throw new Error("The creative step needs a vision model (vision: on): set one up in Settings, or use vision: auto");
-  const canSee = mode !== "off" && !!ctx.director.visionModel;
+  if (mode === "on" && !ctx.director.canSee) throw new Error("The creative step needs the LLM to look at the frames (vision: on): connect it in Settings, or use vision: auto");
+  const canSee = mode !== "off" && ctx.director.canSee;
   // what only pictures can answer goes to the vision judge when there is one: Jev reads text, and it
   // passed a film whose world was tilted on its side and whose closing line sat on the house (2026-11-02)
   const seen = (q: { id: string }) => canSee && SEEN.has(q.id);
@@ -84,7 +84,7 @@ export const run: RunFn = async (ctx) => {
     });
     judgements = [...judgements, ...fromLlm(answer, left.criteria, left.risks)];
     pictures = images.length;
-    judges.push(`${pictures ? "llm-vision" : "llm"}:${pictures ? ctx.director.visionModel : ctx.director.judgeModel}`);
+    judges.push(`${pictures ? "llm-vision" : "llm"}:${ctx.director.judgeModel}`);
   }
   const judgedBy = judges.join(" + ");
 

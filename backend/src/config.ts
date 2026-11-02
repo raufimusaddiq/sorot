@@ -73,9 +73,6 @@ export interface AppConfig {
   tebarEnabled: boolean;
   /** With an LLM: it also writes a video brief and picks its own clip moments (director.ts); false = review only. */
   llmDirector: boolean;
-  /** Vision: a model that can look at images (review frames), used through the same endpoint and key. */
-  llmVision: boolean;
-  llmVisionModel: string;
   /** Jev decision model (TypeSafe System One) as the clip quality gate; off without JEV_API_KEY. */
   jevUrl: string;
   jevModel: string;
@@ -203,8 +200,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
     jevEnabled: true,
     tebarEnabled: true,
     llmDirector: !/^(0|false|no|off)$/i.test((env.LLM_DIRECTOR ?? "").trim()),
-    llmVision: !/^(0|false|no|off)$/i.test((env.LLM_VISION ?? "").trim()),
-    llmVisionModel: (env.LLM_VISION_MODEL ?? "").trim(),
     jevUrl: (env.JEV_URL ?? "").trim() || "https://api.typesafe.ai/v1/systemone",
     // A pinned version, not the jev-latest alias: the gate's thresholds were set against it.
     jevModel: (env.JEV_MODEL ?? "").trim() || "jev-1.14.0",

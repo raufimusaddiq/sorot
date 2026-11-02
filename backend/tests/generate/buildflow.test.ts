@@ -58,7 +58,7 @@ describe("a build, from the approved plan to two verdicts", () => {
     expect(got.version).toMatchObject({ status: "BUILT", progress: 100, step: null, hyperframesVersion: env.config.hyperframesVersion });
     expect(Object.keys(got.version.stepState)).toEqual(["author", "check", "render", "technical", "creative"]);
     expect(got.version.draftPath).toEndWith("draft.mp4");
-    expect(got.verdicts.map((v: any) => [v.kind, v.status, v.judgedBy])).toEqual([["TECHNICAL", "PASS", "code"], ["CREATIVE", "PASS", "llm:m"]]);
+    expect(got.verdicts.map((v: any) => [v.kind, v.status, v.judgedBy])).toEqual([["TECHNICAL", "PASS", "code"], ["CREATIVE", "PASS", "llm-vision:m"]]);
     expect(got.verdicts[0].findings).toEqual([]);
     expect(store().getGenProject(id)!.status).toBe("BUILT");
     expect(llm.requests).toHaveLength(3 + 3 + 1);   // storylines, plan, effects, three scenes, the judge

@@ -424,7 +424,8 @@ export class Director {
   get model(): string { return this.llm.modelFor("scene"); }
   /** The CREATIVE judge's model when it judges without pictures. */
   get judgeModel(): string { return this.llm.modelFor("judge"); }
-  get visionModel(): string | null { return this.llm.visionModel; }
+  /** Whether the director can be shown pictures: a Generate director model reasons and sees, so whenever the LLM is on. */
+  get canSee(): boolean { return this.llm.enabled; }
 
   /** generator/prompts/authoring.md: the contract a scene must keep (read once). */
   private authoring(): string {
@@ -505,10 +506,10 @@ export class Director {
     for (let attempt = 0; attempt < 2; attempt++) {
       let answer = "";
       const reply = await this.log.track(
-        { projectId: project.id, kind, model: seeing ? (this.llm.visionModel ?? model) : model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
+        { projectId: project.id, kind, model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
         async () => {
           const opts = { tools, toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
-          const r = seeing ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], { ...opts, model });
+          const r = seeing ? await this.llm.see(messages, { ...opts, model }) : await this.llm.chat(messages as ChatMessage[], { ...opts, model });
           const call = r.tool_calls?.find((c) => c.function?.name === name);
           const args = call?.function.arguments;
           answer = typeof args === "string" ? args : args ? JSON.stringify(args) : r.content;

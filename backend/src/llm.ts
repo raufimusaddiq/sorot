@@ -161,7 +161,7 @@ export function jsonError(text: string): { message: string; at: number; excerpt:
 export class Llm {
   constructor(
     private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmMaxCallSec?: number }
-      & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmVision?: boolean; llmVisionModel?: string; llmStream?: boolean }
+      & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmStream?: boolean }
       & { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number },
     private readonly fetchFn: typeof fetch = fetch,
     private readonly retryWaitMs = 2000,
@@ -189,10 +189,7 @@ export class Llm {
     return own?.trim() || this.config.llmModel;
   }
 
-  /** The model that looks at images: set, switched on, and the LLM itself on. */
-  get visionModel(): string | null {
-    return this.enabled && this.config.llmVision !== false && this.config.llmVisionModel ? this.config.llmVisionModel : null;
-  }
+
 
   /** The configured output budget per call; it includes a reasoning model's thinking. */
   get maxTokens(): number {
@@ -209,11 +206,9 @@ export class Llm {
     return this.send(messages, opts);
   }
 
-  /** A call with pictures in it, to the vision model (LlmError when none is set up). */
+  /** A call with pictures in it. There is no separate vision model: the model answering must see (a Generate director reasons and sees). */
   async see(messages: ChatInput[], opts: ChatOptions = {}): Promise<ChatMessage> {
-    const model = this.visionModel;
-    if (!model) throw new LlmError("No vision model configured (set LLM_VISION_MODEL)");
-    return this.send(messages, { ...opts, model: opts.model ?? model });
+    return this.send(messages, opts);
   }
 
   private async send(messages: ChatInput[], opts: ChatOptions): Promise<ChatMessage> {

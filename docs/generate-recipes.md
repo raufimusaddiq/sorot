@@ -16,7 +16,7 @@ JSON. The full contract is `specs/001-2d-video-generator/contracts/recipe.md`; t
 4. Per step you can add **prompt text** that is appended to (or replaces) what the director is told for
    that step. It changes what the model is asked, never what it must return.
 5. Save. The editor shows what is wrong in plain words ("`voice` needs a `script` before it") and
-   which Settings are missing (a voice engine, a data source, a vision model); a recipe that needs
+   which Settings are missing (a voice engine, a data source, the LLM); a recipe that needs
    something you have not set is **unavailable** with that reason, not broken.
 
 ## Two things are fixed
