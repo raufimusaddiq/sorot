@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient } from '@/lib/api';
 import { reportError } from '@/lib/errors';
-import type { ConnectionTest, ConnectionView, Connections, KenariModel } from '@/types';
+import type { ConnectionTest, ConnectionView, Connections, KenariAccount, KenariModel } from '@/types';
 import { GenerateConnections } from './GenerateConnections';
 import { Toggle } from './ImportOptions';
 import { Window } from './Window';
@@ -63,6 +63,7 @@ const DIRECTOR = {
 
 const label = 'font-pixel text-xs text-fg block mb-1';
 const field = 'field w-full px-2 py-1.5';
+const rupiah = (n: number) => `Rp ${n.toLocaleString('id-ID')}`;
 
 function ConnectionCard({ kind, view, api, onSaved }: {
   kind: CoreKind; view: ConnectionView; api: ApiClient; onSaved: (c: Connections) => void;
@@ -82,12 +83,21 @@ function ConnectionCard({ kind, view, api, onSaved }: {
   const [kenariModels, setKenariModels] = useState<KenariModel[]>([]);
   const [kenariModel, setKenariModel] = useState(KENARI_DEFAULT_MODEL);
   const [kenariProbe, setKenariProbe] = useState<ConnectionTest | null>(null);
+  const [kenariAccount, setKenariAccount] = useState<KenariAccount | null | undefined>(undefined);
 
   useEffect(() => {
     if (kind === 'llm' && mode === 'kenari' && kenariModels.length === 0) {
       api.getKenariModels().then((r) => setKenariModels(r.models), () => setKenariModels([]));
     }
   }, [kind, mode, kenariModels.length, api]);
+
+  useEffect(() => {
+    if (kind === 'llm' && mode === 'kenari' && view.active) {
+      api.getKenariAccount().then((r) => setKenariAccount(r.account), () => setKenariAccount(null));
+    } else {
+      setKenariAccount(undefined);
+    }
+  }, [kind, mode, view.active, api]);
 
   const value = (k: FieldDef['key']) => form[k] ?? String(view[k] ?? '');
   const patchOf = (): Record<string, string> => {
@@ -219,6 +229,19 @@ function ConnectionCard({ kind, view, api, onSaved }: {
         <p className={`text-sm mt-2 ${kenariProbe.ok ? 'text-success' : 'text-error'}`}>
           {kenariProbe.ok ? `Key works · ${kenariProbe.model}` : `Failed: ${kenariProbe.error}`}
         </p>
+      )}
+      {kenari && view.active && kenariAccount && (
+        <div className="text-xs text-fg/70 mt-3 border-2 border-line p-2 grid gap-1">
+          {kenariAccount.plan && <p>{kenariAccount.plan} plan — {rupiah(kenariAccount.balanceRp)} balance</p>}
+          {!kenariAccount.plan && <p>Balance: {rupiah(kenariAccount.balanceRp)}</p>}
+          {Object.entries(kenariAccount.windows).map(([name, w]) => (
+            <p key={name}>{rupiah(w.remainingRp)} left this {name} of {rupiah(w.budgetRp)} ({Math.round(w.usedFrac * 100)}% used, resets {new Date(w.resetsAt).toLocaleDateString('id-ID')})</p>
+          ))}
+          <p>{kenariAccount.usage.requests.toLocaleString('id-ID')} requests this period</p>
+        </div>
+      )}
+      {kenari && view.active && kenariAccount === null && (
+        <p className="text-xs text-subtle mt-2">Balance and usage aren&apos;t available for this key (it may be restricted).</p>
       )}
       {(kind !== 'llm' || mode === 'custom') && (
         <div className="flex flex-wrap gap-2 mt-4">

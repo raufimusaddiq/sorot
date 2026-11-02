@@ -86,10 +86,24 @@ describe('ConnectionsPanel', () => {
     fireEvent.click(testKey);
     expect(await within(llm).findByText('Key works · kenari/auto')).toBeInTheDocument();
     expect(save).toBeEnabled();
+    state.kenariAccount = { plan: 'Studio', balanceRp: 0,
+      windows: { week: { budgetRp: 300000, remainingRp: 233222, usedFrac: 0.2226, resetsAt: '2026-11-07T00:58:27Z' } },
+      usage: { requests: 42, promptTokens: 1000, completionTokens: 200 } };
     fireEvent.click(save);
     await waitFor(() => expect(sent('PUT', '/api/settings/llm')).toEqual([
       { baseUrl: 'https://kenari.id/v1', model: 'kenari/auto', apiKey: 'kn-bad' },
     ]));
+    expect(await within(llm).findByText('Studio plan — Rp 0 balance')).toBeInTheDocument();
+    expect(within(llm).getByText(/Rp 233\.222 left this week of Rp 300\.000/)).toBeInTheDocument();
+    expect(within(llm).getByText('42 requests this period')).toBeInTheDocument();
+  });
+
+  it('Kenari: a restricted key still connects, but balance/usage are explained as unavailable', async () => {
+    state.settings = makeConnections({ llm: { baseUrl: 'https://kenari.id/v1', model: 'kenari/auto', active: true, apiKeySet: true } });
+    state.kenariAccount = null;
+    render(<ConnectionsPanel api={api} />);
+    const llm = await screen.findByRole('region', { name: 'LLM' });
+    expect(await within(llm).findByText(/Balance and usage aren.t available for this key/)).toBeInTheDocument();
   });
 
   it('Kenari: "Use a different provider" is reachable with no key, and an already-saved custom provider is shown as-is', async () => {
