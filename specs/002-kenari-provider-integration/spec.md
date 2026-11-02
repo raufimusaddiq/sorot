@@ -39,27 +39,35 @@ on a machine with no prior AI configuration, and confirming AI-assisted features
 
 ---
 
-### User Story 2 - Stay customizable (Priority: P2)
+### User Story 2 - Skip Kenari or customize it (Priority: P2)
 
-A user who wants a different OpenAI-compatible endpoint (self-hosted model, another gateway) or
-who wants to pin a specific Kenari model instead of the automatic default, can see and override
-the endpoint and model that the one-field Kenari setup chose, without losing the simple path for
-everyone else.
+A user who doesn't want Kenari at all — they'd rather use a different OpenAI-compatible endpoint
+(self-hosted model, another gateway), or no AI provider at all — can skip the Kenari step right
+from the start and go straight to a general provider form, or configure one later. A user who
+does want Kenari but wants a specific model instead of the automatic default can override the
+endpoint and model the one-field setup chose. Neither path is blocked by the other.
 
 **Why this priority**: The request explicitly asks for "still customizeable" — Kenari must not
-become a hard-coded, unchangeable dependency.
+become a hard-coded, unchangeable, or mandatory dependency. Not wanting Kenari at all is as valid
+an outcome as connecting it.
 
-**Independent Test**: Can be fully tested by connecting Kenari, then changing the model and/or
-endpoint in advanced settings, and confirming subsequent AI calls use the new values.
+**Independent Test**: Can be fully tested two ways — (a) opening the connection flow and choosing
+to skip Kenari straight to a general provider form, confirming no Kenari key is required or
+stored; and (b) connecting Kenari, then changing the model and/or endpoint in advanced settings,
+and confirming subsequent AI calls use the new values.
 
 **Acceptance Scenarios**:
 
-1. **Given** Kenari is connected with its default endpoint/model, **When** the user opens
+1. **Given** the user opens the AI provider connection flow (UI or CLI) and has not entered a
+   Kenari key, **When** they choose to skip Kenari, **Then** they land directly on a general
+   provider form (endpoint, model, key) with no Kenari key required, and can finish there or
+   leave AI unconfigured entirely.
+2. **Given** Kenari is connected with its default endpoint/model, **When** the user opens
    advanced provider settings, **Then** they can view and edit the endpoint and model without
    being blocked or required to re-enter the API key.
-2. **Given** a different AI provider is already configured, **When** this feature ships,
+3. **Given** a different AI provider is already configured, **When** this feature ships,
    **Then** the user's existing configuration is left exactly as it was (see Assumptions).
-3. **Given** the user clears the API key, **When** the change is saved, **Then** AI assistance
+4. **Given** the user clears the API key, **When** the change is saved, **Then** AI assistance
    turns off and clipping continues using the existing rule-based fallback.
 
 ---
@@ -92,6 +100,8 @@ finding a short, linked acknowledgment of Kenari's support.
 - What happens if a user has both a Kenari key and an unrelated custom provider's key entered at
   different times — which one is actually in effect, and is that shown clearly?
 - Is the API key ever visible unmasked in the UI, CLI output, or logs after it is saved?
+- What happens if a user skips Kenari and also leaves the general provider form blank — does
+  the flow complete with AI simply off (per FR-006), or does it force a choice?
 
 ## Requirements *(mandatory)*
 
@@ -128,6 +138,9 @@ finding a short, linked acknowledgment of Kenari's support.
   crediting Kenari for supporting Sorot's development, with a link to kenari.id.
 - **FR-011**: This integration MUST be additive — it MUST NOT require or replace the project's
   separate Jev or Tebar connections, which keep using their own API keys.
+- **FR-012**: The connection flow (UI and CLI) MUST offer a direct way to skip Kenari and go
+  straight to a general provider form (endpoint, model, key), from the first step, without
+  requiring a Kenari key to be entered, tried, or rejected first.
 
 ### Key Entities
 
@@ -149,8 +162,9 @@ finding a short, linked acknowledgment of Kenari's support.
   external setup docs.
 - **SC-002**: 100% of existing clipping functionality keeps working unchanged for a user who
   never enters a Kenari key — AI stays fully optional.
-- **SC-003**: A user who wants a non-Kenari provider can fully override the connection
-  (endpoint, model) in under 5 UI steps or one CLI command, with no code changes.
+- **SC-003**: A user who wants a non-Kenari provider can skip Kenari entirely from the first step
+  of the connection flow and fully configure a general provider (endpoint, model, key) in under
+  5 UI steps or one CLI command, with no code changes and no Kenari key required.
 - **SC-004**: An invalid or revoked Kenari key produces a clear, actionable error — never a
   silent failure or a raw technical error — in 100% of connection attempts.
 - **SC-005**: The project's documentation publicly credits Kenari's support in the same change
@@ -177,3 +191,7 @@ finding a short, linked acknowledgment of Kenari's support.
   an in-product UI element — the request's "shoutout" was about crediting the grant the project
   received, not a requirement found in Kenari's own API documentation.
 - Jev and Tebar continue to use their own separate API keys and are unaffected by this change.
+- Skipping Kenari and leaving the general provider form blank is a valid end state: the
+  connection flow completes, no provider is configured, and AI stays off until the user
+  configures one (per FR-006) — the flow never forces a choice between "Kenari" and "something
+  else."
