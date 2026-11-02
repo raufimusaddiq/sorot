@@ -11,9 +11,11 @@ import type { GenProject } from "../types";
 import { now as stamp } from "../store";
 
 // Director levels (research R24 to R26, FR-042 to FR-044): how much code the model writes per shot.
-// The level comes from each model's record on this install: the highest level where it passed its
-// checks first time often enough, with few malformed answers. No record means `kit` until the owner
-// calibrates; a pin (the recipe's or the model's) wins.
+// Owner's requirement (2026-11-02): the director's creativity is never stopped up front. Every shot
+// starts at the highest level the recipe and the machine allow (`free`: any drawing), and the kit is
+// only the floor it falls back to when a shot fails (level_drop). The model's record is kept and shown
+// (and Calibrate fills it), but it no longer lowers where a shot starts. Only an explicit pin (the
+// recipe's or the owner's) starts lower.
 
 /**
  * First guesses (research R25), to be checked in spike S7. A level the owner calibrated counts with
@@ -51,13 +53,20 @@ export interface LevelChoice {
   record: Partial<Record<Level, Pick<GenModelRecord, "asked" | "firstPass" | "malformed"> & { calibratedAt?: string | null }>>;
 }
 
-/** The level a shot is written at: a pin (the recipe's, then the model's), else the best level the record earns; never above the caps. */
+/**
+ * The level a shot starts at: a pin (the recipe's, then the owner's for the model) if there is one,
+ * else the highest level the caps allow, so the director is never held back; a shot that fails drops
+ * one level from there. The record doesn't choose: it only tells the owner how the model fares.
+ */
 export function chooseLevel(c: LevelChoice): Level {
   const cap = atMost(c.maxLevel ?? "free", c.cpuCap ?? "free");
   const pinned = c.recipeLevel && c.recipeLevel !== "auto" ? c.recipeLevel : c.pin ?? null;
-  if (pinned) return atMost(pinned, cap);
-  const earned = [...LEVELS].reverse().find((l) => l !== "kit" && LEVELS.indexOf(l) <= LEVELS.indexOf(cap) && qualifies(c.record[l]));
-  return earned ?? "kit";
+  return pinned ? atMost(pinned, cap) : cap;
+}
+
+/** The highest level the record says the model reliably passes (shown to the owner; it never caps a shot). */
+export function provenLevel(record: LevelChoice["record"]): Level {
+  return [...LEVELS].reverse().find((l) => l !== "kit" && qualifies(record[l])) ?? "kit";
 }
 
 /** The model's records keyed by level. */

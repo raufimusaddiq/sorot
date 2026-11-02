@@ -235,7 +235,7 @@ export function ModelsCard({ api }: { api: ApiClient }) {
   const cal = data?.calibration;
   return (
     <Window title="Models" bar="bg-mint" right={data?.current || undefined}>
-      <p className="text-sm text-fg/80 mb-2">A model starts by building shots from kit parts; once it passes its checks often enough it writes scenes itself. Calibrate measures it at once.</p>
+      <p className="text-sm text-fg/80 mb-2">Every shot starts with the director free to draw anything; a shot that fails falls back to kit parts. The record and Calibrate show how a model fares, so you can pin a weak one lower.</p>
       {data?.models.map((m) => (
         <div key={m.model} aria-label={`Model ${m.model}`} className="border-2 border-line p-2 mb-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
@@ -243,7 +243,7 @@ export function ModelsCard({ api }: { api: ApiClient }) {
             <label className="ml-auto text-xs flex items-center gap-1">
               level
               <select aria-label={`${m.model} level`} disabled={busy} value={m.pin ?? 'auto'} onChange={(e) => act(() => api.pinModel(m.model, e.target.value === 'auto' ? null : (e.target.value as GenLevel)))} className="field px-1 py-0.5">
-                <option value="auto">auto ({m.auto})</option>
+                <option value="auto">auto (starts at {m.auto}{m.proven ? `, proven ${m.proven}` : ''})</option>
                 {Object.keys(LEVEL_NAMES).map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </label>

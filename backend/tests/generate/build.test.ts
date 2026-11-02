@@ -83,14 +83,20 @@ function withKit(r: ReturnType<typeof rig>) {
 const kitAnswer = (id: string) => json({ shotId: id, layers: [{ part: "particles", settings: { kind: "snow" }, fromSec: 0, toSec: 5 }] });
 
 describe("director levels", () => {
-  test("a new model writes at the kit level: Sorot writes the scenes from its answers and the version records each shot's level", async () => {
+  test("a model pinned to kit writes kit-level answers: Sorot writes the scenes from them and the version records each shot's level", async () => {
     const r = rig([kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03")]);
+    setModelPin(r.store, "m", "kit");
     await STEPS.author.run(r.ctxFor("author", {}, withKit(r)));
     expect(r.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_shot_kit", "submit_shot_kit", "submit_shot_kit"]);
     expect(scenes(r.dir)[1]).toContain('SorotKitRuntime.mount("particles", layers[0]');
     expect(JSON.parse(r.store.getGenVersion("v1")!.shotLevels!)).toEqual({ s01: { planned: "kit", built: "kit" }, s02: { planned: "kit", built: "kit" }, s03: { planned: "kit", built: "kit" } });
     expect(recordOf(r.store, "m")).toMatchObject({ kit: { asked: 3, firstPass: 3 } });
     expect(readFindings(r.dir)).toEqual([]);
+    // unpinned, the same model starts at the top: the director is never held back
+    const top = rig([html(0), html(1), html(2)]);
+    await STEPS.author.run(top.ctxFor("author", {}, withKit(top)));
+    expect(top.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_scene", "submit_scene", "submit_scene"]);
+    expect(JSON.parse(top.store.getGenVersion("v1")!.shotLevels!).s01).toEqual({ planned: "free", built: "free" });
   });
 
   test("a shot that still fails at its level after the repairs is rebuilt one level down, with a level_drop finding; the record counts it", async () => {
@@ -105,9 +111,11 @@ describe("director levels", () => {
 
   test("a kit-level answer that fails its checks is asked again with what was wrong, up to the repair rounds; only then does the build fail", async () => {
     const r = rig(["not json", "still not json", kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03")]);
+    setModelPin(r.store, "m", "kit");
     await STEPS.author.run(r.ctxFor("author", { repairRounds: 1 }, withKit(r)));
     expect(JSON.parse(r.requests[2]!.messages.at(-1)!.content).findings[0]).toMatchObject({ code: "kit_answer_refused" });
     const stubborn = rig(["not json", "still not json", "no", "nope"]);
+    setModelPin(stubborn.store, "m", "kit");
     await expect(STEPS.author.run(stubborn.ctxFor("author", { repairRounds: 1 }, withKit(stubborn)))).rejects.toThrow("Shot s01 couldn't be built at any level, not even from kit parts");
   });
 
@@ -116,6 +124,7 @@ describe("director levels", () => {
       lint: (() => { let n = 0; return () => (n++ === 0 ? lint(finding("bad_markup", "error", { file: "compositions/shot-02.html" })) : lint()); })(),
       check: () => check(),
     });
+    setModelPin(r.store, "m", "kit");
     const k = withKit(r);
     await STEPS.author.run(r.ctxFor("author", {}, k));
     await STEPS.check.run(r.ctxFor("check", { rounds: 1 }, k));

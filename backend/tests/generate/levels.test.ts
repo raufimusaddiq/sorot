@@ -6,7 +6,7 @@ import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { readPart, type KitManifest } from "../../src/generate/kit";
 import { validateKitShot, writeKitScene } from "../../src/generate/kitScene";
-import { CALIBRATION_PLAN, calibrate, chooseLevel, qualifies, recordAnswer, recordOf, type LevelChoice } from "../../src/generate/levels";
+import { CALIBRATION_PLAN, calibrate, chooseLevel, provenLevel, qualifies, recordAnswer, recordOf, type LevelChoice } from "../../src/generate/levels";
 import { Store } from "../../src/store";
 import { fakeLlm, sceneHtml } from "../helpers";
 
@@ -24,19 +24,27 @@ describe("model record", () => {
   });
 
   test.each<[string, LevelChoice, string]>([
-    ["no record starts at kit", { record: {} }, "kit"],
-    ["8 shots, 60% first time, 10% malformed: compose", { record: { compose: r(10, 6, 1) } }, "compose"],
-    ["too few shots", { record: { compose: r(7, 7) } }, "kit"],
-    ["too few first time", { record: { compose: r(10, 5) } }, "kit"],
-    ["too many malformed", { record: { compose: r(10, 9, 2) } }, "kit"],
-    ["the highest earned level wins", { record: { compose: r(10, 9), free: r(10, 8) } }, "free"],
-    ["...under the recipe's cap", { record: { free: r(10, 8) }, maxLevel: "compose" }, "kit"],
-    ["...and the machine's", { record: { compose: r(10, 9), free: r(10, 8) }, cpuCap: "compose" }, "compose"],
-    ["the recipe's pin wins over the model's", { record: {}, recipeLevel: "free", pin: "kit" }, "free"],
-    ["the model's pin", { record: {}, recipeLevel: "auto", pin: "compose" }, "compose"],
+    // the director is never held back: a shot starts as high as the caps allow, whatever the record says
+    ["no record starts at the top", { record: {} }, "free"],
+    ["a poor record still starts at the top", { record: { compose: r(10, 1, 5), free: r(10, 0, 9) } }, "free"],
+    ["...under the recipe's cap", { record: {}, maxLevel: "compose" }, "compose"],
+    ["...and the machine's", { record: {}, cpuCap: "compose" }, "compose"],
+    ["the recipe's pin wins over the owner's", { record: {}, recipeLevel: "kit", pin: "compose" }, "kit"],
+    ["the owner's pin for the model", { record: {}, recipeLevel: "auto", pin: "kit" }, "kit"],
     ["a pin above the cap is capped", { record: {}, pin: "free", maxLevel: "compose" }, "compose"],
   ])("%s", (_name, choice, level) => {
     expect(chooseLevel(choice)).toBe(level as never);
+  });
+
+  test.each<[string, LevelChoice["record"], string]>([
+    // what the record shows the owner (it never caps a shot)
+    ["no record", {}, "kit"],
+    ["8 shots, 60% first time, 10% malformed", { compose: r(10, 6, 1) }, "compose"],
+    ["too few shots", { compose: r(7, 7) }, "kit"],
+    ["too many malformed", { compose: r(10, 9, 2) }, "kit"],
+    ["the highest proven level", { compose: r(10, 9), free: r(10, 8) }, "free"],
+  ])("proven level: %s", (_name, record, level) => {
+    expect(provenLevel(record)).toBe(level as never);
   });
 
   test("qualifies needs at least 8 shots, or 3 from a calibration", () => {

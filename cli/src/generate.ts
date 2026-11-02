@@ -780,7 +780,7 @@ async function modelsCmd(d: Deps, a: Args): Promise<number> {
     `${m.model}${m.model === r.current ? " *" : ""}`, m.pin ?? `auto: ${m.auto}`, x.level, x.asked, pct(x.firstPass, x.asked), pct(x.repaired, x.asked), x.dropped, x.malformed, x.calibratedAt ? when(x.calibratedAt) : "",
   ]));
   d.out(table(["MODEL", "LEVEL", "AT", "ASKED", "FIRST PASS", "REPAIRED", "DROPPED", "MALFORMED", "CALIBRATED"], rows));
-  d.out("* the connected model. A model with no record starts at kit: run sorot gen calibrate.");
+  d.out("* the connected model. Shots start at the auto level (the director is never held back); a failing shot falls back a level. Pin a weak model lower if you want.");
   return 0;
 }
 

@@ -24,7 +24,7 @@ import { Narrator } from "./narration";
 import { findPreset, loadPresets } from "./presets";
 import { IdeaBank, type IdeaFlags } from "./ideas";
 import { Kit, requiredParts } from "./kit";
-import { calibrate, chooseLevel, modelPin, recordAnswer, recordOf, setModelPin, type CalibrationResult } from "./levels";
+import { calibrate, chooseLevel, modelPin, provenLevel, recordAnswer, recordOf, setModelPin, type CalibrationResult } from "./levels";
 import { capabilitiesFor, CPU_MAX_LEVEL, recipeMaxLevel, type Capabilities, type Level } from "./capabilities";
 import { RecipeBook } from "./recipes";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
@@ -203,7 +203,8 @@ export class GenerateService {
       current: this.director.model,
       models: names.map((model) => ({
         model, pin: modelPin(this.store, model), records: records.filter((r) => r.model === model),
-        auto: chooseLevel({ record: recordOf(this.store, model), cpuCap: this.machineMaxLevel }),
+        auto: chooseLevel({ pin: modelPin(this.store, model), record: recordOf(this.store, model), cpuCap: this.machineMaxLevel }),
+        proven: provenLevel(recordOf(this.store, model)),
       })),
       calibration: this.calibrating,
     };
@@ -227,7 +228,7 @@ export class GenerateService {
   /** Pins a model to a level, or back to auto with null. */
   pinModel(model: string, level: Level | null) {
     setModelPin(this.store, model, level);
-    return this.models().models.find((m) => m.model === model) ?? { model, pin: level, records: [], auto: "kit" as Level };
+    return this.models().models.find((m) => m.model === model) ?? { model, pin: level, records: [], auto: level ?? this.machineMaxLevel, proven: "kit" as Level };
   }
 
   /** What a plan's shot looks are checked against: the kit at the highest level the recipe allows. */

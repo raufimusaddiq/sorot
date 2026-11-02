@@ -88,9 +88,10 @@ Fallback: after the step's repair rounds, or over the frame-time budget, the sho
 level down from the same shot spec, with a `level_drop` finding. A failure at `kit` fails the
 build.
 
-Choosing (`author.level: auto`): the highest level ≤ `maxLevel` where the model's record
-(`gen_model_record`) shows ≥ 60% first-pass over ≥ 8 shots and ≤ 10% malformed answers; no record
-→ `kit` until calibrated. A pin per recipe (`author.level`) or per model (Settings) wins.
+Choosing (`author.level: auto`), revised by the owner on 2026-11-02 ("we don't stop our director's
+creativity"): every shot starts at the highest level ≤ `maxLevel` and the machine's cap; the record
+(`gen_model_record`, Calibrate) is reported as the model's proven level and never lowers where a
+shot starts. A pin per recipe (`author.level`) or per model (Settings) wins.
 
 ## The capability description (every director call)
 

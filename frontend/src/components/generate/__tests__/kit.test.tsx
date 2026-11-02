@@ -49,7 +49,7 @@ describe('ModelsCard', () => {
     state.genModels.models[0]!.records = [{ model: 'm1', level: 'compose', asked: 10, firstPass: 8, repaired: 1, dropped: 0, malformed: 1, ms: 1000, calibratedAt: null }];
     render(<ModelsCard api={api} />);
     const m1 = await screen.findByLabelText('Model m1');
-    expect(within(m1).getByRole('option', { name: 'auto (kit)' })).toBeInTheDocument();
+    expect(within(m1).getByRole('option', { name: 'auto (starts at kit)' })).toBeInTheDocument();
     expect(within(m1).getByRole('row', { name: /compose/ })).toHaveTextContent('compose1080%10%01');
     fireEvent.change(within(m1).getByLabelText('m1 level'), { target: { value: 'compose' } });
     await waitFor(() => expect(sent('PUT', '/api/generate/models/m1/level')).toEqual([{ level: 'compose' }]));

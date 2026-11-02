@@ -36,10 +36,12 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
   motion, text reveal, particles, image placement, and real 3D with Three.js), offline. Add your own
   parts from a `.zip` (Settings → Generate → Kit, or `sorot gen kit add`); a part is only offered after
   its example renders twice the same.
-- Director levels: a model with no track record builds shots from kit parts; once it passes its checks
-  often enough it writes scenes itself (Calibrate measures it at once; `sorot gen calibrate`). A shot
-  that fails is rebuilt one level down instead of failing the build. The plan shows each shot's level
-  and look.
+- Director levels: every shot starts with the director free to draw anything (its own canvas, WebGL
+  or Three.js); a shot that fails is rebuilt one level down (scene with kit parts, then kit parts
+  only) instead of failing the build. Calibrate (`sorot gen calibrate`) shows how a model fares at
+  each level; pin a weak model lower if you want. The plan shows each shot's level and look.
+- Isometric 3D: the `iso` kit part draws a real isometric diorama (blocks, coin stacks, bars, houses,
+  trees) with soft shadows, offline, on CPU too.
 - Smooth motion: a new always-on check finds jumps and stalls inside shots; fast shots can get motion
   blur (`render.motionBlur`, auto by default; it costs about 3.4× the render time on a CPU), and the
   judge always asks whether the film looks finished and moves with weight.

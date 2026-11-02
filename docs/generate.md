@@ -124,12 +124,14 @@ any director may use them. How to write and share one: [generate-kit.md](generat
 | `compose` | the scene HTML; mounts parts with `SorotKitRuntime.mount`, adds its own GSAP and 2D canvas | plan-lock, the parts it mounts, no WebGL of its own |
 | `free` | any drawing the contract allows, its own WebGL or Three.js included | the same checks, plus a frame-time budget |
 
-`author.level: auto` (the default) picks from the model's record on this install
-(`gen_model_record`): the highest level where it passed its checks first time in at least 60% of at
-least 8 shots, with at most 10% malformed answers. A model with no record starts at `kit`; **Calibrate**
-(Settings → Generate → Models, or `sorot gen calibrate`) writes three sample shots at each level and
-fills the record at once. A pin wins: the recipe's `author.level`, else the model's pin in Settings.
-`author.maxLevel` caps it. A shot that still fails after its repair rounds, or whose frames take
+**The director is never held back.** With `author.level: auto` (the default) every shot starts at the
+highest level the recipe (`author.maxLevel`) and the machine allow, `free` on every install today, so
+the director may draw anything; the kit is the floor a failing shot falls back to, never a ceiling.
+Only an explicit pin starts lower: the recipe's `author.level`, else the owner's pin for the model in
+Settings. The model's record on this install (`gen_model_record`) and **Calibrate** (Settings →
+Generate → Models, or `sorot gen calibrate`, three sample shots per level) report how the model fares,
+including the level it is proven at (≥ 60% first-pass over ≥ 8 shots, or the 3 calibration shots,
+with ≤ 10% malformed answers), so you can decide whether to pin a weak model lower. A shot that still fails after its repair rounds, or whose frames take
 longer to draw than the budget, is rebuilt one level down with a `level_drop` (or `frame_budget`)
 should-fix; only a failure at `kit` fails the build. The plan shows each shot's level and you may
 lower it before approving; the version records what each shot was built at.

@@ -376,6 +376,6 @@ export type GenModelRecord = { model: string; level: GenLevel | 'plan'; asked: n
 
 export type GenModels = {
   current: string;
-  models: Array<{ model: string; pin: GenLevel | null; auto: GenLevel; records: GenModelRecord[] }>;
+  models: Array<{ model: string; pin: GenLevel | null; auto: GenLevel; proven?: GenLevel; records: GenModelRecord[] }>;
   calibration: { model: string; startedAt: string; done: boolean; error?: string; result?: Partial<Record<GenLevel, { asked: number; firstPass: number; repaired: number; failed: number }>> } | null;
 };

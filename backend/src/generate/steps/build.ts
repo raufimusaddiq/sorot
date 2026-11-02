@@ -43,16 +43,16 @@ export const readShotLevels = (ctx: StepContext): ShotLevels => {
 };
 
 /**
- * The level `auto` gives this model now (research R25): a pin wins, else its record on this install,
- * capped by the recipe and the machine. Without a kit there is nothing to build a kit-level shot from,
- * so the floor is compose.
+ * The level a shot starts at: a pin if there is one, else the highest the recipe and the machine allow
+ * (owner's requirement: the director is never held back; the kit is the floor a failing shot falls to).
  */
 export function autoLevel(ctx: StepContext): Level {
   const chosen = chooseLevel({
     pin: modelPin(ctx.store, ctx.director.model), recipeLevel: recipeLevel(ctx.recipe), maxLevel: recipeMaxLevel(ctx.recipe),
     cpuCap: ctx.capabilities?.("free").level ?? "free", record: recordOf(ctx.store, ctx.director.model),
   });
-  return chosen === "kit" && !(ctx.kit && ctx.capabilities?.("kit").kit.length) ? "compose" : chosen;
+  // without a kit the levels mean nothing: the model writes its scene, as before levels existed
+  return !(ctx.kit && ctx.capabilities?.("kit").kit.length) ? "compose" : chosen;
 }
 
 /** The level a shot is planned at: the plan's (FR-042), never above what `auto` gives now (a worse record or a lower cap wins). */

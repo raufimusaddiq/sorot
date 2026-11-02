@@ -209,7 +209,7 @@ describe("kit API", () => {
     rig();
     env!.app.store.addGenModelRecord("m", "compose", { asked: 10, firstPass: 9 });
     const first = (await env!.json("GET", "/api/generate/models")).body.data;
-    expect(first.models.find((m: any) => m.model === "m")).toMatchObject({ pin: null, auto: "compose", records: [{ level: "compose", asked: 10 }] });
+    expect(first.models.find((m: any) => m.model === "m")).toMatchObject({ pin: null, auto: "free", proven: "compose", records: [{ level: "compose", asked: 10 }] });
     expect((await env!.json("PUT", "/api/generate/models/m/level", { level: "kit" })).body.data.model).toMatchObject({ pin: "kit" });
     expect((await env!.json("PUT", "/api/generate/models/m/level", { level: null })).body.data.model.pin).toBeNull();
     expect((await env!.json("PUT", "/api/generate/models/m/level", { level: "max" })).status).toBe(400);
