@@ -11,16 +11,16 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
   Settings or `sorot connect llm --kenari --key -` (or the `sorot connect setup` wizard's "kenari"
   choice), pick a model from its live catalog or accept the pre-selected `kenari/auto`, and the
   key is validated before anything is saved. The same connection covers the optional
-  director/review/post-copy calls and Generate's director — one key, both.
+  director/review/post-copy calls and Generate's director: one key, both.
 - Still fully optional and swappable: "Use a different provider" reaches the existing
   OpenAI-compatible `baseUrl`/`model`/`apiKey` fields directly, with no Kenari key ever required,
   tried, or rejected first; an already-configured different provider is left untouched.
 - The same one-key setup, with a live, pickable model list, is offered for Generate's scene
-  images (`/images/generations`) and narration voice (the `openai` engine's `/audio/speech`) —
+  images (`/images/generations`) and narration voice (the `openai` engine's `/audio/speech`).
   Kenari was already a drop-in for both existing OpenAI-compatible slots; this just makes picking
   a Kenari model/voice as easy as picking a chat model.
 - Once connected, the Settings LLM card shows your Kenari plan, balance, quota remaining per
-  window and usage for the period — no need to check kenari.id separately.
+  window and usage for the period: no need to check kenari.id separately.
 - Thanks to Kenari for supporting Sorot's development through the Kenari Grant.
 
 ### Generate: briefs to finished 2D videos
@@ -50,7 +50,7 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 - Fixes: passing a plan's gate as a step approves the plan; the speech check reads spelled-out and
   digit numbers alike; old effect notes no longer contradict the director's final choice.
 
-## [1.0.0] — 2026-10-29
+## [1.0.0] - 2026-10-29
 
 First release. Sorot turns long YouTube or local videos into vertical 9:16 clips with word-timed captions,
 built for Indonesian and running on your own machine. Jev, an LLM and Tebar are optional: without them,
@@ -135,31 +135,31 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
 ### Since the pre-release image
 Installs made before this release ran a `:latest` built by hand from PR #15 (`sha-1d5e964`, 2026-10-28).
 1.0.0 adds:
-- #17 — Faster CPU rendering.
+- #17: Faster CPU rendering.
   - One-pass render with captions and music.
   - Whisper on every core.
   - ffmpeg killed on cancel.
   - 4-core benchmark: a 30 s clip took 168 s before, 46 s after.
-- #18 — Usable on 4 vCPU or fewer.
+- #18: Usable on 4 vCPU or fewer.
   - Visual signals are sampled at keyframes. One hour of video: 121 s before (visual signals silently
     lost), 32 s after.
   - On a CPU: the 10 best clips render, and one pipeline runs at a time.
   - Transcript reuse, transcription progress, and range imports copied instead of re-encoded.
-- #19 — Jev-first creative loop, LLM director, quality gate, Tebar publishing, connection settings in
+- #19: Jev-first creative loop, LLM director, quality gate, Tebar publishing, connection settings in
   the studio and CLI.
-- #20 — Publishing from the CLI, Tebar account picker by workspace, TikTok draft or direct post,
+- #20: Publishing from the CLI, Tebar account picker by workspace, TikTok draft or direct post,
   retry/cancel posts, `sorot connect setup`, `sorot doctor` checks connections.
-- #21 — Long YouTube range imports download whole and cut locally.
-- #22 — Jev picks can run to 60 s; a ≥ 0.6 s pause ends a sentence.
-- #23, #24 — Whisper re-run where a transcript lost its punctuation, with a word-count guard and its
+- #21: Long YouTube range imports download whole and cut locally.
+- #22: Jev picks can run to 60 s; a ≥ 0.6 s pause ends a sentence.
+- #23, #24: Whisper re-run where a transcript lost its punctuation, with a word-count guard and its
   own progress line.
-- #25 — Fixes found by checking the docs against the code:
+- #25: Fixes found by checking the docs against the code:
   - Keyword matching (above), with the tier cutoffs recalibrated to 0.78 / 0.63.
   - A trained LightGBM model gets its features in the order it was trained with.
   - `sorot restart` (Docker) applies `.env.docker` changes.
   - The Linux installer keeps the installed mode on a re-run.
   - `WHISPER_MODEL` defaults to `large-v3-turbo` when unset.
-- #16 — README.
+- #16: README.
 
 ### Upgrading
 - **Docker on Windows:** `.\scripts\start.ps1 -Update`, or re-run the installer.

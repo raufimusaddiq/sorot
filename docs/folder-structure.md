@@ -106,7 +106,7 @@ sorot/
 
 - Per-video files are named by the video ID: `{videoId}.mp4`, `{videoId}.wav`; clip files by rank inside `{videoId}/` folders (`clip_{rank}_subtitled.mp4`)
 - Transcript/segment files are JSON: `{videoId}.json`
-- The `data/` folder is gitignored — it contains large media files
+- The `data/` folder is gitignored: it contains large media files
 - Backend is the only writer to `data/` (Python scripts write there too, but only when called by backend)
 - Paths in the DB start with `DATA_DIR` (e.g., `/app/data/raw/abc.mp4` in Docker); a local file imported whole keeps its own path
 

@@ -2,7 +2,7 @@
 
 Source of truth: [`backend/src/app.ts`](../backend/src/app.ts) (routes) and
 [`backend/tests/api.test.ts`](../backend/tests/api.test.ts) (contract tests).
-If this file and the code disagree, the code wins — fix this file.
+If this file and the code disagree, the code wins: fix this file.
 
 Base URL: `http://localhost:8080/api`. The UI is served from the same origin
 (`http://localhost:8080/` is the landing page, `/studio` the app), so browsers need no CORS. CORS is allowed only for
@@ -52,7 +52,7 @@ TypeScript shapes are in [`backend/src/types.ts`](../backend/src/types.ts) and
 ## Videos
 
 ### `POST /api/import`
-Register a video. Does **not** start processing — call `POST /api/process` next.
+Register a video. Does **not** start processing: call `POST /api/process` next.
 
 ```json
 { "url": "https://www.youtube.com/watch?v=...", "localPath": null,
@@ -67,7 +67,7 @@ still creates a `LOCAL` row (legacy behavior); its pipeline fails at IMPORT.
 processing to that part of the source: YouTube downloads only that window
 (`yt-dlp --download-sections`), or, for a range of at least a tenth of the
 video, downloads it whole (yt-dlp's own downloader is ~10x faster than the
-ffmpeg one sections use) and cuts it locally. Either way it is stream-copied —
+ffmpeg one sections use) and cuts it locally. Either way it is stream-copied;
 cut exactly, i.e. re-encoded, only with YouTube captions on. A local file is
 cut once. Accepted formats:
 `85`, `85s`, `1:25`, `01:02:03`, `13m25s`. 400 on a bad or one-sided range.
@@ -157,7 +157,7 @@ All jobs, newest first: `{ "jobs": [Job] }`.
 holds `"Transcribing 37%"` (then the transcript path); `SEGMENT` and `SCORE` show
 Jev's or the LLM's progress (`"Jev judging clips 10/40"`) the same way. For `RENDER` and `SUBTITLE`, `outputPath` holds
 progress text such as `"Rendering 3/8 clips"`, then `"7 rendered, 1 failed"` or
-`"8 burned, 0 failed"` — with `", 35 more render on request"` when
+`"8 burned, 0 failed"`, with `", 35 more render on request"` when
 `MAX_RENDER_CLIPS` held some back. RENDER burns the captions, so `SUBTITLE` only
 re-burns clips rendered without them and otherwise reads `"Captions burned during render"`. A failed job's `errorMessage` reads
 `Stage {STAGE} failed: {reason}`. 404 `Job not found`.
@@ -193,10 +193,10 @@ Choices and server defaults for the import form and clip editor:
 | `hookFirst` | Replay the clip's strongest line (a question/hook, 1.2–6 s, after the first 3 s) before it starts |
 | `youtubeCaptions` / `allowAutoCaptions` | Use the video's uploaded (and optionally auto-generated) YouTube captions instead of Whisper when present |
 | `bgm` / `bgmVolume` | Music file from `data/music`, looped and ducked under speech; volume 0–1 |
-| `direction` | Job level, ≤ 500 chars: free-text steer for the picks and copy — Jev asks `fits_direction` when screening and scoring; the LLM uses it for the brief, picks, review and post copy. Ignored when neither is connected |
+| `direction` | Job level, ≤ 500 chars: free-text steer for the picks and copy; Jev asks `fits_direction` when screening and scoring; the LLM uses it for the brief, picks, review and post copy. Ignored when neither is connected |
 
 ### `GET /api/music`
-`{ "tracks": ["lofi.mp3", ...] }` — audio files in `data/music`
+`{ "tracks": ["lofi.mp3", ...] }`: audio files in `data/music`
 (`.mp3 .m4a .aac .wav .ogg .flac`), sorted.
 
 ---
@@ -204,7 +204,7 @@ Choices and server defaults for the import form and clip editor:
 ## Clips
 
 Tiers: `PRIMARY` (≥ 0.78), `BACKUP` (≥ 0.63), `SKIP` (< 0.63). The pipeline
-renders (with captions) PRIMARY and BACKUP clips — all of them on a GPU, the
+renders (with captions) PRIMARY and BACKUP clips: all of them on a GPU, the
 best `MAX_RENDER_CLIPS` (default 10) on a CPU. The others stay `PENDING`;
 `POST /api/clips/{id}/rerender` with `{}` renders any clip. Render/export
 status values are `PENDING`, `RENDERING`, `COMPLETED` or `FAILED`.
@@ -252,13 +252,13 @@ the pipeline left `PENDING` (`{}`, the studio's **Render** button). All keys opt
   "options": { "style": "hormozi", "silenceTrim": true },
   "captionWords": [{ "text": "Mongol", "start": 32.0, "end": 32.4 }] }
 ```
-- `startTime`/`endTime` — new range (same formats as import); length 3–180 s.
-- `options` — replaces the clip's saved overrides (`{}` clears them); layered
+- `startTime`/`endTime`: new range (same formats as import); length 3–180 s.
+- `options`: replaces the clip's saved overrides (`{}` clears them); layered
   over the job's options and the server defaults.
-- `captionWords` — corrected words (empty text drops a word); `null` clears a
+- `captionWords`: corrected words (empty text drops a word); `null` clears a
   saved edit and regenerates captions from the transcript; omitted keeps it.
 
-Returns `{ "clip": Clip }` with `updatedAt` set — append it to the preview /
+Returns `{ "clip": Clip }` with `updatedAt` set: append it to the preview /
 download URL (`?v=…`) to bypass the browser cache. Errors: 400 validation,
 404 unknown clip, 409 `Clip is already re-rendering` /
 `Video is still processing…`, 500 `Re-render failed: …` (the clip's statuses
@@ -290,7 +290,7 @@ Downloads the export as `application/octet-stream` with
 | Field | Meaning |
 |---|---|
 | `source` | `rules` (pause-based window), `jev` (sentence window Jev picked) or `llm` (picked by the LLM director) |
-| `hookStart` / `hookEnd` | Hook line in source seconds (Jev's, the LLM's, or the rules'); `null` = none — with Jev first, also Jev's decision that the clip's opening needs no replay. Replayed first with `hookFirst` |
+| `hookStart` / `hookEnd` | Hook line in source seconds (Jev's, the LLM's, or the rules'); `null` = none; with Jev first, also Jev's decision that the clip's opening needs no replay. Replayed first with `hookFirst` |
 | `gateVerdict` | `PASS`, `REVIEW` (content risk: a person decides), `FAIL` (held back: tier `SKIP`, ranked last), or `null` (not gated: not in a render tier) |
 | `gate` | JSON: `{verdict, by: "jev"\|"rules", model, reasons[], answers{question: probability, payoff: 0-2}, quality, titleReplaced?}` |
 | `reason` | Why it scored as it did; `Held back: …` when the gate failed it |
@@ -333,8 +333,8 @@ or `{ "ok": false, "ms": 3, "error": "Not configured: …" }`.
 
 409 `Tebar is not connected…` when there is no key. Tebar's own errors come
 back as 400 (its 4xx, message kept, e.g. `Tebar 403 plan_required: …`) or 502;
-for the codes a user can fix, a hint follows (`— reconnect this account at
-tebar.app`, `— this API key can only read: create a read + write key …`).
+for the codes a user can fix, a hint follows (e.g. `reconnect this account at
+tebar.app`, `this API key can only read: create a read + write key …`).
 
 **Workspaces.** A Tebar key can see several workspaces (Tebar "profiles"),
 each with its own accounts. A post and its media live in one workspace, so
@@ -372,7 +372,7 @@ finish there); a direct post needs `privacyLevel` (one of the draft's
 before the upload (400). A `REVIEW` clip needs `confirmReview: true`, a `FAIL`
 clip `override: true` (else 409). Uploads the clip, posts with an
 `Idempotency-Key` in the accounts' workspace, returns `{ "post": SocialPost }`
-— status `PUBLISHING`, `SCHEDULED`, `PUBLISHED`, `PARTIAL`, `FAILED` or
+with status `PUBLISHING`, `SCHEDULED`, `PUBLISHED`, `PARTIAL`, `FAILED` or
 `CANCELLED`, `targets` (JSON per account: platform, status, permalink,
 errorCode), `profileId`.
 
@@ -506,8 +506,8 @@ Starts auto-discover in the background (one run at a time; 409
   "steps": [], "notes": null, "llmError": null, "error": null, "count": 0, "videos": [] }
 ```
 With an LLM (`LLM_BASE_URL` + `LLM_MODEL`), an agent calls tools at temperature
-0.8 — `web_search` (`WEB_SEARCH`: `bing`, a SearXNG URL, or `off`),
-`youtube_search`, `analyze_video`, `channel_videos`, `source_channels` — and
+0.8: `web_search` (`WEB_SEARCH`: `bing`, a SearXNG URL, or `off`),
+`youtube_search`, `analyze_video`, `channel_videos`, `source_channels`, and
 answers with picks and reasons; only videos its tools returned are accepted.
 Without an LLM, or if it fails (`llmError` says why), the algorithm runs: 3
 random anchor queries (the goal first; up to 6 while few results turn up), the

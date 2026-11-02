@@ -3,12 +3,12 @@
 Three ways in, from simplest to most flexible:
 
 1. **`sorot`** in shell scripts, cron jobs and other tools (`--json` + exit codes).
-2. **The HTTP API** from any language — the same API the web UI and `sorot` use
+2. **The HTTP API** from any language, the same API the web UI and `sorot` use
    ([api-spec.md](api-spec.md)).
-3. **The files** in `data/` — finished clips are plain `.mp4` files you can pick up.
+3. **The files** in `data/`: finished clips are plain `.mp4` files you can pick up.
 
 There is no authentication: the app is meant for one machine or a trusted
-network. Don't expose its port to the internet — use an SSH tunnel or a VPN
+network. Don't expose its port to the internet; use an SSH tunnel or a VPN
 (Tailscale, WireGuard) to reach it from elsewhere.
 
 ## 1. Scripting with sorot
@@ -157,7 +157,7 @@ Useful pieces for integrations:
 | Need | Endpoint |
 |---|---|
 | Pipeline options and defaults | `GET /api/options` |
-| Job progress (stage by stage) | `GET /api/jobs/{id}` — poll every few seconds |
+| Job progress (stage by stage) | `GET /api/jobs/{id}`: poll every few seconds |
 | Clip text for a caption/post | `GET /api/clips/{id}` → `clip.title`, `clip.description`, score breakdown |
 | Fix one clip (timing, style, words) | `POST /api/clips/{id}/rerender` |
 | Report a post's results (trains the scorer) | `POST /api/clips/{id}/feedback` with views, likes, comments, shares, saves, `postedAt` |
@@ -182,4 +182,4 @@ sync tool or upload script can read that folder directly; use the API
 files are finished (`exportStatus`).
 
 Don't write into `data/` other than `data/input/` (files to import) and
-`data/music/` (background tracks) — the rest is managed by the app.
+`data/music/` (background tracks); the rest is managed by the app.
