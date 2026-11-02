@@ -258,11 +258,11 @@ the second; resuming the first by name doesn't move the cursor (quickstart §9).
 - [x] T093 [P] Write `docs/generate.md` (design, step library, recipes, the two rules, verdict rules, measurements from S2/S3/S4, voice compute rule) and update `docs/api-spec.md`, `docs/cli.md` and `docs/data-model.md`
 - [x] T094 [P] Write the guides "Build your own pipeline" and "Porting an agent pipeline", with the placeholder example `docs/examples/recipes/agent-explainer.json`
 - [ ] T095 Spike S6 / SC-012: rebuild one video made by an existing agent pipeline as a recipe from `docs/examples/recipes/agent-explainer.json` with local Settings; time the setup (< 30 min, no code) and compare TECHNICAL numbers with that pipeline's own checks; record in `specs/001-2d-video-generator/research.md`
-- [ ] T096 Spike S2 (final) and S5: measure delivery renders for a 60 s narrated recipe (SC-013) and the vision look review; record in `specs/001-2d-video-generator/research.md`
+- [ ] T096 Spike S2 (final) and S5: measure delivery renders for a 60 s narrated recipe (SC-013) and the vision look review; record in `specs/001-2d-video-generator/research.md` (S5 done and the CPU half of S2 measured 2026-11-02, see "S2 and S5 on the CPU test install"; open: the RTX 4060 render and a full unattended 60 s narrated run for SC-013)
 - [x] T097 [P] Add Generate rules to `AGENTS.md` (pointers to `docs/generate.md`, the two rules, the voice compute rule, `generator/` holds no Sorot logic) and a user-facing entry under `## [Unreleased]` in `CHANGELOG.md`
 - [x] T098 [P] Add a journal entry for the feature in `docs/journal/`
 - [x] T099 Extend the CI smoke test to check that the CPU image has Node and HyperFrames but no local-TTS packages, in `.github/workflows/ci.yml`
-- [ ] T100 Run every scenario in `specs/001-2d-video-generator/quickstart.md` and fix what fails
+- [ ] T100 Run every scenario in `specs/001-2d-video-generator/quickstart.md` and fix what fails (2026-11-02 on the CPU test install: 1 availability passes (LLM off → unavailable with the reason; on → available); 5 determinism passes (900/900 frame hashes); 2, 3, 7 and 11 ran in the live GLM and Kimi builds (storylines, plan, build, two verdicts, images and narration). Open: 4 fix/restore and 6 export/publish (needs Tebar) through the CLI, 8, 9 and the UI checks)
 - [x] T101 Run the full gate with `/test` (backend, frontend, CLI, ai-pipeline: 100% pass, ≥ 95% coverage, zero type errors) and fix until the verdict is OPEN
 
 ---
@@ -451,7 +451,7 @@ the smooth builds of 2026-11-01 give none; CREATIVE answers `finished` and `moti
 - [X] T144 [US9] `render.motionBlur: auto|on|off` (no DEFAULTS entry; `auto` in code): the composer sets `data-motion-blur="on"` on the root when a shot's look marks it fast or the setting is `on`, in `backend/src/generate/composer.ts` and `steps/render.ts`; tests
 - [X] T145 [US9] Per-shot `look` `{description, values, parts?: [{part, settings}]}` in `PLAN_PROPS` (`director.ts`) and `planSchema.ts` (description and values free, parts checked against the kit), passed to the scene and kit-level calls; tests in `planSchema.test.ts`
 - [X] T146 [US9] CREATIVE always adds `finished` ("Do the things in `shots` read as what they are, and look finished and intended?") and `motion` ("Does the motion in `shots` move smoothly and with weight?"), both passing `lintQuestion`, in `backend/src/generate/creative.ts`; update the shared judge replies in `backend/tests/helpers.ts` and the creative tests
-- [ ] T147 Spike S7, thresholds: tune `motion` k and N on the builds of 2026-11-01 (no findings) and a planted jump (one finding); calibrate deepseek-v4-flash, deepseek-v4-1-flash and one small local model and check their `auto` levels; record in `specs/001-2d-video-generator/research.md`
+- [X] T147 Spike S7, thresholds: tune `motion` k and N on the builds of 2026-11-01 (no findings) and a planted jump (one finding); calibrate deepseek-v4-flash, deepseek-v4-1-flash and one small local model and check their `auto` levels; record in `specs/001-2d-video-generator/research.md` (done 2026-11-02: thresholds in "S7 motion thresholds, first pass"; calibration in "S7 level thresholds: calibration", with `gemma-4-31b-it` through the gateway standing in for a local model, none being reachable here)
 
 ## Phase 18: UI, docs and validation
 

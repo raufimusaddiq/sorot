@@ -945,6 +945,23 @@ in for "a small local model", served by the gateway, not locally.
 - gemma's 41 s for nine shots is far faster than the others; its scenes were short. Looks were not
   judged in calibration.
 
+### S2 and S5 on the CPU test install (2026-11-02, T096)
+
+- **S5, the vision look review**: done. The model that writes is the model that sees (no separate
+  vision model, R36). On the GLM story builds (`glm-5-3-flash`, 7 shots) four look calls took
+  23 to 69 s each and described the frames accurately ("an old woman seen from behind … carrying a
+  rattan basket of jars"); they caught the weak shot ("a dark dome shape with a dim sphere and a
+  stylized hand knocking on nothing … the lamp appears unlit") and gave `look_unexplained` /
+  `look_mismatch` findings for it. The CREATIVE judge with the frames (14 to 22 s a call) answered
+  `finished: partly` on the same shot with the same reason. Jev, reading text, can't see these.
+- **S2, delivery render on CPU**: the 30 s story film (7 shots, narration, 1080×1920, 30 fps)
+  renders at delivery quality in **118 s** (3.9 s of render per second of video) and at draft in
+  97 s (3.2 s/s) on a 4-core, 15 GB container. A 60 s narrated film would take about 4 minutes on
+  this machine (estimate, not run). The RTX 4060 numbers and a full unattended 60 s narrated run
+  (SC-013) are still open.
+- **Determinism (quickstart 5, SC-007)**: the same version rendered twice at draft: 900 frames each,
+  all 900 frame hashes equal.
+
 ## Part 4: The director loop (2026-11-02)
 
 Evidence: three real builds on 2026-11-02 (Kimi isometric, GLM isometric, GLM story) and the
