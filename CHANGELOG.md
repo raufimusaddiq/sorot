@@ -15,6 +15,12 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 - Still fully optional and swappable: "Use a different provider" reaches the existing
   OpenAI-compatible `baseUrl`/`model`/`apiKey` fields directly, with no Kenari key ever required,
   tried, or rejected first; an already-configured different provider is left untouched.
+- The same one-key setup, with a live, pickable model list, is offered for Generate's scene
+  images (`/images/generations`) and narration voice (the `openai` engine's `/audio/speech`) —
+  Kenari was already a drop-in for both existing OpenAI-compatible slots; this just makes picking
+  a Kenari model/voice as easy as picking a chat model.
+- Once connected, the Settings LLM card shows your Kenari plan, balance, quota remaining per
+  window and usage for the period — no need to check kenari.id separately.
 - Thanks to Kenari for supporting Sorot's development through the Kenari Grant.
 
 ### Generate: briefs to finished 2D videos
