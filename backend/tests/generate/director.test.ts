@@ -314,6 +314,7 @@ describe("director: tool calling", () => {
     expect(req.tools[0]).toMatchObject({ type: "function", function: { name: fn, parameters: { type: "object", required: [...required] } } });
     expect(req.tool_choice).toEqual({ type: "function", function: { name: fn } });
     expect(r.events()[0]!.response).toBe(reply());   // the log keeps the arguments the model gave
+    if (fn === "submit_plan") expect(Object.keys(req.tools[0].function.parameters.properties.shots.items.properties.look.properties)).toEqual(["description", "values", "parts"]);   // FR-041
   });
 
   test("a model that writes the JSON as text instead of calling the function is still understood", async () => {

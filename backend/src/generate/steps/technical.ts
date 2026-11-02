@@ -13,6 +13,7 @@ import { YES } from "../../clipGate";
 import { JevError, noul } from "../../jev";
 import { LlmError } from "../../llm";
 import type { Plan } from "../planSchema";
+import { frameDiffArgs, motionFindings, parseFrameDiffs } from "../motion";
 import { readScene } from "./build";
 import { chosenStoryline } from "./storylines";
 import { buildTarget } from "./build";
@@ -104,6 +105,18 @@ export const run: RunFn = async (ctx) => {
     }, { fpsTolerance: num(output.fpsTolerance, 0.5), lengthToleranceSec: num(output.lengthToleranceSec, 0.1) }));
   }
 
+  // Motion (always checked): jumps and stalls inside each shot, from the rendered frames.
+  if (media) {
+    const m = obj(measures.motion);
+    const res = await ctx.exec(ctx.config.ffmpegPath, frameDiffArgs(file as string), { signal: ctx.signal, timeoutMs: 300_000 });
+    const diffs = res.exitCode === 0 ? parseFrameDiffs(res.stdout) : [];
+    if (diffs.length) {
+      own.push(...motionFindings(diffs, plan, Number(ctx.settings.fps ?? ctx.recipe.output.fps), {
+        ...(typeof m.jumpRatio === "number" ? { jumpRatio: m.jumpRatio } : {}), ...(typeof m.stallFrames === "number" ? { stallFrames: m.stallFrames } : {}),
+      }));
+    }
+  }
+
   own.push(...readabilityFindings(plan, { holdBaseSec: num(readability.holdBaseSec, 0.5), holdPerWordSec: num(readability.holdPerWordSec, 0.25) }));
   // Effects (always checked): the floor is the plan step's minEffects.
   own.push(...effectFindings(plan, minEffectsFor(plan, ctx.recipe.steps.find((s) => s.use === "plan")?.with?.minEffects)));
@@ -141,7 +154,7 @@ export const run: RunFn = async (ctx) => {
     id: crypto.randomUUID(), versionId: version.id, kind: "TECHNICAL", status, findings: JSON.stringify(all), judgedBy: "code",
     inputs: JSON.stringify({
       render: { kind: version.renderKind, path: file }, sources: [...new Set(all.map((f) => f.source))], shots: plan.shots.length,
-      measures: ["output", "planText", "layout", "readability", "firstFrame", "effects", ...(planHasSound(plan) ? ["audio"] : []), ...(voice && flag(measures.voiceRoute) ? ["voiceRoute"] : []), ...(voice && flag(measures.speechMatch) ? ["speechMatch"] : []), ...(flag(measures.sourcedNumbers) ? ["sourcedNumbers"] : [])],
+      measures: ["output", "planText", "layout", "readability", "firstFrame", "effects", "motion", ...(planHasSound(plan) ? ["audio"] : []), ...(voice && flag(measures.voiceRoute) ? ["voiceRoute"] : []), ...(voice && flag(measures.speechMatch) ? ["speechMatch"] : []), ...(flag(measures.sourcedNumbers) ? ["sourcedNumbers"] : [])],
     }),
     createdAt: now(),
   });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildRoot, bundledFontFaces, checkScene, shotFile, shotId, shotStarts, visibleText } from "../../src/generate/composer";
+import { buildRoot, bundledFontFaces, checkScene, motionBlurOf, shotFile, shotId, shotStarts, visibleText } from "../../src/generate/composer";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import { contrastOf, luminance, seamColour, seams, TRANSITION_NAMES } from "../../src/generate/transitions";
 import { samplePlan, sceneHtml as scene } from "../helpers";
@@ -68,6 +68,18 @@ describe("root composition", () => {
     expect(html).toContain('font-family: "Odd&quot;Font"');
     expect(html).toContain('<audio id="music" class="clip" src="assets/ab-lagu.mp3" data-start="0" data-duration="30" data-track-index="1" data-volume="0.12"></audio>');
     expect(html).toContain('lang="i&quot;d"');
+  });
+
+  test("motion blur: auto blurs only the shots the plan marks fast (the others opt out), on blurs all, off none; kit parts' render(t) is blurred too", () => {
+    const plan = planOf();
+    const fast = { ...plan, shots: plan.shots.map((s, i) => (i === 1 ? { ...s, look: { description: "a dash", values: { speed: "fast" } } } : s)) };
+    expect(motionBlurOf(fast, "auto", true)).toEqual({ on: true, off: [0, 2], events: true });
+    expect([motionBlurOf(plan, "auto", true).on, motionBlurOf(plan, "on", false), motionBlurOf(fast, "off", true).on]).toEqual([false, { on: true, off: [], events: false }, false]);
+    const html = buildRoot({ plan: fast, width: 1080, height: 1920, fonts: [], motionBlur: motionBlurOf(fast, "auto", true) });
+    expect(html).toContain('data-height="1920" data-motion-blur="on" data-motion-blur-events="on">');
+    expect(html).toContain('data-composition-src="compositions/shot-01.html" data-start="0" data-duration="10" data-width="1080" data-height="1920" data-track-index="0" data-motion-blur="off">');
+    expect(html).not.toContain('shot-02.html" data-start="10" data-duration="10" data-width="1080" data-height="1920" data-track-index="0" data-motion-blur');
+    expect(buildRoot({ plan, width: 1080, height: 1920, fonts: [], motionBlur: motionBlurOf(plan, "auto", false) })).not.toContain("motion-blur");
   });
 
   test("names", () => {

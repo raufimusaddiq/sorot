@@ -71,6 +71,32 @@ export interface ComposeInput {
   voice?: Array<{ id: string; path: string; start: number; duration: number }> | null;
   /** The kit's <script> lines (`kitScripts`), loaded after GSAP. */
   kit?: string[];
+  /** HyperFrames' render-time motion blur (`render.motionBlur`, research R28). */
+  motionBlur?: MotionBlur;
+}
+
+export interface MotionBlur {
+  /** Blur on for the film. */
+  on: boolean;
+  /** Shots (0-based) opted out while it is on. */
+  off: number[];
+  /** Motion set from a timeline callback (a kit part's render(t)) is blurred too. */
+  events: boolean;
+}
+
+/** A shot the plan marks as fast: its look says speed fast or asks for motion blur. */
+export const isFast = (s: Shot) => s.look?.values?.speed === "fast" || s.look?.values?.motionBlur === true;
+
+/**
+ * `render.motionBlur`: `on` blurs every shot, `off` none, `auto` (the default) only the shots the plan
+ * marks fast (it costs about 3.4× the render time on a CPU, spike S7). `events` when kit parts drive
+ * motion from render(t).
+ */
+export function motionBlurOf(plan: Plan, setting: unknown, kitLoaded: boolean): MotionBlur {
+  if (setting === "off") return { on: false, off: [], events: false };
+  if (setting === "on") return { on: true, off: [], events: kitLoaded };
+  const fast = plan.shots.map(isFast);
+  return { on: fast.some(Boolean), off: fast.flatMap((f, i) => (f ? [] : [i])), events: kitLoaded && fast.some(Boolean) };
 }
 
 /** The key light every kit part shares: the first shot that names one, else from the upper left. */
@@ -83,7 +109,7 @@ export function keyLightOf(plan: Plan): number {
 export const kitLookOf = (plan: Plan) => ({ palette: plan.look.palette.filter((c) => HEX.test(c)), keyLightDeg: keyLightOf(plan) });
 
 /** The root index.html: one host per shot, in the plan's order and with the plan's timing, and the seams the plan names between them. */
-export function buildRoot({ plan, width, height, fonts, music, voice, kit }: ComposeInput): string {
+export function buildRoot({ plan, width, height, fonts, music, voice, kit, motionBlur }: ComposeInput): string {
   const starts = shotStarts(plan);
   const total = round3(plan.shots.reduce((n, s) => n + s.durationSec, 0));
   const hexes = plan.look.palette.filter((c) => HEX.test(c));
@@ -94,8 +120,9 @@ export function buildRoot({ plan, width, height, fonts, music, voice, kit }: Com
   });
   const faces = fonts.map((f) =>
     `      @font-face { font-family: "${esc(f.family)}"; font-weight: ${f.weight}; src: url("${esc(f.path)}") format("woff2"); }`).join("\n");
+  const blur = motionBlur?.on ? motionBlur : null;
   const hosts = plan.shots.map((s, i) =>
-    `      <div id="host-${shotNumber(i)}" data-composition-id="${shotId(i)}" data-composition-src="${shotFile(i)}" data-start="${starts[i]}" data-duration="${s.durationSec}" data-width="${width}" data-height="${height}" data-track-index="0"></div>`).join("\n");
+    `      <div id="host-${shotNumber(i)}" data-composition-id="${shotId(i)}" data-composition-src="${shotFile(i)}" data-start="${starts[i]}" data-duration="${s.durationSec}" data-width="${width}" data-height="${height}" data-track-index="0"${blur?.off.includes(i) ? ' data-motion-blur="off"' : ""}></div>`).join("\n");
   const audio = (music
     ? `\n      <audio id="music" class="clip" src="${esc(music.path)}" data-start="0" data-duration="${total}" data-track-index="1" data-volume="${music.volume}"></audio>`
     : "") + (voice ?? []).map((v) =>
@@ -113,7 +140,7 @@ ${faces}
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}">${audio}
+    <div id="root" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}"${blur ? ` data-motion-blur="on"${blur.events ? ' data-motion-blur-events="on"' : ""}` : ""}>${audio}
 ${hosts}${seam.overlays.length ? `\n${seam.overlays.join("\n")}` : ""}
     </div>
     <script>

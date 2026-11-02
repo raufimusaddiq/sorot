@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ProcResult } from "../../src/runner";
-import { EFFECTS_DONE, makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, type TestEnv } from "../helpers";
+import { EFFECTS_DONE, makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, type TestEnv, judgeYes } from "../helpers";
 
 const json = JSON.stringify;
 const story = (i: number) => ({ title: `Film ${i}`, pitch: "satu", opening: "benih", beats: ["hook", "isi", "akhir"], look: "flat", sound: "tenang", bold: false, recommended: i === 1, reason: "k" });
@@ -10,10 +10,7 @@ const STORIES = json({ storylines: [story(1), story(2), story(3)] });
 /** A plan with three effects, so the always-checked effects floor passes. */
 const PLAN = json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: ["cut", "fade", "flash"][i], ...(i === 0 ? { effects: { glowPx: 20, reason: "the hook shines" } } : {}) })) }));
 const SCENES = [0, 1, 2].map((i) => json({ html: sceneHtml(i) }));
-const JUDGE = json({
-  criteria: ["opening", "pace", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })),
-  risks: ["misleading_claim", "flat_film"].map((id) => ({ id, flagged: false, reason: "" })),
-});
+const JUDGE = judgeYes(["opening", "pace"]);
 const CLEAN_CHECK = json({ ok: true, lint: { findings: [] }, runtime: { findings: [] }, layout: { findings: [] } });
 const probe = (over: { width?: number; duration?: string } = {}) => json({
   streams: [{ codec_type: "video", width: over.width ?? 1080, height: 1920, avg_frame_rate: "30/1", duration: over.duration ?? "30.0" }], format: { duration: over.duration ?? "30.0" },

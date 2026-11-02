@@ -93,6 +93,13 @@ const PLAN_PROPS: Json = {
             blurPx: { type: "number", description: "background blur, 0 to 40" }, depthLayers: { type: "integer", description: "2 to 5 layers that move apart" }, glowPx: { type: "number", description: "0 to 80" }, reason: { type: "string" },
           },
         },
+        look: {
+          type: "object", description: "how this shot looks, in whatever terms it needs, with exact values where you have them; name kit parts from capabilities.kit only", properties: {
+            description: str("what the shot looks like, one or two sentences"),
+            values: { type: "object", description: "exact values: colours, angles, sizes, timings; speed: \"fast\" turns on motion blur for the shot" },
+            parts: { type: "array", items: { type: "object", required: ["part", "settings"], properties: { part: str("a kit part name"), settings: { type: "object" } } } },
+          },
+        },
         audio: { type: "string" }, narration: { type: ["string", "null"] }, hold: { type: "boolean" },
         frames: { type: "array", items: { type: "integer" }, description: "numeric plans: [from, to) in frames; the first starts at 0 and each starts where the one before ends" },
         heroMove: str("numeric plans: the one thing that moves most"), reads: str("numeric plans: what a stranger reads in this shot"), handoff: str("numeric plans: what carries into the next shot"),

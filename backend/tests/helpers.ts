@@ -398,6 +398,13 @@ export function scriptLlm(env: TestEnv, replies: Array<string | AsText | Calls |
   return { requests, left: () => queue.length };
 }
 
+/** The criteria every CREATIVE verdict asks besides the recipe's own (FR-013, FR-046). */
+export const ALWAYS_ASKED = ["main_message", "finished", "motion"];
+/** A judge that answers yes to these criteria (plus the always-asked ones) and flags none of the risks. */
+export const judgeYes = (criteria: string[], risks = ["misleading_claim", "flat_film"]) => JSON.stringify({
+  criteria: [...new Set([...criteria, ...ALWAYS_ASKED])].map((id) => ({ id, answer: "yes", reason: "ok" })), risks: risks.map((id) => ({ id, flagged: false, reason: "" })),
+});
+
 /** The `kind` of a request to the director: its closing task field names the job. */
 export const userPayload = (req: { messages: Array<{ role: string; content: string }> }) => JSON.parse(req.messages.find((m) => m.role === "user")!.content);
 

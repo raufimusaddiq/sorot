@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -153,7 +153,7 @@ describe("technical step", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   /** A version with a rendered file; ffprobe and ffmpeg answer from `media`. */
-  function rig(opts: { planOver?: Record<string, unknown>; media?: { probe?: object | null; volume?: string }; rendered?: boolean; measures?: object; rules?: object; fps?: number } = {}) {
+  function rig(opts: { planOver?: Record<string, unknown>; media?: { probe?: object | null; volume?: string; diffs?: string }; rendered?: boolean; measures?: object; rules?: object; fps?: number } = {}) {
     tmp = mkdtempSync(join(tmpdir(), "vc-tech-"));
     const store = new Store(openDatabase(":memory:"));
     const recipe = quickRecipe();
@@ -176,6 +176,7 @@ describe("technical step", () => {
     const exec: ExecFn = async (cmd, args) => {
       calls.push([cmd, ...args]);
       if (cmd.includes("ffprobe")) return opts.media?.probe === null ? { ...procOk(), exitCode: 1 } : procOk(JSON.stringify(opts.media?.probe ?? probeOf({ audio: true })));
+      if (args.some((a) => a.startsWith("tblend"))) return procOk(opts.media?.diffs ?? "");
       return { ...procOk(), stderr: opts.media?.volume ?? "mean_volume: -20.0 dB\nmax_volume: -3.0 dB" };
     };
     const { llm } = fakeLlm([]);
@@ -192,9 +193,23 @@ describe("technical step", () => {
     const r = rig();
     expect(await STEPS.technical.run(r.ctx)).toEqual({ status: "done", outputRef: "PASS" });
     expect(r.verdict()).toMatchObject({ kind: "TECHNICAL", status: "PASS", judgedBy: "code", findings: "[]" });
-    expect(JSON.parse(r.verdict().inputs!)).toMatchObject({ render: { kind: "draft" }, shots: 3, measures: ["output", "planText", "layout", "readability", "firstFrame", "effects"] });
-    expect(r.calls[0]![0]).toBe("/usr/bin/ffprobe");
-    expect(r.calls).toHaveLength(1);   // the plan has no sound: no volume measurement
+    expect(JSON.parse(r.verdict().inputs!)).toMatchObject({ render: { kind: "draft" }, shots: 3, measures: ["output", "planText", "layout", "readability", "firstFrame", "effects", "motion"] });
+    expect(r.calls.map((c) => c[0])).toEqual(["/usr/bin/ffprobe", "/usr/bin/ffmpeg"]);   // the frames' motion; the plan has no sound: no volume measurement
+  });
+
+  test("motion: a planted one-frame jump is a must-fix with its shot and moment; the smooth renders of spike S7 have none; the recipe tunes the ratio", async () => {
+    const fixture = (name: string) => readFileSync(join(import.meta.dir, "../fixtures/motion", `${name}.txt`), "utf8");
+    const planted = rig({ media: { diffs: fixture("planted") } });
+    await STEPS.technical.run(planted.ctx);
+    expect(readFindings(planted.dir)).toMatchObject([{ code: "motion_jump", severity: "must-fix", shotId: "s01", fromSec: 3, rule: "motion" }]);
+    for (const name of ["smooth", "fast-noblur", "three"]) {
+      const smooth = rig({ media: { diffs: fixture(name) } });
+      await STEPS.technical.run(smooth.ctx);
+      expect(readFindings(smooth.dir)).toEqual([]);
+    }
+    const lenient = rig({ media: { diffs: fixture("planted") }, measures: { motion: { jumpRatio: 50 } } });
+    await STEPS.technical.run(lenient.ctx);
+    expect(readFindings(lenient.dir)).toEqual([]);
   });
 
   test("the build steps' findings count: a must-fix from the author step fails it, a kept warning does not", async () => {
@@ -250,7 +265,7 @@ describe("technical step", () => {
     await STEPS.technical.run(missing.ctx);
     expect(missing.verdict().status).toBe("FAIL");
     expect(readFindings(missing.dir).map((f) => f.code)).toEqual(["audio_missing"]);
-    expect(missing.calls).toHaveLength(1);   // nothing to measure without a track
+    expect(missing.calls).toHaveLength(2);   // the probe and the motion; nothing to measure without a track
 
     const loud = rig({ planOver: sound, media: { volume: "mean_volume: -9.0 dB\nmax_volume: 0.0 dB" } });
     await STEPS.technical.run(loud.ctx);

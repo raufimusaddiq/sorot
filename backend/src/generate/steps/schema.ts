@@ -32,6 +32,8 @@ const MEASURES: Record<string, Field> = {
   firstFrame: { t: "flag", always: true },
   audio: { t: "flag", always: true, fields: { minMeanVolumeDb: { t: "num", min: -80, max: 0 }, maxTruePeakDb: { t: "num", min: -20, max: 3 } } },
   forbiddenNumbers: { t: "flag", always: true },
+  // jumps and stalls inside shots, from the rendered frames (research R28)
+  motion: { t: "flag", always: true, fields: { jumpRatio: { t: "num", min: 2, max: 50 }, stallFrames: { t: "int", min: 2, max: 120 } } },
   // Optional.
   speechMatch: { t: "flag", fields: { maxWordErrorRate: { t: "num", min: 0, max: 1 } } },
   voiceRoute: { t: "flag" },

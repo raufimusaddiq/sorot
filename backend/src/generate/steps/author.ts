@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
-import { buildRoot, bundledFontFaces, checkScene, GSAP_FILE, kitLookOf, shotFile, sizeFor, type ComposeInput, type FontFace, type SceneIssue } from "../composer";
+import { buildRoot, bundledFontFaces, checkScene, GSAP_FILE, kitLookOf, motionBlurOf, shotFile, sizeFor, type ComposeInput, type FontFace, type SceneIssue } from "../composer";
 import { kitScripts, PART_NAME, requiredParts, type KitManifest } from "../kit";
 import { editApplied, markEditApplied, readFix } from "../fixes";
 import { saveFindings, type NewFinding } from "../findings";
@@ -107,7 +107,8 @@ export async function prepareProject(ctx: StepContext, dir: string, plan: Plan):
   const installed = new Set((ctx.kit?.manifests() ?? []).map((m) => m.name));
   const writeRoot = (parts: string[]) => {
     const manifests = ctx.kit && parts.length ? ctx.kit.copyInto(dir, parts) : [];
-    writeFileSync(join(dir, "index.html"), buildRoot({ ...rootInput, kit: kitScripts(manifests, kitLookOf(plan), size, ctx.recipe.output.fps) }));
+    const blur = motionBlurOf(plan, ctx.recipe.steps.find((s) => s.use === "render")?.with?.motionBlur ?? "auto", manifests.length > 0);
+    writeFileSync(join(dir, "index.html"), buildRoot({ ...rootInput, kit: kitScripts(manifests, kitLookOf(plan), size, ctx.recipe.output.fps), motionBlur: blur }));
     return manifests;
   };
   const required = ctx.step.use === "author" ? ctx.settings.require : ctx.recipe.steps.find((s) => s.use === "author")?.with?.require;

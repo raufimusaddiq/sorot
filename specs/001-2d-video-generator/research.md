@@ -895,3 +895,27 @@ WebGL with SwiftShader (software). Treat these as single measurements.
 - The nine built-in parts each rendered their example twice with identical frames (framemd5) on this
   machine, which is the check a user part must pass.
 - Still open: the same four scenes on the RTX 4060 Docker app.
+
+### S7 motion thresholds, first pass (2026-11-02)
+
+- ffmpeg's scene score (`select=gte(scene,0)`) and `freezedetect` were tried first. Both round a
+  small element's motion to zero: a 240 px box moving 4 px a frame scored 0.000, and `freezedetect`
+  reported 42 "freezes" in that smooth 6 s clip. Not usable for stalls or for small elements.
+- The measure uses the mean luma difference of each frame pair instead
+  (`tblend=all_mode=difference,signalstats`, YAVG). Ratio of a frame's change to the median of its
+  four neighbours on each side:
+
+  | Clip (spike S7 renders, plus two made with ffmpeg) | Highest ratio |
+  |---|---|
+  | Planted: a 240 px box jumping 400 px for one frame and back | 45× (one finding) |
+  | The same box moving smoothly | 1.3× |
+  | Six cards darting with `expo.out` every 0.5 s (fast, eased) | 2.0× |
+  | `three` coins orbiting | 1.2× |
+
+  So `jumpRatio` defaults to 6 (must-fix from 12) with a floor of 1 luma level; `stallFrames` to 8
+  (must-fix from 16), a frame under 0.03 counting as still. Fixtures: `backend/tests/fixtures/motion/`.
+- Still open (T147): the same on the real builds of 2026-11-01, and calibrating deepseek-v4-flash,
+  deepseek-v4-1-flash and a small local model to check their `auto` levels.
+- The `finished` question is worded "Do the things in `shots` read as what they are, looking finished
+  and intended?": the spec's "..., and look finished and intended?" asks two things by Sorot's own
+  question lint.
