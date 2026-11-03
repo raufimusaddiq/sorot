@@ -1,6 +1,9 @@
 import type { NewFinding } from "./findings";
 import { shotStarts } from "./composer";
 import type { Plan } from "./planSchema";
+import type { Director } from "./director";
+import type { RecipeStep } from "./recipe";
+import type { GenProject } from "../types";
 
 // The look step: a vision model looks at the frames of a build as a stranger would, and says what
 // it sees. Code compares that with what the plan meant. This module holds the parts that are pure:
@@ -64,4 +67,30 @@ export function lookFindings(answer: LookAnswer, plan: Plan, times: number[], au
     }
   }
   return found;
+}
+
+export interface StrangerRead {
+  findings: NewFinding[];
+  /** What the stranger saw, for the director to read as well. */
+  seen: { description: string; objects: string[]; unexplained: string[] };
+}
+
+/**
+ * A stranger's read of one shot's frames, in the director's own turn (docs/director-loop.md): a fresh
+ * call with only the pictures (no conversation, no plan intent beyond `meant`) describes them; the
+ * look findings come from the same code as the look step. One `meant` entry per picture, so the
+ * stranger answers for each one; repeats collapse into one finding.
+ */
+export async function strangerRead(
+  director: Pick<Director, "look">, input: { project: GenProject; step: RecipeStep; plan: Plan; index: number; images: string[] },
+): Promise<StrangerRead> {
+  const meant = expectations(input.plan)[input.index]!;
+  const answer = await director.look({ project: input.project, step: input.step, expected: input.images.map(() => meant), audit: [], images: input.images });
+  const seen = new Set<string>();
+  const findings = lookFindings(answer, input.plan, [], false).filter((f) => !seen.has(`${f.code} ${f.description}`) && !!seen.add(`${f.code} ${f.description}`));
+  const first = answer.frames[0];
+  return {
+    findings,
+    seen: { description: first?.description ?? "", objects: [...new Set(answer.frames.flatMap((f) => f.objects))], unexplained: [...new Set(answer.frames.flatMap((f) => f.unexplained))] },
+  };
 }

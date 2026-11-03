@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tool, type ToolDef } from "../llm";
 import { checkScene, shotFile, type SceneIssue } from "./composer";
-import type { Shot } from "./planSchema";
+import type { Plan, Shot } from "./planSchema";
 import type { Hyperframes, HfFinding } from "./hyperframes";
+import type { StrangerRead } from "./look";
 import type { SceneKit } from "./composer";
 
 // The tools a director may use inside one shot's turn (docs/director-loop.md, FR-049): find a
@@ -86,13 +88,15 @@ export function searchBlocks(catalog: CatalogEntry[], args: ToolArgs): ToolOutco
 export interface ToolEnv {
   /** The version's HyperFrames project. */
   dir: string;
-  hyperframes: Pick<Hyperframes, "add" | "lint">;
+  hyperframes: Pick<Hyperframes, "add" | "lint" | "snapshot">;
   catalog: () => Promise<CatalogEntry[]>;
   /** The recipe's plan step allows registry blocks. */
   blocksAllowed: boolean;
   shot: Shot;
   /** 0-based position of the shot in the plan. */
   index: number;
+  /** Where the shot starts in the film, seconds (frames are taken at film time). */
+  startSec: number;
   /** The rules a scene is held to at this shot's level (`sceneRules`). */
   rules: { assets: string[]; kit?: SceneKit };
   signal?: AbortSignal;
@@ -151,6 +155,59 @@ export const TOOL_DEFS: Record<(typeof TOOL_ORDER)[number], ToolDef> = {
     html: { type: "string", description: "the complete draft of compositions/shot-NN.html" },
   }),
 };
+
+const MIME: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png" };
+
+/** Frames of the project at film times, as data URLs in the order asked (the nearest frame HyperFrames made for each). */
+export async function framesAt(hf: Pick<Hyperframes, "snapshot">, dir: string, times: number[], signal?: AbortSignal): Promise<string[]> {
+  const shots = await hf.snapshot(dir, { at: times }, { signal });
+  const byTime = [...shots.frames].sort((a, b) => a.time - b.time);
+  return times.map((t, i) => {
+    const frame = byTime.reduce((best, f) => (Math.abs(f.time - t) < Math.abs(best.time - t) ? f : best), byTime[i] ?? byTime[0]!);
+    return `data:${MIME[frame.path.split(".").pop()?.toLowerCase() ?? ""] ?? "image/png"};base64,${readFileSync(frame.path).toString("base64")}`;
+  });
+}
+
+const LOOKED = "looked.json";
+const hashOf = (html: string) => createHash("sha1").update(html).digest("hex").slice(0, 16);
+
+/** Remembers that a draft of this shot was looked at, by the hash of the file that was looked at. */
+export function markLooked(dir: string, shotId: string, html: string): void {
+  const file = join(dir, LOOKED);
+  const now = existsSync(file) ? (JSON.parse(readFileSync(file, "utf-8")) as Record<string, string>) : {};
+  writeFileSync(file, JSON.stringify({ ...now, [shotId]: hashOf(html) }));
+}
+
+/** Was every shot looked at in its own turn, and is each scene file still the one that was looked at? */
+export function lookedInLoop(dir: string, plan: Plan, sceneOf: (index: number) => string | null): boolean {
+  const file = join(dir, LOOKED);
+  if (!existsSync(file)) return false;
+  const looked = JSON.parse(readFileSync(file, "utf-8")) as Record<string, string>;
+  return plan.shots.every((s, i) => { const html = sceneOf(i); return html !== null && looked[s.id] === hashOf(html); });
+}
+
+/** The most seconds of a shot one look takes frames at. */
+const MAX_LOOK_TIMES = 3;
+
+/**
+ * Renders frames of a draft and returns them with a stranger's read of them: the director sees its own
+ * drawing and what a viewer who doesn't know the plan would make of it.
+ */
+export async function lookAtDraft(env: ToolEnv, read: (images: string[]) => Promise<StrangerRead>, args: ToolArgs): Promise<ToolOutcome> {
+  const html = typeof args.html === "string" ? args.html : "";
+  if (!html.trim()) return { result: { error: "html: the draft is empty" } };
+  const asked = (Array.isArray(args.times) ? args.times : []).filter((t): t is number => typeof t === "number" && Number.isFinite(t)).slice(0, MAX_LOOK_TIMES);
+  const last = Math.max(0, env.shot.durationSec - 0.05);
+  const inShot = (asked.length ? asked : [env.shot.durationSec / 2]).map((t) => Math.round(Math.min(Math.max(t, 0), last) * 100) / 100);
+  writeDraft(env, html);
+  const images = await framesAt(env.hyperframes, env.dir, inShot.map((t) => Math.round((env.startSec + t) * 100) / 100), env.signal);
+  const { findings, seen } = await read(images);
+  markLooked(env.dir, env.shot.id, html);
+  return {
+    result: { frames: inShot, seen, findings: findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })) },
+    images,
+  };
+}
 
 /** The most one turn may use of each tool (the recipe sets `toolSteps` and `looks`). */
 const LIMITS = { search_blocks: 4, use_block: 2, check: 3 };

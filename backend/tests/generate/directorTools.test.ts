@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { BLOCK_SOURCE_CHARS, checkDraft, sceneTools, searchBlocks, useBlock, type CatalogEntry, type ToolEnv } from "../../src/generate/directorTools";
+import { BLOCK_SOURCE_CHARS, checkDraft, lookAtDraft, lookedInLoop, sceneTools, searchBlocks, useBlock, type CatalogEntry, type ToolEnv } from "../../src/generate/directorTools";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import { samplePlan } from "../helpers";
 
@@ -43,7 +43,7 @@ describe("tools on a version's project", () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   const env = (over: Partial<ToolEnv> = {}): ToolEnv => ({
-    dir, shot, index: 1, blocksAllowed: true, rules: { assets: [] }, catalog: async () => CATALOG,
+    dir, shot, index: 1, startSec: 3, blocksAllowed: true, rules: { assets: [] }, catalog: async () => CATALOG,
     hyperframes: {
       add: async (d: string, names: string[]) => { writeFileSync(join(d, "compositions", `${names[0]}.html`), "<div>" + "x".repeat(BLOCK_SOURCE_CHARS + 100) + "</div>"); return {}; },
       lint: async () => ({ ok: true, errorCount: 0, warningCount: 1, infoCount: 0, findings: [{ code: "mine", severity: "warning", message: "m", file: "compositions/shot-02.html" }, { code: "other", severity: "error", message: "o", file: "compositions/shot-05.html" }] }),
@@ -65,6 +65,27 @@ describe("tools on a version's project", () => {
     expect(out.findings.map((f) => f.code)).toEqual(expect.arrayContaining(["mine"]));
     expect(out.findings.map((f) => f.code)).not.toContain("other");
     expect(((await checkDraft(env(), { html: "  " })).result as any).error).toContain("empty");
+  });
+
+  test("look renders frames at film time (clamped into the shot, at most three), returns them with the stranger's read, and remembers which file was looked at", async () => {
+    const asked: number[][] = [];
+    const hf = { snapshot: async (d: string, what: { at: number[] }) => {
+      asked.push(what.at);
+      return { ok: true, outputDir: d, frames: what.at.map((t, i) => { const path = join(d, `f${i}.png`); writeFileSync(path, `PIC${i}`); return { path, time: t }; }) };
+    } } as never;
+    const read = async (images: string[]) => ({ findings: [{ code: "look_unexplained", severity: "must-fix", description: "A stranger can't tell what \"dome\" is for in s02.", suggestedFix: "Label it." }], seen: { description: "a dome", objects: ["dome"], unexplained: ["dome"] }, n: images.length } as never);
+    const e = env({ hyperframes: { ...env().hyperframes, ...(hf as object) } });
+    const out = await lookAtDraft(e, read, { html: HTML, times: [-1, 2, 99, 5] });   // a fourth is dropped; 99 is clamped to the shot's last moment
+    expect(asked).toEqual([[3, 5, 3 + (shot.durationSec - 0.05)].map((t) => Math.round(t * 100) / 100)]);
+    expect(out.images).toEqual([0, 1, 2].map((i) => `data:image/png;base64,${Buffer.from(`PIC${i}`).toString("base64")}`));
+    expect(out.result).toMatchObject({ frames: [0, 2, shot.durationSec - 0.05], findings: [{ code: "look_unexplained", severity: "must-fix", hint: "Label it." }] });
+    expect(readFileSync(join(dir, "compositions/shot-02.html"), "utf-8")).toBe(HTML);
+    const plan2 = { shots: [{ id: "s02" }] } as unknown as Plan;
+    expect([lookedInLoop(dir, plan2, () => HTML), lookedInLoop(dir, plan2, () => HTML + "<!-- changed -->"), lookedInLoop(dir, plan2, () => null)]).toEqual([true, false, false]);
+    expect(await lookAtDraft(e, read, { html: "" })).toEqual({ result: { error: "html: the draft is empty" } });
+    asked.length = 0;
+    await lookAtDraft(e, read, { html: HTML });
+    expect(asked[0]).toEqual([3 + shot.durationSec / 2].map((t) => Math.round(t * 100) / 100));   // no moments given: the middle
   });
 
   test("a turn's tools: none when the recipe sets 0 steps, use_block only where blocks are allowed, look only with looks", async () => {

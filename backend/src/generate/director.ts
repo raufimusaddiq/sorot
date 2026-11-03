@@ -266,7 +266,7 @@ const INSTRUCTIONS = {
 
 type Kind = keyof typeof TOOLS;
 /** Which Generate role answers each call (Settings → LLM: plan, scene and judge models). */
-const roleOf = (kind: Kind | "effects" | "research"): "plan" | "scene" | "judge" => (kind === "judge" ? "judge" : SCENE_KINDS.has(kind as Kind) ? "scene" : "plan");
+const roleOf = (kind: Kind | "effects" | "research"): "plan" | "scene" | "judge" => (kind === "judge" ? "judge" : SCENE_KINDS.has(kind as Kind) || kind === "look" ? "scene" : "plan");   // the look is the scene model's own eyes
 const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, outline: 0.4, specs: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, kitshot: 0.4, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
 /** Words a voice says per second, pauses between lines included: Fish in Indonesian measured 1.7 to 2.0 (2026-11-01). */
 const WORDS_PER_SEC = 1.8;

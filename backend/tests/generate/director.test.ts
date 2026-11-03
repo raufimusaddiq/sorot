@@ -457,6 +457,16 @@ describe("director: scenes", () => {
     expect(r.events().filter((e) => e.kind === "check").map((e) => e.ok)).toEqual([0, 0]);
   });
 
+  test("a look's frames come back as a picture message right after its results, and the log row counts them", async () => {
+    const tools = { steps: 2, tools: { look: { def: TOOL_DEFS.look, limit: 2, run: async () => ({ result: { seen: { description: "a dome" } }, images: ["data:image/png;base64,AAA", "data:image/png;base64,BBB"] }) } } };
+    const r = rig([new Calls([["look", { html: "x", times: [1] }]]), json({ html: HTML })], { genSession: true });
+    await r.director.scene({ ...input(), session: "v-look", tools });
+    const after = r.requests[1]!.messages.slice(-2);
+    expect(after[0]).toMatchObject({ role: "tool", name: "look" });
+    expect((after[1].content as unknown as Array<{ type: string }>).filter((p) => p.type === "image_url")).toHaveLength(2);
+    expect(r.events().find((e) => e.kind === "look")!.response).toContain("+2 image(s)");
+  });
+
   test("each Generate role asks its own model when one is set, else the LLM model", async () => {
     const r = rig([json({ html: HTML }), json({ html: HTML })], { genSceneModel: "cheap", genJudgeModel: "strict" });
     await r.director.scene(input());

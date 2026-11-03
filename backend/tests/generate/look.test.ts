@@ -8,13 +8,15 @@ import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { readFindings } from "../../src/generate/findings";
 import { Hyperframes } from "../../src/generate/hyperframes";
-import { beatTimes, expectations, lookFindings, type LookAnswer } from "../../src/generate/look";
+import { markLooked } from "../../src/generate/directorTools";
+import { beatTimes, expectations, lookFindings, strangerRead, type LookAnswer } from "../../src/generate/look";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
 import { STEPS, settingsOf } from "../../src/generate/steps";
+import { sceneToolsFor } from "../../src/generate/steps/build";
 import { Llm } from "../../src/llm";
 import { Store } from "../../src/store";
-import { fakeHyperframes, procOk, quickRecipe, samplePlan, sceneHtml, type HfHandler } from "../helpers";
+import { fakeHyperframes, procOk, quickRecipe, samplePlan, sceneHtml, SAMPLE_TITLES, type HfHandler } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const json = JSON.stringify;
@@ -105,6 +107,38 @@ function rig(replies: string[], over: { vision?: string; handlers?: Record<strin
   } as any;
   return { ctx, dir, store, requests, snaps, progress };
 }
+
+describe("a stranger's read in the director's turn", () => {
+  test("one fresh call with only the pictures; repeats across pictures collapse into one finding; what was seen goes back to the director", async () => {
+    const r = rig([answer([frame("s02", { unexplained: ["grey sphere"], description: "A grey ball." }), frame("s02", { unexplained: ["grey sphere"], objects: ["seed", "ball"], matches: false })])]);
+    const read = await strangerRead(r.ctx.director, { project: r.ctx.project, step: r.ctx.step, plan: plan(), index: 1, images: ["data:image/png;base64,A", "data:image/png;base64,B"] });
+    expect(JSON.parse(r.requests[0].messages[1].content[0].text)).toMatchObject({ pictures: 2, shots: ["s02", "s02"] });
+    expect(read.findings.map((f) => [f.code, f.severity, f.shotId])).toEqual([["look_unexplained", "must-fix", "s02"], ["look_mismatch", "should-fix", "s02"]]);
+    expect(read.seen).toEqual({ description: "A grey ball.", objects: ["seed", "ball"], unexplained: ["grey sphere"] });
+  });
+
+  test("a shot's tools include the look when the model sees: frames at film time, the stranger's read; none at the kit level, and no look without sight", async () => {
+    const withTools = (r: ReturnType<typeof rig>) => { r.ctx.recipe = { ...r.ctx.recipe, steps: r.ctx.recipe.steps.map((s: RecipeStep) => (s.use === "author" ? { use: "author" } : s)) }; return r; };
+    const r = withTools(rig([answer([frame("s02")])]));
+    const tools = sceneToolsFor(r.ctx, r.dir, plan(), 1, "free")!;
+    expect(Object.keys(tools.tools)).toEqual(["search_blocks", "use_block", "look", "check"]);
+    const out = await tools.tools.look!.run({ html: sceneHtml(1), times: [1] });
+    expect([r.snaps, out.images?.length, (out.result as any).findings]).toEqual([[[11]], 1, []]);   // shot 2 starts at 10 s
+    expect(sceneToolsFor(r.ctx, r.dir, plan(), 1, "kit")).toBeNull();
+    const blind = withTools(rig([], { vision: "" }));
+    expect(Object.keys(sceneToolsFor(blind.ctx, blind.dir, plan(), 1, "free")!.tools)).toEqual(["search_blocks", "use_block", "check"]);
+  });
+
+  test("the look step has nothing left to do when every shot was looked at in its turn and no scene changed since", async () => {
+    const r = rig([CLEAN], { settings: { rounds: 0 } });
+    plan().shots.forEach((shot, i) => markLooked(r.dir, shot.id, sceneHtml(i)));
+    expect(await STEPS.look.run(r.ctx)).toEqual({ status: "done", outputRef: "looked in the loop" });
+    expect([r.requests.length, r.snaps.length, readFindings(r.dir)]).toEqual([0, 0, []]);
+    writeFileSync(join(r.dir, "compositions/shot-02.html"), sceneHtml(1, SAMPLE_TITLES[1], "<!-- redrawn after the look -->"));
+    expect((await STEPS.look.run(r.ctx)).outputRef).toBe("0 findings");   // one scene changed: the step looks at all
+    expect(r.requests).toHaveLength(1);
+  });
+});
 
 describe("look step", () => {
   test("shows the LLM's model one picture per shot, in shot order, without asking for anything the stranger shouldn't know first", async () => {

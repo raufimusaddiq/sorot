@@ -1,22 +1,11 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { checkScene, shotFile, sizeFor } from "../composer";
 import { saveFindings, type NewFinding } from "../findings";
+import { framesAt, lookedInLoop } from "../directorTools";
 import { beatTimes, expectations, lookFindings } from "../look";
 import { buildTarget, levelOfShot, readScene, sceneAssets, sceneRules } from "./build";
 import type { RunFn, StepContext } from "./types";
-
-const MIME: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png" };
-
-/** One picture per shot (a little after it starts), as data URLs in shot order. */
-async function frames(ctx: StepContext, dir: string, times: number[]): Promise<string[]> {
-  const shots = await ctx.hyperframes.snapshot(dir, { at: times }, { signal: ctx.signal });
-  const byTime = [...shots.frames].sort((a, b) => a.time - b.time);
-  return times.map((t, i) => {
-    const frame = byTime.reduce((best, f) => (Math.abs(f.time - t) < Math.abs(best.time - t) ? f : best), byTime[i] ?? byTime[0]!);
-    return `data:${MIME[frame.path.split(".").pop()?.toLowerCase() ?? ""] ?? "image/png"};base64,${readFileSync(frame.path).toString("base64")}`;
-  });
-}
 
 /**
  * The vision self-review: frames at each beat, described by a stranger, compared with what the plan
@@ -26,6 +15,11 @@ async function frames(ctx: StepContext, dir: string, times: number[]): Promise<s
 export const run: RunFn = async (ctx) => {
   const { dir, plan } = buildTarget(ctx);
   if (!ctx.director.canSee) throw new Error("The look step needs the LLM (its model looks at the frames): connect it in Settings, or give the step `when: connection:vision`");
+  // the director looked at every shot in its own turn, and the scenes are the ones it looked at: nothing left to look at
+  if (lookedInLoop(dir, plan, (i) => readScene(dir, i))) {
+    saveFindings(dir, "look", []);
+    return { status: "done", outputRef: "looked in the loop" };
+  }
   const rounds = Number(ctx.settings.rounds);
   const audit = ctx.settings.audit !== false;
   const defaults = ((ctx.recipe.rules?.defaultsAudit as string[] | undefined) ?? []).slice(0, 20);
@@ -35,7 +29,7 @@ export const run: RunFn = async (ctx) => {
 
   let found: NewFinding[] = [];
   for (let round = 0; ; round++) {
-    const answer = await ctx.director.look({ project: ctx.project, step: ctx.step, expected: expectations(plan), audit: audit ? defaults : [], images: await frames(ctx, dir, times) });
+    const answer = await ctx.director.look({ project: ctx.project, step: ctx.step, expected: expectations(plan), audit: audit ? defaults : [], images: await framesAt(ctx.hyperframes, dir, times, ctx.signal) });
     found = lookFindings(answer, plan, times, audit);
     ctx.progress(Math.min(95, ((round + 1) / (rounds + 1)) * 100));
     const broken = [...new Set(found.filter((f) => f.severity === "must-fix" && f.shotId).map((f) => f.shotId as string))];
