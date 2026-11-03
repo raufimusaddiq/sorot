@@ -89,6 +89,8 @@ export type ConnectionView = {
   genMaxTokens?: number;
   /** LLM only: how far a build's director session may grow (tokens). */
   contextTokens?: number;
+  /** LLM only: how far one shot's turn may grow before older tool results are cut (tokens). */
+  turnTokens?: number;
   /** LLM only: Generate's model per role (empty = model). */
   planModel?: string;
   sceneModel?: string;

@@ -162,7 +162,7 @@ export class Llm {
   constructor(
     private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmMaxCallSec?: number }
       & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmStream?: boolean }
-      & { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number },
+      & { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number; genTurnTokens?: number },
     private readonly fetchFn: typeof fetch = fetch,
     private readonly retryWaitMs = 2000,
   ) {}
@@ -181,6 +181,9 @@ export class Llm {
   }
   get genContextTokens(): number {
     return this.config.genContextTokens ?? 600000;
+  }
+  get genTurnTokens(): number {
+    return this.config.genTurnTokens ?? 60000;
   }
 
   /** Generate's model for a role (Settings → LLM): its own when set, else LLM_MODEL. */

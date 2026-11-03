@@ -88,6 +88,10 @@ Timings below were each measured once, on the machine named in `docs/journal/`; 
   once, each shot sees the ones before it (one film, not seven), and every request extends the last so the
   provider's prompt cache covers almost all of it. `GEN_CONTEXT_TOKENS` (Settings → LLM, default 600000)
   caps how large the session may grow; `GEN_SESSION=off` goes back to separate calls.
+- Generate: the director works with tools inside each shot's turn: it can search and install HyperFrames
+  registry blocks (charts, maps, 3D, characters), look at frames of its own draft with a stranger's read of
+  them, and check its draft before it submits (recipe `author.toolSteps` and `author.looks`; 0 = as before).
+  A turn's tool results are compacted so the session stays small and cached (`GEN_TURN_TOKENS`).
 
 ### Import and transcription
 - YouTube URL or local file, whole or a time range (`--from 13:25 --to 25:00`). A short range is copied

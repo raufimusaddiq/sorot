@@ -467,6 +467,37 @@ describe("director: scenes", () => {
     expect(r.events().find((e) => e.kind === "look")!.response).toContain("+2 image(s)");
   });
 
+  test("compaction: an accepted turn leaves a note and its answer, a failed turn leaves nothing, and a turn past its budget cuts its older tool results; earlier requests stay an exact prefix", async () => {
+    const look = (n: number) => ({ def: TOOL_DEFS.look, limit: 5, run: async () => ({ result: { n }, images: ["data:image/png;base64,AAA"] }) });
+    const tools = { steps: 4, tools: { check: { def: TOOL_DEFS.check, limit: 3, run: async () => ({ result: { findings: [] } }) }, look: look(1) } };
+    const r = rig([
+      new Calls([["check", { html: "x" }]]), json({ html: HTML }),                       // turn 1: one tool, accepted
+      json({ html: "no" }), json({ html: "still no" }),                                  // turn 2: never valid
+      new Calls([["look", { html: "x", times: [1] }]]), new Calls([["look", { html: "y", times: [2] }]]), json({ html: HTML }),   // turn 3: two looks
+      json({ html: HTML }),                                                              // turn 4
+    ], { genSession: true, genTurnTokens: 1000 });
+    const s = { ...input(), session: "v-compact", tools };
+    await r.director.scene({ ...s, index: 0 });
+    await expect(r.director.scene({ ...s, index: 1 })).rejects.toThrow("didn't pass the checks");
+    await r.director.scene({ ...s, index: 2 });
+    await r.director.scene({ ...s, index: 0 });
+    const roles = (q: any) => q.messages.map((m: any) => m.role + (m.name ? `:${m.name}` : ""));
+    // turn 2 starts where turn 1's compacted answer ended: request, note, the accepted call and its result
+    expect(roles(r.requests[2]!)).toEqual(["system", "user", "user", "user", "assistant", "tool:submit_scene", "user"]);
+    expect(r.requests[2]!.messages[3].content).toBe("tools used: check ×1");
+    // turn 3 starts right after turn 1: the failed turn 2 left nothing
+    const turn3 = r.requests[4]!.messages;
+    expect(turn3.slice(0, 6)).toEqual(r.requests[2]!.messages.slice(0, 6));
+    // the second look of turn 3 comes after the first's frames were cut (a budget of 1000 is exceeded by one picture)
+    const lastOfTurn3 = r.requests[6]!.messages.slice(6);
+    expect(lastOfTurn3.map((m: any) => (typeof m.content === "string" ? m.content : "pictures")).filter((c: string) => c.includes("removed"))).toEqual([
+      JSON.stringify({ stub: "look #1 removed: see #2" }), "Frames from look #1 removed: see look #2.",
+    ]);
+    // turn 4: turn 3 is a note too, so the earlier requests are still its prefix
+    expect(r.requests[7]!.messages.slice(0, 6)).toEqual(turn3.slice(0, 6));
+    expect(r.requests[7]!.messages.some((m: any) => m.role === "tool" && m.name === "look")).toBeFalse();
+  });
+
   test("each Generate role asks its own model when one is set, else the LLM model", async () => {
     const r = rig([json({ html: HTML }), json({ html: HTML })], { genSceneModel: "cheap", genJudgeModel: "strict" });
     await r.director.scene(input());

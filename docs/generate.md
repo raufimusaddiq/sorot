@@ -62,6 +62,17 @@ reached at most 44–51% on real builds, 2026-11-02), and every shot sees the sh
 `GEN_CONTEXT_TOKENS` (default 600000) caps the conversation; past it the session restarts from its
 opening and the latest version of each shot. `GEN_SESSION=off` goes back to one fresh call per shot.
 
+**Tools in a turn** (`docs/director-loop.md`). Before it submits, the director may `search_blocks`
+(the HyperFrames registry: words and tags), `use_block` (installs a block and returns its source to
+adapt), `look` (renders frames of its draft and returns them with a stranger's read: a fresh call
+that sees only the frames; the look findings come back in the same turn) and `check` (Sorot's scene
+rules and HyperFrames lint on the draft). The recipe's `author.toolSteps` (default 8; 0 = one forced
+call) and `author.looks` (default 2) limit it; past a tool's limit its call answers "limit reached:
+submit now", and the step after the last is forced to the submit tool. A turn's tool exchanges are
+replaced by a one-line note once its answer is accepted; a turn past `GEN_TURN_TOKENS` (default
+60000) cuts its older tool results to stubs. When the director looked at every shot, the look step
+records "looked in the loop" and makes no vision call of its own.
+
 ### Step library
 
 | Step | Does |

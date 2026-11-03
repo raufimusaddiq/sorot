@@ -50,5 +50,9 @@ describe("vision in the connection settings", () => {
     expect((await env.json("PUT", "/api/settings/llm", { contextTokens: "750000", sceneModel: "glm" })).body.data.llm).toMatchObject({ contextTokens: 750000, sceneModel: "glm" });
     expect([env.app.llm.genContextTokens, env.app.llm.modelFor("scene"), loadConfig({}).genContextTokens, loadConfig({ GEN_SESSION: "off" }).genSession]).toEqual([750000, "glm", 600000, false]);
     for (const bad of [1000, 3_000_000]) expect((await env.json("PUT", "/api/settings/llm", { contextTokens: bad })).status).toBe(400);
+    // the turn budget (older tool results are cut past it)
+    expect((await env.json("PUT", "/api/settings/llm", { turnTokens: "80000" })).body.data.llm.turnTokens).toBe(80000);
+    expect([env.app.llm.genTurnTokens, loadConfig({}).genTurnTokens, loadConfig({ GEN_TURN_TOKENS: "1" }).genTurnTokens]).toEqual([80000, 60000, 5000]);
+    for (const bad of [1000, 600_000]) expect((await env.json("PUT", "/api/settings/llm", { turnTokens: bad })).status).toBe(400);
   });
 });

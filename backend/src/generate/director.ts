@@ -13,6 +13,7 @@ import type { RecipeStep } from "./recipe";
 import type { Capabilities, Level } from "./capabilities";
 import type { KitManifest } from "./kit";
 import { validateKitShot, type KitShot } from "./kitScene";
+import { endTurn, estimateTokens, stubTurn } from "./compaction";
 import { LIMIT_REACHED, TOOL_DEFS, TOOL_ORDER, type SceneTools } from "./directorTools";
 
 // The bounded LLM director (contracts/director.md). Every call is one request and one TOOL CALL:
@@ -331,6 +332,8 @@ const SCENE_KINDS: ReadonlySet<string> = new Set(["scene", "repair", "kitshot"])
 const SESSION_TOOLS: ToolDef[] = [TOOLS.scene, TOOLS.repair, TOOLS.kitshot];
 /** Builds whose sessions stay open (one per pipeline; a few for retries and fixes). */
 const MAX_SESSIONS = 4;
+/** The tool loop of one turn: its tools, where its request sits in the conversation, and the size past which older tool results are cut to stubs. */
+interface TurnLoop { tools: SceneTools; start: number; tokens: number }
 /** One build's conversation: the opening (instructions, film), every turn since, and the latest answer for each shot. */
 interface Session { messages: ChatInput[]; opening: number; latest: Map<number, string>; turn: Promise<unknown>; /** The tool definitions offered on every turn of the session, fixed when it opens. */ tools: ToolDef[] }
 
@@ -500,21 +503,22 @@ export class Director {
    * A tool that fails returns its error to the model: it never fails the build.
    */
   private async useTools(
-    project: GenProject, model: string, messages: ChatInput[], loop: SceneTools, submit: string,
+    project: GenProject, model: string, messages: ChatInput[], loop: TurnLoop, submit: string,
     callModel: (force: boolean) => Promise<{ message: ChatMessage; call: ToolCall | undefined }>,
   ): Promise<{ message: ChatMessage; call: ToolCall | undefined }> {
     const used: Record<string, number> = {};
     for (let step = 0; ; step++) {
-      const reply = await callModel(step >= loop.steps);
+      stubTurn(messages, loop.start, loop.tokens);   // a turn that grew past its budget cuts its older tool results first
+      const reply = await callModel(step >= loop.tools.steps);
       const calls = reply.message.tool_calls ?? [];
       if (reply.call || !calls.length) return reply;
       messages.push({ role: "assistant", content: reply.message.content ?? "", tool_calls: calls });
       const seen: string[] = [];
       for (const c of calls) {
         const toolName = c.function?.name ?? "";
-        const t = loop.tools[toolName];
+        const t = loop.tools.tools[toolName];
         let result: unknown;
-        if (!t) result = { error: `no tool named ${toolName}: use ${[...Object.keys(loop.tools), submit].join(", ")}` };
+        if (!t) result = { error: `no tool named ${toolName}: use ${[...Object.keys(loop.tools.tools), submit].join(", ")}` };
         else if ((used[toolName] = (used[toolName] ?? 0) + 1) > t.limit) result = LIMIT_REACHED;
         else {
           let args: Record<string, unknown> = {};
@@ -544,7 +548,7 @@ export class Director {
    */
   private async converse<T>(
     project: GenProject, kind: Kind, messages: ChatInput[], tools: ToolDef[], task: string,
-    validate: (parsed: unknown) => Validated<T>, level: AnswerEvent["level"] | null, seeing = false, loop: SceneTools | null = null,
+    validate: (parsed: unknown) => Validated<T>, level: AnswerEvent["level"] | null, seeing = false, loop: TurnLoop | null = null,
   ): Promise<{ value: T; call: ToolCall | undefined }> {
     const name = TOOLS[kind].function.name;
     let problems: string[] = [];
@@ -904,10 +908,18 @@ export class Director {
       this.trim(session);
       const level = input.level ?? "compose";
       const levelMeans = this.capabilities ? this.capabilities({ level }).levelMeans : undefined;
+      const start = session.messages.length;
       session.messages.push({ role: "user", content: JSON.stringify({ request: kind, level, ...(levelMeans ? { levelMeans } : {}), ...this.sceneOwn(input), ...extra, task }) });
-      const { value } = await this.converse<T>(input.project, kind, session.messages, [...session.tools, ...SESSION_TOOLS], task, validate, level, false, input.tools ?? null);
-      session.latest.set(input.index, keep(value));
-      return value;
+      try {
+        const loop = input.tools ? { tools: input.tools, start, tokens: this.llm.genTurnTokens } : null;
+        const { value } = await this.converse<T>(input.project, kind, session.messages, [...session.tools, ...SESSION_TOOLS], task, validate, level, false, loop);
+        endTurn(session.messages, start);   // the tools' bulk is gone; the request and the accepted answer stay
+        session.latest.set(input.index, keep(value));
+        return value;
+      } catch (e) {
+        session.messages.length = start;   // a turn that failed leaves nothing behind: what came before stays an exact prefix
+        throw e;
+      }
     });
     session.turn = turn.catch(() => undefined);
     return turn;
@@ -948,8 +960,7 @@ export class Director {
    * the latest version of every shot written so far, so it never outgrows the model's window.
    */
   private trim(session: Session): void {
-    const chars = session.messages.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : 0) + JSON.stringify(m.tool_calls ?? "").length, 0);
-    if (chars / 3.5 <= this.llm.genContextTokens) return;
+    if (estimateTokens(session.messages) <= this.llm.genContextTokens) return;
     const shots = [...session.latest].sort((a, b) => a[0] - b[0]).map(([i, latest]) => ({ shot: i + 1, file: shotFile(i), latest }));
     session.messages = [...session.messages.slice(0, session.opening), { role: "user", content: JSON.stringify({ shotsSoFar: shots, task: "The conversation was shortened to fit: these are the latest versions of the shots written so far. Carry on from them." }) }];
   }

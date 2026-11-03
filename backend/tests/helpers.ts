@@ -388,7 +388,7 @@ function completion(body: any, reply: string | AsText | Calls | ThoughtTooLong):
 export const gatewayDown = () => Object.assign(new Error("upstream unavailable"), { status: 503 });
 
 /** An Llm whose replies come from `replies` in order (a string = the model's text; an Error = HTTP 400, or its `status`). `requests` logs each body. */
-export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>, config: { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number } = {}) {
+export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>, config: { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number; genTurnTokens?: number } = {}) {
   const requests: Array<{ messages: Array<{ role: string; content: string }>; [k: string]: any }> = [];
   const queue = [...replies];
   const fetchFn = (async (_url: string, init?: RequestInit) => {

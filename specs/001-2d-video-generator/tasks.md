@@ -547,15 +547,15 @@ current turn.
 the latest frames and one copy of the source; after the submit the turn is one note; every request
 before the turn is byte-for-byte the same.
 
-- [ ] T166 [P] [US10] New `backend/src/generate/compaction.ts` (pure): `estimateTokens(messages)` (text at 3.5 characters a token, an image at 1,500 tokens, corrected from T156); `endTurn(messages, turnStart, note)` replaces the turn's tool exchanges with `user: "tools used: …"` and keeps the task and the accepted `submit_*` call and result; `stubTurn(messages, turnStart, budget)` turns older tool results into `{ "stub": "<kind> #n removed: see #m" }`, keeping the latest look frames, the latest check and one block source. Table tests in new `backend/tests/generate/compaction.test.ts`, including "messages before `turnStart` unchanged"
-- [ ] T167 [US10] Wire compaction into the session turn in `director.ts`: `endTurn` after an accepted submit (the note lists each tool with its count and key argument), `stubTurn` before each step when the turn passes `GEN_TURN_TOKENS`; `trim` uses `estimateTokens`; tests in `director.test.ts`
-- [ ] T168 [P] [US10] `GEN_TURN_TOKENS` (default 60000) in `backend/src/config.ts`, `Llm.genTurnTokens` in `backend/src/llm.ts`, Settings `llm.turnTokens` ("whole number 5000 to 500000") in `backend/src/settings.ts`, and its field in `frontend/src/components/ConnectionsPanel.tsx`; tests in `vision.test.ts` and the frontend jest test
+- [X] T166 [P] [US10] New `backend/src/generate/compaction.ts` (pure): `estimateTokens(messages)` (text at 3.5 characters a token, an image at 1,500 tokens, corrected from T156); `endTurn(messages, turnStart, note)` replaces the turn's tool exchanges with `user: "tools used: …"` and keeps the task and the accepted `submit_*` call and result; `stubTurn(messages, turnStart, budget)` turns older tool results into `{ "stub": "<kind> #n removed: see #m" }`, keeping the latest look frames, the latest check and one block source. Table tests in new `backend/tests/generate/compaction.test.ts`, including "messages before `turnStart` unchanged"
+- [X] T167 [US10] Wire compaction into the session turn in `director.ts`: `endTurn` after an accepted submit (the note lists each tool with its count and key argument), `stubTurn` before each step when the turn passes `GEN_TURN_TOKENS`; `trim` uses `estimateTokens`; tests in `director.test.ts`
+- [X] T168 [P] [US10] `GEN_TURN_TOKENS` (default 60000) in `backend/src/config.ts`, `Llm.genTurnTokens` in `backend/src/llm.ts`, Settings `llm.turnTokens` ("whole number 5000 to 500000") in `backend/src/settings.ts`, and its field in `frontend/src/components/ConnectionsPanel.tsx`; tests in `vision.test.ts` and the frontend jest test
 
 ## Phase 23: Measure and document (SC-021 to SC-024)
 
 - [ ] T169 Spike S8, part 2, and quickstart scenario 12: the story brief on GLM with `author.toolSteps: 0`, then 8; record the provider's cache numbers, `look_unexplained` findings, build times, tool calls per kind and any forced submits in `specs/001-2d-video-generator/research.md`; adjust the per-tool limits if the model loops
-- [ ] T170 [P] Docs: `docs/director-loop.md` (status → built, measured numbers), `docs/generate.md` (the turn and its tools), `AGENTS.md` rule line, `CHANGELOG.md` under `## [Unreleased]`
-- [ ] T171 Gates: `cd backend; bun test --coverage; bun run typecheck`, `cd frontend; bun run test; bun run build`, `cd cli; bun test --coverage` all pass with at least 95% line and function coverage (`/test` → OPEN)
+- [X] T170 [P] Docs: `docs/director-loop.md` (status → built, measured numbers), `docs/generate.md` (the turn and its tools), `AGENTS.md` rule line, `CHANGELOG.md` under `## [Unreleased]`
+- [X] T171 Gates: `cd backend; bun test --coverage; bun run typecheck`, `cd frontend; bun run test; bun run build`, `cd cli; bun test --coverage` all pass with at least 95% line and function coverage (`/test` → OPEN)
 - [ ] T172 SC-022 on the 20-brief set with the fast model: fewer than 1 shot in 10 with a `look_unexplained` finding; record in `research.md`
 
 ### Part 4 dependencies

@@ -60,6 +60,8 @@ export interface AppConfig {
   genSession: boolean;
   /** How large that conversation may grow before it starts again from its opening and the latest shots (GEN_CONTEXT_TOKENS). */
   genContextTokens: number;
+  /** How large one shot's turn (its tool results) may grow before older results are cut to stubs (GEN_TURN_TOKENS). */
+  genTurnTokens: number;
   genPlanModel: string;
   genSceneModel: string;
   genJudgeModel: string;
@@ -191,6 +193,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     genLlmMaxTokens: Math.max(256, int(env.GEN_LLM_MAX_TOKENS, 32000)),
     genSession: !/^(0|false|no|off)$/i.test((env.GEN_SESSION ?? "").trim()),
     genContextTokens: Math.max(20000, int(env.GEN_CONTEXT_TOKENS, 600000)),
+    genTurnTokens: Math.max(5000, int(env.GEN_TURN_TOKENS, 60000)),
     genPlanModel: (env.GEN_PLAN_MODEL ?? "").trim(),
     genSceneModel: (env.GEN_SCENE_MODEL ?? "").trim(),
     genJudgeModel: (env.GEN_JUDGE_MODEL ?? "").trim(),

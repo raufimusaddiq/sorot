@@ -1,6 +1,9 @@
-# The director loop (draft spec, 2026-11-02)
+# The director loop (2026-11-02)
 
-Status: **proposed**, not built. Builds on the build session (`docs/generate.md`, "The build session").
+Status: **built** (phases 19 to 22: the session, `search_blocks`, `use_block`, `look`, `check`, the forced
+submit, the stranger's read and compaction), **not yet measured on a real build** (spike S8, T156, T169).
+Builds on the build session (`docs/generate.md`, "The build session"). Code: `directorTools.ts`
+(tools), `compaction.ts` (pure), `Director.useTools` / `askScene` (the turn), `look.ts` (`strangerRead`).
 
 ## Why
 
@@ -90,8 +93,11 @@ the conversation (the current turn), so everything before it stays an exact pref
 3. **Session (when the session passes `GEN_CONTEXT_TOKENS`, default 600000).** As today: restart from
    the opening plus the latest version of every shot.
 
-Sizes are estimated in code: text at 3.5 characters a token, an image at a fixed 1,500 tokens (to be
-measured against the provider's usage numbers and corrected).
+Sizes are estimated in code (`compaction.ts`): text at 3.5 characters a token, an image at a fixed
+1,500 tokens (to be measured against the provider's usage numbers and corrected). A turn that fails
+(its answer never validates) is cut from the conversation altogether, so what came before stays an
+exact prefix. `looked.json` in the version's project records, per shot, the hash of the file that was
+looked at; the look step does nothing when every scene is still the one that was looked at.
 
 ## Settings
 
@@ -99,8 +105,8 @@ measured against the provider's usage numbers and corrected).
 | --- | --- | --- |
 | `author.toolSteps` | 8 | recipe (0 = today's one forced call) |
 | `author.looks` | 2 | recipe |
-| `GEN_TURN_TOKENS` | 60000 | env / Settings → LLM |
-| `GEN_CONTEXT_TOKENS` | 600000 | env / Settings → LLM (exists) |
+| `GEN_TURN_TOKENS` | 60000 (5000 to 500000) | env / Settings → LLM |
+| `GEN_CONTEXT_TOKENS` | 600000 (20000 to 2000000) | env / Settings → LLM |
 
 ## Measuring it
 
