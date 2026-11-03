@@ -81,6 +81,8 @@ export const STEP_SPECS: Record<StepType, StepSpec> = {
   music: { gates: none, fields: { track: { t: "str", max: 200 }, duckUnderVoiceDb: { t: "num", min: -40, max: 0 } } },
   author: { gates: none, fields: {
     require: { t: "strs", maxItems: 20, maxLen: 80 }, repairRounds: { t: "int", min: 0, max: 5 }, concurrency: { t: "int", min: 1, max: 4 },
+    // The director's tool loop per shot (FR-049): steps before it must submit (0 = one forced call) and looks at its own draft; defaults 8 and 2 in code.
+    toolSteps: { t: "int", min: 0, max: 16 }, looks: { t: "int", min: 0, max: 4 },
     // No defaults (a default joins every step's hash): level auto and maxLevel free (or the machine's), in code.
     level: { t: "enum", values: ["auto", "kit", "compose", "free"] }, maxLevel: { t: "enum", values: ["kit", "compose", "free"] } } },
   check: { gates: none, fields: { warnings: { t: "enum", values: ["fix", "fix-or-hold", "report"] }, rounds: { t: "int", min: 0, max: 5 } } },

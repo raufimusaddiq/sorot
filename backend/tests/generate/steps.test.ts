@@ -28,6 +28,14 @@ describe("step registry", () => {
     expect(settingsOf("storylines", { count: 5 })).toMatchObject({ count: 5, requireBold: false });
   });
 
+  test.each<[Record<string, unknown>, number]>([
+    [{ toolSteps: 0, looks: 0 }, 0], [{ toolSteps: 16, looks: 4 }, 0], [{ toolSteps: 17 }, 1], [{ toolSteps: -1 }, 1], [{ looks: 5 }, 1], [{ looks: 1.5 }, 1],
+  ])("the author's tool loop settings (%j) have %d errors", (values, count) => {
+    const errors: string[] = [];
+    checkObject(STEPS.author.spec.fields, values, "author", errors);
+    expect(errors).toHaveLength(count);
+  });
+
   test("a step type without a module fails loudly", async () => {
     await expect(notImplemented("dance")({} as StepContext)).rejects.toThrow("dance step is not implemented");
   });

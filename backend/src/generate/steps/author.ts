@@ -10,7 +10,7 @@ import { BUNDLED_FONTS } from "../planContext";
 import type { Plan, Shot } from "../planSchema";
 import { placeLines, readVoice } from "../voice";
 import { settingsOf } from "./index";
-import { buildTarget, levelOfShot, plannedLevel, readScene, readShotLevels, sceneAssets, sceneRules, type ShotLevels } from "./build";
+import { buildTarget, levelOfShot, plannedLevel, readScene, readShotLevels, sceneAssets, sceneRules, sceneToolsFor, type ShotLevels } from "./build";
 import { levelBelow, type Level } from "../capabilities";
 import { DirectorError, type SceneInput } from "../director";
 import { writeKitScene } from "../kitScene";
@@ -159,7 +159,7 @@ export function shotWriter(ctx: StepContext, dir: string, plan: Plan, blocks: Re
 
   const attempt = async (shot: Shot, i: number, level: Level, fix: Fix | null) => {
     const input: SceneInput = {
-      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level, ...(ctx.version ? { session: ctx.version.id } : {}),
+      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level, ...(ctx.version ? { session: ctx.version.id, tools: sceneToolsFor(ctx, dir, plan, i, level) } : {}),
       blocks: shot.visual.block && blocks[shot.visual.block] ? { [shot.visual.block]: blocks[shot.visual.block] as string } : {},
     };
     const rules = sceneRules(ctx, level);

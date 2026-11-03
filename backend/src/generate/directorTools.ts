@@ -1,0 +1,173 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tool, type ToolDef } from "../llm";
+import { checkScene, shotFile, type SceneIssue } from "./composer";
+import type { Shot } from "./planSchema";
+import type { Hyperframes, HfFinding } from "./hyperframes";
+import type { SceneKit } from "./composer";
+
+// The tools a director may use inside one shot's turn (docs/director-loop.md, FR-049): find a
+// registry block, install it, check its own draft. Each returns plain JSON for the model; a tool
+// never throws into the build (a failure is `{ error }` so the director can carry on).
+
+export interface CatalogEntry {
+  name: string;
+  tags: string[];
+  type?: string;
+  title?: string;
+  description?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+}
+
+/** What a tool gives back: the JSON for the tool result, and pictures to show the model after it. */
+export interface ToolOutcome { result: unknown; images?: string[] }
+export type ToolArgs = Record<string, unknown>;
+
+export interface SceneTool {
+  def: ToolDef;
+  /** How many calls one turn may make. */
+  limit: number;
+  run: (args: ToolArgs) => Promise<ToolOutcome>;
+}
+
+/** The tools of one shot's turn: `steps` tool steps before the answer is forced. */
+export interface SceneTools { steps: number; tools: Record<string, SceneTool> }
+
+/** Fixed order, so every turn of a session offers the same list (the provider caches the prefix). */
+export const TOOL_ORDER = ["search_blocks", "use_block", "look", "check"] as const;
+/** The text a call past its limit gets back. */
+export const LIMIT_REACHED = { error: "limit reached: submit now" };
+
+const MAX_QUERY = 120;
+const MAX_MATCHES = 8;
+const DEFAULT_MATCHES = 5;
+/** The most of a block's source a result carries (the rest is cut, with a note). */
+export const BLOCK_SOURCE_CHARS = 24 * 1024;
+
+const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
+
+/**
+ * The registry items that fit a request, best first. Words and tags only: 448 short descriptions
+ * don't need embeddings (spike S8 checks that). A word in the name or a tag counts most, then the
+ * title, then the description.
+ */
+export function searchBlocks(catalog: CatalogEntry[], args: ToolArgs): ToolOutcome {
+  const query = typeof args.query === "string" ? args.query.slice(0, MAX_QUERY) : "";
+  const type = args.type === "block" || args.type === "component" ? args.type : null;
+  const limit = Math.max(1, Math.min(MAX_MATCHES, Number.isInteger(args.limit) ? (args.limit as number) : DEFAULT_MATCHES));
+  const wanted = [...new Set(words(query))];
+  if (!wanted.length) return { result: { error: "query: say what you are looking for in a few words" } };
+  const scored = catalog.filter((c) => !type || c.type === type).map((c) => {
+    const name = c.name.toLowerCase();
+    const tags = (c.tags ?? []).map((t) => t.toLowerCase());
+    const title = (c.title ?? "").toLowerCase();
+    const about = (c.description ?? "").toLowerCase();
+    let score = 0;
+    for (const w of wanted) {
+      if (name.includes(w)) score += 3;
+      if (tags.some((t) => t === w || t.includes(w))) score += 3;
+      if (title.includes(w)) score += 2;
+      if (about.includes(w)) score += 1;
+    }
+    return { c, score };
+  }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name));
+  return {
+    result: {
+      matches: scored.slice(0, limit).map(({ c }) => ({
+        name: c.name, type: c.type ?? null, title: c.title ?? null, description: (c.description ?? "").slice(0, 200), tags: c.tags ?? [],
+        width: c.width ?? null, height: c.height ?? null, duration: c.duration ?? null,
+      })),
+    },
+  };
+}
+
+export interface ToolEnv {
+  /** The version's HyperFrames project. */
+  dir: string;
+  hyperframes: Pick<Hyperframes, "add" | "lint">;
+  catalog: () => Promise<CatalogEntry[]>;
+  /** The recipe's plan step allows registry blocks. */
+  blocksAllowed: boolean;
+  shot: Shot;
+  /** 0-based position of the shot in the plan. */
+  index: number;
+  /** The rules a scene is held to at this shot's level (`sceneRules`). */
+  rules: { assets: string[]; kit?: SceneKit };
+  signal?: AbortSignal;
+}
+
+/** Installs a registry block into the project and hands its source over to adapt. */
+export async function useBlock(env: ToolEnv, args: ToolArgs): Promise<ToolOutcome> {
+  if (!env.blocksAllowed) return { result: { error: "this recipe doesn't allow registry blocks: draw it yourself" } };
+  const name = typeof args.name === "string" ? args.name.trim() : "";
+  const catalog = await env.catalog();
+  if (!name || !catalog.some((c) => c.name === name)) return { result: { error: `no block named "${name}": use search_blocks to find one` } };
+  await env.hyperframes.add(env.dir, [name], { signal: env.signal });
+  const files = [`compositions/${name}.html`, `compositions/components/${name}.html`].filter((rel) => existsSync(join(env.dir, rel)));
+  const full = files.map((rel) => readFileSync(join(env.dir, rel), "utf-8")).join("\n");
+  return { result: { name, files, source: full.slice(0, BLOCK_SOURCE_CHARS), cut: full.length > BLOCK_SOURCE_CHARS } };
+}
+
+export interface DraftFinding { code: string; severity: string; message: string; hint?: string }
+
+const fromIssue = (i: SceneIssue): DraftFinding => ({ code: i.code, severity: "error", message: i.message, hint: i.hint });
+const fromLint = (f: HfFinding): DraftFinding => ({ code: f.code, severity: f.severity, message: f.message, ...(f.fixHint ? { hint: f.fixHint } : {}) });
+
+/** Writes a draft into the project as this shot's file, ready for a check or a look. */
+export function writeDraft(env: ToolEnv, html: string): void {
+  mkdirSync(join(env.dir, "compositions"), { recursive: true });
+  writeFileSync(join(env.dir, shotFile(env.index)), html);
+}
+
+/** Holds a draft to Sorot's scene rules and HyperFrames' lint, before it is handed in. */
+export async function checkDraft(env: ToolEnv, args: ToolArgs): Promise<ToolOutcome> {
+  const html = typeof args.html === "string" ? args.html : "";
+  if (!html.trim()) return { result: { error: "html: the draft is empty" } };
+  writeDraft(env, html);
+  const rules = checkScene(html, env.shot, env.index, env.rules).map(fromIssue);
+  const lint = await env.hyperframes.lint(env.dir, { signal: env.signal });
+  const mine = shotFile(env.index);
+  const own = lint.findings.filter((f) => `${f.file ?? ""} ${f.sourceFile ?? ""} ${f.selector ?? ""}`.includes(mine) || (!f.file && !f.sourceFile)).map(fromLint);
+  return { result: { findings: [...rules, ...own] } };
+}
+
+/** The tool definitions the model sees (all of them, so the list never changes between turns). */
+export const TOOL_DEFS: Record<(typeof TOOL_ORDER)[number], ToolDef> = {
+  search_blocks: tool("search_blocks", "Search the HyperFrames registry (blocks and components: charts, maps, 3D, characters, kinetic type, overlays) for something this shot needs.", {
+    query: { type: "string", description: `what you are looking for, in a few words (at most ${MAX_QUERY} characters)` },
+    type: { type: "string", enum: ["block", "component"], description: "only blocks, or only components" },
+    limit: { type: "integer", description: `how many matches, 1 to ${MAX_MATCHES} (default ${DEFAULT_MATCHES})` },
+  }, ["query"]),
+  use_block: tool("use_block", "Install a registry block or component into this project and read its source, to adapt it to the shot (its size, colours and timing).", {
+    name: { type: "string", description: "a name from search_blocks" },
+  }),
+  look: tool("look", "Render frames of your draft and see them, with how a stranger who doesn't know the plan reads them (what is there, what can't be told apart).", {
+    html: { type: "string", description: "the complete draft of compositions/shot-NN.html" },
+    times: { type: "array", items: { type: "number" }, description: "1 to 3 moments, in seconds from the start of this shot" },
+  }),
+  check: tool("check", "Check your draft against the scene rules and HyperFrames' lint, before you submit it.", {
+    html: { type: "string", description: "the complete draft of compositions/shot-NN.html" },
+  }),
+};
+
+/** The most one turn may use of each tool (the recipe sets `toolSteps` and `looks`). */
+const LIMITS = { search_blocks: 4, use_block: 2, check: 3 };
+
+/**
+ * One shot's tools for a turn, or null when the recipe turns the loop off (`toolSteps` 0: one forced
+ * call, as before). `look` is added by the caller when a model can see (`looks` > 0).
+ */
+export function sceneTools(
+  env: ToolEnv, opts: { steps: number; looks: number; look?: (env: ToolEnv, args: ToolArgs) => Promise<ToolOutcome> },
+): SceneTools | null {
+  if (!(opts.steps > 0)) return null;
+  const tools: Record<string, SceneTool> = {
+    search_blocks: { def: TOOL_DEFS.search_blocks, limit: LIMITS.search_blocks, run: async (a) => searchBlocks(await env.catalog(), a) },
+    ...(env.blocksAllowed ? { use_block: { def: TOOL_DEFS.use_block, limit: LIMITS.use_block, run: (a: ToolArgs) => useBlock(env, a) } } : {}),
+    ...(opts.look && opts.looks > 0 ? { look: { def: TOOL_DEFS.look, limit: opts.looks, run: (a: ToolArgs) => (opts.look as NonNullable<typeof opts.look>)(env, a) } } : {}),
+    check: { def: TOOL_DEFS.check, limit: LIMITS.check, run: (a) => checkDraft(env, a) },
+  };
+  return { steps: Math.min(16, Math.floor(opts.steps)), tools };
+}

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
+import { TOOL_DEFS } from "../../src/generate/directorTools";
 import { Director, DirectorError, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { validatePlan, type Plan, type PlanContext } from "../../src/generate/planSchema";
@@ -422,6 +423,38 @@ describe("director: scenes", () => {
     const again = small.requests[1]!.messages;
     expect(again).toHaveLength(4);
     expect(JSON.parse(again[2]!.content).shotsSoFar).toEqual([{ shot: 1, file: "compositions/shot-01.html", latest: HTML }]);
+  });
+
+  test("a turn's tool loop: tool results go back in order, limits and errors answer the model, the last step is forced to submit, and every tool call is logged", async () => {
+    const ran: string[] = [];
+    const t = (name: string, limit: number, run: (a: any) => Promise<any>) => ({ def: TOOL_DEFS[name as keyof typeof TOOL_DEFS], limit, run: async (a: any) => { ran.push(name); return run(a); } });
+    const tools = {
+      steps: 3, tools: {
+        search_blocks: t("search_blocks", 1, async () => ({ result: { matches: [{ name: "lottie-character-walk" }] } })),
+        check: t("check", 3, async () => { throw new Error("lint crashed"); }),
+      },
+    };
+    const r = rig([
+      new Calls([["search_blocks", { query: "walk" }]]),
+      new Calls([["search_blocks", { query: "again" }], ["check", { html: "x" }], ["nope", {}]]),
+      new Calls([["check", { html: "x" }]]),
+      json({ html: HTML }),
+    ], { genSession: true });
+    expect(await r.director.scene({ ...input(), session: "v1", tools })).toBe(HTML);
+    expect(r.requests).toHaveLength(4);
+    expect(r.requests[0]!.tools.map((x: any) => x.function.name)).toEqual(["search_blocks", "check", "submit_scene", "submit_repair", "submit_shot_kit"]);
+    expect(r.requests.map((q) => q.tool_choice?.function?.name ?? "auto")).toEqual(["auto", "auto", "auto", "submit_scene"]);   // 3 tool steps, then forced
+    const toolMsgs = r.requests[3]!.messages.filter((m: any) => m.role === "tool").map((m: any) => [m.name, JSON.parse(m.content)]);
+    expect(toolMsgs).toEqual([
+      ["search_blocks", { matches: [{ name: "lottie-character-walk" }] }],
+      ["search_blocks", { error: "limit reached: submit now" }],
+      ["check", { error: "lint crashed" }],
+      ["nope", { error: expect.stringContaining("no tool named nope: use search_blocks, check, submit_scene") }],
+      ["check", { error: "lint crashed" }],
+    ]);
+    expect(ran).toEqual(["search_blocks", "check", "check"]);
+    expect(r.events().map((e) => e.kind)).toEqual(["scene", "search_blocks", "scene", "check", "scene", "check", "scene"]);
+    expect(r.events().filter((e) => e.kind === "check").map((e) => e.ok)).toEqual([0, 0]);
   });
 
   test("each Generate role asks its own model when one is set, else the LLM model", async () => {

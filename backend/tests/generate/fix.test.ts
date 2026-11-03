@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFix } from "../../src/generate/fixes";
-import { makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, SAMPLE_TITLES, type TestEnv, judgeYes } from "../helpers";
+import { calledTool, makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, SAMPLE_TITLES, type TestEnv, judgeYes } from "../helpers";
 
 const json = JSON.stringify;
 const story = (i: number) => ({ title: `Film ${i}`, pitch: "satu", opening: "benih", beats: ["hook", "isi", "akhir"], look: "flat", sound: "tenang", bold: false, recommended: i === 1, reason: "k" });
@@ -71,7 +71,7 @@ describe("a fix round", () => {
     const asked = JSON.parse(llm.requests[0]!.messages[1]!.content);
     expect(asked.findings).toEqual([expect.objectContaining({ code: "text_below_floor", shotId: "s02", severity: "must-fix", suggestedFix: "Make it 40 px." })]);
     // only shot 2 was rewritten: one repair call, with the instruction and the finding; the judge ran again
-    expect(llm.requests.map((r) => r.tool_choice.function.name)).toEqual(["submit_fix", "submit_repair", "submit_judgement"]);
+    expect(llm.requests.map(calledTool)).toEqual(["submit_fix", "submit_repair", "submit_judgement"]);
     const repair = JSON.parse(llm.requests[1]!.messages.at(-1)!.content);   // the build session's latest turn
     expect(repair.compositionId).toBe("shot-02");
     expect(repair.findings.map((f: any) => f.code)).toEqual(["fix_request", "text_below_floor"]);
@@ -181,7 +181,7 @@ describe("a fix that changes the plan", () => {
     const v2 = store().getGenVersion(res.version!.id)!;
     expect(v2.planId).toBe(res.plan!.id);
     expect(store().getGenProject(id)).toMatchObject({ currentPlanId: res.plan!.id, status: "BUILT" });
-    const repairs = llm.requests.filter((r) => r.tool_choice.function.name === "submit_repair").map((r) => JSON.parse(r.messages.at(-1)!.content));
+    const repairs = llm.requests.filter((r) => calledTool(r) === "submit_repair").map((r) => JSON.parse(r.messages.at(-1)!.content));
     expect(repairs.map((r) => r.compositionId)).toEqual(["shot-02", "shot-03"]);
     expect(repairs[1]!.findings[0].message).toBe("The plan for this shot changed: update the scene to match it.");
     expect(gen().assertCanBuild(id).id).toBe(res.plan!.id);   // still approved: a plain build may follow

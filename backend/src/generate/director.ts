@@ -13,6 +13,7 @@ import type { RecipeStep } from "./recipe";
 import type { Capabilities, Level } from "./capabilities";
 import type { KitManifest } from "./kit";
 import { validateKitShot, type KitShot } from "./kitScene";
+import { LIMIT_REACHED, TOOL_DEFS, TOOL_ORDER, type SceneTools } from "./directorTools";
 
 // The bounded LLM director (contracts/director.md). Every call is one request and one TOOL CALL:
 // the model must call one function whose arguments are the answer, so a reasoning model can't
@@ -317,6 +318,8 @@ export interface SceneInput {
   level?: Level;
   /** The build's director session (its version id): every scene, repair and kit shot of a build is one conversation. */
   session?: string;
+  /** The tools this shot's turn may use before it submits (FR-049); none = one forced call. Only a session has turns. */
+  tools?: SceneTools | null;
 }
 
 /** One answer's outcome, for the model's record (research R25). Scene kinds report their level; plan kinds report `plan`. */
@@ -329,7 +332,7 @@ const SESSION_TOOLS: ToolDef[] = [TOOLS.scene, TOOLS.repair, TOOLS.kitshot];
 /** Builds whose sessions stay open (one per pipeline; a few for retries and fixes). */
 const MAX_SESSIONS = 4;
 /** One build's conversation: the opening (instructions, film), every turn since, and the latest answer for each shot. */
-interface Session { messages: ChatInput[]; opening: number; latest: Map<number, string>; turn: Promise<unknown> }
+interface Session { messages: ChatInput[]; opening: number; latest: Map<number, string>; turn: Promise<unknown>; /** The tool definitions offered on every turn of the session, fixed when it opens. */ tools: ToolDef[] }
 
 /** A capability query: the call's level and the parts whose full settings it gets (none for plan calls). */
 export interface CapabilityQuery { level?: Level; parts?: string[] }
@@ -491,12 +494,57 @@ export class Director {
   }
 
   /**
+   * The tool steps of one turn: the model may call the turn's tools (`loop.tools`) before it submits;
+   * each result goes back as the tool's result (images, as a user message after them). Past a tool's
+   * limit it gets "limit reached: submit now"; the step after `loop.steps` is forced to the submit tool.
+   * A tool that fails returns its error to the model: it never fails the build.
+   */
+  private async useTools(
+    project: GenProject, model: string, messages: ChatInput[], loop: SceneTools, submit: string,
+    callModel: (force: boolean) => Promise<{ message: ChatMessage; call: ToolCall | undefined }>,
+  ): Promise<{ message: ChatMessage; call: ToolCall | undefined }> {
+    const used: Record<string, number> = {};
+    for (let step = 0; ; step++) {
+      const reply = await callModel(step >= loop.steps);
+      const calls = reply.message.tool_calls ?? [];
+      if (reply.call || !calls.length) return reply;
+      messages.push({ role: "assistant", content: reply.message.content ?? "", tool_calls: calls });
+      const seen: string[] = [];
+      for (const c of calls) {
+        const toolName = c.function?.name ?? "";
+        const t = loop.tools[toolName];
+        let result: unknown;
+        if (!t) result = { error: `no tool named ${toolName}: use ${[...Object.keys(loop.tools), submit].join(", ")}` };
+        else if ((used[toolName] = (used[toolName] ?? 0) + 1) > t.limit) result = LIMIT_REACHED;
+        else {
+          let args: Record<string, unknown> = {};
+          const parsed = typeof c.function.arguments === "string" ? parseJson(c.function.arguments) : c.function.arguments;   // no JSON: the tool says what it needed
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) args = parsed as Record<string, unknown>;
+          try {
+            const out = await this.log.track(
+              { projectId: project.id, kind: toolName, model, request: JSON.stringify(args).slice(0, 4000) },
+              () => t.run(args),
+              (o) => ({ response: JSON.stringify(o.result).slice(0, 4000) + (o.images?.length ? ` +${o.images.length} image(s)` : "") }),
+            );
+            result = out.result;
+            seen.push(...(out.images ?? []));
+          } catch (e) {
+            result = { error: (e as Error).message };
+          }
+        }
+        messages.push({ role: "tool", tool_call_id: c.id || toolName, name: toolName, content: JSON.stringify(result) });
+      }
+      if (seen.length) messages.push(withImages("Frames from your draft, in the order you asked.", ...seen));
+    }
+  }
+
+  /**
    * One forced tool call on `messages`, validated; a failed validation goes back to the model as the
    * tool's result and it gets one more try. The exchange stays in `messages` (a session keeps it).
    */
   private async converse<T>(
     project: GenProject, kind: Kind, messages: ChatInput[], tools: ToolDef[], task: string,
-    validate: (parsed: unknown) => Validated<T>, level: AnswerEvent["level"] | null, seeing = false,
+    validate: (parsed: unknown) => Validated<T>, level: AnswerEvent["level"] | null, seeing = false, loop: SceneTools | null = null,
   ): Promise<{ value: T; call: ToolCall | undefined }> {
     const name = TOOLS[kind].function.name;
     let problems: string[] = [];
@@ -505,10 +553,11 @@ export class Director {
     const model = this.llm.modelFor(roleOf(kind));
     for (let attempt = 0; attempt < 2; attempt++) {
       let answer = "";
-      const reply = await this.log.track(
+      // one model call: forced to the submit tool, or free to use the turn's other tools
+      const callModel = (force: boolean) => this.log.track(
         { projectId: project.id, kind, model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
         async () => {
-          const opts = { tools, toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
+          const opts = { tools, ...(force ? { toolChoice: name } : {}), temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
           const r = seeing ? await this.llm.see(messages, { ...opts, model }) : await this.llm.chat(messages as ChatMessage[], { ...opts, model });
           const call = r.tool_calls?.find((c) => c.function?.name === name);
           const args = call?.function.arguments;
@@ -517,6 +566,7 @@ export class Director {
         },
         (out) => ({ response: answer || out.message.content }),
       );
+      const reply = loop ? await this.useTools(project, model, messages, loop, name, callModel) : await callModel(true);
       const parsed = answer ? parseJson(answer) : null;
       const result: Validated<T> = parsed === null
         ? { errors: [reply.call ? malformed(answer) : `you didn't call ${name}`] }
@@ -855,7 +905,7 @@ export class Director {
       const level = input.level ?? "compose";
       const levelMeans = this.capabilities ? this.capabilities({ level }).levelMeans : undefined;
       session.messages.push({ role: "user", content: JSON.stringify({ request: kind, level, ...(levelMeans ? { levelMeans } : {}), ...this.sceneOwn(input), ...extra, task }) });
-      const { value } = await this.converse<T>(input.project, kind, session.messages, SESSION_TOOLS, task, validate, level);
+      const { value } = await this.converse<T>(input.project, kind, session.messages, [...session.tools, ...SESSION_TOOLS], task, validate, level, false, input.tools ?? null);
       session.latest.set(input.index, keep(value));
       return value;
     });
@@ -878,6 +928,7 @@ export class Director {
     const session: Session = {
       messages: [{ role: "system", content: this.sessionSystem(input.step) }, { role: "user", content: JSON.stringify(film) }],
       opening: 2, latest: new Map(), turn: Promise.resolve(),
+      tools: TOOL_ORDER.filter((n) => input.tools?.tools[n]).map((n) => TOOL_DEFS[n]),
     };
     this.sessions.set(key, session);
     while (this.sessions.size > MAX_SESSIONS) this.sessions.delete(this.sessions.keys().next().value as string);

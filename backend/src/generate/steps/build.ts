@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { HttpError } from "../../http";
 import { shotFile, type SceneKit } from "../composer";
 import { atMost, isLevel, recipeLevel, recipeMaxLevel, type Level } from "../capabilities";
+import { sceneTools, type SceneTools } from "../directorTools";
 import { chooseLevel, modelPin, recordOf } from "../levels";
 import type { Plan, Shot } from "../planSchema";
 import type { StepContext } from "./types";
@@ -76,6 +77,27 @@ export function sceneRules(ctx: StepContext, level: Level): { assets: string[]; 
     assets,
     kit: { installed: ctx.kit.manifests().map((m) => m.name), allowed: caps.kit.map((p) => p.name), level: caps.level, webgl: caps.renderer.runtimes.includes("webgl") },
   };
+}
+
+/** Tool steps per shot turn and looks at its own draft when the recipe says nothing (FR-049). */
+export const DEFAULT_TOOL_STEPS = 8;
+export const DEFAULT_LOOKS = 2;
+
+/**
+ * The tools a shot's turn may use (search and install registry blocks, check its draft), per the recipe's
+ * `author.toolSteps` and `author.looks`; none at the kit level (Sorot writes that scene) or when the
+ * recipe sets `toolSteps: 0`.
+ */
+export function sceneToolsFor(ctx: StepContext, dir: string, plan: Plan, index: number, level: Level): SceneTools | null {
+  if (level === "kit") return null;
+  const authorWith = (ctx.recipe.steps.find((s) => s.use === "author")?.with ?? {}) as Record<string, unknown>;
+  const planWith = (ctx.recipe.steps.find((s) => s.use === "plan")?.with ?? {}) as Record<string, unknown>;
+  const steps = Number.isInteger(authorWith.toolSteps) ? (authorWith.toolSteps as number) : DEFAULT_TOOL_STEPS;
+  const looks = Number.isInteger(authorWith.looks) ? (authorWith.looks as number) : DEFAULT_LOOKS;
+  return sceneTools(
+    { dir, hyperframes: ctx.hyperframes, catalog: ctx.catalog, blocksAllowed: planWith.blocks !== false, shot: plan.shots[index]!, index, rules: sceneRules(ctx, level), signal: ctx.signal },
+    { steps, looks },
+  );
 }
 
 /** The shot (0-based) a finding belongs to: its file, its selector, or the moment it happens. */

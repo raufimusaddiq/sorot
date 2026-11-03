@@ -313,7 +313,7 @@ export const quickRecipe = (): Recipe => ({
     { use: "storylines", with: { count: 3, skipUnderSec: 15 }, gate: "owner" },
     // no effects pass and no effects floor: the sample plan is all cuts (both are tested on their own)
     { use: "plan", gate: "owner", with: { blocks: true, minEffects: 0, effects: false } },
-    { use: "author" }, { use: "check" },
+    { use: "author", with: { toolSteps: 0 } }, { use: "check" },   // one forced call per shot, unless a test turns the tool loop on
     { use: "render", with: { quality: "draft" } },
     { use: "technical" }, { use: "creative", with: { criteria: [{ id: "hook", question: "Does `opening` hold the eye?" }] } },
     { use: "export", with: { mode: "rerender" } },
@@ -351,6 +351,21 @@ export class Calls {
 /** The effects pass's answer when the director keeps the plan's effects as they are: no tool call ends the loop. */
 export const EFFECTS_DONE = new AsText("The plan's effects stand as written.");
 
+const SUBMIT_FOR = { scene: "submit_scene", repair: "submit_repair", kitshot: "submit_shot_kit" } as Record<string, string>;
+/**
+ * The function a request asks for: the one it forces, or, in a build session's tool-loop turn (tool_choice is
+ * "auto"), the submit tool its last message names (`request`). A fake model answers with that.
+ */
+export function calledTool(body: any): string | undefined {
+  if (body.tool_choice?.function?.name) return body.tool_choice.function.name;
+  const last = (body.messages ?? []).filter((m: any) => m.role === "user").at(-1)?.content;
+  try {
+    return SUBMIT_FOR[JSON.parse(typeof last === "string" ? last : last?.[0]?.text ?? "{}").request];
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The model's answer. When the request forces a function (tool_choice), a JSON string reply is that function's
  * arguments, as a real tool call would carry them; otherwise (or with AsText) it is the message text.
@@ -361,7 +376,7 @@ function completion(body: any, reply: string | AsText | Calls | ThoughtTooLong):
     const tool_calls = reply.calls.map(([name, args], i) => ({ id: `call_${i + 1}`, type: "function", function: { name, arguments: JSON.stringify(args) } }));
     return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls }, finish_reason: "tool_calls" }] });
   }
-  const forced = body.tool_choice?.function?.name as string | undefined;
+  const forced = calledTool(body);
   if (forced && typeof reply === "string") {
     const call = { id: "call_1", type: "function", function: { name: forced, arguments: reply } };
     return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }] });
