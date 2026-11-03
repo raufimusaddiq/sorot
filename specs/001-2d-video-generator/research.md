@@ -1081,3 +1081,26 @@ test install with the tool loop on (`author.toolSteps` default 8, `looks` defaul
   of the version would produce the verdicts. Not caused by the loop.
 - **Open**: image cost in tokens (needs the provider's usage numbers), registry blocks adapted to
   9:16 (nothing tried them), a stronger model's use of `search_blocks` and `use_block`, the 20-brief set.
+
+### S8, registry blocks and the planner (2026-11-03, T156 in part)
+
+- **What the planner sees**: the plan call gets every block's name and tags (448 items), not their descriptions
+  (the effects pass's search does see them). GLM's plan named one block, `godrays`, for shot 4, and the
+  scene for that shot doesn't use it. Nothing for people.
+- **Two install layouts**: `hyperframes add` writes a block flat (`compositions/godrays.html` plus
+  `compositions/lib/…`) or in its own folder (`compositions/lottie-character-walk/lottie-character-walk.html`
+  plus `assets/mascot.json`). Sorot looked only at the flat paths, so `use_block` would have returned an
+  empty source for a folder block, and a planned folder block never reached its scene call either. Fixed:
+  the source comes from the files `add` reports as written (`blockFiles`).
+- **`lottie-character-walk` in a vertical film is not a drop-in**: it is a 1920×1080 composition with a card
+  on the right, loads GSAP, lottie-web and Google Fonts from the web (the authoring contract forbids remote
+  scripts and links, and Sorot ships no Lottie player; Three.js is the only vendored library), and the
+  character is a 92 KB Lottie file. Using it needs a vendored player and a re-layout to 9:16; a strong
+  model might adapt it, a flash model is unlikely to. `use_block` now flags what a block loads from the web.
+- **So option 2 (the planner picks blocks) would not fix GLM's drawing of people by itself.** Open: whether
+  a vendored `lottie-web` kit part (about 150 KB, my estimate) plus a few Lottie characters is worth the size,
+  against drawing people in Three.js (`iso`/`three`) or SVG.
+- **A failed last step loses the build.** The gateway's `ECONNRESET` is already treated as transient (3
+  attempts, 2 s then 4 s apart) but a reset longer than 6 s ended the creative step, and a version has no
+  "retry from the failed step": a new build re-authors everything (about 15 min). Candidate fix: retry a
+  failed version from its failed step (finished steps are already reused by input hash) and a longer wait.

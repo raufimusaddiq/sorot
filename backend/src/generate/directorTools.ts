@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { tool, type ToolDef } from "../llm";
 import { checkScene, shotFile, type SceneIssue } from "./composer";
 import type { Plan, Shot } from "./planSchema";
@@ -104,16 +104,39 @@ export interface ToolEnv {
   signal?: AbortSignal;
 }
 
+/**
+ * The files a block installed, relative to the project: from what `hyperframes add` reports as written
+ * (a block lands flat, `compositions/<name>.html`, or in its own folder, `compositions/<name>/…`), or,
+ * when the report names none, the two flat places a block may sit.
+ */
+export function blockFiles(dir: string, name: string, added: Record<string, unknown>): string[] {
+  const written = (Array.isArray(added.written) ? added.written : []).filter((p): p is string => typeof p === "string").map((p) => relative(dir, p));
+  const mine = written.filter((rel) => rel.split("/").some((part) => part === name || part === `${name}.html`));
+  return (mine.length ? mine : [`compositions/${name}.html`, `compositions/components/${name}.html`]).filter((rel) => existsSync(join(dir, rel)));
+}
+
+/** A block's source as the director reads it: its HTML, cut, and a note when it loads anything from the web (a Sorot scene loads nothing). */
+export function blockSource(dir: string, files: string[], max: number): { source: string; cut: boolean; external: string[] } {
+  const full = files.filter((f) => f.endsWith(".html")).map((f) => readFileSync(join(dir, f), "utf-8")).join("\n");
+  const external = [...new Set([...full.matchAll(/\b(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)["']/gi)].map((m) => m[1] as string))].slice(0, 6);
+  return { source: full.slice(0, max), cut: full.length > max, external };
+}
+
 /** Installs a registry block into the project and hands its source over to adapt. */
 export async function useBlock(env: ToolEnv, args: ToolArgs): Promise<ToolOutcome> {
   if (!env.blocksAllowed) return { result: { error: "this recipe doesn't allow registry blocks: draw it yourself" } };
   const name = typeof args.name === "string" ? args.name.trim() : "";
   const catalog = await env.catalog();
   if (!name || !catalog.some((c) => c.name === name)) return { result: { error: `no block named "${name}": use search_blocks to find one` } };
-  await env.hyperframes.add(env.dir, [name], { signal: env.signal });
-  const files = [`compositions/${name}.html`, `compositions/components/${name}.html`].filter((rel) => existsSync(join(env.dir, rel)));
-  const full = files.map((rel) => readFileSync(join(env.dir, rel), "utf-8")).join("\n");
-  return { result: { name, files, source: full.slice(0, BLOCK_SOURCE_CHARS), cut: full.length > BLOCK_SOURCE_CHARS } };
+  const added = await env.hyperframes.add(env.dir, [name], { signal: env.signal });
+  const files = blockFiles(env.dir, name, added);
+  const { source, cut, external } = blockSource(env.dir, files, BLOCK_SOURCE_CHARS);
+  return {
+    result: {
+      name, files, source, cut,
+      ...(external.length ? { external, note: "this block loads scripts, fonts or files from the web; a scene here loads nothing from the web (the root provides GSAP and the kit): take them out or replace them" } : {}),
+    },
+  };
 }
 
 export interface DraftFinding { code: string; severity: string; message: string; hint?: string }

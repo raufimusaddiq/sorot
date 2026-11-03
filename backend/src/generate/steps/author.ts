@@ -10,6 +10,7 @@ import { BUNDLED_FONTS } from "../planContext";
 import type { Plan, Shot } from "../planSchema";
 import { placeLines, readVoice } from "../voice";
 import { settingsOf } from "./index";
+import { blockFiles, blockSource } from "../directorTools";
 import { buildTarget, levelOfShot, plannedLevel, readScene, readShotLevels, sceneAssets, sceneRules, sceneToolsFor, type ShotLevels } from "./build";
 import { levelBelow, type Level } from "../capabilities";
 import { DirectorError, type SceneInput } from "../director";
@@ -82,12 +83,11 @@ export async function prepareProject(ctx: StepContext, dir: string, plan: Plan):
   const duck = plan.sound.narration && bed?.duckUnderVoiceDb != null && track?.id === bed.assetId ? gainOf(bed.duckUnderVoiceDb) : 1;
   const planStep = ctx.recipe.steps.find((s) => s.use === "plan");
   const blocksOn = planStep?.with?.blocks !== false && plan.blocks.length > 0;
-  if (blocksOn) await ctx.hyperframes.add(dir, plan.blocks, { signal: ctx.signal });
+  const added = blocksOn ? await ctx.hyperframes.add(dir, plan.blocks, { signal: ctx.signal }) : {};
   const blocks: Record<string, string> = {};
   for (const name of blocksOn ? plan.blocks : []) {
-    for (const rel of [`compositions/${name}.html`, `compositions/components/${name}.html`]) {
-      if (existsSync(join(dir, rel))) blocks[name] = readFileSync(join(dir, rel), "utf-8").slice(0, BLOCK_SNIPPET_CHARS);
-    }
+    const files = blockFiles(dir, name, added);
+    if (files.length) blocks[name] = blockSource(dir, files, BLOCK_SNIPPET_CHARS).source;
   }
 
   // The recorded voice goes into the project's assets/ and onto its own audio track.

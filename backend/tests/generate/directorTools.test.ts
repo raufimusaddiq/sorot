@@ -59,6 +59,23 @@ describe("tools on a version's project", () => {
     expect(((await useBlock(env(), { name: "no-such" })).result as any).error).toContain("use search_blocks");
   });
 
+  test("a block that installs in its own folder is found from what `add` wrote; its HTML is the source, other files are listed, and what it loads from the web is flagged", async () => {
+    const own = env({
+      hyperframes: { ...env().hyperframes, add: async (d: string) => {
+        mkdirSync(join(d, "compositions/lottie-character-walk/assets"), { recursive: true });
+        writeFileSync(join(d, "compositions/lottie-character-walk/lottie-character-walk.html"), '<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script><div id="lcw-root"></div>');
+        writeFileSync(join(d, "compositions/lottie-character-walk/assets/mascot.json"), "{}");
+        writeFileSync(join(d, "compositions/other.html"), "<div>another block</div>");
+        return { written: [join(d, "compositions/lottie-character-walk/lottie-character-walk.html"), join(d, "compositions/lottie-character-walk/assets/mascot.json")] };
+      } } as never,
+    });
+    const out = (await useBlock(own, { name: "lottie-character-walk" })).result as any;
+    expect(out).toMatchObject({ files: ["compositions/lottie-character-walk/lottie-character-walk.html", "compositions/lottie-character-walk/assets/mascot.json"], cut: false, external: ["https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"] });
+    expect(out.source).toContain('id="lcw-root"');
+    expect(out.source).not.toContain("another block");
+    expect(out.note).toContain("loads scripts, fonts or files from the web");
+  });
+
   test("check writes the draft as the shot's file and returns Sorot's rules and this shot's lint only", async () => {
     const out = (await checkDraft(env(), { html: HTML })).result as { findings: Array<{ code: string }> };
     expect(readFileSync(join(dir, "compositions/shot-02.html"), "utf-8")).toBe(HTML);
