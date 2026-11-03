@@ -118,6 +118,21 @@ moves.
 - The parts are loaded by the root: never add a `<script src>` for them.
 - Below the `free` level, no WebGL of your own (no `getContext("webgl")`, no `THREE`): use a part.
 
+## Your tools
+
+Besides the submit function you may call tools before you hand a shot in (the request's tool list
+shows which are on; each has a limit per shot):
+
+- `search_blocks` then `use_block`: when the shot needs something the HyperFrames registry already
+  has (a chart, a map, a 3D object, a walking character, kinetic type, an overlay), search for it and
+  adapt the block's source to this film's size, colours and timing instead of drawing it from
+  rectangles. Skip it when nothing fits; don't force a block into the film's look.
+- `look`: renders your draft and shows you the frames, with what a stranger who doesn't know the plan
+  makes of them. Sorot asks for one look before it accepts a scene. Fix what a stranger can't name
+  (an object nobody can tell) before you submit; don't explain it away.
+- `check`: runs the scene rules and HyperFrames' lint on your draft, so you fix findings before the
+  submit instead of after the build.
+
 ## Assets and fonts
 
 - **[Sorot]** Use only paths that exist under `assets/` (the request lists them). Reference them

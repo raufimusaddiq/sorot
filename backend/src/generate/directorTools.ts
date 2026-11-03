@@ -41,6 +41,8 @@ export interface SceneTools { steps: number; tools: Record<string, SceneTool> }
 export const TOOL_ORDER = ["search_blocks", "use_block", "look", "check"] as const;
 /** The text a call past its limit gets back. */
 export const LIMIT_REACHED = { error: "limit reached: submit now" };
+/** What the first submit gets back when the turn can look and hasn't. */
+export const LOOK_FIRST = "look at your draft first: call look with this html (and 1 to 3 moments of the shot), see what a stranger sees, fix what they can't name, then submit again";
 
 const MAX_QUERY = 120;
 const MAX_MATCHES = 8;

@@ -14,7 +14,7 @@ import type { Capabilities, Level } from "./capabilities";
 import type { KitManifest } from "./kit";
 import { validateKitShot, type KitShot } from "./kitScene";
 import { endTurn, estimateTokens, stubTurn } from "./compaction";
-import { LIMIT_REACHED, TOOL_DEFS, TOOL_ORDER, type SceneTools } from "./directorTools";
+import { LIMIT_REACHED, LOOK_FIRST, TOOL_DEFS, TOOL_ORDER, type SceneTools } from "./directorTools";
 
 // The bounded LLM director (contracts/director.md). Every call is one request and one TOOL CALL:
 // the model must call one function whose arguments are the answer, so a reasoning model can't
@@ -510,6 +510,15 @@ export class Director {
     for (let step = 0; ; step++) {
       stubTurn(messages, loop.start, loop.tokens);   // a turn that grew past its budget cuts its older tool results first
       const reply = await callModel(step >= loop.tools.steps);
+      // a fast model skips optional steps (GLM submitted 7 scenes of 7 without a look): the first submit
+      // of a turn that has a look is turned back once, inside the turn, so it costs no retry
+      if (reply.call && loop.tools.tools.look && !used.look && step < loop.tools.steps) {
+        messages.push(
+          { role: "assistant", content: "", tool_calls: [reply.call] },
+          { role: "tool", tool_call_id: reply.call.id || submit, name: submit, content: JSON.stringify({ accepted: false, problems: [LOOK_FIRST] }) },
+        );
+        continue;
+      }
       const calls = reply.message.tool_calls ?? [];
       if (reply.call || !calls.length) return reply;
       messages.push({ role: "assistant", content: reply.message.content ?? "", tool_calls: calls });

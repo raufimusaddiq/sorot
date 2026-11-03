@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
-import { TOOL_DEFS } from "../../src/generate/directorTools";
+import { LOOK_FIRST, TOOL_DEFS } from "../../src/generate/directorTools";
 import { Director, DirectorError, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { validatePlan, type Plan, type PlanContext } from "../../src/generate/planSchema";
@@ -394,6 +394,7 @@ describe("director: scenes", () => {
     expect(systemOf(req)).toContain("never `from`");   // HyperFrames' own contract: fromTo only, transforms not width/height
     expect(systemOf(req)).toContain("## Motion craft");
     expect(systemOf(req)).toContain("Writing one scene");          // the authoring contract
+    expect(systemOf(req)).toContain("## Your tools");              // when each tool is worth using
     expect(systemOf(req)).toContain('# A worked example');          // one finished shot to learn the craft from
     expect(systemOf(req)).toContain('data-composition-id="shot-02"');
     expect(systemOf(req)).toContain("submit_scene");
@@ -457,6 +458,20 @@ describe("director: scenes", () => {
     expect(r.events().filter((e) => e.kind === "check").map((e) => e.ok)).toEqual([0, 0]);
   });
 
+  test("when the turn can look, the first submit is turned back once inside the turn (no retry used); after a look, or at the last step, it is accepted", async () => {
+    const look = { def: TOOL_DEFS.look, limit: 2, run: async () => ({ result: { findings: [] } }) };
+    const r = rig([json({ html: HTML }), new Calls([["look", { html: HTML, times: [1] }]]), json({ html: HTML })], { genSession: true });
+    expect(await r.director.scene({ ...input(), session: "v-lookfirst", tools: { steps: 4, tools: { look } } })).toBe(HTML);
+    expect(r.requests).toHaveLength(3);
+    const turned = r.requests[1]!.messages.at(-1) as any;
+    expect([turned.role, JSON.parse(turned.content)]).toEqual(["tool", { accepted: false, problems: [LOOK_FIRST] }]);
+    expect(r.events().map((e) => e.kind)).toEqual(["scene", "scene", "look", "scene"]);
+    // no steps left: the submit stands (the forced step), and without a look tool nothing is asked
+    const last = rig([json({ html: HTML })], { genSession: true });
+    expect(await last.director.scene({ ...input(), session: "v-forced", tools: { steps: 0, tools: { look } } })).toBe(HTML);
+    expect(last.requests).toHaveLength(1);
+  });
+
   test("a look's frames come back as a picture message right after its results, and the log row counts them", async () => {
     const tools = { steps: 2, tools: { look: { def: TOOL_DEFS.look, limit: 2, run: async () => ({ result: { seen: { description: "a dome" } }, images: ["data:image/png;base64,AAA", "data:image/png;base64,BBB"] }) } } };
     const r = rig([new Calls([["look", { html: "x", times: [1] }]]), json({ html: HTML })], { genSession: true });
@@ -474,11 +489,12 @@ describe("director: scenes", () => {
       new Calls([["check", { html: "x" }]]), json({ html: HTML }),                       // turn 1: one tool, accepted
       json({ html: "no" }), json({ html: "still no" }),                                  // turn 2: never valid
       new Calls([["look", { html: "x", times: [1] }]]), new Calls([["look", { html: "y", times: [2] }]]), json({ html: HTML }),   // turn 3: two looks
-      json({ html: HTML }),                                                              // turn 4
+      new Calls([["look", { html: "x", times: [1] }]]), json({ html: HTML }),            // turn 4 (it has a look, so its first submit is turned back to look first)
     ], { genSession: true, genTurnTokens: 1000 });
     const s = { ...input(), session: "v-compact", tools };
-    await r.director.scene({ ...s, index: 0 });
-    await expect(r.director.scene({ ...s, index: 1 })).rejects.toThrow("didn't pass the checks");
+    const checkOnly = { steps: 4, tools: { check: tools.tools.check } };   // no look to ask for first
+    await r.director.scene({ ...s, index: 0, tools: checkOnly });
+    await expect(r.director.scene({ ...s, index: 1, tools: checkOnly })).rejects.toThrow("didn't pass the checks");
     await r.director.scene({ ...s, index: 2 });
     await r.director.scene({ ...s, index: 0 });
     const roles = (q: any) => q.messages.map((m: any) => m.role + (m.name ? `:${m.name}` : ""));

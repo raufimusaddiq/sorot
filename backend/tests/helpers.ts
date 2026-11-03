@@ -175,6 +175,18 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   // Generate: the model writes its own scenes in these tests (a new model would start at the kit level, R25)
   if (config.llmModel) new Store(db).setSetting(`gen.modelLevel.${config.llmModel}`, "compose");
   const app = createApp(config, { db, runScript, exec, fetch: fetchFn, retryWaitMs: 0 });
+  // these tests script one forced call per shot: the shipped recipes' tool loop (author.toolSteps) has its own tests.
+  // Recipes are seeded when the app starts, so the patch follows it.
+  const recipes = new Store(db);
+  const start = app.generate.start.bind(app.generate);
+  app.generate.start = () => {
+    start();
+    for (const row of recipes.listGenRecipes()) {
+      const recipe = JSON.parse(row.recipe) as { steps: Array<{ use: string; with?: Record<string, unknown> }> };
+      recipe.steps = recipe.steps.map((st) => (st.use === "author" ? { ...st, with: { ...st.with, toolSteps: 0 } } : st));
+      recipes.updateGenRecipe(row.id, { recipe: JSON.stringify(recipe) });
+    }
+  };
   const req = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.fetch(new Request(`http://localhost${path}`, {
       method,
