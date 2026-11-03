@@ -1050,3 +1050,34 @@ Evidence: three real builds on 2026-11-02 (Kimi isometric, GLM isometric, GLM st
 | What does an image cost in tokens on the provider? | the provider's usage numbers for calls with 1, 2, 3 frames | the compaction estimate, `author.looks` |
 | Can `lottie-character-walk` and the 3D blocks be adapted to 9:16 and a film's look? | install into a 9:16 project, adapt, render | whether `use_block` returns full sources or references |
 | Word and tag search: do the right blocks come up for "a person walking", "a bar chart", "a map"? | ten queries against the catalog | whether search needs more than words and tags |
+
+### S8, first real runs (2026-11-03, T169 in part)
+
+The GLM story brief (`glm-5-3-flash`, 7 shots, same plan, images and voice) rebuilt twice on the CPU
+test install with the tool loop on (`author.toolSteps` default 8, `looks` default 2).
+
+| Run | Tools used | Scene+repair model calls | Prefix reuse (log estimate) | Author step | Final `look_unexplained` must-fix |
+|---|---|---|---|---|---|
+| A. tools offered, nothing asking for a look (`545fa70`) | none: 0 of 11 turns | 11 | not measured | 3.4 min | 2 (s02, s03) |
+| B. first submit asks for a look once (`7974c56`) | `look` 10×, `search_blocks` 0, `use_block` 0, `check` 0 | 32 | 93% | about 11 min | 4 (s02 ×2, s03 ×2) |
+
+- **A fast model skips optional tools.** With the tools only offered, GLM submitted every turn at
+  once. Run B's rule ("look at your draft first", turned back inside the turn, no retry used) got a
+  look for each of the 7 shots; three shots looked more than once. It never searched the registry
+  or ran `check`, even with the "Your tools" section in the authoring guide.
+- **Looking didn't make the drawing better by the stranger's measure.** The director read the
+  findings and sometimes redrew (one turn says "the look renders showed two problems: the brown
+  rectangle…"), but the final look step still found unnameable objects in shots 2 and 3, as many
+  as before. By eye, shot 1 now fills the frame with the generated illustration and the street scene
+  is busier and more readable; the hands and the door are still crude.
+- **Cost**: about 3× the author time (each look is a render of up to 3 frames plus a stranger call,
+  about 20 s plus 15 s here), 10 looks in all.
+- **Cache**: 93% of the scene and repair requests' text was a prefix of an earlier finished request
+  (session with tool results), against 87% without tools. The provider's own number is still to be
+  read from its dashboard.
+- **The look step still ran**: repairs after the check step changed scenes, so the hashes no longer
+  matched ("looked in the loop" applies only when no scene changed since its look).
+- **Run B failed at the creative verdict**: the gateway reset the connection (`ECONNRESET`); a retry
+  of the version would produce the verdicts. Not caused by the loop.
+- **Open**: image cost in tokens (needs the provider's usage numbers), registry blocks adapted to
+  9:16 (nothing tried them), a stronger model's use of `search_blocks` and `use_block`, the 20-brief set.
