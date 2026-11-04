@@ -44,12 +44,12 @@ export const run: RunFn = async (ctx) => {
   };
   try {
     await speakAll(lines);
-    // Past the film: the director writes the script again once, told how long it took to speak (the voice is cheap to run again).
+    // Past the film: the director writes the script again (up to twice), told which line took how many seconds: a model
+    // can cut a line it is shown the length of, but it can't hit a word count (GLM asked for 54 words wrote 67).
     const scriptStep = ctx.recipe.steps.find((s) => s.use === "script");
-    if (scriptStep && speechSec(spoken) > project.targetSec + SLACK) {
-      const words = lines.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
-      const shorter = await writeScript(ctx, scriptStep, settingsOf("script", scriptStep.with), { spokenSec: speechSec(spoken), filmSec: project.targetSec, words });
-      await speakAll(shorter);
+    for (let round = 0; scriptStep && round < 2 && speechSec(spoken) > project.targetSec + SLACK; round++) {
+      const overrun = { spokenSec: speechSec(spoken), filmSec: project.targetSec, lines: spoken.map((l) => ({ id: l.id, text: l.text, sec: l.durationSec })) };
+      await speakAll(await writeScript(ctx, scriptStep, settingsOf("script", scriptStep.with), overrun));
     }
     if (speechSec(spoken) > project.targetSec + SLACK) throw new Error(`The voice takes ${speechSec(spoken)} s and the video is ${project.targetSec} s: shorten the script (sorot gen revise) or make the video longer`);
   } catch (e) {

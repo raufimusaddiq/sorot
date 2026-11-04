@@ -3,7 +3,7 @@ import type { RecipeStep } from "../recipe";
 import type { RunFn, StepContext } from "./types";
 
 /** What the voice measured when it ran past the film: the script is written again to fit. */
-export interface Overrun { spokenSec: number; filmSec: number; words: number }
+export interface Overrun { spokenSec: number; filmSec: number; lines: Array<{ id: string; text: string; sec: number }> }
 
 /** The director writes the script (again, told the measured overrun) and the project keeps it. */
 export async function writeScript(ctx: StepContext, step: RecipeStep, settings: StepContext["settings"], overrun?: Overrun) {

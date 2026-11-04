@@ -117,10 +117,10 @@ describe("voice step", () => {
   test("a voice that runs past the film gets the script written again once, told how long it took; still too long is an error with the numbers", async () => {
     const fits = withScript({ every: 20 }, [scriptJson([{ id: "l1", text: "Satu kalimat saja." }])]);
     expect(await STEPS.voice.run(fits.ctxFor("voice"))).toEqual({ status: "done", outputRef: "voice" });
-    expect(body(fits.requests[0]!).overrun).toEqual({ spokenSec: 40.2, filmSec: 30, words: 8 });
+    expect(body(fits.requests[0]!).overrun).toMatchObject({ spokenSec: 40.2, filmSec: 30, lines: [{ id: "l1", sec: 20 }, { id: "l2", sec: 20 }] });
     expect(JSON.parse(fits.store.getGenProject("p1")!.narrationScript!).lines).toHaveLength(1);
     expect(readVoice(fits.config, "p1")!.lines).toHaveLength(1);
-    const still = withScript({ every: 20 }, [scriptJson()]);
+    const still = withScript({ every: 20 }, [scriptJson(), scriptJson()]);   // two rounds, still too long
     await expect(STEPS.voice.run(still.ctxFor("voice"))).rejects.toThrow("The voice takes 40.2 s and the video is 30 s");
   });
 

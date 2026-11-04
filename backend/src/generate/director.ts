@@ -1196,7 +1196,7 @@ export class Director {
     /** A factual recipe: the numbers in these lines that nothing verified states (an error to repair). */
     unsourced?: (texts: string[]) => string[];
     /** The voice ran past the film (measured after speaking): write it again to fit. */
-    overrun?: { spokenSec: number; filmSec: number; words: number };
+    overrun?: { spokenSec: number; filmSec: number; lines: Array<{ id: string; text: string; sec: number }> };
   }): Promise<Array<{ id: string; text: string }>> {
     const { settings, project } = input;
     // The voice must fit the video, but how many words that is depends on the voice: the length only sets a target in the
@@ -1210,7 +1210,7 @@ export class Director {
       project, "script", input.step,
       { ...this.base(project, input.assets), tone: typeof settings.tone === "string" ? settings.tone : null, targetWords: target, ...(over ? { overrun: over } : {}), spellNumbers: spell },
       over
-        ? `Write the narration again for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: the last one (${over.words} words) took ${over.spokenSec} s to speak and the video is ${over.filmSec} s. Keep the story and the best lines, with fewer words: about ${Math.max(10, Math.floor(over.words * (over.filmSec - 1) / over.spokenSec))} words in all.${spell ? " Write every number out in words, as it is spoken." : ""}`
+        ? `Write the narration again for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}. The last one takes ${over.spokenSec} s to speak (each line's seconds are in \`overrun.lines\`) and the video is ${over.filmSec} s: save at least ${Math.ceil(over.spokenSec - over.filmSec + 1)} s by cutting or shortening lines. Keep the story and the best lines.${spell ? " Write every number out in words, as it is spoken." : ""}`
         : `Write the narration for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: about ${target} words in all (the voice has to fit ${project.targetSec} s).${spell ? " Write every number out in words, as it is spoken." : ""}`,
       (parsed) => {
         const raw = (parsed as { lines?: unknown }).lines;
