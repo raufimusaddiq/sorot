@@ -171,7 +171,7 @@ const TOOLS = {
       type: "array", items: {
         type: "object", required: ["shotId", "description", "objects", "unexplained", "matches", "heroVisible"], properties: {
           shotId: str("the shot the picture belongs to"), description: str("what a stranger sees, in a sentence or two, written before you look at what was meant"),
-          objects: { type: "array", items: { type: "string" } }, unexplained: { type: "array", items: { type: "string" }, description: "objects whose purpose a stranger could not tell" },
+          objects: { type: "array", items: { type: "string" }, description: "the things visible on screen" }, unexplained: { type: "array", items: { type: "string" }, description: "things that ARE on screen, listed in `objects`, whose purpose a stranger could not tell; never something missing or not visible (say what is missing in `description` or with `matches`)" },
           matches: { type: "boolean", description: "does the picture read as `reads` says?" }, heroVisible: { type: "boolean", description: "can the hero move be seen?" },
         },
       },
