@@ -302,7 +302,7 @@ async function watchBuild(d: Deps, a: Args, id: string, version: Json): Promise<
   if (json(d, a, done)) return done.version.status === "BUILT" ? 0 : 1;
   const v = done.version as Json;
   if (v.status === "FAILED") {
-    d.err(`The build failed: ${v.errorMessage}. The scenes already written are kept; build again to try once more.`);
+    d.err(`The build failed: ${v.errorMessage}. The scenes already written are kept; go on from the failed step with: sorot gen resume <project>`);
     return 1;
   }
   if (v.status === "CANCELLED") {
@@ -380,6 +380,13 @@ async function cancelCmd(d: Deps, a: Args): Promise<number> {
   const r = await d.api.post(`${VERSIONS}/${await versionId(d, need(a, 2, "version or project"))}/cancel`);
   if (!json(d, a, r)) d.out(`Version ${r.version.number}: ${r.version.status}`);
   return 0;
+}
+
+/** A failed build goes on from its failed step (same version; finished steps and shots are kept). */
+async function resumeCmd(d: Deps, a: Args): Promise<number> {
+  const vid = await versionId(d, need(a, 2, "version or project"));
+  const { version } = await d.api.post(`${VERSIONS}/${vid}/retry`);
+  return watchBuild(d, a, String(version.projectId), version);
 }
 
 async function acceptCmd(d: Deps, a: Args): Promise<number> {
@@ -828,6 +835,7 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   build: buildCmd,
   verdicts: verdictsCmd,
   cancel: cancelCmd,
+  resume: resumeCmd,
   accept: acceptCmd,
   fix: fixCmd,
   restore: restoreCmd,

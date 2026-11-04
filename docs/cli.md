@@ -71,7 +71,7 @@ Briefs to finished 2D videos ([generate.md](generate.md); full flags in
 | `gen new "<brief>" [--recipe R --facts F --preset P --length S --lang id\|en --narration --no-numbers]` | Create a video; prints the storylines or the plan. |
 | `gen list`, `gen show <p>`, `gen plan <p>`, `gen files <p> [name]` | Videos, one video's state, its plan as a shot table, its mirrored files. |
 | `gen storylines`, `pick <p> <1-3>`, `revise <p> "<request>"`, `approve <p>`, `approve-step <p> <step>` | Work the storylines and plan; pass an owner gate. |
-| `gen build <p>`, `verdicts <v>`, `fix <v>`, `cancel\|restore\|accept <v>` | Build, read the two verdicts, fix must-fix items, keep a version. |
+| `gen build <p>`, `verdicts <v>`, `fix <v>`, `cancel\|resume\|restore\|accept <v>` | Build, read the two verdicts, fix must-fix items, keep a version. |
 | `gen export <v> [--title --out]`, then `publish --generated <id>` / `posts --generated <id>` | Delivery render into the library; publish it like a clip. |
 | `gen steps`, `recipes`, `recipe show\|new\|copy\|edit\|validate\|export\|import` | The step library and your pipelines. |
 | `gen facts <p> [add\|rm\|verify]` | Facts with sources. |

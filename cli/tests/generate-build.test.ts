@@ -87,6 +87,15 @@ describe("gen build", () => {
 });
 
 describe("gen verdicts, cancel, accept", () => {
+  test("resume sends a failed build on from its failed step, then follows it like a build", async () => {
+    const h = harness(routes({ [`POST ${VERSIONS}/${VID}/retry`]: { version: version({ projectId: "11111111-0000-0000-0000-000000000000" }) }, [`GET ${VERSIONS}/${VID}`]: { version: version(), verdicts: GOOD } }));
+    expect(await h.run("gen", "resume", VID)).toBe(0);
+    expect(h.text()).toContain("Built version 1");
+    const refused = harness({ [`POST ${VERSIONS}/${VID}/retry`]: new Fail(409, "Only a build that failed can be retried") });
+    expect(await refused.run("gen", "resume", VID)).toBe(1);
+    expect(refused.err[0]).toContain("Only a build that failed");
+  });
+
   const shown = [
     verdict("TECHNICAL", "FAIL", [
       finding({ severity: "polish", code: "craft", description: "A nit." }),
