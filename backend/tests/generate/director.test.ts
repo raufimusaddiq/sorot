@@ -470,6 +470,10 @@ describe("director: scenes", () => {
     const last = rig([json({ html: HTML })], { genSession: true });
     expect(await last.director.scene({ ...input(), session: "v-forced", tools: { steps: 0, tools: { look } } })).toBe(HTML);
     expect(last.requests).toHaveLength(1);
+    // a repair turn may look but is not made to: its first submit stands
+    const fix = rig([json({ html: HTML, holds: [] })], { genSession: true });
+    await fix.director.repair({ ...input(), session: "v-repair", tools: { steps: 4, tools: { look } }, html: "x", findings: [] });
+    expect(fix.requests).toHaveLength(1);
   });
 
   test("a look's frames come back as a picture message right after its results, and the log row counts them", async () => {

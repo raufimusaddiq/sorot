@@ -57,7 +57,7 @@ user: {request, shot fields, task}
 
 On the first real build with the tools on (GLM, 7 shots, 2026-11-03), the model used no tool in any
 of the 11 turns: it submitted straight away. A tool that is only offered is skipped by a fast model.
-So the first submit of a turn that has `look` available is turned back once, inside the turn, with
+So the first submit of a **scene** turn that has `look` available is turned back once, inside the turn, with
 "look at your draft first…" (no retry is used); after a `look` (or on the forced last step) a submit
 is accepted. `author.looks: 0` turns the look off, and with it this rule. The authoring guide's
 "Your tools" section says when `search_blocks` and `use_block` are worth a step; those stay optional.

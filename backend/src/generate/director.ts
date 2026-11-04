@@ -505,14 +505,15 @@ export class Director {
   private async useTools(
     project: GenProject, model: string, messages: ChatInput[], loop: TurnLoop, submit: string,
     callModel: (force: boolean) => Promise<{ message: ChatMessage; call: ToolCall | undefined }>,
+    lookFirst: boolean,
   ): Promise<{ message: ChatMessage; call: ToolCall | undefined }> {
     const used: Record<string, number> = {};
     for (let step = 0; ; step++) {
       stubTurn(messages, loop.start, loop.tokens);   // a turn that grew past its budget cuts its older tool results first
       const reply = await callModel(step >= loop.tools.steps);
       // a fast model skips optional steps (GLM submitted 7 scenes of 7 without a look): the first submit
-      // of a turn that has a look is turned back once, inside the turn, so it costs no retry
-      if (reply.call && loop.tools.tools.look && !used.look && step < loop.tools.steps) {
+      // of a scene turn that has a look is turned back once (repairs and kit shots may look, but are not made to), inside the turn, so it costs no retry
+      if (lookFirst && reply.call && loop.tools.tools.look && !used.look && step < loop.tools.steps) {
         messages.push(
           { role: "assistant", content: "", tool_calls: [reply.call] },
           { role: "tool", tool_call_id: reply.call.id || submit, name: submit, content: JSON.stringify({ accepted: false, problems: [LOOK_FIRST] }) },
@@ -579,7 +580,7 @@ export class Director {
         },
         (out) => ({ response: answer || out.message.content }),
       );
-      const reply = loop ? await this.useTools(project, model, messages, loop, name, callModel) : await callModel(true);
+      const reply = loop ? await this.useTools(project, model, messages, loop, name, callModel, kind === "scene") : await callModel(true);
       const parsed = answer ? parseJson(answer) : null;
       const result: Validated<T> = parsed === null
         ? { errors: [reply.call ? malformed(answer) : `you didn't call ${name}`] }
