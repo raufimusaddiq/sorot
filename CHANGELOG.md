@@ -7,6 +7,8 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 ## [Unreleased]
 
 ### Generate: briefs to finished 2D videos
+- A build that failed (a gateway error, an interruption) can go on from its failed step: **Continue from the
+  failed step** keeps the finished steps and shots instead of starting a new version.
 - A new mode that makes a short video from a brief, with no source footage: storylines, an approved
   plan, a HyperFrames build, a TECHNICAL (code) and a CREATIVE (fresh judge) verdict, fix rounds, then
   export to a Generated library and publish through Tebar like a clip. Needs an LLM connection;

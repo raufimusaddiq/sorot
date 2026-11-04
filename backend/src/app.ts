@@ -390,6 +390,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     return ok({ version: versionView(d.version), verdicts: d.verdicts.map(verdictView) });
   });
   router.on("POST", "/api/generate/versions/:id/cancel", (c) => ok({ version: versionView(generate.cancelVersion(c.params.id as string)) }));
+  router.on("POST", "/api/generate/versions/:id/retry", (c) => ok({ version: versionView(generate.retryVersion(c.params.id as string)) }));
   router.on("POST", "/api/generate/versions/:id/fix", async (c) => {
     const b = await c.body();
     const ids = Array.isArray(b.findingIds) ? (b.findingIds as unknown[]).filter((x): x is string => typeof x === "string") : undefined;

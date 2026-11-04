@@ -24,6 +24,7 @@ columns. Errors: 400 bad input, 404 unknown id, 409 wrong state, 503 Generate un
 | POST | `/api/generate/projects/:id/versions` | | `{version}` | build; 409 without an approved plan (FR-006) |
 | GET | `/api/generate/versions/:id` | | `{version, verdicts[]}` | poll while building |
 | POST | `/api/generate/versions/:id/cancel` | | `{version}` | kills the process tree |
+| POST | `/api/generate/versions/:id/retry` | | `{version}` | a FAILED version goes on from its failed step (same version; finished steps and shots kept); else 409 |
 | POST | `/api/generate/versions/:id/fix` | `{findingIds?[], note?, shotId?}` | `{version}` | new version; no ids = all must-fix |
 | POST | `/api/generate/versions/:id/restore` | | `{project}` | makes this version's plan the current one |
 | POST | `/api/generate/versions/:id/accept` | | `{project}` | 409 if TECHNICAL = FAIL (FR-014) |

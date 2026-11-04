@@ -785,6 +785,20 @@ export class GenerateService {
   }
 
   /**
+   * A build that failed (a gateway error, an interruption) goes on from its failed step: it is the same
+   * version, and the runner skips every step whose input hash still matches, so finished work is kept.
+   */
+  retryVersion(versionId: string): GenVersion {
+    const v = this.mustVersion(versionId);
+    const p = this.idle(v.projectId);
+    if (v.status !== "FAILED") throw new HttpError(409, "Only a build that failed can be retried");
+    this.store.updateGenVersion(v.id, { status: "QUEUED", errorMessage: null });
+    this.store.updateGenProject(p.id, { status: "BUILDING", errorMessage: null });
+    this.queue.enqueue(v.id);
+    return this.mustVersion(versionId);
+  }
+
+  /**
    * Makes the next version of a project and queues it. A fix round starts from the version it fixes:
    * that version's scenes are copied over, and fix.json says which shots change and how, so only
    * those are written again.

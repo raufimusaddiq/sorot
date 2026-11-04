@@ -268,6 +268,10 @@ export class ApiClient {
     return this.request<{ version: GenVersion }>(`/api/generate/versions/${id}/cancel`, { method: 'POST' });
   }
 
+  async retryGenerateVersion(id: string) {
+    return this.request<{ version: GenVersion }>(`/api/generate/versions/${id}/retry`, { method: 'POST' });
+  }
+
   async acceptGenerateVersion(id: string) {
     return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/accept`, { method: 'POST' });
   }

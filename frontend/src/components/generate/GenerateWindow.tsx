@@ -244,6 +244,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
             <BuildPanel api={api} project={p} version={newest} verdicts={verdicts} estimate={estimate} busy={busy} exported={detail?.exports.find((x) => x.versionId === newest?.id) ?? null} shots={currentPlan?.plan.shots.map((s) => s.id) ?? []}
               onBuild={() => act(() => api.startGenerateBuild(p.id))}
               onCancel={(id) => act(() => api.cancelGenerateVersion(id))}
+              onRetry={(id) => act(() => api.retryGenerateVersion(id))}
               onAccept={(id) => act(() => api.acceptGenerateVersion(id))}
               onExport={(id) => act(async () => { await api.exportGenerateVersion(id); })}
               onFix={(id, body) => act(async () => {

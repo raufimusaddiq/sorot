@@ -253,12 +253,16 @@ describe("cancel, failure and restart", () => {
     expect(store().getGenProject(id)).toMatchObject({ status: "FAILED" });
     expect(existsSync(`${env.config.genDir}/${id}/v1/compositions/shot-01.html`)).toBe(true);
 
-    scriptLlm(env, [...SCENES, JUDGE]);
-    const again = await env.json("POST", `${base}/projects/${id}/versions`);
-    expect(again.body.data.version.number).toBe(2);
+    // retrying the same version goes on from the failed step (only a failed one can be retried)
+    const left = scriptLlm(env, [SCENES[1]!, SCENES[2]!, JUDGE]);   // shot 1 is kept: only the shots after it are asked for
+    const retried = await env.json("POST", `${base}/versions/${v1}/retry`);
+    expect(retried.body.data.version).toMatchObject({ id: v1, errorMessage: null });
+    expect((await env.json("POST", `${base}/versions/${v1}/retry`)).status).toBe(409);
     await gen().whenIdle();
-    expect(store().getGenVersion(again.body.data.version.id)!.status).toBe("BUILT");
+    expect(left.left()).toBe(0);
+    expect(store().getGenVersion(v1)).toMatchObject({ status: "BUILT", number: 1 });
     expect(store().getGenProject(id)!.status).toBe("BUILT");
+    expect((await env.json("POST", `${base}/versions/${v1}/retry`)).status).toBe(409);
   });
 
   test("a build that was still queued when the app stopped starts again at the next start", async () => {

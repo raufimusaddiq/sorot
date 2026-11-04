@@ -77,7 +77,7 @@ describe('VerdictPanel', () => {
 describe('BuildPanel', () => {
   const props = (over: Partial<React.ComponentProps<typeof BuildPanel>> = {}) => ({
     api, project: makeGenProject('g1'), version: null, verdicts: [], estimate: { draftSec: 600, exportSec: 30 }, busy: false,
-    shots: ['s01', 's02'], exported: null, onBuild: jest.fn(), onCancel: jest.fn(), onAccept: jest.fn(), onFix: jest.fn(), onExport: jest.fn(), ...over,
+    shots: ['s01', 's02'], exported: null, onBuild: jest.fn(), onCancel: jest.fn(), onRetry: jest.fn(), onAccept: jest.fn(), onFix: jest.fn(), onExport: jest.fn(), ...over,
   });
 
   it('offers a build with its estimate; a finished one can be built again', () => {
@@ -172,8 +172,11 @@ describe('BuildPanel', () => {
   });
 
   it('a failed or cancelled build says what happened', () => {
-    const { rerender } = render(<BuildPanel {...props({ version: makeGenVersion('ver1', { status: 'FAILED', errorMessage: 'chrome crashed' }) })} />);
+    const retry = jest.fn();
+    const { rerender } = render(<BuildPanel {...props({ onRetry: retry, version: makeGenVersion('ver1', { status: 'FAILED', errorMessage: 'chrome crashed' }) })} />);
     expect(screen.getByRole('alert')).toHaveTextContent('The build stopped: chrome crashed. The scenes already written are kept.');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue from the failed step' }));
+    expect(retry).toHaveBeenCalledWith('ver1');
     rerender(<BuildPanel {...props({ version: makeGenVersion('ver1', { status: 'CANCELLED' }) })} />);
     expect(screen.getByText('The last build was cancelled.')).toBeInTheDocument();
   });

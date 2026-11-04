@@ -17,7 +17,7 @@ export const aboutTime = (sec: number) => `about ${sec < 90 ? `${sec} s` : `${Ma
 
 const field = 'field w-full px-2 py-1.5';
 
-export function BuildPanel({ api, project, version, verdicts, estimate, busy, shots, exported, onBuild, onCancel, onAccept, onFix, onExport }: {
+export function BuildPanel({ api, project, version, verdicts, estimate, busy, shots, exported, onBuild, onCancel, onRetry, onAccept, onFix, onExport }: {
   api: ApiClient;
   project: GenProject;
   /** The newest version, if any. */
@@ -31,6 +31,7 @@ export function BuildPanel({ api, project, version, verdicts, estimate, busy, sh
   exported: GenExport | null;
   onBuild: () => void;
   onCancel: (versionId: string) => void;
+  onRetry: (versionId: string) => void;
   onAccept: (versionId: string) => void;
   /** Ask the director to fix findings, or to change something, in a new version. */
   onFix: (versionId: string, body: GenFixBody) => void;
@@ -66,7 +67,10 @@ export function BuildPanel({ api, project, version, verdicts, estimate, busy, sh
       )}
 
       {version?.status === 'FAILED' && (
-        <p role="alert" className="text-error text-sm">The build stopped: {version.errorMessage}. The scenes already written are kept.</p>
+        <>
+          <p role="alert" className="text-error text-sm">The build stopped: {version.errorMessage}. The scenes already written are kept.</p>
+          <button className="btn" disabled={busy} onClick={() => onRetry(version.id)}>Continue from the failed step</button>
+        </>
       )}
       {version?.status === 'CANCELLED' && <p className="text-sm text-subtle">The last build was cancelled.</p>}
 
