@@ -25,10 +25,11 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
 const LINES = [{ id: "l1", text: "Bunga majemuk membuat uang tumbuh." }, { id: "l2", text: "Mulai dari sekarang." }];
 
-function rig(replies: Parameters<typeof fakeLlm>[0] = [], opts: { narration?: number; script?: string | null; config?: object; fetch?: (u: any, i?: any) => Promise<Response>; run?: any; durations?: Record<string, number> } = {}) {
+function rig(replies: Parameters<typeof fakeLlm>[0] = [], opts: { narration?: number; script?: string | null; config?: object; fetch?: (u: any, i?: any) => Promise<Response>; run?: any; durations?: Record<string, number>; every?: number } = {}) {
   const config = { ...loadConfig({}), genDir: join(tmp, "generate"), ffmpegPath: "ffmpeg", voiceEngine: "openai", voiceApiKey: "k", voiceVoices: { id: "alloy" }, whisperDevice: "cpu", ...opts.config };
   const store = new Store(openDatabase(":memory:"));
   const recipe = quickRecipe();
+  if (opts.every && !recipe.steps.some((x) => x.use === "script")) recipe.steps.push({ use: "script" } as never);
   store.saveGenProject({
     id: "p1", title: null, brief: "Jelaskan bunga majemuk", format: "9:16", targetSec: 30, language: "id", styleNotes: null, preset: null, recipeId: "quick",
     recipe: json(recipe), ideaId: null, briefFlags: null, narrationScript: opts.script === undefined ? null : opts.script, concept: null, stepIndex: 0,
@@ -40,7 +41,7 @@ function rig(replies: Parameters<typeof fakeLlm>[0] = [], opts: { narration?: nu
   const exec: ExecFn = async (_cmd, args) => {
     seen.push(args);
     const file = args.at(-1) as string;
-    return procOk(json({ format: { duration: String(opts.durations?.[file.split(/[\\/]/).pop() as string] ?? 2.5) } }));
+    return procOk(json({ format: { duration: String(opts.durations?.[file.split(/[\\/]/).pop() as string] ?? opts.every ?? 2.5) } }));
   };
   let calls = 0;
   const f = opts.fetch ?? (async () => new Response(new Uint8Array([calls++, 2, 3])));
@@ -65,9 +66,12 @@ describe("script step", () => {
     const r = rig([scriptJson()]);
     expect(await STEPS.script.run(r.ctxFor("script"))).toEqual({ status: "done", outputRef: "script" });
     expect(json(JSON.parse(r.store.getGenProject("p1")!.narrationScript!))).toBe(scriptJson());
-    // the recipe allows 160 words, but 30 s of voice holds 54 (1.8 words a second): the length wins
-    expect(body(r.requests[0]!)).toMatchObject({ spellNumbers: true, maxWords: 54, targetSec: 30, language: "id" });
+    // the recipe allows 160 words; the length only sets a target in the prompt (1.8 words a second), it rejects nothing
+    expect(body(r.requests[0]!)).toMatchObject({ spellNumbers: true, targetWords: 54, targetSec: 30, language: "id" });
+    expect(body(r.requests[0]!).task).toContain("about 54 words");
     expect(body(r.requests[0]!).task).toContain("Write every number out in words");
+    const long = rig([scriptJson([{ id: "l1", text: Array.from({ length: 60 }, () => "kata").join(" ") }])]);
+    expect(await STEPS.script.run(long.ctxFor("script"))).toMatchObject({ status: "done" });   // 60 words in a 30 s film is the voice step's to measure
   });
 
   test("numbers must be spelled out, and a second try can fix it", async () => {
@@ -108,6 +112,16 @@ describe("voice step", () => {
     expect(STEPS.voice.inputKey!(r.ctxFor("voice"))).toContain("alloy");
     await STEPS.voice.run(r.ctxFor("voice"));
     expect(r.seen.filter((a) => a.includes("format=duration:stream=sample_rate"))).toHaveLength(4);   // measured again, spoken from the cache
+  });
+
+  test("a voice that runs past the film gets the script written again once, told how long it took; still too long is an error with the numbers", async () => {
+    const fits = withScript({ every: 20 }, [scriptJson([{ id: "l1", text: "Satu kalimat saja." }])]);
+    expect(await STEPS.voice.run(fits.ctxFor("voice"))).toEqual({ status: "done", outputRef: "voice" });
+    expect(body(fits.requests[0]!).overrun).toEqual({ spokenSec: 40.2, filmSec: 30, words: 8 });
+    expect(JSON.parse(fits.store.getGenProject("p1")!.narrationScript!).lines).toHaveLength(1);
+    expect(readVoice(fits.config, "p1")!.lines).toHaveLength(1);
+    const still = withScript({ every: 20 }, [scriptJson()]);
+    await expect(STEPS.voice.run(still.ctxFor("voice"))).rejects.toThrow("The voice takes 40.2 s and the video is 30 s");
   });
 
   test("with ElevenLabs the word times come along and the voiceover counts as timed", async () => {

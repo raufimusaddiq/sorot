@@ -1195,16 +1195,23 @@ export class Director {
     project: GenProject; step: RecipeStep; settings: Record<string, unknown>; assets: GenAsset[];
     /** A factual recipe: the numbers in these lines that nothing verified states (an error to repair). */
     unsourced?: (texts: string[]) => string[];
+    /** The voice ran past the film (measured after speaking): write it again to fit. */
+    overrun?: { spokenSec: number; filmSec: number; words: number };
   }): Promise<Array<{ id: string; text: string }>> {
     const { settings, project } = input;
-    // The voice must fit the video: a recipe's maxWords is a ceiling, the length is the budget (a 60 s film once got 80 s of voice).
-    const fits = Math.max(10, Math.floor(project.targetSec * WORDS_PER_SEC));
-    const maxWords = Math.min(typeof settings.maxWords === "number" ? settings.maxWords : fits, fits);
+    // The voice must fit the video, but how many words that is depends on the voice: the length only sets a target in the
+    // prompt (a rule on a guess cost whole builds over two words), and the voice step measures the real speech afterwards.
+    // A recipe's maxWords stays a hard ceiling.
+    const ceiling = typeof settings.maxWords === "number" ? settings.maxWords : 600;
+    const target = Math.min(ceiling, Math.max(10, Math.floor(project.targetSec * WORDS_PER_SEC)));
+    const over = input.overrun;
     const spell = settings.spellNumbers === true;
     return this.ask(
       project, "script", input.step,
-      { ...this.base(project, input.assets), tone: typeof settings.tone === "string" ? settings.tone : null, maxWords, spellNumbers: spell },
-      `Write the narration for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: at most ${maxWords} words in all.${spell ? " Write every number out in words, as it is spoken." : ""}`,
+      { ...this.base(project, input.assets), tone: typeof settings.tone === "string" ? settings.tone : null, targetWords: target, ...(over ? { overrun: over } : {}), spellNumbers: spell },
+      over
+        ? `Write the narration again for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: the last one (${over.words} words) took ${over.spokenSec} s to speak and the video is ${over.filmSec} s. Keep the story and the best lines, with fewer words: about ${Math.max(10, Math.floor(over.words * (over.filmSec - 1) / over.spokenSec))} words in all.${spell ? " Write every number out in words, as it is spoken." : ""}`
+        : `Write the narration for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: about ${target} words in all (the voice has to fit ${project.targetSec} s).${spell ? " Write every number out in words, as it is spoken." : ""}`,
       (parsed) => {
         const raw = (parsed as { lines?: unknown }).lines;
         const list = Array.isArray(raw) ? raw : [];
@@ -1216,7 +1223,7 @@ export class Director {
         if (!lines.length || lines.length > 40) errors.push("write between 1 and 40 lines");
         if (new Set(lines.map((l) => l.id)).size !== lines.length) errors.push("every line needs its own id");
         const words = lines.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
-        if (words > maxWords) errors.push(`the script has ${words} words; the most allowed is ${maxWords}`);
+        if (words > ceiling) errors.push(`the script has ${words} words; the most allowed is ${ceiling}`);
         if (spell && lines.some((l) => /\d/.test(l.text))) errors.push("write numbers out in words (no digits): a voice reads them aloud");
         const unsourced = input.unsourced?.(lines.map((l) => l.text)) ?? [];
         if (unsourced.length) errors.push(`these numbers have no verified fact: ${unsourced.join(", ")}; say only numbers from the brief or the verified facts, or none`);

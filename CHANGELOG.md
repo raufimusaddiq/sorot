@@ -7,6 +7,8 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 ## [Unreleased]
 
 ### Generate: briefs to finished 2D videos
+- The narration's length is a target, not a rule that fails the run: the voice is measured after it is spoken,
+  and one that runs past the video gets the script written again, told how many seconds it took.
 - A build that failed (a gateway error, an interruption) can go on from its failed step: **Continue from the
   failed step** keeps the finished steps and shots instead of starting a new version.
 - A new mode that makes a short video from a brief, with no source footage: storylines, an approved

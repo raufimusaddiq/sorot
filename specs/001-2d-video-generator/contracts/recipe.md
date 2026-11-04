@@ -75,7 +75,7 @@ and the closing `task` field stay Sorot's, so a custom prompt can't break parsin
 |---|---|---|---|
 | `idea` | takes the next idea from the idea bank, or a named one | `cursor: true` | |
 | `facts` | builds or checks the fact list | `mode: verify \| research \| brief-only`, `sources: [<data source names>]`, `headlinesAsEvidence: false`, `maxSteps` | optional |
-| `script` | writes the narration lines | `spellNumbers`, `maxWords`, `tone` | optional |
+| `script` | writes the narration lines; the film's length is only a word target in the prompt, `maxWords` (default 160) the hard ceiling; the `voice` step measures the speech and, past the film, has the script written again once with the measured seconds (else an error with the numbers) | `spellNumbers`, `maxWords`, `tone` | optional |
 | `voice` | voices the script (engine and voice from Settings, per language) | `engine?: elevenlabs \| fish \| openai \| local` and `voice?` (overrides; examples never set them), `failClosed: true`, `speed` | |
 | `align` | word timings: the engine's timestamps if it returns them, else local Whisper on the voiceover | `source: auto \| engine \| whisper`, `model?` | |
 | `storylines` | N different films in words | `count: 1..5`, `skipUnderSec` (go straight to a plan at or under this length), `requireBold`, `pickRule` | **owner / director** |
