@@ -197,15 +197,25 @@ export function sourcedNumberFindings(plan: Plan, allowed: string[]): NewFinding
   )));
 }
 
+/** The numbers in `text` the brief's `forbiddenNumbers` flag rules out (none without the flag). */
+function forbiddenHits(text: string, flag: unknown, brief: string) {
+  if (flag === undefined || flag === false || flag === null) return [];
+  const forbidden = Array.isArray(flag) ? numbersOf(flag.filter((x): x is string => typeof x === "string").join(" . ")) : null;
+  return forbidden ? numbersOf(text).filter((n) => forbidden.some((f) => sameNumber(n, f))) : unmatchedNumbers(text, [brief]);
+}
+
+/** The same rule for the plan and script steps, so a number the brief rules out goes back to the director before anything is built. */
+export const forbiddenIn = (texts: string[], flag: unknown, brief: string): string[] => [...new Set(forbiddenHits(texts.join(" . "), flag, brief).map((n) => n.raw))];
+
 /**
  * `forbiddenNumbers`, whenever the brief has the flag: `true` means no number but the brief's own
  * (for example "no market data"); a list names numbers that must not appear at all.
  */
 export function forbiddenNumberFindings(plan: Plan, flag: unknown, brief: string): NewFinding[] {
   if (flag === undefined || flag === false || flag === null) return [];
-  const forbidden = Array.isArray(flag) ? numbersOf(flag.filter((x): x is string => typeof x === "string").join(" . ")) : null;
+  const forbidden = Array.isArray(flag);
   const found = shownTexts(plan).flatMap(({ shotId, text }) => {
-    const hits = forbidden ? numbersOf(text).filter((n) => forbidden.some((f) => sameNumber(n, f))) : unmatchedNumbers(text, [brief]);
+    const hits = forbiddenHits(text, flag, brief);
     return hits.map((n) => must(
       "number_forbidden", forbidden ? `Shot ${shotId} shows "${n.raw}", a number the brief says must not appear.` : `Shot ${shotId} shows "${n.raw}": the brief asks for no numbers beyond its own.`,
       "Remove the number.", { shotId },

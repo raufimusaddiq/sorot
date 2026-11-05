@@ -630,7 +630,7 @@ rate, and the build takes at most twice as long.
   the run. After the voice is made, speech more than 0.5 s longer than the video MUST send the
   script back to the director, told each line's measured seconds, up to twice; still too long, the
   step MUST fail with the measured and the allowed seconds. The rewritten script is what later
-  steps are built from.
+  steps are built from. A voice still up to 10% past the film after both rewrites is sped up as recorded (`atempo`), not refused; further over fails the step.
 - **FR-055**: Scene calls MUST carry two worked examples in different styles (one built from kit
   parts, one drawn by hand), each passing Sorot's scene rules, so the director learns the craft they
   share (text clear of the drawing, words whole on the first frame, one hero move) rather than

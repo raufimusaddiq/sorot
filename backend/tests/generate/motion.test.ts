@@ -21,6 +21,10 @@ describe("motion measure", () => {
     ["a shot that ends still (it never moves again)", [...moving(10), ...moving(30, 0)], plan(4), []],
     ["a hold shot", [...moving(10), ...moving(10, 0), ...moving(20)], plan([4, true]), []],
     ["a mostly still shot", [...moving(5, 0), 0.3, ...moving(9, 0), 0.3, ...moving(24, 0)], plan(4), []],
+    // what the bench's drafts flagged that wasn't a jump (2026-11-05)
+    ["a flash over the whole frame", [...moving(15), 240, 230, ...moving(23)], plan(4), []],
+    ["a move starting from rest (as a draft measured it: 2.78, 0, 2.77, 2.76 ...)", [...moving(15, 0), 2.8, 0, ...moving(9, 2.8), ...moving(15, 0)], plan(4), []],
+    ["a tiny change on a still frame (a counter ticking)", [...moving(15, 0), 0.6, 0, 0.6, ...moving(21, 0)], plan(4), []],
   ])("%s", (_name, diffs, p, found) => {
     expect(codes(diffs, p) as unknown[]).toEqual(found);
   });

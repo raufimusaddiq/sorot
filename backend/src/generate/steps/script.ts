@@ -1,4 +1,5 @@
 import { requiresSourcedNumbers, unsourcedIn } from "../facts";
+import { forbiddenIn } from "../technical";
 import type { RecipeStep } from "../recipe";
 import type { RunFn, StepContext } from "./types";
 
@@ -9,9 +10,11 @@ export interface Overrun { spokenSec: number; filmSec: number; lines: Array<{ id
 export async function writeScript(ctx: StepContext, step: RecipeStep, settings: StepContext["settings"], overrun?: Overrun) {
   const { project } = ctx;
   const factual = requiresSourcedNumbers(ctx.recipe);
+  const flag = project.briefFlags ? (JSON.parse(project.briefFlags) as Record<string, unknown>).forbiddenNumbers : undefined;
   const unsourced = (texts: string[]) => unsourcedIn(texts, project.brief, ctx.store.genFactsForProject(project.id));
-  // A factual recipe: an unsourced number goes back to the director to repair first.
-  const lines = await ctx.director.script({ project, step, settings, assets: ctx.store.genAssetsForProject(project.id), ...(factual ? { unsourced } : {}), ...(overrun ? { overrun } : {}) });
+  // A factual recipe, or a brief that rules numbers out: such a number goes back to the director to repair first.
+  const check = (texts: string[]) => [...new Set([...(factual ? unsourced(texts) : []), ...forbiddenIn(texts, flag, project.brief)])];
+  const lines = await ctx.director.script({ project, step, settings, assets: ctx.store.genAssetsForProject(project.id), ...(factual || flag ? { unsourced: check } : {}), ...(overrun ? { overrun } : {}) });
   if (factual) {
     const bad = unsourced(lines.map((l) => l.text));
     if (bad.length) throw new Error(`The script says numbers without a verified fact: ${bad.join(", ")}. Add them as facts with a source and verify them, or take them out.`);

@@ -1160,6 +1160,23 @@ alongside). A 30 s first attempt failed closed at the voice: 32.1 s of speech af
 - The look step sent all of a 40 s film's frames in one request and the gateway refused it (HTTP 413):
   three shots a call now (T188).
 
+### The bench's TECHNICAL failures (2026-11-05, set A so far)
+
+11 of 13 GLM builds failed TECHNICAL. Must-fix findings: `motion_jump` 18, `number_forbidden` 9,
+`motion_stall` 8 (pauses of 0.5 to 1.3 s).
+
+- **`motion_jump` mostly wasn't a jump.** Frames around each: a designed flash (opacity 0 to 0.8 in 0.12 s)
+  changes 95% of the frame (243/255); a counter ticking changes 0.2% of it every other frame against a still
+  frame (ratio huge because the neighbours are 0); a move starting from rest (2.78, 0, 2.77, 2.76...). The
+  rule now leaves out whole-frame changes (≥ 128/255), needs at least 2/255 of the frame, and skips a spike
+  the next frames keep up. Replayed on the 13 drafts: 23 jumps became 2; both left are real pops (a ball
+  stepping in size), and the dropped ones were checked frame by frame (one a solid line turning dotted in one
+  frame, small enough to let through). The planted jump of spike S7 is still caught.
+- **`number_forbidden` came too late.** With `market_data: false` the plan and script were never held to "no
+  numbers beyond the brief's": the director's plan showed "+Rp 87rb" and only the verdict at the end said so.
+  The plan and script steps now send such a number back for repair, as for sourced numbers.
+- **`motion_stall`** is left as the owner set it (8 still frames between moves; must-fix at twice that).
+
 ### S8, a subject too dark to see (2026-11-05, T183)
 
 GLM build `a54d3888` (the Wi-Fi brief) drew the router, a wall and two houses in navy (about `rgb(25,37,74)`)

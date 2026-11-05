@@ -5,6 +5,7 @@ import { planContext } from "../planContext";
 import { recipeMaxLevel } from "../capabilities";
 import { parseRecipe } from "../recipe";
 import { requiresSourcedNumbers, unsourcedIn } from "../facts";
+import { forbiddenIn } from "../technical";
 import type { Concept } from "../novelty";
 import { readVoice, snapToVoice } from "../voice";
 import { chosenStoryline } from "./storylines";
@@ -35,7 +36,10 @@ export const run: RunFn = async (ctx) => {
     ...(ctx.capabilities && ctx.kit ? { capabilities: ctx.capabilities(recipeMaxLevel(recipe)), kit: ctx.kit.manifests() } : {}),
   });
   // A factual recipe: an unsourced number goes back to the director to repair, rather than failing the step.
-  if (requiresSourcedNumbers(ctx.recipe)) planCtx.unsourced = (texts) => unsourcedIn(texts, project.brief, store.genFactsForProject(project.id));
+  // A brief that rules numbers out (no market data) is held to it here too, not only in the verdict at the end.
+  const flag = project.briefFlags ? (JSON.parse(project.briefFlags) as Record<string, unknown>).forbiddenNumbers : undefined;
+  const sourced = requiresSourcedNumbers(ctx.recipe);
+  if (sourced || flag) planCtx.unsourced = (texts) => [...new Set([...(sourced ? unsourcedIn(texts, project.brief, store.genFactsForProject(project.id)) : []), ...forbiddenIn(texts, flag, project.brief)])];
   const voice = project.narration === 1 && before(ctx, "voice") ? readVoice(ctx.config, project.id) : null;
   const generated = await ctx.director.plan({
     project, step: ctx.step, settings: ctx.settings, assets, storyline: chosenStoryline(project), planCtx, catalog,

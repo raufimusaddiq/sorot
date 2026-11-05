@@ -29,7 +29,9 @@ export interface MotionSettings {
  * its neighbours; the smooth renders (fast expo.out 2D moves, a Three.js orbit, a slow constant move)
  * stayed at or under 2×. A jump or stall twice the threshold is a must-fix.
  */
-export const MOTION_DEFAULTS: MotionSettings = { jumpRatio: 6, minJump: 0.5, stallFrames: 8, still: 0.03 };
+export const MOTION_DEFAULTS: MotionSettings = { jumpRatio: 6, minJump: 2, stallFrames: 8, still: 0.03 };
+/** A change over half the frame's pixels (of 255) is the whole picture changing (a flash, a fade): the probe's hard_swap covers swaps, so it isn't an object's jump. */
+const WHOLE_FRAME = 128;
 const NEIGHBOURS = 4;
 const SEAM_FRAMES = 2;
 
@@ -76,9 +78,12 @@ export function motionFindings(diffs: number[], plan: Plan, fps: number, setting
       const nb: number[] = [];
       for (let j = Math.max(from, i - NEIGHBOURS); j <= Math.min(to - 1, i + NEIGHBOURS); j++) if (j !== i) nb.push(diffs[j]!);
       const ratio = diffs[i]! / Math.max(median(nb), s.still);
-      if (diffs[i]! >= s.minJump && ratio >= s.jumpRatio) {
+      if (diffs[i]! >= s.minJump && diffs[i]! < WHOLE_FRAME && ratio >= s.jumpRatio) {
         let end = i;
         while (end + 1 < to && diffs[end + 1]! >= s.minJump && diffs[end + 1]! / Math.max(median(nb), s.still) >= s.jumpRatio) end++;
+        // a spike the following frames keep up is a move starting from rest, not a jump (a jump comes back down)
+        const after = diffs.slice(end + 1, Math.min(to, end + 4));
+        if (after.length && median(after) >= diffs[end]! / 2) { i = end + 1; continue; }
         found.push({
           severity: ratio >= s.jumpRatio * 2 ? "must-fix" : "should-fix", shotId: shot.id, code: "motion_jump", fromSec: at(i), toSec: at(end), state: "open", rule: "motion",
           description: `${shot.id} jumps at ${at(i)} s: one frame changes ${Math.round(ratio)}× more than the frames around it.`,
