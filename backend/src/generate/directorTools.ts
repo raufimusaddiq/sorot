@@ -54,6 +54,9 @@ const DEFAULT_MATCHES = 5;
 export const BLOCK_SOURCE_CHARS = 24 * 1024;
 
 const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
+const FILLER = new Set(["an", "the", "of", "in", "on", "at", "to", "and", "or", "for", "with", "from", "into", "by", "is"]);
+/** Whole words, and a shared stem of 4 letters or more ("walk" finds "walking"): a substring would let "of" find "proof". */
+const matches = (w: string, field: string[]) => field.some((f) => f === w || (Math.min(f.length, w.length) >= 4 && (f.startsWith(w) || w.startsWith(f))));
 
 /**
  * The registry items that fit a request, best first. Words and tags only: 448 short descriptions
@@ -64,19 +67,16 @@ export function searchBlocks(catalog: CatalogEntry[], args: ToolArgs): ToolOutco
   const query = typeof args.query === "string" ? args.query.slice(0, MAX_QUERY) : "";
   const type = args.type === "block" || args.type === "component" ? args.type : null;
   const limit = Math.max(1, Math.min(MAX_MATCHES, Number.isInteger(args.limit) ? (args.limit as number) : DEFAULT_MATCHES));
-  const wanted = [...new Set(words(query))];
+  const wanted = [...new Set(words(query).filter((w) => !FILLER.has(w)))];
   if (!wanted.length) return { result: { error: "query: say what you are looking for in a few words" } };
   const scored = catalog.filter((c) => !type || c.type === type).map((c) => {
-    const name = c.name.toLowerCase();
-    const tags = (c.tags ?? []).map((t) => t.toLowerCase());
-    const title = (c.title ?? "").toLowerCase();
-    const about = (c.description ?? "").toLowerCase();
+    const name = words(c.name), tags = (c.tags ?? []).flatMap(words), title = words(c.title ?? ""), about = words(c.description ?? "");
     let score = 0;
     for (const w of wanted) {
-      if (name.includes(w)) score += 3;
-      if (tags.some((t) => t === w || t.includes(w))) score += 3;
-      if (title.includes(w)) score += 2;
-      if (about.includes(w)) score += 1;
+      if (matches(w, name)) score += 3;
+      if (matches(w, tags)) score += 3;
+      if (matches(w, title)) score += 2;
+      if (matches(w, about)) score += 1;
     }
     return { c, score };
   }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name));

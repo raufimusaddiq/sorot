@@ -1033,8 +1033,8 @@ Evidence: three real builds on 2026-11-02 (Kimi isometric, GLM isometric, GLM st
 - **Alternatives**: summarising the turn with an extra LLM call (cost and latency for a note code
   can write); a sliding window over the whole conversation (moves the prefix on every turn, so
   nothing is cached); never compacting (frames from earlier shots would fill the window).
-- **Sizes**: estimated in code at 3.5 characters a token and a placeholder 1,500 tokens an image,
-  corrected from the provider's usage numbers in S8.
+- **Sizes**: estimated in code at 3.5 characters a token and 2,700 tokens an image (measured in S8,
+  below; the placeholder was 1,500).
 
 ## R36. Removing the vision settings is a contract break
 
@@ -1082,7 +1082,35 @@ test install with the tool loop on (`author.toolSteps` default 8, `looks` defaul
 - **Open**: image cost in tokens (needs the provider's usage numbers), registry blocks adapted to
   9:16 (nothing tried them), a stronger model's use of `search_blocks` and `use_block`, the 20-brief set.
 
-### S8, a subject too dark to see (2026-11-05, T183, not built)
+### S8, part 1 finished (2026-11-05, T156)
+
+- **What a frame costs** (one 1080×1920 PNG, the provider's `usage.prompt_tokens`, calls with 0 to 3 frames):
+
+  | Model | 0 frames | 1 | 2 | 3 | Per frame |
+  |---|---|---|---|---|---|
+  | `glm-5-3-flash` | 19 | 2,712 | 5,405 | 8,098 | 2,693 |
+  | `kimi-k3-1-pro` | 93 | 2,794 | 5,495 | 8,196 | 2,701 (the repeat call read 2,782 then 5,483 from its cache) |
+  | `qwen3-8-omni-flash:free` | 270 | 2,100 | 4,145 | 6,190 | 1,830 to 2,045 |
+
+  `IMAGE_TOKENS` in `compaction.ts` is now 2,700 (was a placeholder 1,500), so compaction counted frames at
+  about half their cost. A look of 3 frames is about 8,000 tokens of input.
+- **Ten searches** on the 448-item catalog (`hyperframes catalog --json`). Found by substring at first: "of"
+  matched "proof" (a map of Java → testimonial cards) and "walking" missed "walk". Now whole words, a shared
+  stem of 4 letters or more, and English filler words dropped (`searchBlocks`): a person walking →
+  `lottie-character-walk`; a bar chart → `bar-chart-race`, `animated-bar-chart`; a map of Java → `us-map`,
+  `spain-map` (no Indonesian map in the registry); a phone notification → five notification blocks; water
+  waves → `sine-wave`, `water`, `ripple-waves`; a house → nothing; money coins → `apple-money-count`; a hand
+  pouring, a rocket launch, a clock ticking → loosely related blocks only. Words and tags are enough to find
+  what exists; what the registry lacks (people, houses, Indonesia) no search finds.
+- **`product-turntable` adapted to 9:16**: 1920×1080, loads GSAP, a font and Three.js r0.184 (with
+  `RoomEnvironment` and `GLTFLoader`) from a CDN. Five mechanical changes made it render here: GSAP and the
+  vendored Three r159 from `assets/` (a global, not an ES module), the font dropped, `RoomEnvironment`
+  replaced by a hemisphere fill, `GLTFLoader` left out (only a user's own model needs it), and the sizes
+  swapped to 1080×1920. The can turns on its plinth across the three snapshots. A strong model can do this
+  from `use_block`'s source and its remote-load warning; `lottie-character-walk` needs a Lottie player Sorot
+  doesn't ship (above).
+
+### S8, a subject too dark to see (2026-11-05, T183)
 
 GLM build `a54d3888` (the Wi-Fi brief) drew the router, a wall and two houses in navy (about `rgb(25,37,74)`)
 on a near-black ground (`rgb(9,13,35)`). Lint, check, the probe, the motion measure and the look step all

@@ -7,8 +7,8 @@ import type { ChatInput } from "../llm";
 
 /** Characters a token takes, on average (an estimate: the provider's own count is the truth). */
 export const CHARS_PER_TOKEN = 3.5;
-/** What a picture costs in tokens, to be corrected from a provider's usage numbers (spike S8). */
-export const IMAGE_TOKENS = 1500;
+/** What a 1080x1920 picture costs in tokens: 2,693 (GLM) and 2,701 (Kimi) measured from the provider's usage numbers (spike S8), 1,915 to 2,045 (Qwen). */
+export const IMAGE_TOKENS = 2700;
 
 type Part = { type: string; text?: string };
 

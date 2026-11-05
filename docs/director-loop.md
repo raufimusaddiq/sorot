@@ -129,8 +129,8 @@ the conversation (the current turn), so everything before it stays an exact pref
 3. **Session (when the session passes `GEN_CONTEXT_TOKENS`, default 600000).** As today: restart from
    the opening plus the latest version of every shot.
 
-Sizes are estimated in code (`compaction.ts`): text at 3.5 characters a token, an image at a fixed
-1,500 tokens (to be measured against the provider's usage numbers and corrected). A turn that fails
+Sizes are estimated in code (`compaction.ts`): text at 3.5 characters a token, an image at 2,700 tokens
+(measured from the provider's usage numbers for a 1080×1920 frame: 2,693 on GLM, 2,701 on Kimi). A turn that fails
 (its answer never validates) is cut from the conversation altogether, so what came before stays an
 exact prefix. `looked.json` in the version's project records, per shot, the hash of the file that was
 looked at; the look step does nothing when every scene is still the one that was looked at.

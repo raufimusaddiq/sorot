@@ -517,7 +517,7 @@ draft before it submits, within limits, and every turn still ends in a submit.
 turn's requests show the tool results in order, the scene is accepted, and a model that never
 submits is forced to on step `toolSteps`.
 
-- [ ] T156 Spike S8, part 1 (before T157 and T166): measure the provider's token cost of a call with 1, 2 and 3 frames (1080×1920 PNG) from its usage numbers; run ten queries ("a person walking", "a bar chart", "a map of Java", "a house", "a hand pouring", …) through word and tag search on `hyperframes catalog --json`; install `lottie-character-walk` and `product-turntable` into a 9:16 project and render them adapted. Record in `specs/001-2d-video-generator/research.md` under "Spike S8"
+- [X] T156 Spike S8, part 1 (before T157 and T166): measure the provider's token cost of a call with 1, 2 and 3 frames (1080×1920 PNG) from its usage numbers; run ten queries ("a person walking", "a bar chart", "a map of Java", "a house", "a hand pouring", …) through word and tag search on `hyperframes catalog --json`; install `lottie-character-walk` and `product-turntable` into a 9:16 project and render them adapted. Record in `specs/001-2d-video-generator/research.md` under "Spike S8" (done 2026-11-05: 2,700 tokens a frame, search fixed to whole words and stems, `product-turntable` rendered adapted)
 - [X] T157 [P] [US10] `searchBlocks(catalog, { query, type?, limit? })` in new `backend/src/generate/directorTools.ts`: `query` "≤ 120 chars", `type` "`block` | `component`", `limit` "1..8" (default 5); scores words and tags of name, title, description and tags; returns `{matches: [{name, type, title, description, tags, width, height, duration}]}`; pure, table tests in new `backend/tests/generate/directorTools.test.ts`
 - [X] T158 [US10] `useBlock(ctx, { name })` in `directorTools.ts`: refused with `{error}` when the recipe's plan step has `blocks: false` or the name isn't in the catalog; otherwise `hyperframes.add(dir, [name])` into the version's project and returns `{name, files, source, cut}` with `source` "≤ 24 KB" (cut with a note, `cut: true`); tests with `fakeHyperframes` in `directorTools.test.ts`
 - [X] T159 [US10] `checkDraft(ctx, { html }, shot)` in `directorTools.ts`: writes the draft to `compositions/shot-NN.html`, returns `{findings: [{code, severity, message, hint}]}` from `checkScene(html, shot, index, sceneRules(ctx, level))` plus `hyperframes lint` filtered to that file; the author step puts the last accepted file back when a turn ends without an accepted submit; tests in `directorTools.test.ts`
@@ -547,7 +547,7 @@ current turn.
 the latest frames and one copy of the source; after the submit the turn is one note; every request
 before the turn is byte-for-byte the same.
 
-- [X] T166 [P] [US10] New `backend/src/generate/compaction.ts` (pure): `estimateTokens(messages)` (text at 3.5 characters a token, an image at 1,500 tokens, corrected from T156); `endTurn(messages, turnStart, note)` replaces the turn's tool exchanges with `user: "tools used: …"` and keeps the task and the accepted `submit_*` call and result; `stubTurn(messages, turnStart, budget)` turns older tool results into `{ "stub": "<kind> #n removed: see #m" }`, keeping the latest look frames, the latest check and one block source. Table tests in new `backend/tests/generate/compaction.test.ts`, including "messages before `turnStart` unchanged"
+- [X] T166 [P] [US10] New `backend/src/generate/compaction.ts` (pure): `estimateTokens(messages)` (text at 3.5 characters a token, an image at 2,700 tokens, measured in T156); `endTurn(messages, turnStart, note)` replaces the turn's tool exchanges with `user: "tools used: …"` and keeps the task and the accepted `submit_*` call and result; `stubTurn(messages, turnStart, budget)` turns older tool results into `{ "stub": "<kind> #n removed: see #m" }`, keeping the latest look frames, the latest check and one block source. Table tests in new `backend/tests/generate/compaction.test.ts`, including "messages before `turnStart` unchanged"
 - [X] T167 [US10] Wire compaction into the session turn in `director.ts`: `endTurn` after an accepted submit (the note lists each tool with its count and key argument), `stubTurn` before each step when the turn passes `GEN_TURN_TOKENS`; `trim` uses `estimateTokens`; tests in `director.test.ts`
 - [X] T168 [P] [US10] `GEN_TURN_TOKENS` (default 60000) in `backend/src/config.ts`, `Llm.genTurnTokens` in `backend/src/llm.ts`, Settings `llm.turnTokens` ("whole number 5000 to 500000") in `backend/src/settings.ts`, and its field in `frontend/src/components/ConnectionsPanel.tsx`; tests in `vision.test.ts` and the frontend jest test
 
@@ -577,7 +577,7 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 ### Part 4 dependencies
 
 - Phase 19 is done.
-- T156 (spike part 1): T157 and T166 shipped without it (T166 uses a provisional 1,500 tokens an image); T156 now corrects that estimate.
+- T156 (spike part 1): T157 and T166 shipped without it (T166 used a provisional 1,500 tokens an image); T156 measured 2,700 and corrected it.
 - Phase 20: T157, T158, T159 (handlers) → T160 (loop) → T161, T162.
 - Phase 21 needs T160 (the loop) and T163 before T164; T165 after T164.
 - Phase 22: T166 any time; T167 after T160 and T164; T168 alongside.

@@ -23,6 +23,8 @@ describe("search_blocks", () => {
     ["only components", { query: "chart bars", type: "component" }, ["bar-chart-race"]],
     ["the type filter drops other kinds", { query: "chart", type: "block" }, []],
     ["nothing fits", { query: "zebra" }, []],
+    ["a stem: walking finds walk", { query: "a person walking" }, ["lottie-character-walk"]],
+    ["a word inside another word doesn't count (art in chart)", { query: "art" }, []],
     ["the limit keeps the best", { query: "character walk chart plinth", limit: 1 }, ["lottie-character-walk"]],
     ["best first: the name and tags outrank the description", { query: "3d turntable" }, ["product-turntable"]],
   ])("%s", (_name, args, names) => {
