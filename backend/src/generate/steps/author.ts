@@ -182,6 +182,7 @@ export function shotWriter(ctx: StepContext, dir: string, plan: Plan, blocks: Re
     let issues = checkScene(html, shot, i, rules);
     let repaired = false;
     for (let n = 0; issues.length && n < rounds; n++) {
+      ctx.signal?.throwIfAborted();
       html = (await ctx.director.repair({ ...input, html, findings: issues })).html;
       issues = checkScene(html, shot, i, rules);
       repaired = true;
@@ -255,6 +256,7 @@ export const run: RunFn = async (ctx) => {
   const build = shotWriter(ctx, dir, plan, blocks, levels);
 
   const writeShot = async ({ shot, i }: { shot: Plan["shots"][number]; i: number }): Promise<NewFinding[]> => {
+    ctx.signal?.throwIfAborted();   // a cancelled build writes no further shot
     const planned = levels[shot.id]?.planned ?? plannedLevel(ctx, shot);
     let level = levelOfShot(ctx, plan, i, levels);
     let html = readScene(dir, i);

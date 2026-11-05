@@ -7,6 +7,9 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 ## [Unreleased]
 
 ### Generate: briefs to finished 2D videos
+- Cancelling a build while the director is writing now stops it: the shots not yet asked for are never written,
+  and the version ends CANCELLED before the next step. (It used to run on to the end of the author step, because
+  only HyperFrames calls saw the cancel. The model call already in flight still finishes.)
 - The look step judges a shot from three pictures of it (early, mid-move, settled) instead of one frame 0.3 s in,
   and the model answers once per shot: things still arriving no longer count as "a stranger can't tell what this
   is", and a hero move that happens later is no longer "hidden". The `beatOffsetSec` setting is gone.

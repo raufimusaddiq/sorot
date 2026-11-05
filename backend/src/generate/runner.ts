@@ -185,6 +185,7 @@ export class Runner {
 
     try {
       for (const [n, step] of steps.entries()) {
+        signal?.throwIfAborted();   // a cancel lands between steps even when the last one was a model call, which can't be interrupted
         const id = stepId(step);
         const ctx = this.context(this.mustProject(project.id), this.mustVersion(versionId), recipe, step, signal);
         const key = this.inputHash(prev, ctx);

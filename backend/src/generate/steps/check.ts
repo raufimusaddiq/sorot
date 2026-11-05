@@ -169,6 +169,7 @@ export const run: RunFn = async (ctx) => {
 
   let found: Found[] = [];
   for (let round = 0; ; round++) {
+    ctx.signal?.throwIfAborted();
     found = grouped(await collect(ctx, dir, plan, starts, durations));
     // the plan's own rules count too: a scene that lost its text is repaired with the lint findings
     const planLock = plan.shots.flatMap((shot, i) => checkScene(readScene(dir, i) ?? "", shot, i, sceneRules(ctx, levelOfShot(ctx, plan, i))).map((c): Found => ({ shot: i, code: c.code, severity: "error", message: c.message, hint: c.hint })));

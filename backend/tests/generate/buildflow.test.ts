@@ -244,6 +244,28 @@ describe("cancel, failure and restart", () => {
     expect(existsSync(`${env.config.genDir}/${id}/v1/compositions/shot-01.html`)).toBe(true);
   });
 
+  test("a cancel that lands during the author step's model calls (which can't be interrupted) stops the shots still to be written and ends the version before the next step", async () => {
+    let project = "";
+    // the first scene reply cancels the build, as the owner would while the director is writing
+    const cancelling = () => { gen().cancelVersion(store().genVersionsForProject(project)[0]!.id); return SCENES[0]!; };
+    const made = await approved({ replies: [cancelling, SCENES[1]!, SCENES[2]!, JUDGE] });
+    project = made.id;
+    // one shot at a time, so the shots after the first have not been asked for yet when the cancel lands
+    const recipe = JSON.parse(store().getGenProject(project)!.recipe);
+    for (const step of recipe.steps) if (step.use === "author") step.with = { ...(step.with ?? {}), concurrency: 1 };
+    store().updateGenProject(project, { recipe: JSON.stringify(recipe) });
+    let renders = 0;
+    const fallback = env.execHandler.fn;
+    env.execHandler.fn = (cmd, args, signal) => { if (cmd === env.config.nodePath && args[1] === "render") renders++; return fallback(cmd, args, signal); };
+    const asked = () => made.llm.requests.filter((r) => JSON.stringify(r).includes('\\"request\\":\\"scene\\"')).length;
+    const v = (await env.json("POST", `${base}/projects/${project}/versions`)).body.data.version.id as string;
+    await gen().whenIdle();
+    expect(store().getGenVersion(v)!.status).toBe("CANCELLED");
+    expect(asked()).toBe(1);                                   // shots 2 and 3 were never asked for
+    expect(renders).toBe(0);
+    expect(store().getGenProject(project)!.status).toBe("WAITING");
+  });
+
   test("a failing step fails the version with the reason, keeps its work, and a new build can follow", async () => {
     const { id } = await approved({ replies: [SCENES[0]!, new Error("quota exceeded")] });
     const v1 = (await env.json("POST", `${base}/projects/${id}/versions`)).body.data.version.id as string;

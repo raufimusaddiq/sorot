@@ -30,6 +30,7 @@ export const run: RunFn = async (ctx) => {
 
   let found: NewFinding[] = [];
   for (let round = 0; ; round++) {
+    ctx.signal?.throwIfAborted();
     const answer = await ctx.director.look({ project: ctx.project, step: ctx.step, expected: expectations(plan, moments[0]?.length ?? 1), audit: audit ? defaults : [], images: await framesAt(ctx.hyperframes, dir, moments.flat(), ctx.signal) });
     found = lookFindings(answer, plan, times, audit);
     ctx.progress(Math.min(95, ((round + 1) / (rounds + 1)) * 100));
