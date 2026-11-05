@@ -589,7 +589,7 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 - [X] T190 [US1] Plan mistakes a fast model makes are set right in code, with a note on the plan: a total within 25% of the target is scaled to it (not for numeric plans, whose frames come from the lengths); a kit part listed as a registry block is dropped from `blocks`; a registry block named as a kit part moves to `blocks` (`planSchema`, `planContext.kitParts`). Found in the 20-brief bench (A-12 to A-14 failed their plans on exactly these). Test in `backend/tests/generate/planSchema.test.ts`
 
 - [X] T191 [US10] Toward SC-021 above 90%: the director keeps its look frames at 360×640 (about 300 tokens each instead of 2,700; the stranger still reads the full frames), and `look` and `check` without html use the turn's latest draft (the one just submitted, looked at or checked), so the html isn't sent again (`steps/build.ts` `shrinkFrames`, `directorTools` `shrink`, `director.ts` `TurnLoop.draft`). Tests in `backend/tests/generate/{director,directorTools,look}.test.ts`
-- [ ] T192 Measure SC-021 after T191 on GLM builds (the story brief and bench briefs) and record it in `research.md` (the story brief: 90.8%, 2026-11-05; the bench briefs to come)
+- [X] T192 Measure SC-021 after T191 on GLM builds (the story brief and bench briefs) and record it in `research.md` (2026-11-05: the story brief 90.8%; 16 bench builds 89.5%, per build 83 to 93%)
 
 - [X] T193 [US10] The look tool runs the stranger's read and the draft's probe and motion render together (`lookAtDraft`), toward SC-023
 - [X] T194 [US6] A voice still up to 10% past the film after both rewrites is sped up as recorded (ffmpeg `atempo`, every engine; lengths and word times scaled) instead of failing the run; the step says so (`voice, sped up 1.03× to fit`). A 30 s story failed at 32.1 s. Test in `backend/tests/generate/narration.test.ts` (FR-054)
@@ -597,6 +597,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 - [X] T195 [US2] The motion measure's jump rule leaves out whole-frame changes (a flash, a fade: ≥ 128/255 of the frame), needs at least 2/255 of the frame, and skips a spike the next frames keep up (a move starting): the bench's 23 jumps were 2 real ones. A brief with no numbers holds the plan and script to it (`forbiddenIn` in `technical.ts`, used by `steps/plan.ts`, `steps/script.ts`). Tests in `backend/tests/generate/motion.test.ts`, `facts.test.ts`
 
 - [X] T196 [US1] A brief with no numbers rules out figures, not counting words: a spelled-out number under 10 that isn't a percentage ("satu kunjungan") passes; a plan's effect value out of its range is brought into it (depthLayers 6 → 5, 2.5 → 3) instead of failing the plan. Two bench builds (A-19, A-20) had failed on exactly these after T195. Tests in `backend/tests/generate/{planSchema,technical,director}.test.ts`
+
+- [X] T197 [US7] A director gate decision without a reason is asked once more, then kept, logged as "(the director gave no reason)" (`director.gate`, `NO_REASON`): 10 of 19 small-model bench runs failed only on this. Test in `backend/tests/generate/director.test.ts`
 
 ### Part 4 dependencies
 

@@ -1187,6 +1187,29 @@ rest after; A-12 to A-15, A-19 and A-20 were run again after a fix.
 - One look call of the 60 failed (GLM didn't call `submit_look`); its shots were looked at again in the
   next call.
 
+### The 20-brief bench, set B (small model at kit) and C, and SC-021 across builds (2026-11-05, T150 in part, T192)
+
+Set B: `qwen3-8-omni-flash:free` with the recipe pinned to `kit` (`bench-kit`). 19 of the 20 briefs ran
+(B-02's rerun didn't, see below).
+
+| Set B | |
+|---|---|
+| Built | 5 of 19; all 5 TECHNICAL REVIEW or better but one (4 accepted) |
+| Failed before building | 14: the gate decision without its `reason` 10, storylines an empty list 1, no `submit_plan` 1, the old "satu" rule (T196) 1, the gateway reset (`ECONNRESET`) 1 |
+| Median build | 541 s (kit level) |
+| Input served from cache | 91.3% |
+
+- **SC-015 not met as run** (80% TECHNICAL PASS or REVIEW at kit): 4 of 19. But 10 of the 14 failures were
+  one thing Sorot can take: a decision given without a reason, asked once more and still without. The gate
+  now asks once and then keeps the decision, logged as "(the director gave no reason)" (T197). With that, the
+  builds that ran point to SC-015 being within reach for a small model at kit; to be run again.
+- **Set C** (`kimi-k3-1-pro`, the highest level) built C-01 only: the bench ran inside a tracked background task
+  (it keeps the container from being reclaimed, which had killed the bench three times) whose limit is 2 hours,
+  and it stopped there. SC-018 (strong model vs kit) is not measured.
+- **SC-021 across builds** after T191: 89.5% over the 16 builds that ran on it (per build 83 to 93%, median
+  about 90%). The story brief alone was 90.8%. Just under "above 90%" across the set; the misses left are each
+  build's first request (the opening) and the turn's own new text.
+
 ### The bench's TECHNICAL failures (2026-11-05, set A so far)
 
 11 of 13 GLM builds failed TECHNICAL. Must-fix findings: `motion_jump` 18, `number_forbidden` 9,

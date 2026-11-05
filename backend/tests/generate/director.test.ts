@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
 import { LOOK_FIRST, TOOL_DEFS } from "../../src/generate/directorTools";
 import { estimateTokens } from "../../src/generate/compaction";
-import { Director, DirectorError, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
+import { Director, DirectorError, NO_REASON, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { validatePlan, type Plan, type PlanContext } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
@@ -297,12 +297,14 @@ describe("director: gate", () => {
     await expect(ask(r, "storylines")).rejects.toThrow("decision must be");
   });
 
-  test("plan: approve or reject; a reason is required", async () => {
+  test("plan: approve or reject; a reason is asked for once", async () => {
     expect(await ask(rig([json({ decision: "approve", reason: "siap" })]), "plan")).toEqual({ decision: "approve", reason: "siap" });
     expect((await ask(rig([json({ decision: "reject", reason: "terlalu panjang" })]), "plan")).decision).toBe("reject");
     const r = rig([json({ decision: "approve" }), json({ decision: "maybe", reason: "x" })]);
     await expect(ask(r, "plan")).rejects.toThrow('decision must be "approve" or "reject"');
     expect(JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems[0]).toContain("reason");
+    // asked once for its reason, a decision without one still stands, and the log says so
+    expect(await ask(rig([json({ decision: "approve" }), json({ decision: "approve" })]), "plan")).toEqual({ decision: "approve", reason: NO_REASON });
   });
 });
 

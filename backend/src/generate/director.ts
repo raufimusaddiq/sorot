@@ -51,6 +51,8 @@ const malformed = (answer: string): string => {
 };
 
 const MAX_REASON = 240;
+/** What the log says for a gate decision the director gave no reason for, after being asked once. */
+export const NO_REASON = "(the director gave no reason)";
 const clip = (s: unknown, max: number) => (typeof s === "string" ? s.trim().slice(0, max) : "");
 
 const str = (description: string) => ({ type: "string", description });
@@ -1336,6 +1338,7 @@ export class Director {
     project: GenProject; step: RecipeStep; kind: "storylines" | "plan"; output: unknown; rule?: string;
   }): Promise<GateDecision> {
     const count = input.kind === "storylines" ? (input.output as Storyline[]).length : 0;
+    let askedWhy = false;
     return this.ask<GateDecision>(
       input.project, "gate", input.step,
       { stepOutput: input.output, kind: input.kind, brief: input.project.brief, rule: input.rule ?? null },
@@ -1344,8 +1347,10 @@ export class Director {
         : 'Decide whether this plan is ready for the owner to build from: decision "approve" or "reject".',
       (parsed) => {
         const o = parsed as { decision?: unknown; index?: unknown; reason?: unknown };
-        const reason = clip(o.reason, MAX_REASON);
-        if (!reason) return { errors: ['"reason" is required'] };
+        let reason = clip(o.reason, MAX_REASON);
+        // asked once for its reason; a decision without one still stands (10 of 19 small-model runs failed only on this)
+        if (!reason && !askedWhy) { askedWhy = true; return { errors: ['"reason" is required'] }; }
+        reason ||= NO_REASON;
         if (input.kind === "storylines") {
           return o.decision === "pick" && Number.isInteger(o.index) && (o.index as number) >= 0 && (o.index as number) < count
             ? { value: { decision: "pick", index: o.index as number, reason } }
