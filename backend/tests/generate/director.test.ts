@@ -442,7 +442,7 @@ describe("director: scenes", () => {
     expect(c!.slice(0, b!.length)).toEqual(b);
     expect([a, b, c].map((m) => JSON.parse(m!.at(-1)!.content)).map((t) => [t.request, t.compositionId])).toEqual([["scene", "shot-01"], ["scene", "shot-02"], ["repair", "shot-02"]]);
     // past its budget the session starts again from the opening and the newest shots that fit (here one of two)
-    const opening = estimateTokens(a!.slice(0, 2));
+    const opening = estimateTokens(a!.slice(0, 2) as never);
     const one = estimateTokens([{ role: "user", content: JSON.stringify({ shotsSoFar: [{ shot: 2, file: "compositions/shot-02.html", latest: HTML }], task: "x".repeat(160) }) }]);
     const small = rig([json({ html: HTML }), json({ html: HTML }), json({ html: HTML })], { genSession: true, genContextTokens: Math.ceil(opening + one + 20) });
     await small.director.scene({ ...session, index: 0 });
@@ -551,7 +551,7 @@ describe("director: scenes", () => {
     const turn = [new Calls([["look", { html: "x", times: [1] }]]), new Calls([["look", { html: "y", times: [2] }]]), json({ html: HTML })];
     const probe = rig([json({ html: HTML })], { genSession: true });
     await probe.director.scene({ ...input(), session: "v-probe" });
-    const opening = estimateTokens(probe.requests[0]!.messages.slice(0, 3));
+    const opening = estimateTokens(probe.requests[0]!.messages.slice(0, 3) as never);
     const r = rig(turn, { genSession: true, genTurnTokens: 500_000, genContextTokens: Math.ceil(opening + 1000) });
     await r.director.scene({ ...input(), session: "v-window", tools: { steps: 4, tools: { look } } });
     expect(JSON.stringify(r.requests[2]!.messages)).toContain("look #1 removed: see #2");
