@@ -1160,6 +1160,33 @@ alongside). A 30 s first attempt failed closed at the voice: 32.1 s of speech af
 - The look step sent all of a 40 s film's frames in one request and the gateway refused it (HTTP 413):
   three shots a call now (T188).
 
+### The 20-brief bench, set A: GLM at the default level (2026-11-05, T172, SC-004, SC-022)
+
+20 explainer briefs (30 s, Indonesian, no narration, `market_data: false`; `scratchpad/bench/briefs.tsv`, the
+Quick recipe with director gates and no export), `glm-5-3-flash`, the tool loop on, one build at a time on a
+4-core CPU. The code moved during the run (fixes T185 to T196 came from it): A-01 to A-11 ran before them, the
+rest after; A-12 to A-15, A-19 and A-20 were run again after a fix.
+
+| Measure | Set A | Target |
+|---|---|---|
+| Built | 20 of 20 (after the plan fixes) | |
+| TECHNICAL, as measured | 3 PASS, 3 REVIEW, 14 FAIL | SC-004: 80% PASS within two fix rounds |
+| TECHNICAL, the jump rule of T195 replayed on the same drafts | 4 PASS, 4 REVIEW, 12 FAIL | |
+| Accepted (TECHNICAL not FAIL) | 6 | |
+| Shots with a `look_unexplained` (the look step's stranger read run on the finished drafts, 3 pictures a shot) | 32 of 144, **22.2%** | SC-022: under 10% |
+| Input served from cache (scene and repair calls, mostly before T191) | 84.6% | SC-021: above 90% |
+| Median build | 1,292 s | |
+
+- **SC-004 not met.** The must-fix findings left: `motion_stall` 9 (pauses of 0.53 to 2.33 s between moves),
+  `number_forbidden` 9 (6 of those builds were planned before T195; under today's rules 3 builds still show
+  figures: prices in A-06, a number in A-10 and in A-13, which the plan step would now send back),
+  `readability_hold` 2. The director sees its stalls in the loop (`check`, `look`) and leaves them.
+- **SC-022 not met**: what a stranger can't explain is mostly small leftovers: dots, specks, faint shapes,
+  a "pale blob", a duplicated label. The bench recipe has no look step, so nothing in the build took them out;
+  a recipe with the look step repairs must-fix unexplained objects (`rounds`), which these builds didn't run.
+- One look call of the 60 failed (GLM didn't call `submit_look`); its shots were looked at again in the
+  next call.
+
 ### The bench's TECHNICAL failures (2026-11-05, set A so far)
 
 11 of 13 GLM builds failed TECHNICAL. Must-fix findings: `motion_jump` 18, `number_forbidden` 9,

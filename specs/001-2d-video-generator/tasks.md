@@ -556,7 +556,7 @@ before the turn is byte-for-byte the same.
 - [X] T169 Spike S8, part 2, and quickstart scenario 12: the story brief on GLM with `author.toolSteps: 0`, then 8; record the provider's cache numbers, `look_unexplained` findings, build times, tool calls per kind and any forced submits in `specs/001-2d-video-generator/research.md`; adjust the per-tool limits if the model loops (done 2026-11-05: research.md "S8, part 2", five builds; SC-021 met at 90.8% after T191, SC-022 1 must-fix left, SC-023 3.6× then about 2.4× after T191, SC-024 fixed in T189)
 - [X] T170 [P] Docs: `docs/director-loop.md` (status → built, measured numbers), `docs/generate.md` (the turn and its tools), `AGENTS.md` rule line, `CHANGELOG.md` under `## [Unreleased]`
 - [X] T171 Gates: `cd backend; bun test --coverage; bun run typecheck`, `cd frontend; bun run test; bun run build`, `cd cli; bun test --coverage` all pass with at least 95% line and function coverage (`/test` → OPEN)
-- [ ] T172 SC-022 on the 20-brief set with the fast model: fewer than 1 shot in 10 with a `look_unexplained` finding; record in `research.md`
+- [X] T172 SC-022 on the 20-brief set with the fast model: fewer than 1 shot in 10 with a `look_unexplained` finding; record in `research.md` (measured 2026-11-05: 22.2% of 144 shots, not met; research.md "The 20-brief bench, set A")
 
 ## Phase 24: Calibration and review fixes (2026-11-03 to 2026-11-05)
 
