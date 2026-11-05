@@ -1082,6 +1082,31 @@ test install with the tool loop on (`author.toolSteps` default 8, `looks` defaul
 - **Open**: image cost in tokens (needs the provider's usage numbers), registry blocks adapted to
   9:16 (nothing tried them), a stronger model's use of `search_blocks` and `use_block`, the 20-brief set.
 
+### S8, a subject too dark to see (2026-11-05, T183, not built)
+
+GLM build `a54d3888` (the Wi-Fi brief) drew the router, a wall and two houses in navy (about `rgb(25,37,74)`)
+on a near-black ground (`rgb(9,13,35)`). Lint, check, the probe, the motion measure and the look step all
+passed it. HyperFrames' own `contrast` check reports text only (empty for this build). The second GLM build of
+the same brief (`d8c3a94a`) reads well: a white router and cyan waves on navy. Measured offline on both, no LLM
+calls:
+
+| Measure | `a54d` (subject hard to see) | `d8c3` (reads well) | Verdict |
+|---|---|---|---|
+| Share of a drawing's pixels under 1.5:1 against the ring around its probe box | 45 to 98% | 21 to 100% | doesn't separate: glows and gradients count as faint |
+| 90th percentile contrast inside the probe box | 1.3 to 1.8 in shots 1, 5, 6; 5.2 in shot 4 | 1.2 to 1.5 for the dim walls; 2.6 to 15 elsewhere | misses shot 4: one svg holds the navy router and wall and the bright orange rings |
+| Flat regions grown across neighbour differences of ≤ 4, 540×960 | router and wall 1.33 to 1.36, houses 1.29 | walls and glow halos 1.16 to 1.26 | the dim shapes measure the same in both films |
+| Brightest region in the frame, text left out | 1.36 at 15 s, 1.29 at 20 s (the shots that look wrong) | 4.5 to 15.7 in every frame | separates these two films |
+
+- **Contrast alone can't tell a subject from scenery.** Both films draw navy shapes at about 1.2 to 1.35:1; in
+  `d8c3` they are walls behind a white router, in `a54d` they are the subject itself.
+- **Candidate**: a frame where nothing drawn stands out (every sizeable non-text region under about 1.5:1
+  against what it sits on) is a should-fix. Tested on two films only, so the threshold is uncalibrated; it
+  needs the probe's text boxes to leave text out, misses thin bright strokes under the size floor, and must be
+  run on the hand-written film (`claude-v`) and both worked examples before it ships.
+- **Other option**: the stranger's read in the look step names what is hard to see against the ground (it
+  knows the plan's subject); costs nothing new to run but depends on the model's eyes.
+- The `a54d` version's snapshots don't match its `draft.mp4` (shot 1 at 6, 10 and 15 s); not investigated.
+
 ### S8, registry blocks and the planner (2026-11-03, T156 in part)
 
 - **What the planner sees**: the plan call gets every block's name and tags (448 items), not their descriptions
