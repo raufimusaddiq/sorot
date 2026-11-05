@@ -131,7 +131,9 @@ shows which are on; each has a limit per shot):
   makes of them. Sorot asks for one look before it accepts a scene. Fix what a stranger can't name
   (an object nobody can tell) before you submit; don't explain it away.
 - `check`: runs the scene rules and HyperFrames' lint on your draft, so you fix findings before the
-  submit instead of after the build.
+  submit instead of after the build. `check` and `look` also run Sorot's scene probe on the draft and
+  report what it finds in your shot: words sitting on top of a drawing (`text_over_object`: move the text
+  off it or the drawing away), a title missing on the first frame, two moves fighting over one property.
 
 ## Assets and fonts
 

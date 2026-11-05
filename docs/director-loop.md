@@ -41,15 +41,14 @@ user: {request, shot fields, task}
 | `search_blocks` | `query` (≤ 120 chars), `type?` `block`\|`component`, `limit?` ≤ 8 | name, type, title, description, tags, size, duration of the best matches in the cached catalog (word and tag match, no embeddings) | 4 |
 | `use_block` | `name` | installs it (`hyperframes add`), returns its files and its source (≤ 24 KB, the rest cut with a note) | 2; refused when the recipe's plan step has `blocks: false` |
 | `look` | `html` (the draft), `times` (1–3 s inside the shot) | the frames as images, and a stranger's read of them as findings (see Vision) | 2 (`author.looks`) |
-| `check` | `html` (the draft) | Sorot's scene rules (`checkScene`) and HyperFrames `lint` for this shot: code, severity, message, hint | 3 |
+| `check` | `html` (the draft) | Sorot's scene rules (`checkScene`), HyperFrames `lint` for this shot, and the scene probe's findings for this shot (text on a drawing, a missing first-frame title, fighting moves; see "The probe in the loop"): code, severity, message, hint | 3 |
 | `submit_*` | as today | `{accepted}` or the problems (one more try, as today) | ends the turn |
 
 - `look` and `check` write the draft to `compositions/shot-NN.html` before they run; `submit_*`
   overwrites it, and a turn that ends without an accepted submit puts the last accepted file back.
 - `look` uses `hyperframes snapshot --at` on the whole root, at the shot's absolute times. On this CPU a
   batch of three frames has taken about a minute; that cost is why it is limited.
-- Not a tool: the scene probe (`sceneProbe.ts`) needs a full `hyperframes check` of the project
-  (minutes), so it stays in the check step and comes back as a repair turn.
+- The scene probe also stays in the check step after the build (a repair turn if it finds something).
 - Three.js needs no tool: the parts and their settings are in the session's opening (`capabilities`),
   and at `free` the director may write its own WebGL.
 
@@ -61,6 +60,16 @@ So the first submit of a **scene** turn that has `look` available is turned back
 "look at your draft first…" (no retry is used); after a `look` (or on the forced last step) a submit
 is accepted. `author.looks: 0` turns the look off, and with it this rule. The authoring guide's
 "Your tools" section says when `search_blocks` and `use_block` are worth a step; those stay optional.
+
+## The probe in the loop
+
+The probe took the director's own drawing as its only judge before this: GLM's films had 14 to 16% of their
+text moments under a drawing (a hull made of CSS boxes, which the probe did not count as a drawing), and
+nothing said so. Now `check` and `look` both return the probe's findings for the shot being written. HyperFrames'
+check refuses a project whose shots are missing, so the probe runs on a scratch copy: the root, the shots so
+far, a placeholder for each shot not yet written, the assets linked; the version's own folder is never touched.
+It takes about 5 s. A probe that can't run adds nothing. CSS-drawn boxes count as drawings, except a box a
+fifth of the frame or more (`panelShare`), which is a card the words sit on.
 
 ## Vision: who looks at what
 

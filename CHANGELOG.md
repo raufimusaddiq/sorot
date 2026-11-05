@@ -7,6 +7,11 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 ## [Unreleased]
 
 ### Generate: briefs to finished 2D videos
+- Scene calls carry a second worked example, drawn by hand from SVG and plain boxes, next to the kit-built one
+  (a model shown one style copies it): on the same brief GLM put its words in a zone on top and its drawings
+  below, and none of its text sat on a drawing (14 to 16% of its text moments did before).
+- The scene probe counts shapes drawn from CSS boxes as drawings, and the director's `check` and `look` tools
+  now return its findings (words on top of a drawing, a missing first-frame title) while the shot is written.
 - The narration's length is a target, not a rule that fails the run: the voice is measured after it is spoken,
   and one that runs past the video gets the script written again, told how many seconds it took.
 - A build that failed (a gateway error, an interruption) can go on from its failed step: **Continue from the

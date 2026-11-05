@@ -443,16 +443,24 @@ export class Director {
   }
 
   /**
-   * generator/prompts/example-scene.html: one finished shot that keeps the contract (zones that don't
-   * overlap, one continuous build, a flat camera over the isometric part, the title whole on the first
-   * frame), for the model to learn the craft from. Read once; empty when the file is missing.
+   * generator/prompts/example-scene.html and example-scene-2.html: finished shots that keep the contract
+   * (zones that don't overlap, the title whole on the first frame, one hero move), for the model to learn
+   * the craft from. The first is built from kit parts, the second by hand from SVG shapes and plain boxes:
+   * a model shown one style copies it, and shown two it learns what they share. Read once; empty when the
+   * files are missing.
    */
   private example(): string {
     if (this.sample === null) {
-      const path = join(this.generatorDir, "prompts", "example-scene.html");
-      this.sample = existsSync(path) ? readFileSync(path, "utf-8").trim() : "";
+      const read = (name: string) => {
+        const path = join(this.generatorDir, "prompts", name);
+        return existsSync(path) ? readFileSync(path, "utf-8").trim() : "";
+      };
+      const fence = (html: string) => `\n\n\`\`\`html\n${html}\n\`\`\``;
+      const [kit, hand] = [read("example-scene.html"), read("example-scene-2.html")];
+      this.sample = !kit ? "" : `\n\n# A worked example\n\nOne finished shot from another film; it uses only kit parts, so it fits the compose and free levels. Learn the craft from it (how the zones, parts, timing and text fit together); don't copy its content, colours or words.${fence(kit)}`
+        + (hand ? `\n\n# A second worked example\n\nAnother finished shot, drawn by hand from SVG shapes and plain boxes with no kit part. Learn what the two share: the text zone on top and every moving drawing in its own zone below, so nothing crosses the words; the words whole on the first frame; one hero move; shapes with a clear silhouette. Don't copy its content, colours or words.${fence(hand)}` : "");
     }
-    return this.sample ? `\n\n# A worked example\n\nOne finished shot from another film; it uses only kit parts, so it fits the compose and free levels. Learn the craft from it (how the zones, parts, timing and text fit together); don't copy its content, colours or words.\n\n\`\`\`html\n${this.sample}\n\`\`\`` : "";
+    return this.sample;
   }
 
   /** The part of generator/prompts/story.md that applies to this job (the file is read once). */

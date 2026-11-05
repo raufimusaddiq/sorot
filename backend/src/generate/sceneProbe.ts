@@ -36,6 +36,8 @@ export interface ProbeSettings {
   coverMoments: number;
   /** An object this big is a backdrop: text has to sit somewhere on it. */
   backdropShare: number;
+  /** A CSS-drawn box this big is a panel or card the words sit on, not a drawing: it is left out (an svg or picture this big is a backdrop at `backdropShare`). */
+  panelShare: number;
   /** On a first frame, text showing more than this share of itself (and less than `wholeShare`) is cut off. */
   slicedShare: number;
   /** A box showing this much is whole (an edge kissing the mask isn't a cut). */
@@ -46,7 +48,7 @@ export interface ProbeSettings {
 
 export const PROBE_DEFAULTS: ProbeSettings = {
   swapSec: 0.3, swapShare: 0.4, swapGapSec: 0.1, swapFullShare: 0.8, fightSec: 0.05,
-  coverShare: 0.3, coverTime: 0.5, coverMoments: 2, backdropShare: 0.5, slicedShare: 0.05, wholeShare: 0.95, moments: 4,
+  coverShare: 0.3, coverTime: 0.5, coverMoments: 2, backdropShare: 0.5, panelShare: 0.2, slicedShare: 0.05, wholeShare: 0.95, moments: 4,
 };
 
 /** Shown means at least this opaque; hidden means at most `HIDDEN` (a fade's two ends). */
@@ -103,7 +105,7 @@ export async function withProbe<T>(dir: string, config: ProbeConfig, fn: () => P
 
 export interface ProbeTween { el: string; p: string[]; s: number; e: number; kit: string | null; auto: boolean }
 export interface ProbeFade { el: string; s: number; e: number; before?: { o: number; a: number }; after?: { o: number; a: number } }
-export interface ProbeBox { el: string; r: [number, number, number, number]; o: number }
+export interface ProbeBox { el: string; r: [number, number, number, number]; o: number; /** A plain box or shape drawn with CSS (a colour, a gradient or a clip-path), not an svg, picture or canvas. */ box?: 1 }
 export interface ProbeText extends ProbeBox { /** Share of the box a viewer can see (-1: a clip shape that can't be read). */ v: number; overlap?: boolean }
 export interface ProbeFrame { t: number; c: string; first?: boolean; texts: ProbeText[]; objects: ProbeBox[] }
 export interface ProbeData {
@@ -201,7 +203,7 @@ export function probeFindings(data: ProbeData, plan: Plan, settings: Partial<Pro
   for (const f of data.frames) {
     const k = shotOf(f.c, n);
     if (k === null || f.first) continue;
-    const objects = f.objects.filter((o) => o.o >= READABLE && area(o.r) < s.backdropShare * frame);
+    const objects = f.objects.filter((o) => o.o >= READABLE && area(o.r) < (o.box ? s.panelShare : s.backdropShare) * frame);
     for (const t of f.texts) {
       if (t.o < READABLE || (t.v >= 0 && t.v < READABLE) || t.overlap || area(t.r) <= 0) continue;
       const entry = byText.get(t.el) ?? { k, shown: 0, over: new Map(), at: f.t };
@@ -254,7 +256,7 @@ const PROBE_JS = String.raw`(function () {
   "use strict";
   var C = window.__sorotProbe || { frames: [], fadeMaxSec: 0.3 };
   var PREFIX = "SOROT_PROBE:";
-  var LIMIT = { texts: 60, objects: 30, tweens: 600 };
+  var LIMIT = { texts: 60, objects: 60, tweens: 600 };
   var NOT_PROPS = { duration: 1, delay: 1, ease: 1, repeat: 1, repeatDelay: 1, yoyo: 1, yoyoEase: 1, stagger: 1, overwrite: 1, immediateRender: 1, lazy: 1, id: 1, paused: 1, reversed: 1, data: 1, inherit: 1, callbackScope: 1, runBackwards: 1, startAt: 1, keyframes: 1, onStart: 1, onUpdate: 1, onComplete: 1, onRepeat: 1, onReverseComplete: 1, onInterrupt: 1, onStartParams: 1, onUpdateParams: 1, onCompleteParams: 1, transformOrigin: 1, force3D: 1, autoRound: 1, css: 1, defaults: 1, parent: 1 };
   var ALIAS = { translateX: ["x"], translateY: ["y"], translateZ: ["z"], rotate: ["rotation"], rotationZ: ["rotation"], rotateZ: ["rotation"], scale: ["scaleX", "scaleY"], autoAlpha: ["opacity", "visibility"], xPercent: ["xPercent"], yPercent: ["yPercent"] };
   var FADE = { opacity: 1, visibility: 1, display: 1 };
@@ -376,7 +378,7 @@ const PROBE_JS = String.raw`(function () {
   var r3 = function (x) { return Math.round(x * 1000) / 1000; };
 
   // what is text and what is drawn, once
-  var texts = [], objects = [];
+  var texts = [], objects = [], boxes = [];
   function classify() {
     document.querySelectorAll("body *").forEach(function (el) {
       if (el.closest("script, style, noscript, template, svg *, [data-layout-ignore], [data-layout-check='ignore']")) return;
@@ -387,6 +389,11 @@ const PROBE_JS = String.raw`(function () {
       }
       var own = [];
       el.childNodes.forEach(function (c) { if (c.nodeType === 3 && /\S/.test(c.textContent)) own.push(c); });
+      // a plain box or shape drawn with a colour, a gradient or a clip-path is a drawing too (a hull made of divs)
+      if (!own.length && tag !== "svg" && tag !== "img" && tag !== "canvas" && tag !== "video" && !el.hasAttribute("data-kit")) {
+        var cs = getComputedStyle(el), bg = cs.backgroundColor || "", alpha = /rgba\(.*,\s*([\d.]+)\)$/.exec(bg);
+        if ((bg && bg !== "transparent" && !(alpha && Number(alpha[1]) < 0.05)) || (cs.backgroundImage && cs.backgroundImage !== "none") || (cs.clipPath && cs.clipPath !== "none")) { boxes.push(el); objects.push(el); }
+      }
       if (own.length) texts.push({
         el: el, nodes: own, text: own.map(function (c) { return c.textContent; }).join(" ").replace(/\s+/g, " ").trim(),
         overlap: !!el.closest("[data-layout-allow-overlap]"), bleed: !!el.closest("[data-layout-allow-overflow], [data-layout-bleed]"),
@@ -492,7 +499,9 @@ const PROBE_JS = String.raw`(function () {
           if (o <= 0.01) return;
           var r = objectRect(ob);
           if (r.w * r.h <= 0) return;
-          out.objects.push({ el: key(ob), r: [r1(r.x), r1(r.y), r1(r.w), r1(r.h)], o: r3(o) });
+          var drawn = { el: key(ob), r: [r1(r.x), r1(r.y), r1(r.w), r1(r.h)], o: r3(o) };
+          if (boxes.indexOf(ob) >= 0) drawn.box = 1;
+          out.objects.push(drawn);
         });
       });
     });

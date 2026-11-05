@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { tool, type ToolDef } from "../llm";
 import { checkScene, shotFile, type SceneIssue } from "./composer";
@@ -7,6 +8,7 @@ import type { Plan, Shot } from "./planSchema";
 import type { Hyperframes, HfFinding } from "./hyperframes";
 import type { StrangerRead } from "./look";
 import type { SceneKit } from "./composer";
+import { PROBE_PREFIX, probeConfig, probeFindings, readProbe, withProbe } from "./sceneProbe";
 
 // The tools a director may use inside one shot's turn (docs/director-loop.md, FR-049): find a
 // registry block, install it, check its own draft. Each returns plain JSON for the model; a tool
@@ -90,11 +92,14 @@ export function searchBlocks(catalog: CatalogEntry[], args: ToolArgs): ToolOutco
 export interface ToolEnv {
   /** The version's HyperFrames project. */
   dir: string;
-  hyperframes: Pick<Hyperframes, "add" | "lint" | "snapshot">;
+  hyperframes: Pick<Hyperframes, "add" | "lint" | "snapshot" | "check">;
   catalog: () => Promise<CatalogEntry[]>;
   /** The recipe's plan step allows registry blocks. */
   blocksAllowed: boolean;
   shot: Shot;
+  /** The film's plan and frame rate: with them `check` and `look` also run the scene probe on the draft. */
+  plan?: Plan;
+  fps?: number;
   /** 0-based position of the shot in the plan. */
   index: number;
   /** Where the shot starts in the film, seconds (frames are taken at film time). */
@@ -150,6 +155,46 @@ export function writeDraft(env: ToolEnv, html: string): void {
   writeFileSync(join(env.dir, shotFile(env.index)), html);
 }
 
+/** A project's shot file that doesn't exist yet: HyperFrames' check refuses a root whose hosts point at nothing. */
+const stub = (id: string, w: number, h: number) =>
+  `<!doctype html><html><body><div data-composition-id="${id}" data-width="${w}" data-height="${h}"><script>window.__timelines = window.__timelines || {}; window.__timelines["${id}"] = gsap.timeline({ paused: true });</script></div></body></html>`;
+
+/**
+ * The scene probe (sceneProbe.ts) on the draft: text sitting on a drawing, a title missing on the first frame,
+ * two moves fighting over one property, a hard swap. It needs the whole film to load, and the shots after this
+ * one aren't written yet, so it runs on a scratch copy of the project (the root, the shots so far, a
+ * placeholder for each missing one, and the assets linked) and never touches the version's own folder.
+ * Takes a few seconds; failing to run is no finding (the check step runs the same probe after the build).
+ */
+export async function probeDraft(env: ToolEnv): Promise<Array<{ code: string; severity: string; message: string; hint?: string }>> {
+  if (!env.plan) return [];
+  const plan = env.plan;
+  const copy = mkdtempSync(join(tmpdir(), "sorot-probe-"));
+  try {
+    for (const f of ["index.html", "hyperframes.json", "package.json", "meta.json"]) if (existsSync(join(env.dir, f))) cpSync(join(env.dir, f), join(copy, f));
+    mkdirSync(join(copy, "assets"));
+    if (existsSync(join(env.dir, "assets"))) for (const name of readdirSync(join(env.dir, "assets"))) symlinkSync(join(env.dir, "assets", name), join(copy, "assets", name));
+    mkdirSync(join(copy, "compositions"));
+    const root = existsSync(join(copy, "index.html")) ? readFileSync(join(copy, "index.html"), "utf-8") : "";
+    plan.shots.forEach((_, i) => {
+      const file = shotFile(i);
+      if (existsSync(join(env.dir, file))) cpSync(join(env.dir, file), join(copy, file));
+      else {
+        const size = new RegExp(`data-composition-id="shot-0*${i + 1}"[^>]*data-width="(\\d+)"[^>]*data-height="(\\d+)"`).exec(root);
+        writeFileSync(join(copy, file), stub(`shot-${String(i + 1).padStart(2, "0")}`, Number(size?.[1] ?? 1080), Number(size?.[2] ?? 1920)));
+      }
+    });
+    const result = await withProbe(copy, probeConfig(plan, env.fps ?? 30), () => env.hyperframes.check(copy, { signal: env.signal }));
+    const messages = Object.values(result).flatMap((v) => (v && typeof v === "object" && Array.isArray((v as { findings?: unknown }).findings) ? (v as { findings: HfFinding[] }).findings : [])).map((f) => f.message).filter((m) => m.startsWith(PROBE_PREFIX));
+    const data = readProbe(messages);
+    return data ? probeFindings(data, plan).filter((f) => f.shot === env.index).map((f) => ({ code: f.code, severity: f.severity, message: f.message, hint: f.hint })) : [];
+  } catch {
+    return [];
+  } finally {
+    rmSync(copy, { recursive: true, force: true });
+  }
+}
+
 /** Holds a draft to Sorot's scene rules and HyperFrames' lint, before it is handed in. */
 export async function checkDraft(env: ToolEnv, args: ToolArgs): Promise<ToolOutcome> {
   const html = typeof args.html === "string" ? args.html : "";
@@ -159,7 +204,7 @@ export async function checkDraft(env: ToolEnv, args: ToolArgs): Promise<ToolOutc
   const lint = await env.hyperframes.lint(env.dir, { signal: env.signal });
   const mine = shotFile(env.index);
   const own = lint.findings.filter((f) => `${f.file ?? ""} ${f.sourceFile ?? ""} ${f.selector ?? ""}`.includes(mine) || (!f.file && !f.sourceFile)).map(fromLint);
-  return { result: { findings: [...rules, ...own] } };
+  return { result: { findings: [...rules, ...own, ...(await probeDraft(env))] } };
 }
 
 /** The tool definitions the model sees (all of them, so the list never changes between turns). */
@@ -229,7 +274,7 @@ export async function lookAtDraft(env: ToolEnv, read: (images: string[]) => Prom
   const { findings, seen } = await read(images);
   markLooked(env.dir, env.shot.id, html);
   return {
-    result: { frames: inShot, seen, findings: findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })) },
+    result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...(await probeDraft(env))] },
     images,
   };
 }

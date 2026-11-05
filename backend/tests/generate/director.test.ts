@@ -10,6 +10,8 @@ import { Store } from "../../src/store";
 import type { GenProject } from "../../src/types";
 import { Llm } from "../../src/llm";
 import { AsText, Calls, fakeLlm, samplePlan } from "../helpers";
+import { checkScene } from "../../src/generate/composer";
+import { readFileSync } from "node:fs";
 
 const T = "2026-01-01T00:00:00.000Z";
 const project: GenProject = {
@@ -368,6 +370,17 @@ describe("director: tool calling", () => {
   });
 });
 
+describe("director: the worked examples", () => {
+  // the examples a scene call carries must keep the contract they teach: scene rules, no kit part the level lacks
+  test.each(["example-scene.html", "example-scene-2.html"])("%s passes the scene rules for its own text", (file) => {
+    const html = readFileSync(`../generator/prompts/${file}`, "utf-8");
+    const text = (cls: string) => new RegExp(`class="${cls}">([\\s\\S]*?)</`).exec(html)![1]!.replace(/<[^>]+>/g, "").trim();
+    const shot = { id: "s02", purpose: "beat", durationSec: 4, text: [{ role: "title", value: text("title") }, { role: "body", value: text("body") }], visual: { description: "x", block: null, fallbackVisual: "x" }, motion: "x", transition: "cut", audio: "", narration: null, hold: false, level: "free" };
+    const kit = ["camera", "depth", "iso", "motion", "particles", "shade", "shadow", "shape", "text-reveal", "three"];
+    expect(checkScene(html, shot as never, Number(/shot-0(\d)/.exec(html)![1]) - 1, { assets: [], kit: { installed: kit, allowed: kit, level: "free", webgl: true } })).toEqual([]);
+  });
+});
+
 describe("director: scenes", () => {
   const plan = validatePlan(samplePlan(), planCtx).plan as Plan;
   const HTML = '<!doctype html><html><body><div data-composition-id="shot-02" data-width="1080" data-height="1920"><h1>Uang tumbuh sendiri</h1></div></body></html>';
@@ -396,6 +409,7 @@ describe("director: scenes", () => {
     expect(systemOf(req)).toContain("Writing one scene");          // the authoring contract
     expect(systemOf(req)).toContain("## Your tools");              // when each tool is worth using
     expect(systemOf(req)).toContain('# A worked example');          // one finished shot to learn the craft from
+    expect(systemOf(req)).toContain('# A second worked example');   // and one drawn by hand, so it learns what they share
     expect(systemOf(req)).toContain('data-composition-id="shot-02"');
     expect(systemOf(req)).toContain("submit_scene");
     expect(systemOf(req)).not.toContain("Offer N storylines");

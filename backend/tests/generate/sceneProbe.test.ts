@@ -16,10 +16,10 @@ const data = (over: Partial<ProbeData>): ProbeData => ({
 const fade = (el: string, s: number, way: "in" | "out", share = 1, e = s + 0.15): ProbeFade =>
   ({ el, s, e, before: { o: way === "in" ? 0 : 1, a: share }, after: { o: way === "in" ? 1 : 0, a: share } });
 const tween = (kit: string | null, s = 1, e = 4, p = ["scaleX", "y"], el = "a", auto = false): ProbeTween => ({ el, p, s, e, kit, auto });
-const moment = (t: number, text: Partial<ProbeFrame["texts"][number]> | null, object: [number, number, number, number] | null, first = false): ProbeFrame => ({
+const moment = (t: number, text: Partial<ProbeFrame["texts"][number]> | null, object: [number, number, number, number] | null, first = false, box = false): ProbeFrame => ({
   t, c: "shot-01", ...(first ? { first } : {}),
   texts: text ? [{ el: "t", r: [10, 10, 40, 10], o: 1, v: 1, ...text }] : [],
-  objects: object ? [{ el: "b", r: object, o: 1 }] : [],
+  objects: object ? [{ el: "b", r: object, o: 1, ...(box ? { box: 1 as const } : {}) }] : [],
 });
 const house: [number, number, number, number] = [0, 0, 60, 60];
 const codes = (d: Partial<ProbeData>, p = plan(6)) => probeFindings(data(d), p).map((f) => [f.code, f.severity, f.shot, f.time]);
@@ -44,6 +44,8 @@ describe("scene probe", () => {
     // 3. text over drawn objects
     ["text on a drawing in 2 of its 3 moments", { frames: [moment(1, {}, house), moment(2, {}, house), moment(3, {}, null)] }, [["text_over_object", "warning", 0, 1]]],
     ["a drawing passing under the text once", { frames: [moment(1, {}, house), moment(2, {}, null), moment(3, {}, null)] }, []],
+    ["text on a small shape drawn from CSS boxes (a hull of divs) counts like an svg", { frames: [moment(1, {}, [0, 0, 40, 40], false, true), moment(2, {}, [0, 0, 40, 40], false, true)] }, [["text_over_object", "warning", 0, 1]]],
+    ["text on a CSS-drawn panel or card (a fifth of the frame or more) is a label on its card, but the same size svg is a drawing", { frames: [moment(1, {}, house, false, true), moment(2, {}, house, false, true)] }, []],
     ["a backdrop behind the text", { frames: [moment(1, {}, [0, 0, 100, 60]), moment(2, {}, [0, 0, 100, 60])] }, []],
     ["text only grazing the drawing", { frames: [moment(1, {}, [45, 0, 40, 40]), moment(2, {}, [45, 0, 40, 40])] }, []],
     ["a label kept on purpose (data-layout-allow-overlap), or text not yet readable", {
