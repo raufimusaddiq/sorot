@@ -1110,6 +1110,50 @@ test install with the tool loop on (`author.toolSteps` default 8, `looks` defaul
   from `use_block`'s source and its remote-load warning; `lottie-character-walk` needs a Lottie player Sorot
   doesn't ship (above).
 
+### Quickstart run on a real server (2026-11-05, T100, T095, T096 CPU half)
+
+A separate server (CPU, 4 cores, `glm-5-3-flash`) while the 20-brief bench ran on another, so every time
+here is on a shared CPU.
+
+| Scenario | Result |
+|---|---|
+| 3, UI | estimate shown before the build (about 17 min; it took 25.4 min on the shared CPU), progress through every stage, the draft plays, export refused on TECHNICAL FAIL, build refused before approval |
+| 4, Revise | `gen fix` makes a version with fresh verdicts; both versions in the UI history; `gen restore` brings the old plan back (the CLI printed the newest revision instead: fixed, T186) |
+| 6, Export | export re-renders and lands in Library → Generated (1080×1920, 30 fps, 30.0 s). Publish not run: Tebar isn't connected here |
+| 8, Own pipeline | compose, run, wrong order refused, frozen recipe kept, a custom command's findings in TECHNICAL, export to a clean install refused until its command is registered. A voice recipe made without `--narration` stayed silent (fixed, T186) |
+| 9, Unattended factual run | the wrong fact `corrected` with its evidence; cursor and resume as specified; fail-closed voice stops with nothing rendered. The numeric plan never passed until four fixes (T186, T187): CSS tracking, eases with settings, outline repair noise, and naming where an unsourced number sits |
+
+- **SC-013 (CPU half)**: the 60 s narrated run went from idea to a checked film unattended, about 30 min in
+  all here (plan 4.5 min, build 25.8 min, voice and Whisper about 5 min of that) on the shared 4-core CPU;
+  its TECHNICAL was FAIL (motion stalls), so it wasn't exported. The GPU reference (6 min of render for
+  58 s) is still to be measured on the RTX 4060. The run also showed the voice spoken out of the script's
+  order (fixed, T187).
+- **Porting test (T095)**: `docs/examples/recipes/agent-explainer.json` imported and made runnable here in
+  a few minutes with no code (a sqlite data source and the custom command registered in Settings). There
+  is no original agent pipeline on this machine, so its TECHNICAL numbers can't be compared; not run.
+
+### S8, part 2: the story brief, loop off and on (2026-11-05, T169)
+
+The jamu story, 40 s, `glm-5-3-flash`, one approved plan built four times. Shared CPU (the bench ran
+alongside). A 30 s first attempt failed closed at the voice: 32.1 s of speech after both rewrites.
+
+| Build | Setting | Build time | Scene+repair calls | Tool calls | Input served from cache | `look_unexplained` must-fix | Largest request |
+|---|---|---|---|---|---|---|---|
+| v1 | `toolSteps: 0` | 702 s | 8 + 10 | none (look step 7 calls) | 85.3% | 9 | |
+| v2 | `toolSteps: 8` | 2,543 s | 25 + 4 | look 24, check 1, search 0 | 82.1% | 1 | |
+| v3 | 8, `GEN_CONTEXT_TOKENS` 20,000 | 3,205 s | 28 + 10 | look 26, check 2 | 67.0% | 3 | 51,133 tokens |
+
+- **SC-021 met** with the loop (82.1%, from the provider's own `cached_tokens`, now kept per call, T184).
+- **SC-022 not quite**: the loop took the unexplained objects from 9 to 1; the aim is none.
+- **SC-023 not met**: 3.6× the time without the loop (aim ≤ 2×). Each look is a render of up to 3 frames
+  and a stranger call; GLM looked 24 times for 9 shots. Times are on a shared CPU.
+- **SC-024 not met at first**: at a 20,000-token window requests reached 51,133. The restart kept every
+  shot written so far (more than the window by itself) and a turn's tool results were cut only at
+  `GEN_TURN_TOKENS`. Fixed (T189); the floor of a turn is its opening (about 12,600 tokens here) plus its
+  latest look (about 8,100), so 20,000 can only be met to within one look.
+- The look step sent all of a 40 s film's frames in one request and the gateway refused it (HTTP 413):
+  three shots a call now (T188).
+
 ### S8, a subject too dark to see (2026-11-05, T183)
 
 GLM build `a54d3888` (the Wi-Fi brief) drew the router, a wall and two houses in navy (about `rgb(25,37,74)`)
