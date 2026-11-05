@@ -114,7 +114,7 @@ describe("voice step", () => {
     expect(r.seen.filter((a) => a.includes("format=duration:stream=sample_rate"))).toHaveLength(4);   // measured again, spoken from the cache
   });
 
-  test("a voice that runs past the film gets the script written again up to twice, told how long it took; still too long is an error with the numbers", async () => {
+  test("a voice that runs past the film gets the script written again up to twice, told how long it took; a little over is sped up; further over is an error with the numbers", async () => {
     const fits = withScript({ every: 20 }, [scriptJson(), scriptJson([{ id: "l1", text: "Satu kalimat saja." }])]);   // fits on the second rewrite
     expect(await STEPS.voice.run(fits.ctxFor("voice"))).toEqual({ status: "done", outputRef: "voice" });
     expect(body(fits.requests[0]!).overrun).toMatchObject({ spokenSec: 40.2, filmSec: 30, lines: [{ id: "l1", sec: 20 }, { id: "l2", sec: 20 }] });
@@ -122,6 +122,11 @@ describe("voice step", () => {
     const still = withScript({ every: 20 }, [scriptJson(), scriptJson()]);
     await expect(STEPS.voice.run(still.ctxFor("voice"))).rejects.toThrow("The voice takes 40.2 s and the video is 30 s");
     expect(still.requests).toHaveLength(2);   // no third round
+    // a little long after both rewrites (31.35 s for 30): the clips are sped up 1.03× instead of failing
+    const close = withScript({ every: 15.6 }, [scriptJson(), scriptJson()]);
+    expect(await STEPS.voice.run(close.ctxFor("voice"))).toEqual({ status: "done", outputRef: "voice, sped up 1.03× to fit" });
+    expect(close.seen.some((a) => a.includes("atempo=1.03"))).toBeTrue();
+    expect(readVoice(close.config, "p1")!.lines.map((l) => [l.durationSec, l.file.endsWith("-x1.03.mp3")])).toEqual([[15.146, true], [15.146, true]]);
   });
 
   test("with ElevenLabs the word times come along and the voiceover counts as timed", async () => {

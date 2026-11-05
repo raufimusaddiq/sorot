@@ -324,10 +324,11 @@ export async function lookAtDraft(env: ToolEnv, read: (images: string[]) => Prom
   const inShot = (asked.length ? asked : [env.shot.durationSec / 2]).map((t) => Math.round(Math.min(Math.max(t, 0), last) * 100) / 100).sort((x, y) => x - y);   // the stranger reads them early to late
   return withDraft(env, html, async () => {
     const images = await framesAt(env.hyperframes, env.dir, inShot.map((t) => Math.round((env.startSec + t) * 100) / 100), env.signal);
-    const { findings, seen } = await read(images);
+    // the stranger's read (a model call) and the draft's probe and motion render (about 20 s) don't wait for each other
+    const [{ findings, seen }, measured] = await Promise.all([read(images), evaluateDraft(env)]);
     markLooked(env.dir, env.shot.id, html);
     return {
-      result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...(await evaluateDraft(env))] },
+      result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...measured] },
       images: env.shrink ? await env.shrink(images) : images,
     };
   });

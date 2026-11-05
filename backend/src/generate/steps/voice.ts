@@ -28,7 +28,8 @@ export const run: RunFn = async (ctx) => {
   if (!narrator.engines.length) return stop("No voice engine is set up in Settings");
 
   // How long the speech takes against the film: a real voice speaks at its own pace, so this is measured, not guessed.
-  const GAP = 0.15, SLACK = 0.5;
+  const GAP = 0.15, SLACK = 0.5, MAX_SPEEDUP = 1.1;
+  let sped = 0;
   const speechSec = (spoken: VoiceLine[]) => Math.round((spoken.reduce((n, l) => n + l.durationSec, 0) + GAP * Math.max(0, spoken.length - 1)) * 10) / 10;
   let spoken: VoiceLine[] = [];
   const speakAll = async (script: Array<{ id: string; text: string }>) => {
@@ -51,6 +52,20 @@ export const run: RunFn = async (ctx) => {
       const overrun = { spokenSec: speechSec(spoken), filmSec: project.targetSec, lines: spoken.map((l) => ({ id: l.id, text: l.text, sec: l.durationSec })) };
       await speakAll(await writeScript(ctx, scriptStep, settingsOf("script", scriptStep.with), overrun));
     }
+    // still a little long (a 30 s story spoke 32.1 s after both rewrites): up to 10% faster is barely heard, so the clips are
+    // sped up as they are (ffmpeg atempo, every engine) instead of failing the run; further over is still an error
+    const over = speechSec(spoken) / (project.targetSec + SLACK);
+    if (over > 1 && over <= MAX_SPEEDUP) {
+      const factor = Math.ceil(over * 100) / 100;
+      spoken = await Promise.all(spoken.map(async (l) => {
+        const faster = l.file.replace(/(\.[a-z0-9]+)$/i, `-x${factor}$1`);
+        const res = await ctx.exec(ctx.config.ffmpegPath, ["-v", "error", "-y", "-i", l.file, "-filter:a", `atempo=${factor}`, faster], { signal: ctx.signal, timeoutMs: 60_000 });
+        if (res.exitCode !== 0) throw new Error(`The voice is ${speechSec(spoken)} s and couldn't be sped up to fit ${project.targetSec} s: ${res.stderr.slice(0, 200)}`);
+        const r2 = (n: number) => Math.round((n / factor) * 1000) / 1000;
+        return { ...l, file: faster, durationSec: r2(l.durationSec), words: l.words?.map((w) => ({ ...w, start: r2(w.start), end: r2(w.end) })) ?? null };
+      }));
+      sped = factor;
+    }
     if (speechSec(spoken) > project.targetSec + SLACK) throw new Error(`The voice takes ${speechSec(spoken)} s and the video is ${project.targetSec} s: shorten the script (sorot gen revise) or make the video longer`);
   } catch (e) {
     if (e instanceof VoiceUnavailable) return stop(e.message);
@@ -60,5 +75,5 @@ export const run: RunFn = async (ctx) => {
     engine: ctx.config.voiceEngine, voice: narrator.voiceFor(project.language, typeof settings.voice === "string" ? settings.voice : undefined),
     lines: spoken, aligned: spoken.every((l) => l.words) ? "engine" : null,
   });
-  return { status: "done", outputRef: "voice" };
+  return { status: "done", outputRef: sped ? `voice, sped up ${sped}× to fit` : "voice" };
 };
