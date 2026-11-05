@@ -61,7 +61,8 @@ describe("look: where to look and what it means", () => {
   });
 });
 
-function rig(replies: string[], over: { vision?: string; handlers?: Record<string, HfHandler>; settings?: Record<string, unknown>; rules?: Record<string, unknown> } = {}) {
+function rig(replies: string[], over: { vision?: string; handlers?: Record<string, HfHandler>; settings?: Record<string, unknown>; rules?: Record<string, unknown>; plan?: Plan } = {}) {
+  const film = over.plan ?? plan();
   const config = { ...loadConfig({}), genDir: join(tmp, "generate") };
   const store = new Store(openDatabase(":memory:"));
   const recipe = { ...quickRecipe(), rules: over.rules ?? { defaultsAudit: ["a centred title on a dark gradient"] } };
@@ -70,10 +71,10 @@ function rig(replies: string[], over: { vision?: string; handlers?: Record<strin
     ideaId: null, briefFlags: null, narrationScript: null, concept: null, stepIndex: 0, stepState: null, narration: 0, storylines: null, pickedStoryline: null,
     status: "BUILDING", currentPlanId: "pl1", acceptedVersionId: null, errorMessage: null, createdAt: T, updatedAt: T,
   });
-  store.saveGenPlan({ id: "pl1", projectId: "p1", revision: 1, plan: json(plan()), changeRequest: null, changeSummary: null, approvedAt: T, createdAt: T });
+  store.saveGenPlan({ id: "pl1", projectId: "p1", revision: 1, plan: json(film), changeRequest: null, changeSummary: null, approvedAt: T, createdAt: T });
   const dir = join(config.genDir, "p1", "v1");
   mkdirSync(join(dir, "compositions"), { recursive: true });
-  for (let i = 0; i < 3; i++) writeFileSync(join(dir, `compositions/shot-0${i + 1}.html`), sceneHtml(i));
+  for (let i = 0; i < film.shots.length; i++) writeFileSync(join(dir, `compositions/shot-0${i + 1}.html`), sceneHtml(i % 3));
   store.saveGenVersion({
     id: "v1", projectId: "p1", planId: "pl1", number: 1, parentVersionId: null, status: "BUILDING", step: null, progress: null, projectDir: dir, renderKind: "draft",
     draftPath: null, stepState: null, hyperframesVersion: null, buildMs: null, errorMessage: null, createdAt: T, updatedAt: T,
@@ -159,6 +160,15 @@ describe("look step", () => {
     expect(parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => `data:image/png;base64,${Buffer.from(`PIC${i}`).toString("base64")}`));
     expect(JSON.parse(parts[0].text)).toMatchObject({ pictures: 9, shots: ["s01", "s02", "s03"], meant: [{ pictures: 3 }, { pictures: 3 }, { pictures: 3 }], defaultsAudit: ["a centred title on a dark gradient"] });
     expect(readFindings(r.dir)).toEqual([]);
+  });
+
+  test("a longer film is looked at three shots a call (a gateway refused all its frames in one), the answers put together", async () => {
+    const four = validatePlan(samplePlan({ shots: [...samplePlan().shots, { ...samplePlan().shots[2], id: "s04" }].map((s: any) => ({ ...s, durationSec: 7.5 })) }), { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false }).plan as Plan;
+    const r = rig([CLEAN, answer([frame("s04", { unexplained: ["grey bar"] }), frame("s01", { unexplained: ["not this call's"] })])], { settings: { rounds: 0 }, plan: four });
+    await STEPS.look.run(r.ctx);
+    expect(r.requests.map((q) => JSON.parse(q.messages[1].content[0].text).shots)).toEqual([["s01", "s02", "s03"], ["s04"]]);
+    expect(r.snaps.map((t) => t.length)).toEqual([9, 3]);
+    expect(readFindings(r.dir).map((f) => [f.code, f.shotId])).toEqual([["look_unexplained", "s04"]]);
   });
 
   test("what the stranger finds becomes findings of the build; the defaults audit can be turned off", async () => {

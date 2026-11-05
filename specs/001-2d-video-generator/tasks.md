@@ -582,6 +582,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 
 - [X] T187 [US6] The voice keeps the script's order when the plan quotes lines out of order (`voice.placeLines`: a line never starts before the one ahead of it ends); a narrated 60 s run spoke l7 before l6 and l9 before l8, and the speech match read 73% of words as missing. An unsourced number in a plan is named with its shot and words (`planSchema`), so the repair can rewrite a storyline's "Dua Jalur". Tests in `backend/tests/generate/narration.test.ts`, `facts.test.ts`
 
+- [X] T188 [US6] The look step asks about three shots a call (`LOOK_SHOTS_PER_CALL`, 9 frames, about 4 MB) and puts the answers together; a 40 s story sent all its frames at once and the gateway refused it (HTTP 413). Test in `backend/tests/generate/look.test.ts`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.
