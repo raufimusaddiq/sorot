@@ -201,8 +201,8 @@ class TestRenderIntegration:
         cmd = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, timeline=[(0.5, 1.5)],
                                        reframe=reframe.video_filter("blur"))
         graph = cmd[cmd.index("-filter_complex") + 1]
-        assert graph.startswith("[0:v]select='between(t,0.500,1.500)',setpts=N/FRAME_RATE/TB[in];[in]split")
-        assert cmd[cmd.index("-map") + 1] == "[v]" and "0:a?" in cmd and "-vf" not in cmd
+        assert graph.startswith("[0:v]trim=start=0.500:end=1.500,setpts=PTS-STARTPTS[v0]") and "[cv]null[in];[in]split" in graph
+        assert cmd[cmd.index("-map") + 1] == "[v]" and "[ca]" in cmd and "-vf" not in cmd
         plain = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, reframe=reframe.video_filter("blur"))
         assert plain[plain.index("-filter_complex") + 1].startswith("[0:v]null[in];")
 

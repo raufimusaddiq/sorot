@@ -139,22 +139,22 @@ class TestKeepIntervals:
         assert captions.keep_intervals([w("a", 0, 1)], 0) == [(0.0, 0)]
         assert captions.keep_intervals([w("a", 0.0, 4.98)], 5.0) == [(0.0, 5.0)]
 
-    def test_timeline_mapping_and_select_expr(self):
+    def test_timeline_mapping(self):
         keep = [(1.0, 2.0), (5.0, 6.0)]
         words = [w("a", 0.2, 0.6), w("b", 1.2, 1.6), w("c", 5.5, 5.9), w("d", 5.9, 5.9)]
         mapped = captions.map_words(words, keep)
         assert [(x["text"], x["start"]) for x in mapped] == [("b", 0.2), ("c", 1.5), ("d", 1.9)]
         assert mapped[-1]["end"] == pytest.approx(1.95)              # minimum word length kept
-        assert captions.select_expr(keep) == "between(t,1.000,2.000)+between(t,5.000,6.000)"
 
 
 class TestStageWiring:
-    def test_render_cmd_adds_select_filters_only_when_trimming(self):
+    def test_render_cmd_cuts_the_timeline_only_when_trimming(self):
         plain = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False)
-        assert "-af" not in plain and plain[plain.index("-vf") + 1].startswith("crop=")
+        assert "-filter_complex" not in plain and plain[plain.index("-vf") + 1].startswith("crop=")
+        # the kept ranges are cut and concatenated (select/aselect kept the whole length under ffmpeg 8)
         trimmed = render._build_render_cmd("ffmpeg", "in.mp4", 0, 5, "o.mp4", False, timeline=[(0.5, 1.5)])
-        assert trimmed[trimmed.index("-vf") + 1].startswith("select='between(t,0.500,1.500)',setpts=")
-        assert trimmed[trimmed.index("-af") + 1] == "aselect='between(t,0.500,1.500)',asetpts=N/SR/TB"
+        assert trimmed[trimmed.index("-filter_complex") + 1].startswith("[0:v]trim=start=0.500:end=1.500,setpts=PTS-STARTPTS[v0];[0:a]atrim=start=0.500:end=1.500")
+        assert "-vf" not in trimmed and "[ca]" in trimmed
 
     def test_render_main_trims_and_requires_transcript(self, monkeypatch, capsys, tmp_path):
         seg = tmp_path / "s.json"
