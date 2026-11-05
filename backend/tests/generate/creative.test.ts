@@ -16,7 +16,7 @@ import { STEPS, settingsOf } from "../../src/generate/steps";
 import { Jev } from "../../src/jev";
 import { Llm } from "../../src/llm";
 import { Store } from "../../src/store";
-import { fakeHyperframes, fakeJev, fakeLlm, noulA, procOk, quickRecipe, samplePlan, sceneHtml, type HfHandler, judgeYes } from "../helpers";
+import { fakeHyperframes, fakeJev, fakeLlm, noulA, procOk, quickRecipe, samplePlan, sceneHtml, type HfHandler, judgeYes, ALWAYS_ASKED } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const json = JSON.stringify;
@@ -262,7 +262,7 @@ describe("creative step", () => {
     const r = rig({ criteria: [crit("opening"), crit("pace")], replies: [json({
       criteria: [
         { id: "opening", answer: "no", reason: "the first shot is a plain title", shotId: "s01", fromSec: 0, toSec: 3, suggestedFix: "start with the coin" },
-        { id: "pace", answer: "partly", reason: "shot 2 drags" }, ...["main_message", "finished", "motion"].map((id) => ({ id, answer: "yes", reason: "" })),
+        { id: "pace", answer: "partly", reason: "shot 2 drags" }, ...ALWAYS_ASKED.map((id) => ({ id, answer: "yes", reason: "" })),
       ],
       risks: [{ id: "misleading_claim", flagged: true, reason: "the rate is not in the brief", shotId: "s02" }, { id: "flat_film", flagged: false, reason: "" }, { id: "default_1", flagged: false, reason: "" }],
     })] });
@@ -274,10 +274,7 @@ describe("creative step", () => {
   });
 
   test("a judge that skips a question is told which, and asked again once", async () => {
-    const yes = ["main_message", "finished", "motion"].map((id) => ({ id, answer: "yes", reason: "" }));
-    const r = rig({ replies: [json({ criteria: yes, risks: [] }), json({
-      criteria: yes, risks: ["misleading_claim", "flat_film", "default_1"].map((id) => ({ id, flagged: false, reason: "" })),
-    })] });
+    const r = rig({ replies: [judgeYes([], []), judgeYes([], ["misleading_claim", "flat_film", "default_1"])] });
     await STEPS.creative.run(r.ctx);
     expect(r.verdict().status).toBe("PASS");
     expect(JSON.parse(r.requests[1].messages.at(-1).content).problems[0]).toContain("you didn't answer: misleading_claim, flat_film, default_1");

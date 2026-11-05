@@ -387,6 +387,7 @@ describe("director: scenes", () => {
   const input = <T extends object>(extra: T = {} as T) => ({
     project, step: step({ use: "author" }), plan, index: 1, width: 1080, height: 1920, assets: ["assets/ab-logo.png"], ...extra,
   });
+  const tool = (name: keyof typeof TOOL_DEFS, limit: number, run: () => Promise<any> = async () => ({ result: { findings: [] } })) => ({ def: TOOL_DEFS[name], limit, run });
 
   test("scene: one call for one shot with the film around it, the authoring contract and the one function to call", async () => {
     const r = rig([json({ html: HTML }), json({ html: HTML })]);
@@ -456,7 +457,6 @@ describe("director: scenes", () => {
       json({ html: HTML }),
     ], { genSession: true });
     expect(await r.director.scene({ ...input(), session: "v1", tools })).toBe(HTML);
-    expect(r.requests).toHaveLength(4);
     expect(r.requests[0]!.tools.map((x: any) => x.function.name)).toEqual(["search_blocks", "check", "submit_scene", "submit_repair", "submit_shot_kit"]);
     expect(r.requests.map((q) => q.tool_choice?.function?.name ?? "auto")).toEqual(["auto", "auto", "auto", "submit_scene"]);   // 3 tool steps, then forced
     const toolMsgs = r.requests[3]!.messages.filter((m: any) => m.role === "tool").map((m: any) => [m.name, JSON.parse(m.content)]);
@@ -473,7 +473,7 @@ describe("director: scenes", () => {
   });
 
   test("a session: the tool list comes from the first turn that has tools, an answer given as plain text folds without leaving an orphan tool result, and a cancelled turn never starts", async () => {
-    const check = { def: TOOL_DEFS.check, limit: 3, run: async () => ({ result: { findings: [] } }) };
+    const check = tool("check", 3);
     const r = rig([json({ html: HTML }), new Calls([["check", { html: "x" }]]), new AsText(json({ html: HTML })), json({ html: HTML })], { genSession: true });
     const s = { ...input(), session: "v-text" };
     await r.director.scene({ ...s, index: 0 });                                                   // a turn with no tools (a kit shot, a look-step repair)
@@ -489,7 +489,7 @@ describe("director: scenes", () => {
 
   test("the forced step ends the loop even when the provider ignores the forced choice, and a turn's tool limits hold across its retry", async () => {
     let checks = 0;
-    const check = { def: TOOL_DEFS.check, limit: 1, run: async () => { checks++; return { result: { findings: [] } }; } };
+    const check = tool("check", 1, async () => { checks++; return { result: { findings: [] } }; });
     const r = rig([new Calls([["check", { html: "x" }]]), new Calls([["check", { html: "x" }]]), new Calls([["check", { html: "x" }]]), json({ html: HTML })], { genSession: true });
     expect(await r.director.scene({ ...input(), session: "v-forced-ignored", tools: { steps: 1, tools: { check } } })).toBe(HTML);
     expect(JSON.stringify(r.requests[2]!.messages.at(-1))).toContain("didn't call submit_scene");   // the ignored forced step ended the first try
@@ -498,10 +498,9 @@ describe("director: scenes", () => {
   });
 
   test("when the turn can look, the first submit is turned back once inside the turn (no retry used); after a look, or at the last step, it is accepted", async () => {
-    const look = { def: TOOL_DEFS.look, limit: 2, run: async () => ({ result: { findings: [] } }) };
+    const look = tool("look", 2);
     const r = rig([json({ html: HTML }), new Calls([["look", { html: HTML, times: [1] }]]), json({ html: HTML })], { genSession: true });
     expect(await r.director.scene({ ...input(), session: "v-lookfirst", tools: { steps: 4, tools: { look } } })).toBe(HTML);
-    expect(r.requests).toHaveLength(3);
     const turned = r.requests[1]!.messages.at(-1) as any;
     expect([turned.role, JSON.parse(turned.content)]).toEqual(["tool", { accepted: false, problems: [LOOK_FIRST] }]);
     expect(r.events().map((e) => e.kind)).toEqual(["scene", "scene", "look", "scene"]);
@@ -520,7 +519,7 @@ describe("director: scenes", () => {
   });
 
   test("a look's frames come back as a picture message right after its results, and the log row counts them", async () => {
-    const tools = { steps: 2, tools: { look: { def: TOOL_DEFS.look, limit: 2, run: async () => ({ result: { seen: { description: "a dome" } }, images: ["data:image/png;base64,AAA", "data:image/png;base64,BBB"] }) } } };
+    const tools = { steps: 2, tools: { look: tool("look", 2, async () => ({ result: { seen: { description: "a dome" } }, images: ["data:image/png;base64,AAA", "data:image/png;base64,BBB"] })) } };
     const r = rig([new Calls([["look", { html: "x", times: [1] }]]), json({ html: HTML })], { genSession: true });
     await r.director.scene({ ...input(), session: "v-look", tools });
     const after = r.requests[1]!.messages.slice(-2);
@@ -530,8 +529,7 @@ describe("director: scenes", () => {
   });
 
   test("compaction: an accepted turn leaves a note and its answer, a failed turn leaves nothing, and a turn past its budget cuts its older tool results; earlier requests stay an exact prefix", async () => {
-    const look = (n: number) => ({ def: TOOL_DEFS.look, limit: 5, run: async () => ({ result: { n }, images: ["data:image/png;base64,AAA"] }) });
-    const tools = { steps: 4, tools: { check: { def: TOOL_DEFS.check, limit: 3, run: async () => ({ result: { findings: [] } }) }, look: look(1) } };
+    const tools = { steps: 4, tools: { check: tool("check", 3), look: tool("look", 5, async () => ({ result: { n: 1 }, images: ["data:image/png;base64,AAA"] })) } };
     const r = rig([
       new Calls([["check", { html: "x" }]]), json({ html: HTML }),                       // turn 1: one tool, accepted
       json({ html: "no" }), json({ html: "still no" }),                                  // turn 2: never valid

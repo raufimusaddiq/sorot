@@ -1,8 +1,7 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
 import { PROBE_PREFIX } from "../../src/generate/sceneProbe";
 import { BLOCK_SOURCE_CHARS, checkDraft, lookAtDraft, lookedInLoop, sceneTools, searchBlocks, useBlock, type CatalogEntry, type ToolEnv } from "../../src/generate/directorTools";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
@@ -13,7 +12,8 @@ const CATALOG: CatalogEntry[] = [
   { name: "bar-chart-race", type: "component", title: "Bar chart race", description: "Bars climb in a chart", tags: ["chart", "data"] },
   { name: "product-turntable", type: "block", title: "Product Turntable", description: "A product turns on a plinth", tags: ["3d-object", "three-js"] },
 ];
-const shot = (validatePlan(samplePlan(), { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false }).plan as Plan).shots[1]!;
+const plan = validatePlan(samplePlan(), { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false }).plan as Plan;
+const shot = plan.shots[1]!;
 const HTML = '<div data-composition-id="shot-02" data-width="1080" data-height="1920"><script>window.__timelines = window.__timelines || {}; window.__timelines["shot-02"] = gsap.timeline({ paused: true });</script></div>';
 
 describe("search_blocks", () => {
@@ -91,7 +91,6 @@ describe("tools on a version's project", () => {
   });
 
   test("check and look also run the scene probe and the motion measure (a draft render of just this shot) on a scratch copy (placeholders for the shots not written yet, assets linked) and keep only this shot's findings; a measure that can't run adds nothing", async () => {
-    const plan = validatePlan(samplePlan(), { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false }).plan as Plan;
     const moment = (t: number, c: string) => ({ t, c, texts: [{ el: "t", r: [10, 10, 40, 10], o: 1, v: 1 }], objects: [{ el: "svg#hull", r: [0, 0, 40, 40], o: 1 }] });
     const probe = { v: 1, size: [100, 100], labels: {}, tweens: [], fades: [], frames: [moment(4, "shot-02"), moment(5, "shot-02"), moment(1, "shot-01"), moment(2, "shot-01")] };
     mkdirSync(join(dir, "assets"), { recursive: true });

@@ -31,14 +31,11 @@ describe("compaction (rewrites only the current turn)", () => {
 
   test("an accepted turn's tool exchanges become one note on what was used; the request and the answer stay", () => {
     const { before, messages } = session();
-    const kept = [messages[5], ...messages.slice(-2)];
+    const fresh = session();
     endTurn(messages, before.length);
-    expect(messages.slice(0, before.length)).toEqual(session().before);
-    expect(messages).toHaveLength(before.length + 4);   // request, note, the accepted call and its result
-    expect([messages[before.length], messages.slice(-2)]).toEqual([kept[0], kept.slice(1)]);
-    expect(messages[before.length + 1]).toEqual({
+    expect(messages).toEqual([...fresh.before, fresh.turn[0]!, {
       role: "user", content: 'tools used: search_blocks ×1 ("a person walking"), use_block ×1 (lottie-character-walk), look ×2 (at 1.2, 2.8 s; at 4 s), check ×1',
-    });
+    }, ...fresh.turn.slice(-2)]);
   });
 
   test("a turn that used no tool is left as it is", () => {
@@ -54,15 +51,11 @@ describe("compaction (rewrites only the current turn)", () => {
     expect(stubTurn(messages, before.length, 1_000_000)).toBe(false);
     expect(messages).toEqual(original);
     expect(stubTurn(messages, before.length, 1000)).toBe(true);
-    expect(messages.slice(0, before.length)).toEqual(original.slice(0, before.length));
-    const at = (i: number) => messages[before.length + i] as any;
-    expect(at(2).content).toBe(original[before.length + 2]!.content);                            // the only search stays
-    expect(at(4).content).toBe(original[before.length + 4]!.content);                            // the only block source stays
-    expect(JSON.parse(at(6).content)).toEqual({ stub: "look #1 removed: see #2" });             // the first look's result
-    expect(at(7).content).toBe("Frames from look #1 removed: see look #2.");                   // and its frames
-    expect(at(9).content).toBe(original[before.length + 9]!.content);                            // the latest look stays,
-    expect(at(10).content).toEqual(original[before.length + 10]!.content);                        // with its frames
-    expect(at(1)).toEqual(original[before.length + 1]);                                          // the model's own calls stay
+    // only the first look's result and its frames are cut; the latest look, the only search and block source, and the calls stay
+    const expected = structuredClone(original);
+    expected[before.length + 6]!.content = JSON.stringify({ stub: "look #1 removed: see #2" });
+    expected[before.length + 7]!.content = "Frames from look #1 removed: see look #2.";
+    expect(messages).toEqual(expected);
     expect(stubTurn(messages, before.length, 1000)).toBe(false);                                 // nothing more to cut
   });
 });
