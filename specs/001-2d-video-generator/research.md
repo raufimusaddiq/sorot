@@ -1142,8 +1142,14 @@ alongside). A 30 s first attempt failed closed at the voice: 32.1 s of speech af
 | v1 | `toolSteps: 0` | 702 s | 8 + 10 | none (look step 7 calls) | 85.3% | 9 | |
 | v2 | `toolSteps: 8` | 2,543 s | 25 + 4 | look 24, check 1, search 0 | 82.1% | 1 | |
 | v3 | 8, `GEN_CONTEXT_TOKENS` 20,000 | 3,205 s | 28 + 10 | look 26, check 2 | 67.0% | 3 | 51,133 tokens |
+| v4 | 8, 20,000, after T189 | 2,287 s | 25 + 7 | look 24, use_block 1 | 72.7% | 1 | 36,806 tokens |
+| v5 | 8, default window, after T191 (360×640 frames in the session, no html resent) | 1,682 s | 24 + 6 | look 22 | **90.8%** | 1 | |
 
-- **SC-021 met** with the loop (82.1%, from the provider's own `cached_tokens`, now kept per call, T184).
+- **SC-021**: 82.1% with the loop at first. The owner raised the target above 90%. Where the misses were (A-04,
+  per call): of 82,500 uncached tokens about 49,000 were look frames, new to the cache every time (2,700
+  tokens a 1080×1920 frame); the rest was each turn's new request and the model's own answer. After T191 the
+  same story built at **90.8%**, and 34% faster (fewer image tokens to read). One build so far; the bench
+  sets B and C run on this code.
 - **SC-022 not quite**: the loop took the unexplained objects from 9 to 1; the aim is none.
 - **SC-023 not met**: 3.6× the time without the loop (aim ≤ 2×). Each look is a render of up to 3 frames
   and a stranger call; GLM looked 24 times for 9 shots. Times are on a shared CPU.

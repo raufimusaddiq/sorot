@@ -589,7 +589,7 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 - [X] T190 [US1] Plan mistakes a fast model makes are set right in code, with a note on the plan: a total within 25% of the target is scaled to it (not for numeric plans, whose frames come from the lengths); a kit part listed as a registry block is dropped from `blocks`; a registry block named as a kit part moves to `blocks` (`planSchema`, `planContext.kitParts`). Found in the 20-brief bench (A-12 to A-14 failed their plans on exactly these). Test in `backend/tests/generate/planSchema.test.ts`
 
 - [X] T191 [US10] Toward SC-021 above 90%: the director keeps its look frames at 360×640 (about 300 tokens each instead of 2,700; the stranger still reads the full frames), and `look` and `check` without html use the turn's latest draft (the one just submitted, looked at or checked), so the html isn't sent again (`steps/build.ts` `shrinkFrames`, `directorTools` `shrink`, `director.ts` `TurnLoop.draft`). Tests in `backend/tests/generate/{director,directorTools,look}.test.ts`
-- [ ] T192 Measure SC-021 after T191 on GLM builds (the story brief and bench briefs) and record it in `research.md`
+- [ ] T192 Measure SC-021 after T191 on GLM builds (the story brief and bench briefs) and record it in `research.md` (the story brief: 90.8%, 2026-11-05; the bench briefs to come)
 
 ### Part 4 dependencies
 
