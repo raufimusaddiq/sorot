@@ -580,6 +580,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 
 - [X] T186 Fixes from running quickstart scenarios 3, 4, 6, 8 and 9 on a real server (2026-11-05): a project made over the API, CLI or UI without saying `narration` lets the recipe decide (a voice step speaks; `app.ts` sent false), the UI's box starts from the recipe and `gen new --no-narration` says no; a numeric plan reads tracking written as CSS (`"0.02em"`) and GSAP eases with settings (`back.out(1.7)`); an outline is not sent back for the motion plans Sorot fills in later; `gen show`, `plan` and `approve` use the project's current plan (after a restore, an older revision); `gen idea add` takes the run's flags (`--length --lang --format --preset --narration --no-narration --no-numbers`); a version's files list `voice.json` (the never-written `audio_meta.json` is gone), with tests in `backend/tests/generate/{project,planSchema,director,mirror}.test.ts`, `cli/tests/generate-{projects,ideas}.test.ts`, `frontend/src/components/generate/__tests__/plan.test.tsx`
 
+- [X] T187 [US6] The voice keeps the script's order when the plan quotes lines out of order (`voice.placeLines`: a line never starts before the one ahead of it ends); a narrated 60 s run spoke l7 before l6 and l9 before l8, and the speech match read 73% of words as missing. An unsourced number in a plan is named with its shot and words (`planSchema`), so the repair can rewrite a storyline's "Dua Jalur". Tests in `backend/tests/generate/narration.test.ts`, `facts.test.ts`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.

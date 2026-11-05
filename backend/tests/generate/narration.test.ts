@@ -223,6 +223,9 @@ describe("voice helpers", () => {
     expect(placeLines(p, lines).map((x) => [x.line.id, x.start])).toEqual([["l1", 0], ["l2", 3.15], ["l3", 5.3]]);
     const second = plan([null, "mulai dari SEKARANG!", null]);
     expect(placeLines(second, lines.slice(1)).map((x) => x.start)).toEqual([10, 12.15]);
+    // a plan that quotes the lines out of order still speaks them in the script's order
+    const swapped = plan(["Mulai dari sekarang.", "Bunga majemuk membuat uang tumbuh.", null]);
+    expect(placeLines(swapped, lines.slice(0, 2)).map((x) => [x.line.id, x.start])).toEqual([["l1", 10], ["l2", 13.15]]);
     // a line that would run past the film's end moves earlier, and the one before it makes room
     const late = plan([null, null, "Bunga majemuk membuat uang tumbuh. Mulai dari sekarang."], [13, 13, 4]);
     expect(placeLines(late, lines.slice(0, 2)).map((x) => x.start)).toEqual([24.85, 28]);

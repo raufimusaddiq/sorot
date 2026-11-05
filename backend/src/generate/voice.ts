@@ -118,7 +118,9 @@ export function placeLines(plan: Plan, lines: VoiceLine[]): Placed[] {
   });
   let cursor = 0;
   const out = lines.map((line) => {
-    const start = placed.get(line.id) ?? round3(cursor);
+    // the script's order is the voice's: a line its shot puts before the one ahead of it waits for that one
+    // (a plan quoted l7 in a shot before l6's, and the film said them swapped, 2026-11-05)
+    const start = Math.max(placed.get(line.id) ?? 0, round3(cursor));
     cursor = start + line.durationSec + GAP_SEC;
     return { line, start };
   });
