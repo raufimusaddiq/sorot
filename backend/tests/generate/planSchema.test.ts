@@ -40,10 +40,9 @@ describe("validatePlan", () => {
     ["blocks when the recipe forbids them", (p) => ({ ...p, blocks: ["data-chart"] }), { blocksAllowed: false }, "allow registry blocks"],
     ["an unknown block", (p) => ({ ...p, blocks: ["nope"] }), { blocks: ["data-chart"] }, "unknown blocks: nope"],
     ["a transition Sorot can't build", second((s) => ({ ...s, transition: "page curl" })), {}, "transition \"page curl\" isn't one Sorot can build; use one of cut, fade"],
-    ["an effect out of range", second((s) => ({ ...s, effects: { blurPx: 90 } })), {}, "effects.blurPx is a number from 0 to 40"],
+    ["an effect that is not a number", second((s) => ({ ...s, effects: { blurPx: "lots" } })), {}, "effects.blurPx is a number from 0 to 40"],
     ["a light without its angle", second((s) => ({ ...s, effects: { light: { intensity: 0.5, color: "warm" } } })), {}, "effects.light.color is a hex colour"],
     ["effects that are not an object", second((s) => ({ ...s, effects: "lots" })), {}, "effects must be an object"],
-    ["depth in halves", second((s) => ({ ...s, effects: { depthLayers: 2.5 } })), {}, "effects.depthLayers is a whole number"],
   ])("refuses: %s", (_name, mutate, over, message) => {
     const check = validatePlan(mutate(samplePlan()), ctx(over));
     expect(check.ok).toBe(false);
@@ -145,6 +144,9 @@ describe("validatePlan", () => {
     const fixed = validatePlan(mixed, ctx({ blocks: ["data-chart"], kitParts: ["shape", "shade"] }));
     expect(fixed.errors).toEqual([]);
     expect([fixed.plan!.blocks, fixed.plan!.shots[0]!.look!.parts!.map((p) => p.part)]).toEqual([["data-chart"], ["shade"]]);
+    // an effect value out of its range is brought into it (a plan failed on depthLayers 6), a half layer rounded
+    const effects = validatePlan(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => (i < 2 ? { ...s, effects: i ? { depthLayers: 2.5, blurPx: 90 } : { depthLayers: 6 } } : s)) }), ctx());
+    expect(effects.plan!.shots.slice(0, 2).map((s) => s.effects)).toEqual([{ depthLayers: 5 }, { depthLayers: 3, blurPx: 40 }]);
   });
 
   test("number extraction unifies the decimal comma", () => {

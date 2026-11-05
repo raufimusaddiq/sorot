@@ -342,7 +342,7 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
   return { ok: true, plan, errors, notes };
 }
 
-/** A shot's effects, each an exact value in range; anything else is an error to fix. */
+/** A shot's effects, each an exact value: a number out of range is brought into it (a plan failed on depthLayers 6), anything else is an error to fix. */
 export function checkEffects(raw: unknown, at: string, errors: string[]): ShotEffects | undefined {
   if (!isObj(raw)) {
     errors.push(`${at} must be an object`);
@@ -351,11 +351,11 @@ export function checkEffects(raw: unknown, at: string, errors: string[]): ShotEf
   const out: ShotEffects = {};
   const num = (key: string, v: unknown, min: number, max: number): number | undefined => {
     if (v === undefined || v === null) return undefined;
-    if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) {
+    if (typeof v !== "number" || !Number.isFinite(v)) {
       errors.push(`${at}.${key} is a number from ${min} to ${max}`);
       return undefined;
     }
-    return v;
+    return Math.min(max, Math.max(min, v));
   };
   if (raw.light !== undefined && raw.light !== null) {
     const l = record(raw.light);
@@ -367,11 +367,11 @@ export function checkEffects(raw: unknown, at: string, errors: string[]): ShotEf
     else out.light = { angleDeg, intensity, ...(color && HEX.test(color) ? { color } : {}) };
   }
   const blurPx = num("blurPx", raw.blurPx, 0, 40);
-  const depthLayers = num("depthLayers", raw.depthLayers, 2, 5);
+  const layers = num("depthLayers", raw.depthLayers, 2, 5);
+  const depthLayers = layers === undefined ? undefined : Math.round(layers);
   const glowPx = num("glowPx", raw.glowPx, 0, 80);
-  if (depthLayers !== undefined && !Number.isInteger(depthLayers)) errors.push(`${at}.depthLayers is a whole number`);
   if (blurPx !== undefined) out.blurPx = blurPx;
-  if (depthLayers !== undefined && Number.isInteger(depthLayers)) out.depthLayers = depthLayers;
+  if (depthLayers !== undefined) out.depthLayers = depthLayers;
   if (glowPx !== undefined) out.glowPx = glowPx;
   if (str(raw.reason)) out.reason = str(raw.reason).slice(0, 200);
   return Object.keys(out).filter((k) => k !== "reason").length ? out : undefined;

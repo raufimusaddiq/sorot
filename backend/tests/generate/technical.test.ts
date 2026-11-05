@@ -304,7 +304,8 @@ describe("technical step", () => {
     const listed = forbiddenNumberFindings(p, ["16.000", "lima koma tujuh lima persen", 3], "x");
     expect(codes(listed)).toEqual([["number_forbidden", "s01"], ["number_forbidden", "s02"]]);
     expect(listed[1]!.description).toContain("must not appear");
-    expect(forbiddenNumberFindings(withTexts("Dua kamar", "Selesai", "Dua kamar"), true, "x")).toHaveLength(2);   // same word in two shots: one finding each
+    expect(forbiddenNumberFindings(withTexts("Dua belas kamar", "Selesai", "Dua belas kamar"), true, "x")).toHaveLength(2);   // same number in two shots: one finding each
+    expect(forbiddenNumberFindings(withTexts("Satu kunjungan, dua buah", "Selesai", "x"), true, "x")).toEqual([]);   // a small count in words is language, not a figure
   });
 
   test("a flagged blocking content rule is must-fix; clear ones are nothing", () => {

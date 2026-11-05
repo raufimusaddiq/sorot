@@ -201,7 +201,8 @@ export function sourcedNumberFindings(plan: Plan, allowed: string[]): NewFinding
 function forbiddenHits(text: string, flag: unknown, brief: string) {
   if (flag === undefined || flag === false || flag === null) return [];
   const forbidden = Array.isArray(flag) ? numbersOf(flag.filter((x): x is string => typeof x === "string").join(" . ")) : null;
-  return forbidden ? numbersOf(text).filter((n) => forbidden.some((f) => sameNumber(n, f))) : unmatchedNumbers(text, [brief]);
+  // "no numbers beyond the brief's" is about figures: a small count in words ("satu kunjungan", one visit) is language, not data
+  return forbidden ? numbersOf(text).filter((n) => forbidden.some((f) => sameNumber(n, f))) : unmatchedNumbers(text, [brief]).filter((n) => /\d/.test(n.raw) || n.percent || n.value >= 10);
 }
 
 /** The same rule for the plan and script steps, so a number the brief rules out goes back to the director before anything is built. */

@@ -596,6 +596,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 
 - [X] T195 [US2] The motion measure's jump rule leaves out whole-frame changes (a flash, a fade: ≥ 128/255 of the frame), needs at least 2/255 of the frame, and skips a spike the next frames keep up (a move starting): the bench's 23 jumps were 2 real ones. A brief with no numbers holds the plan and script to it (`forbiddenIn` in `technical.ts`, used by `steps/plan.ts`, `steps/script.ts`). Tests in `backend/tests/generate/motion.test.ts`, `facts.test.ts`
 
+- [X] T196 [US1] A brief with no numbers rules out figures, not counting words: a spelled-out number under 10 that isn't a percentage ("satu kunjungan") passes; a plan's effect value out of its range is brought into it (depthLayers 6 → 5, 2.5 → 3) instead of failing the plan. Two bench builds (A-19, A-20) had failed on exactly these after T195. Tests in `backend/tests/generate/{planSchema,technical,director}.test.ts`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.

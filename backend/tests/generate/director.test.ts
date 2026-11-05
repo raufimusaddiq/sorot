@@ -186,7 +186,7 @@ describe("director: effects", () => {
       new Calls([["search_catalog", { query: "light", kind: "any" }], ["set_transition", { shotId: "s01", name: "flash", reason: "x" }]]),
       new Calls([
         ["set_transition", { shotId: "s02", name: "flash", reason: "the number lands" }], ["add_block", { shotId: "s03", name: "data-chart", reason: "the growth" }],
-        ["set_look", { shotId: "s01", glowPx: 24, reason: "the coin shines" }], ["set_look", { shotId: "s02", blurPx: 99, reason: "x" }],
+        ["set_look", { shotId: "s01", glowPx: 24, reason: "the coin shines" }], ["set_look", { shotId: "s02", blurPx: "lots", reason: "x" }],
         ["add_block", { shotId: "s02", name: "nope", reason: "y" }], ["set_transition", { shotId: "s03", name: "light-leak" }],
       ]),
       new AsText("A flash where the number lands, a chart and a glow."),
