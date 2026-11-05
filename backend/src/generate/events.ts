@@ -17,6 +17,9 @@ export interface EventContext {
 export interface EventOutcome {
   response?: unknown;
   tokens?: number;
+  /** The provider's input tokens, and how many of them came from its cache (SC-021). */
+  inputTokens?: number;
+  cachedTokens?: number;
 }
 
 const REDACTIONS: Array<[RegExp, string]> = [
@@ -42,17 +45,17 @@ export class DirectorLog {
   /** Runs `fn`, saves one event with its outcome and timing, and returns (or rethrows) its result. */
   async track<T>(ctx: EventContext, fn: () => Promise<T>, outcome: (value: T) => EventOutcome = (v) => ({ response: v })): Promise<T> {
     const started = performance.now();
-    const base = (): Omit<GenEvent, "ok" | "response" | "tokens"> => ({
+    const base = (): Omit<GenEvent, "ok" | "response" | "tokens" | "inputTokens" | "cachedTokens"> => ({
       id: crypto.randomUUID(), projectId: ctx.projectId, versionId: ctx.versionId ?? null, kind: ctx.kind,
       model: ctx.model ?? null, request: asText(ctx.request), ms: Math.round(performance.now() - started), createdAt: now(),
     });
     try {
       const value = await fn();
       const o = outcome(value);
-      this.store.saveGenEvent({ ...base(), ok: 1, response: asText(o.response), tokens: o.tokens ?? null });
+      this.store.saveGenEvent({ ...base(), ok: 1, response: asText(o.response), tokens: o.tokens ?? null, inputTokens: o.inputTokens ?? null, cachedTokens: o.cachedTokens ?? null });
       return value;
     } catch (e) {
-      this.store.saveGenEvent({ ...base(), ok: 0, response: asText((e as Error).message), tokens: null });
+      this.store.saveGenEvent({ ...base(), ok: 0, response: asText((e as Error).message), tokens: null, inputTokens: null, cachedTokens: null });
       throw e;
     }
   }

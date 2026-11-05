@@ -349,6 +349,8 @@ export interface GenEvent {
   ok: number;
   ms: number | null;
   tokens: number | null;
+  inputTokens: number | null;
+  cachedTokens: number | null;
   createdAt: string;
 }
 

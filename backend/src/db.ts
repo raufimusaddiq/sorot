@@ -351,6 +351,8 @@ CREATE TABLE IF NOT EXISTS gen_event (
     ok INTEGER NOT NULL,
     ms INTEGER,
     tokens INTEGER,
+    input_tokens INTEGER,
+    cached_tokens INTEGER,
     created_at TEXT NOT NULL
 );
 
@@ -429,6 +431,9 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   // any look, any director (2026-11-01): the kit parts a build used, and each shot's level
   ["gen_version", "kit", "TEXT"],
   ["gen_version", "shot_levels", "TEXT"],
+  // the provider's input and cached tokens per director call (2026-11-05, SC-021)
+  ["gen_event", "input_tokens", "INTEGER"],
+  ["gen_event", "cached_tokens", "INTEGER"],
 ];
 
 // Fills a column just added to an old database, where the value can be recovered.

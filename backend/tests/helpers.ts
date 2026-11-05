@@ -391,7 +391,8 @@ function completion(body: any, reply: string | AsText | Calls | ThoughtTooLong):
   const forced = calledTool(body);
   if (forced && typeof reply === "string") {
     const call = { id: "call_1", type: "function", function: { name: forced, arguments: reply } };
-    return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }] });
+    // the provider's usage, as an OpenAI-compatible gateway reports it
+    return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }], usage: { total_tokens: 30, prompt_tokens: 20, prompt_tokens_details: { cached_tokens: 12 } } });
   }
   return Response.json({ choices: [{ message: { role: "assistant", content: reply instanceof AsText ? reply.text : reply }, finish_reason: "stop" }] });
 }

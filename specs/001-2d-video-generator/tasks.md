@@ -574,6 +574,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 - [X] T182 Review fixes elsewhere: `accentOf` reads six-digit hex whole (`transitions.ts`); a call's outcome is recorded under the model that answered (`AnswerEvent.model`); a model name is decoded once when pinned (`app.ts`), with tests in `backend/tests/generate/composer.test.ts`, `director.test.ts`, `kit.test.ts`
 - [X] T183 [US10] Subject-to-ground contrast (a real GLM build drew a dark navy router and wall on a near-black ground that every check passed): four pixel measures and the stranger's read measured on the two GLM builds of the Wi-Fi brief (research.md "S8, a subject too dark to see"); the stranger names `faint` things and the director's `look` tool returns them as `look_faint` should-fix, kept out of the look step's verdict (`look.ts` `strangerRead`, `director.look`), with tests in `backend/tests/generate/look.test.ts` (FR-057)
 
+- [X] T184 [US10] The provider's input and cached tokens are kept per director call (`gen_event.input_tokens`, `cached_tokens`; `llm.ts` reads `prompt_tokens` and `prompt_tokens_details.cached_tokens` or `prompt_cache_hit_tokens`), so SC-021 is read from a build's own log, with tests in `backend/tests/llm.test.ts`, `backend/tests/generate/director.test.ts`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.

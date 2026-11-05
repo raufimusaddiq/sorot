@@ -161,6 +161,7 @@ TEXT and are validated in code (`planSchema.ts`).
 | response | TEXT | truncated to 20,000 chars |
 | ok | INTEGER NOT NULL | |
 | ms, tokens | INTEGER | |
+| input_tokens, cached_tokens | INTEGER | the provider's input tokens for a director call and how many it served from its cache (`prompt_tokens_details.cached_tokens`, or `prompt_cache_hit_tokens`); null when it doesn't say (added 2026-11-05, SC-021) |
 | created_at | TEXT | |
 
 ### Change to an existing table

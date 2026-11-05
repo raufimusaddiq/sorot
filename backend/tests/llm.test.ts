@@ -114,11 +114,11 @@ describe("chat", () => {
       delta({ role: "assistant", content: "" }), ": keep-alive", delta({ reasoning_content: "thinking" }),
       delta({ tool_calls: [{ index: 0, id: "c1", function: { name: "submit_plan", arguments: '{"ti' } }] }),
       delta({ tool_calls: [{ index: 0, function: { arguments: 'tle": "x"}' } }] }), "not json",
-      delta({}, "tool_calls"), { choices: [], usage: { total_tokens: 1234 } }, "[DONE]",
+      delta({}, "tool_calls"), { choices: [], usage: { total_tokens: 1234, prompt_tokens: 1000, prompt_tokens_details: { cached_tokens: 800 } } }, "[DONE]",
     ));
     const msg = await new Llm(CFG, s.fetchFn, 0).chat([]);
     expect(s.requests[0]!.body).toMatchObject({ stream: true, stream_options: { include_usage: true } });
-    expect(msg).toEqual({ role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "submit_plan", arguments: '{"title": "x"}' } }], usage: 1234 });
+    expect(msg).toEqual({ role: "assistant", content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "submit_plan", arguments: '{"title": "x"}' } }], usage: 1234, inputTokens: 1000, cachedTokens: 800 });
     const text = server(sse(delta({ content: "Hal" }), delta({ content: "o" }, "stop")));
     expect((await new Llm(CFG, text.fetchFn, 0).chat([])).content).toBe("Halo");
     // a gateway error inside the stream is transient, so it is tried again; a stream cut by the budget says so

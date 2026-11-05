@@ -69,7 +69,7 @@ COLUMNS.gen_version = [
 COLUMNS.gen_verdict = ["id", "version_id", "kind", "status", "findings", "judged_by", "inputs", "created_at"];
 COLUMNS.gen_asset = ["id", "project_id", "kind", "origin", "path", "shot_id", "prompt_hash", "meta", "created_at"];
 COLUMNS.gen_export = ["id", "project_id", "version_id", "path", "format", "duration_sec", "title", "description", "created_at"];
-COLUMNS.gen_event = ["id", "project_id", "version_id", "kind", "model", "request", "response", "ok", "ms", "tokens", "created_at"];
+COLUMNS.gen_event = ["id", "project_id", "version_id", "kind", "model", "request", "response", "ok", "ms", "tokens", "input_tokens", "cached_tokens", "created_at"];
 COLUMNS.gen_recipe = ["id", "name", "version", "built_in", "description", "recipe", "idea_cursor", "created_at", "updated_at"];
 COLUMNS.gen_fact = [
   "id", "project_id", "idea_id", "claim", "value", "source_url", "status", "original_value", "evidence", "added_by",

@@ -43,6 +43,9 @@ export interface ChatMessage {
   name?: string;
   /** Tokens the call used, when the server reports it (replies only; never sent). */
   usage?: number;
+  /** Of the input, how many tokens there were and how many the provider served from its cache (replies only). */
+  inputTokens?: number;
+  cachedTokens?: number;
 }
 
 export interface ToolDef {
@@ -289,8 +292,10 @@ export class Llm {
     if (!msg.content && !msg.tool_calls?.length && choice?.finish_reason === "length") {
       throw new LlmError(`LLM used all ${String(body.max_tokens)} max_tokens before answering (raise ${opts.budgetName ?? "LLM_MAX_TOKENS"} for reasoning models)`, false, true);
     }
-    const used = (data.usage as { total_tokens?: unknown } | undefined)?.total_tokens;
-    return { ...msg, content: msg.content ?? "", ...(typeof used === "number" ? { usage: used } : {}) };
+    const u = (data.usage ?? {}) as { total_tokens?: unknown; prompt_tokens?: unknown; prompt_tokens_details?: { cached_tokens?: unknown }; prompt_cache_hit_tokens?: unknown };
+    const n = (v: unknown) => (typeof v === "number" ? v : undefined);
+    const used = n(u.total_tokens), input = n(u.prompt_tokens), cached = n(u.prompt_tokens_details?.cached_tokens) ?? n(u.prompt_cache_hit_tokens);
+    return { ...msg, content: msg.content ?? "", ...(used !== undefined ? { usage: used } : {}), ...(input !== undefined ? { inputTokens: input } : {}), ...(cached !== undefined ? { cachedTokens: cached } : {}) };
   }
 
   /**

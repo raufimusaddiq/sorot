@@ -599,7 +599,7 @@ export class Director {
           answer = typeof args === "string" ? args : args ? JSON.stringify(args) : r.content;
           return { message: r, call };
         },
-        (out) => ({ response: answer || out.message.content }),
+        (out) => ({ response: answer || out.message.content, tokens: out.message.usage, inputTokens: out.message.inputTokens, cachedTokens: out.message.cachedTokens }),
       );
       const reply = loop ? await this.useTools(project, model, messages, loop, name, callModel, kind === "scene") : await callModel(true);
       const parsed = answer ? parseJson(answer) : null;

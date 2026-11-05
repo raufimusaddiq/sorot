@@ -19,7 +19,7 @@ const verdict = (over: Partial<GenVerdict> = {}): GenVerdict => ({
   id: "d1", versionId: "v1", kind: "TECHNICAL", status: "PASS", findings: "[]", judgedBy: "code", inputs: null, createdAt: T, ...over,
 });
 const event = (over: Partial<GenEvent> = {}): GenEvent => ({
-  id: "e1", projectId: "p1", versionId: null, kind: "plan", model: "m", request: "r", response: "ok", ok: 1, ms: 5, tokens: 9,
+  id: "e1", projectId: "p1", versionId: null, kind: "plan", model: "m", request: "r", response: "ok", ok: 1, ms: 5, tokens: 9, inputTokens: 7, cachedTokens: 4,
   createdAt: T, ...over,
 });
 

@@ -92,12 +92,12 @@ describe("director: storylines", () => {
     expect(systemOf(replace.requests[0]!)).toContain("submit_storylines");
   });
 
-  test("calls are logged with the model, request and response; an LLM failure keeps the project state and is logged", async () => {
+  test("calls are logged with the model, request, response and the provider's tokens (input, cached); an LLM failure keeps the project state and is logged", async () => {
     const r = rig([json({ storylines: [story(1)] }), new Error("quota")]);
     await ask(r, { count: 1 });
     await expect(ask(r, { count: 1 })).rejects.toBeInstanceOf(LlmError);
     const [ok, failed] = r.events();
-    expect(ok).toMatchObject({ kind: "storylines", model: "m", ok: 1 });
+    expect(ok).toMatchObject({ kind: "storylines", model: "m", ok: 1, tokens: 30, inputTokens: 20, cachedTokens: 12 });
     expect(ok!.request).toContain("Jelaskan bunga majemuk");
     expect(failed).toMatchObject({ kind: "storylines", ok: 0 });
     expect(failed!.response).toContain("quota");
