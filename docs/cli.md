@@ -1,4 +1,4 @@
-# sorot — command-line client
+# sorot: command-line client
 
 `sorot` drives Sorot from a terminal: import and process videos, follow
 jobs, list and download clips, run discovery, and start/stop the app. It is a
@@ -18,13 +18,13 @@ Written by the installer to `/etc/sorot/cli.conf` (first match wins:
 before the rename are still found at `/etc/viralclip/cli.conf` with `VCLIP_*` keys):
 
 ```
-SOROT_MODE=docker          # docker | native — how `up/down/logs` work
+SOROT_MODE=docker          # docker | native: how `up/down/logs` work
 SOROT_APP_DIR=/home/me/sorot
 SOROT_URL=http://localhost:8080
 SOROT_SERVICE=sorot       # systemd unit (native)
 ```
 
-`SOROT_URL` in the environment, or `--url`, overrides the URL — e.g. to drive
+`SOROT_URL` in the environment, or `--url`, overrides the URL, e.g. to drive
 the app on another machine (`up/down/logs` still act on the local install).
 
 ## Commands
@@ -46,7 +46,7 @@ the app on another machine (`up/down/logs` still act on the local install).
 | `connect jev [--model jev-1.14.0] [--base-url URL] [--key -] [--director on\|off]`, `connect tebar [--base-url URL] [--key -]` | Save the Jev / Tebar connection (`--director off`: Jev only gates). |
 | `connect <llm\|jev\|tebar> --on \| --off \| --reset` | Switch it on/off, or go back to the server's env values. |
 | `connect test <llm\|jev\|tebar>` | One small real call; exit 1 if it fails. |
-| `connect setup` | Guided, on a terminal: Jev, then the LLM, then Tebar — asks (keys hidden), saves, tests, lists your Tebar accounts. |
+| `connect setup` | Guided, on a terminal: Jev, then the LLM, then Tebar; asks (keys hidden), saves, tests, lists your Tebar accounts. |
 | `accounts` | Your Tebar accounts, grouped by workspace; the ones Sorot can't post a video to are marked. |
 | `publish <clip>` | On a terminal: pick accounts by number, see the drafted copy and warnings, answer what TikTok / YouTube need (who can see it, made for kids), confirm. In scripts, every choice is a flag: `--to id\|name,…`, `--text "…"`, `--title "…"`, `--privacy LEVEL` or `--draft` (TikTok), `--made-for-kids yes\|no`, `--at ISO-with-zone`, `--confirm-review`, `--override`, `--yes`. It never picks privacy or made-for-kids for you. |
 | `posts <clip>`, `posts refresh\|retry\|cancel <post>` | A clip's posts with status and links / re-read, retry the failed accounts, cancel a scheduled post. |

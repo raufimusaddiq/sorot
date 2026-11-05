@@ -4,7 +4,7 @@ import { has, num, str, UsageError, type Args } from "./args";
 import type { CliConfig } from "./config";
 import { clock, seconds, short, table, truncate, when } from "./format";
 import { genCmd } from "./generate";
-import { setupCmd } from "./social";
+import { KENARI_BASE_URL, KENARI_DEFAULT_MODEL, setupCmd } from "./social";
 
 export interface Deps {
   api: Api;
@@ -378,7 +378,7 @@ function showConnections(d: Deps, a: Args, s: Json): number {
   const jev = s.jev as Json;
   d.out(`\nJev picks moments, hooks and titles: ${jev.director ? "on" : "off"} (wins over the LLM director when Jev is active)`);
   d.out(`LLM director (brief + own clip picks): ${llm.director ? "on" : "off"}`);
-  d.out("Guided: sorot connect setup   ·   change one: sorot connect llm --base-url URL --model M [--key -]   ·   test: sorot connect test llm");
+  d.out("Guided: sorot connect setup   ·   Kenari in one step: sorot connect llm --kenari --key -   ·   change one: sorot connect llm --base-url URL --model M [--key -]   ·   test: sorot connect test llm");
   return 0;
 }
 
@@ -400,6 +400,15 @@ async function connectCmd(d: Deps, a: Args): Promise<number> {
     return r.ok ? 0 : 1;
   }
   if (!CONNECTIONS.includes(sub)) throw new UsageError(`Unknown connection: ${sub} (llm, jev or tebar)`);
+  if (sub === "llm" && has(a, "kenari")) {
+    const key = str(a, "key");
+    if (key === undefined) throw new UsageError("--kenari needs a key: --key kn-… or --key -");
+    const apiKey = key === "-" ? await d.readStdin() : key;
+    const model = str(a, "model") ?? KENARI_DEFAULT_MODEL;
+    const probe = await d.api.post("/api/settings/llm/probe", { model, apiKey });
+    if (!probe.ok) { d.err(`llm (Kenari): ${probe.error}`); return 1; }
+    return showConnections(d, a, await d.api.put("/api/settings/llm", { baseUrl: KENARI_BASE_URL, model, apiKey }));
+  }
   const patch: Json = {};
   if (has(a, "reset")) {
     const fields = sub === "llm" ? ["enabled", "baseUrl", "model", "apiKey", "director"]

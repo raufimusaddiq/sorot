@@ -2,7 +2,9 @@
 
 > **Drop in a 2-hour podcast. Get back the 60 seconds people will actually watch.** ✂️🔥
 
-**Sorot** (Indonesian for *spotlight*) turns long YouTube or local videos into vertical **9:16 clips** — transcribed, scored, framed on the speaker, captioned word by word, with a ready-to-paste title. Built for **Indonesian**, runs **100% locally** (Jev, an LLM and Tebar are optional online extras). No uploads, no subscriptions, no watermark. 🏠
+**Sorot** (Indonesian for *spotlight*) turns long YouTube or local videos into vertical **9:16 clips**, transcribed, scored, framed on the speaker, captioned word by word, with a ready-to-paste title. Built for **Indonesian**, runs **100% locally** (Jev, an LLM and Tebar are optional online extras). No uploads, no subscriptions, no watermark. 🏠
+
+AI features default to [Kenari](https://kenari.id) (paste one API key and go), but any OpenAI-compatible endpoint works too. 🙏
 
 ```
 📺 video  →  🎙️ Whisper  →  🧠 scoring (+ optional Jev / LLM)  →  📱 9:16 render  →  💬 karaoke captions  →  🚀 post-ready clips
@@ -14,19 +16,19 @@
 
 | | |
 |---|---|
-| 🎙️ **Hears every word** | faster-whisper `large-v3-turbo` with word timestamps — or the video's own YouTube captions |
+| 🎙️ **Hears every word** | faster-whisper `large-v3-turbo` with word timestamps, or the video's own YouTube captions |
 | 🧠 **Finds the gold** | 13 weighted signals (hooks, keywords, energy, faces, motion…) rank every moment **PRIMARY / BACKUP / SKIP** |
-| 🤖 **Optional LLM** | Ollama, Groq, OpenRouter or OpenAI writes copy per platform and runs auto-discover; without Jev it also directs — reads the whole video, picks its own moments and hooks, follows your direction ("only the funny parts") — off by default |
-| 🚦 **Jev picks and gates** | [Jev](https://docs.typesafe.ai) answers fixed yes/no questions about every candidate moment (hook, needs context, ending, filler, payoff, risks, fits your direction), then picks the hook line and a title quoted from the clip — in seconds. Without it the LLM director (if any) or the rules decide |
+| 🤖 **Optional LLM** | [Kenari](https://kenari.id) by default (one API key, pick a model, done), or Ollama, Groq, OpenRouter, OpenAI, any OpenAI-compatible endpoint. Writes copy per platform and runs auto-discover; without Jev it also directs: reads the whole video, picks its own moments and hooks, follows your direction ("only the funny parts"), off by default |
+| 🚦 **Jev picks and gates** | [Jev](https://docs.typesafe.ai) answers fixed yes/no questions about every candidate moment (hook, needs context, ending, filler, payoff, risks, fits your direction), then picks the hook line and a title quoted from the clip, in seconds. Without it the LLM director (if any) or the rules decide |
 | 🚀 **Publish via Tebar** | Post to TikTok, Instagram, YouTube, Threads… through [Tebar](https://tebar.app) and pull views/likes back into learning |
 | 🎯 **Speaker in frame** | Face tracking moves the crop with whoever's talking, cutting on scene changes |
 | 💬 **Captions that pop** | Karaoke ASS captions in 4 looks: `default`, `hormozi`, `storyteller`, `cinematic` |
-| 🪝 **Hook first** | Replays the strongest line up front — stop the scroll |
+| 🪝 **Hook first** | Replays the strongest line up front: stop the scroll |
 | 🤫 **Kills dead air** | Silence trim cuts pauses from video, audio *and* captions |
 | 🎵 **Background music** | Tracks in `data/music` loop under the clip and duck under speech |
-| ✏️ **Fix anything** | Nudge timing, fix a word, change style — re-renders one clip in ~20 s |
+| ✏️ **Fix anything** | Nudge timing, fix a word, change style: re-renders one clip in ~20 s |
 | 🔎 **Finds source videos** | ✨ Auto-discover reads what's trending and picks sources with reasons; plus search and a channel crawler |
-| 📈 **Learns what works** | Views and likes come back (from Tebar, or typed in) — after 5+ results the weights re-fit to reality |
+| 📈 **Learns what works** | Views and likes come back (from Tebar, or typed in), after 5+ results the weights re-fit to reality |
 | ⌨️ **Scriptable** | `sorot` CLI + plain HTTP API |
 
 ---
@@ -47,7 +49,7 @@ Captions and ranking are the landing page's live demo.
 
 ## 🚀 Install
 
-Ready-made images on **`ghcr.io/raufimusaddiq/sorot`**, published per release — no 10-minute build. 📦 **`:latest`** = CPU (smaller) · **`:latest-cuda`** = NVIDIA GPU. The installers pick for you.
+Ready-made images on **`ghcr.io/raufimusaddiq/sorot`**, published per release: no 10-minute build. 📦 **`:latest`** = CPU (smaller) · **`:latest-cuda`** = NVIDIA GPU. The installers pick for you.
 
 | | Path | GPU | Effort |
 |---|---|---|---|
@@ -62,7 +64,7 @@ Then open 🌐 **http://localhost:8080/studio** (UI + API on one port).
 
 ### 🪟 Windows — Docker Desktop
 
-Paste into PowerShell — no git needed:
+Paste into PowerShell, no git needed:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/raufimusaddiq/sorot/master/scripts/install.ps1 | iex"
@@ -85,13 +87,13 @@ Running `.ps1` by hand needs `Set-ExecutionPolicy -Scope CurrentUser RemoteSigne
 
 ### 🪟 Windows — native (no Docker)
 
-Bun, Python and ffmpeg straight on Windows — no Docker, no WSL:
+Bun, Python and ffmpeg straight on Windows, no Docker, no WSL:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/raufimusaddiq/sorot/master/scripts/install.ps1))) -Mode native"
 ```
 
-winget brings ffmpeg + Python 3.12, Bun goes in `.tools\bun`, then the venv (+ cuBLAS/cuDNN wheels on NVIDIA — no CUDA toolkit), UI build and Whisper model. Starts at logon. ⚙️ Settings `.env.native` · 📜 logs `data\logs\sorot.log`. *New and untested on real Windows — feedback welcome.* 🙏
+winget brings ffmpeg + Python 3.12, Bun goes in `.tools\bun`, then the venv (+ cuBLAS/cuDNN wheels on NVIDIA, no CUDA toolkit), UI build and Whisper model. Starts at logon. ⚙️ Settings `.env.native` · 📜 logs `data\logs\sorot.log`. *New and untested on real Windows, feedback welcome.* 🙏
 
 Options (both modes): `-Port 8090` · `-Cpu` · `-Dir D:\Sorot` · `-Build` (Docker) · `-SkipModel` · `-NoStart` · `-Uninstall [-Purge]`.
 
@@ -101,11 +103,11 @@ Debian / Ubuntu and friends:
 
 ```bash
 git clone https://github.com/raufimusaddiq/sorot.git && cd sorot
-scripts/install.sh                 # 🐳 Docker (recommended) — pulls the image
+scripts/install.sh                 # 🐳 Docker (recommended): pulls the image
 scripts/install.sh --mode native   # 🧩 or Bun + Python + systemd
 ```
 
-Installs what's missing (Docker, NVIDIA Container Toolkit — or ffmpeg, Python, Bun), picks GPU or CPU, survives reboots, adds the `sorot` CLI. Re-run to update · `--build` to build locally · `--uninstall` to remove. 👉 [docs/linux-install.md](docs/linux-install.md)
+Installs what's missing (Docker, NVIDIA Container Toolkit, or ffmpeg, Python, Bun), picks GPU or CPU, survives reboots, adds the `sorot` CLI. Re-run to update · `--build` to build locally · `--uninstall` to remove. 👉 [docs/linux-install.md](docs/linux-install.md)
 
 ### 🐳 Docker — any OS
 
@@ -139,14 +141,14 @@ services:
 
 📜 `… logs -f backend` · ⏹️ `… down` · ⬇️ `… pull backend && … up -d backend` · 🔨 `… up -d --build backend`. Settings in `.env.docker`; `SOROT_VERSION` pins a release (default `latest`).
 
-🧠 The Whisper model (~1.6 GB) isn't in the image — it downloads once into the `hf-cache` volume and survives updates. Installers fetch it up front; by hand:
+🧠 The Whisper model (~1.6 GB) isn't in the image: it downloads once into the `hf-cache` volume and survives updates. Installers fetch it up front; by hand:
 `docker compose --env-file .env.docker run --rm --entrypoint /app/ai-pipeline/.venv/bin/python3 backend -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8')"`
 
-Images are `linux/amd64` — on Apple Silicon use [Homebrew](#-macos--homebrew).
+Images are `linux/amd64`; on Apple Silicon use [Homebrew](#-macos--homebrew).
 
 ### 🍎 macOS — Homebrew
 
-CPU only, manual, *untested on a Mac — feedback welcome*:
+CPU only, manual, *untested on a Mac, feedback welcome*:
 
 ```bash
 brew install oven-sh/bun/bun ffmpeg python@3.12
@@ -170,7 +172,7 @@ Any `.env.docker` option works in `backend/.env`. 🔄 Update: `git pull`, re-ru
 
 ### ⌨️ CLI only — `sorot` anywhere
 
-One binary that drives any Sorot over HTTP — e.g. your laptop → a GPU box. The Linux installer adds it; elsewhere:
+One binary that drives any Sorot over HTTP (e.g. your laptop → a GPU box). The Linux installer adds it; elsewhere:
 
 ```bash
 cd cli && bun run build                          # → cli/dist/sorot (.exe on Windows)
@@ -183,11 +185,11 @@ Put it on `PATH`, then `SOROT_URL=http://gpu-box:8080 sorot health`. 📖 [docs/
 
 ### 💻 No graphics card? No problem
 
-Everything runs on the **CPU** — installers switch automatically (`--cpu` / `-Cpu` to force). Only **NVIDIA** GPUs accelerate (CUDA + NVENC).
+Everything runs on the **CPU**; installers switch automatically (`--cpu` / `-Cpu` to force). Only **NVIDIA** GPUs accelerate (CUDA + NVENC).
 
-🧠 On a CPU, Sorot renders only the **10 best clips** per video — the rest are listed with scores and titles, one **Render** click away (`MAX_RENDER_CLIPS`). It also runs one video at a time, shows how far Whisper has got (**Transcribing 37%**), and a retry reuses the transcript instead of running Whisper again. Importing a time range copies that section instead of re-encoding it. A GPU renders every PRIMARY/BACKUP clip.
+🧠 On a CPU, Sorot renders only the **10 best clips** per video; the rest are listed with scores and titles, one **Render** click away (`MAX_RENDER_CLIPS`). It also runs one video at a time, shows how far Whisper has got (**Transcribing 37%**), and a retry reuses the transcript instead of running Whisper again. Importing a time range copies that section instead of re-encoding it. A GPU renders every PRIMARY/BACKUP clip.
 
-⏱️ 12-core CPU: a 1-hour video transcribed in ~30 min (`large-v3-turbo`) or ~15 min (`small`), plus ~25 min to render 45 clips. RTX 4060: a 54-min video took ~22 min end to end. Both were measured before the CPU speed-ups (one-pass render with captions, `veryfast`, Whisper on every core) — in a 4-core benchmark a 30 s clip went from 168 s to 46 s, so expect much less now. On 4 cores, a 40 s clip with face framing and captions renders in ~22 s; scoring an hour of video takes ~35 s. 🐢 Whisper is the slow part: try `WHISPER_BEAM_SIZE=1` or `WHISPER_MODEL=small`, or `YOUTUBE_CAPTIONS=true` to skip it when a video has uploaded captions.
+⏱️ 12-core CPU: a 1-hour video transcribed in ~30 min (`large-v3-turbo`) or ~15 min (`small`), plus ~25 min to render 45 clips. RTX 4060: a 54-min video took ~22 min end to end. Both were measured before the CPU speed-ups (one-pass render with captions, `veryfast`, Whisper on every core); in a 4-core benchmark a 30 s clip went from 168 s to 46 s, so expect much less now. On 4 cores, a 40 s clip with face framing and captions renders in ~22 s; scoring an hour of video takes ~35 s. 🐢 Whisper is the slow part: try `WHISPER_BEAM_SIZE=1` or `WHISPER_MODEL=small`, or `YOUTUBE_CAPTIONS=true` to skip it when a video has uploaded captions.
 
 ---
 
@@ -203,7 +205,7 @@ Everything runs on the **CPU** — installers switch automatically (`--cpu` / `-
 
 ---
 
-## ⌨️ `sorot` — the command line
+## ⌨️ `sorot`: the command line
 
 ```bash
 sorot import "https://youtu.be/…" --style hormozi --trim --hook   # 🎬 import, wait, list clips
@@ -232,7 +234,7 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      3. 🎙️ Transcribe    faster-whisper, word timestamps
                      4. ✂️ Segment       gap-based candidates + Jev-judged sentence windows (or the LLM director)
                      5. 🧠 Score         13 signals + Jev (or LLM review), quality gate, hook + title
-                     6. 📱 Render 9:16   crop, silence trim, hook, captions + music — one encode
+                     6. 📱 Render 9:16   crop, silence trim, hook, captions + music, one encode
                      7. 💬 Captions      (re-burns only clips rendered the old way)
                      8. 🔁 Variations    zoom presets (off unless VARIATIONS=true)
                      9. 📊 Analytics     distribution + recommendations
@@ -266,33 +268,33 @@ With Jev (or else an LLM), the score is 50% formula + 50% its judgement; if it's
 
 ### 🎬 Director, 🚦 quality gate, 🚀 publishing
 
-- 🎬 **Director** — **Jev first**: code proposes a window at every sentence start, Jev judges them all and keeps the best 40 next to the rule windows, scores up to 200 candidates, and picks the hook line and a quoted title for the clips that render. On 10 min of a real transcript, segmenting + scoring took ~10 s with Jev (about $0.01 at TypeSafe's listed price) vs 6.5-9 min with a reasoning LLM as director. Without Jev (or `JEV_DIRECTOR=false`), the **LLM director** reads the video, writes a brief and picks moments + hooks. Either way, overlaps keep the better clip; give a **direction** at import to steer it.
-- 🚦 **Gate** before render: PASS / REVIEW (content risk — you decide) / FAIL (held back, renderable on request). Jev when connected, text rules otherwise. Measure the questions with `bun run jev-eval`.
+- 🎬 **Director** (**Jev first**): code proposes a window at every sentence start, Jev judges them all and keeps the best 40 next to the rule windows, scores up to 200 candidates, and picks the hook line and a quoted title for the clips that render. On 10 min of a real transcript, segmenting + scoring took ~10 s with Jev (about $0.01 at TypeSafe's listed price) vs 6.5-9 min with a reasoning LLM as director. Without Jev (or `JEV_DIRECTOR=false`), the **LLM director** reads the video, writes a brief and picks moments + hooks. Either way, overlaps keep the better clip; give a **direction** at import to steer it.
+- 🚦 **Gate** before render: PASS / REVIEW (content risk, you decide) / FAIL (held back, renderable on request). Jev when connected, text rules otherwise. Measure the questions with `bun run jev-eval`.
 - 🤖 **The LLM** is for writing: post copy per platform, and the ✨ auto-discover agent that searches for new videos.
 - 🚀 **Publish** (Tebar), in the studio or `sorot publish`: pick accounts (grouped by Tebar workspace) → LLM copy per platform → you edit and choose (TikTok privacy or send as a draft, YouTube "made for kids") → post or schedule → retry failed accounts or cancel a scheduled post → metrics sync every 6 h into learning.
 
-👉 [docs/creative-loop.md](docs/creative-loop.md) — the design, the questions and their sources.
+👉 [docs/creative-loop.md](docs/creative-loop.md): the design, the questions and their sources.
 
 ### 🔬 What's actually "AI" here?
 
-Whisper is a neural network, and so is the LLM if you add one. Faces use classic ML (Haar cascades). The clip score is a **hand-tuned formula** — fast, explainable, offline — not a trained model; LightGBM can take over after 200+ real results. 👉 [docs/ai-audit.md](docs/ai-audit.md)
+Whisper is a neural network, and so is the LLM if you add one. Faces use classic ML (Haar cascades). The clip score is a **hand-tuned formula** (fast, explainable, offline), not a trained model; LightGBM can take over after 200+ real results. 👉 [docs/ai-audit.md](docs/ai-audit.md)
 
 ### 📈 Learning from your posts
 
-📤 Views / likes / comments / shares / saves — synced from Tebar, or logged by hand → 🧮 a time-normalised viral score → 🔄 after 5+, **Retrain scoring** (Pearson + EMA, α = 0.3) → ✅ next import uses them. Learned weights live in `data/weights.json` and survive updates.
+📤 Views / likes / comments / shares / saves, synced from Tebar, or logged by hand → 🧮 a time-normalised viral score → 🔄 after 5+, **Retrain scoring** (Pearson + EMA, α = 0.3) → ✅ next import uses them. Learned weights live in `data/weights.json` and survive updates.
 
 ### 🔎 Discovery
 
 Finds **long-form sources** (podcasts, talk shows, stand-up, VODs), not other people's clips: re-clips filtered, 30 min and longer favoured, last 90 days by default.
 
-- ✨ **Auto-discover** — the LLM agent reads what Indonesians talk about now, searches YouTube, reads captions, picks with reasons. No LLM? Random anchor queries, best scores, ≤ 2 per channel.
-- 🧾 **Whole-video scoring** in 45 s caption windows — strong moments, best timestamps, talk ratio.
+- ✨ **Auto-discover**: the LLM agent reads what Indonesians talk about now, searches YouTube, reads captions, picks with reasons. No LLM? Random anchor queries, best scores, ≤ 2 per channel.
+- 🧾 **Whole-video scoring** in 45 s caption windows: strong moments, best timestamps, talk ratio.
 - 🗣️ **Reasons** like "3 strong moments, best at 4:38".
 - 📡 **Channel crawler** profiles sources and rejects clip farms; queue the best in one go.
 
 ### 📝 Titles & descriptions
 
-Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description** (hook + summary + 7 hashtags + CTA) — one click to copy.
+Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description** (hook + summary + 7 hashtags + CTA), one click to copy.
 
 ---
 
@@ -314,23 +316,23 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 | `BGM_FILE` / `BGM_VOLUME` | none / `0.12` | Default music from `data/music` |
 | `X264_PRESET` | `veryfast` | CPU encoder preset (`fast`: slightly better quality, ~2x slower) |
 | `WHISPER_THREADS` | all cores | CPU threads for Whisper |
-| `WHISPER_BEAM_SIZE` | `5` | `1` = faster on CPU, a little less accurate — try it on your videos |
+| `WHISPER_BEAM_SIZE` | `5` | `1` = faster on CPU, a little less accurate; try it on your videos |
 | `MAX_RENDER_CLIPS` | `10` on CPU, all on GPU | Best clips rendered per video; the rest render on request. `0` = all |
 | `MAX_CONCURRENT_PIPELINES` | `1` on CPU, `2` on GPU | Videos processed at once (more wait in a queue) |
 | `VARIATIONS` | `false` | Also make zoom-preset copies of the top clips (not shown in the app yet) |
 | `LLM_BASE_URL` / `LLM_MODEL` | empty (off) | OpenAI-compatible endpoint, e.g. Ollama `http://host.docker.internal:11434/v1` + `qwen2.5:7b` |
-| `LLM_API_KEY` | empty | Hosted LLMs — in `.env.llm` (gitignored), never `.env.docker` |
+| `LLM_API_KEY` | empty | Hosted LLMs, in `.env.llm` (gitignored), never `.env.docker` |
 | `LLM_DIRECTOR` | `true` | With an LLM: brief + own moment picks + hook. `false` = review and copy only |
 | `LLM_TIMEOUT` / `LLM_MAX_TOKENS` | `120` / `4000` | Seconds and output tokens per call. Reasoning models (Kimi, DeepSeek-R1…) think before they answer: give them `300` s and room in the budget |
-| `JEV_API_KEY` | empty (off) | Jev quality gate ([TypeSafe](https://docs.typesafe.ai)) — in `.env.llm`. Off = the rules answer the gate's questions |
+| `JEV_API_KEY` | empty (off) | Jev quality gate ([TypeSafe](https://docs.typesafe.ai)), in `.env.llm`. Off = the rules answer the gate's questions |
 | `JEV_MODEL` / `JEV_URL` | `jev-1.14.0` / TypeSafe's `/v1/systemone` | Pinned model; OpenRouter works too (`https://openrouter.ai/api/alpha/decisions` + its model id) |
 | `JEV_DIRECTOR` | `true` | With Jev: it finds the moments, scores them, picks hooks and quote titles (the LLM director and review are skipped). `false` = Jev only gates |
-| `TEBAR_API_KEY` | empty (off) | Publishing via [Tebar](https://docs.tebar.app/api) (paid plan) — in `.env.llm` |
+| `TEBAR_API_KEY` | empty (off) | Publishing via [Tebar](https://docs.tebar.app/api) (paid plan), in `.env.llm` |
 | `TEBAR_SYNC_HOURS` | `6` | Pull posted clips' metrics into learning every N hours (`0` = only on request) |
 | `WEB_SEARCH` | `bing` | `bing` (no key), a SearXNG URL, or `off` |
 | `SOROT_VERSION` | `latest` | Image tag to run, e.g. `1.0.0` |
 
-🔌 LLM, Jev and Tebar can also be set in the app (**Settings** in the dock) or with `sorot connect` — saved in the database, they win over these variables; *Use .env* / `sorot connect <name> --reset` goes back.
+🔌 LLM, Jev and Tebar can also be set in the app (**Settings** in the dock) or with `sorot connect`, saved in the database, they win over these variables; *Use .env* / `sorot connect <name> --reset` goes back.
 
 ---
 
@@ -338,7 +340,7 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 
 | Part | Tech |
 |-----------|------|
-| 🟨 Backend | Bun + TypeScript (`bun:sqlite`, zero runtime deps) — API, scoring, discovery, LLM agent, serves the UI |
+| 🟨 Backend | Bun + TypeScript (`bun:sqlite`, zero runtime deps): API, scoring, discovery, LLM agent, serves the UI |
 | 🐍 Media | Python 3 · faster-whisper · OpenCV · NumPy · ffmpeg / libass · yt-dlp |
 | 🤖 LLM | Any OpenAI-compatible endpoint (optional) |
 | ⚛️ Frontend | Next.js 14, static export |
@@ -373,10 +375,10 @@ cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~200 pipeline tests
 
 ### 📦 CI & releases
 
-- 🧪 [`ci.yml`](.github/workflows/ci.yml) — tests on pushes to `master` and every PR; image-affecting changes also build the **CPU** image (cached, not pushed) and smoke-test it.
-- 🚀 [`release-image.yml`](.github/workflows/release-image.yml) — builds + pushes **CPU and CUDA** images only on a **GitHub release** (`v1.2.3` → `:1.2.3`, `:1.2`, `:latest`, + `-cuda`; pre-releases keep `:latest`) or a **manual run** (Actions → *Release image*).
+- 🧪 [`ci.yml`](.github/workflows/ci.yml): tests on pushes to `master` and every PR; image-affecting changes also build the **CPU** image (cached, not pushed) and smoke-test it.
+- 🚀 [`release-image.yml`](.github/workflows/release-image.yml): builds + pushes **CPU and CUDA** images only on a **GitHub release** (`v1.2.3` → `:1.2.3`, `:1.2`, `:latest`, + `-cuda`; pre-releases keep `:latest`) or a **manual run** (Actions → *Release image*).
 
-To ship: 📋 [docs/release.md](docs/release.md) — versions, checklist, checking the images, rollback. 📰 What changed: [CHANGELOG.md](CHANGELOG.md).
+To ship: 📋 [docs/release.md](docs/release.md): versions, checklist, checking the images, rollback. 📰 What changed: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -400,12 +402,20 @@ To ship: 📋 [docs/release.md](docs/release.md) — versions, checklist, checki
 ## 🗺️ Roadmap
 
 - 🎯 **Calibrate the gate** on real labelled clips (`bun run jev-eval`) and feed its answers to training as features
-- 💬 **Comments** — Tebar comment inbox with LLM-drafted replies you approve
+- 💬 **Comments**: Tebar comment inbox with LLM-drafted replies you approve
+
+---
+
+## 🙏 Thanks
+
+Sorot's default AI provider, [Kenari](https://kenari.id), supports this project through the
+Kenari Grant. Kenari stays optional and swappable: the Settings panel and `sorot connect llm`
+always offer a plain OpenAI-compatible endpoint instead, with no Kenari key required.
 
 ---
 
 ## 📄 License
 
-[MIT](LICENSE) © 2026 Raufi Musaddiq — use, modify, share, even commercially; keep the notice. 🔓
+[MIT](LICENSE) © 2026 Raufi Musaddiq, use, modify, share, even commercially; keep the notice. 🔓
 
-Bundled tools keep their own licenses: ffmpeg (LGPL/GPL), yt-dlp (Unlicense), faster-whisper + Whisper models (MIT), OpenCV (Apache-2.0), LightGBM (MIT) — redistributing the image means following them too. Downloading or clipping videos is subject to platform terms and creators' rights.
+Bundled tools keep their own licenses: ffmpeg (LGPL/GPL), yt-dlp (Unlicense), faster-whisper + Whisper models (MIT), OpenCV (Apache-2.0), LightGBM (MIT); redistributing the image means following them too. Downloading or clipping videos is subject to platform terms and creators' rights.

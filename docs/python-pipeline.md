@@ -1,4 +1,4 @@
-# Python Pipeline — CLI Interface Contract
+# Python Pipeline: CLI Interface Contract
 
 Python does only what needs Python's media/ML libraries: Whisper
 transcription, measuring audio/visual features, the optional LightGBM model,
@@ -62,7 +62,7 @@ python ai-pipeline/transcribe.py \
   --device "cuda"
 ```
 
-**Stdin:** (empty — all params via CLI args)
+**Stdin:** (empty; all params via CLI args)
 
 **Stdout:**
 ```json
@@ -102,7 +102,7 @@ python ai-pipeline/transcribe.py \
 `confidence` is Whisper's average log-probability for the line (≤ 0).
 `words` holds Whisper's per-word timestamps; they drive karaoke captions and
 silence trimming (`captions.py`). Transcripts made before word timestamps were
-kept have no `words` key — consumers fall back to splitting the segment text
+kept have no `words` key; consumers fall back to splitting the segment text
 evenly over its duration.
 
 **Args:**
@@ -161,7 +161,7 @@ python ai-pipeline/media_features.py --segments "data/segments/{videoId}.json" \
 - `sceneChange`, `motion`: histogram difference, Farneback optical flow
 
 Frames: each sample time (5 face checks + start/mid/end per segment) uses its
-nearest **keyframe** — one ffmpeg pass with `-skip_frame nokey` (an hour of
+nearest **keyframe**, one ffmpeg pass with `-skip_frame nokey` (an hour of
 1080p H.264: ~23 s on 4 cores, against 264 s to decode every frame). Close
 times can share a keyframe, so the face majority counts distinct frames. Files
 whose keyframes are more than 3 s from over 10% of the samples (screen
@@ -196,7 +196,7 @@ With `--export-dir` (what the pipeline and the clip editor use) the karaoke
 captions and background music go into the **same encode**, writing the
 finished `clip_{rank}_subtitled.mp4` + `clip_{rank}.ass` there: one decode +
 encode per clip. Burning captions in a second pass cost a whole extra
-encode — on a 4-core CPU a 30 s clip took 168 s that way, 90 s in one pass
+encode: on a 4-core CPU a 30 s clip took 168 s that way, 90 s in one pass
 (46 s with `veryfast`), and one generation of compression loss beats two.
 
 The libx264 preset is `$X264_PRESET`, default `veryfast` (render, subtitle,
@@ -220,7 +220,7 @@ so only those pixels go through the scaler.
 | `--bgm` / `--bgm-volume` | No | none / `0.12` | Music, looped and ducked under speech (with `--export-dir`) |
 
 With `--export-dir`, each clip also reports `captioned: true`, `assPath` and
-`wordCount`. Each clip in the result has `reframe` (mode actually used — `face` falls back
+`wordCount`. Each clip in the result has `reframe` (mode actually used; `face` falls back
 to `center` when no faces are found), `cropSegments` (number of crop
 positions in the face track), `trimmedDuration` (output length after silence
 trim / hook replay, or `null`) and `hookFirst`.
@@ -241,8 +241,8 @@ segments file without the keys (written before Bun chose hooks) falls back to
 
 **Face reframing** (`reframe.py`): frames are sampled at 2 fps, faces found
 with MediaPipe if installed, otherwise OpenCV Haar (the Docker image ships
-Haar only). Each sample gets a crop centre — on the whole group if all faces
-fit in the 9:16 window, else on the largest face — and the centres are
+Haar only). Each sample gets a crop centre (on the whole group if all faces
+fit in the 9:16 window, else on the largest face), and the centres are
 smoothed with hysteresis so the crop only moves after a sustained shift (a
 clean cut to the new speaker, no jitter). The track becomes a per-frame
 ffmpeg `crop` x-expression, re-timed onto the output timeline when the clip
@@ -275,7 +275,7 @@ rendered without them (a job rendered before that change, then retried).
 
 Captions are an ASS file (`captions.build_ass`) burned with ffmpeg's libass
 `ass` filter: one event per word, the spoken word drawn in the preset's
-highlight colour (no size "pop" — it makes libass lines jitter). Standalone
+highlight colour (no size "pop": it makes libass lines jitter). Standalone
 punctuation is folded into the previous word and Indonesian reduplication
 split by Whisper (`gedung` + `-gedung`) is rejoined. The `.ass` is kept next
 to the export so captions can be corrected by hand and re-burned. All presets

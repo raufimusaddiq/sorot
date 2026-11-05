@@ -46,7 +46,7 @@ unboxing" (CPU, synthetic 320x180 video, transcript pre-placed; details in the
 Jev can't write, and it can't search the web. It *can* answer a fixed
 question about a piece of text in tens of milliseconds (37 ms server time on
 the request we timed), with probabilities
-that move little between identical requests (≤ 0.04 in our test) — and
+that move little between identical requests (≤ 0.04 in our test), and
 deciding which moment is a clip, which line hooks, and which sentence is the
 title are all questions of that shape once code proposes the options.
 
@@ -56,8 +56,8 @@ title are all questions of that shape once code proposes the options.
 |---|---|---|---|
 | **Find** (SEGMENT) | one window per line that starts a sentence (previous line ends with `. ! ? …` or a ≥ 0.6 s pause), grown to 25 s then to the next sentence end (same rule: punctuation or a pause, since Whisper sometimes drops punctuation for a whole video); 15-60 s | the five quality questions (§3) + `fits_direction` when there is a direction | non-FAIL windows, best first, no overlaps > 50 %; top 40, each then re-cut from the same start to ~40 s and ~55 s (sentence end, ≤ 60 s) and asked again: the longest non-FAIL cut within 0.05 of the best-judged one wins (Jev favours tight excerpts by a hair), so picks aren't all ~25 s; kept as `source: "jev"` next to the rule windows |
 | **Score + gate** (SCORE) | every candidate (best 200 by rule score + every Jev pick) | the full gate questions (quality + risks) + `fits_direction` | `finalScore` = 0.5 × Jev (quality composite, 50/50 with the fit) + 0.5 × rules; the verdict from the *same* answers (`verdictFrom`); a reason built from them ("Jev: strong opening, complete ending, clear payoff, fits your direction") |
-| **Hook** | every line of the clip; lines ≥ 3 s in are teaser candidates | per line: the gate's hook question, and for candidates "is this an ad, a sponsor read or a like/subscribe request?" (one Noul each — a single Choice picked a sponsor line) | measured against the clip's **own opening** (line 0): opening ≥ 0.7 → no replay; else the best non-ad line if ≥ 0.7, or ≥ 0.5 when the opening is ≤ 0.3. Jev's "no replay" stands — the rules' hook only fills clips Jev had no line to judge |
-| **Title** | the clip's sentences of 15-110 chars | a Choice, one judgment: "which of these sentences from `excerpt`, used as the clip's post title, would make the most viewers want to watch it?" — each option described by the sentence itself | the quote (≤ 80 chars) + 2 rule hashtags. A quote can't over-claim, so no title check is needed |
+| **Hook** | every line of the clip; lines ≥ 3 s in are teaser candidates | per line: the gate's hook question, and for candidates "is this an ad, a sponsor read or a like/subscribe request?" (one Noul each; a single Choice picked a sponsor line) | measured against the clip's **own opening** (line 0): opening ≥ 0.7 → no replay; else the best non-ad line if ≥ 0.7, or ≥ 0.5 when the opening is ≤ 0.3. Jev's "no replay" stands: the rules' hook only fills clips Jev had no line to judge |
+| **Title** | the clip's sentences of 15-110 chars | a Choice, one judgment: "which of these sentences from `excerpt`, used as the clip's post title, would make the most viewers want to watch it?": each option described by the sentence itself | the quote (≤ 80 chars) + 2 rule hashtags. A quote can't over-claim, so no title check is needed |
 
 Hooks and titles are asked only for the clips that will render
 (`MAX_RENDER_CLIPS` on CPU). A Jev failure keeps the rules' answers for that
@@ -69,17 +69,17 @@ toggle) makes Jev a gate only, and the LLM director (§2) runs if configured.
 
 Jev has no system prompt: a request is `model` + `state` + `questions`.
 TypeSafe's [state guide](https://docs.typesafe.ai/concepts/state.md) puts the
-briefing in the state — "the material you would present to a panel of
+briefing in the state: "the material you would present to a panel of
 experts before asking them to make a judgment". So every request Sorot sends
 (screening, judging, the gate, hooks/titles, the publish-copy check) is built
 by `jevState()` (`clipGate.ts`) and carries one `context` object:
 
-- `task` — judging moments of a longer Indonesian video as 15-60 s vertical
+- `task`: judging moments of a longer Indonesian video as 15-60 s vertical
   clips for TikTok, Reels and Shorts;
-- `viewer` — each clip is posted on its own: viewers haven't seen the rest,
+- `viewer`: each clip is posted on its own: viewers haven't seen the rest,
   decide in the first seconds, stay only for a payoff;
-- `text` — Indonesian speech recognition: guessed punctuation, misheard words;
-- `fields` — what each field *in this request* is (`excerpt`, `opening`,
+- `text`: Indonesian speech recognition: guessed punctuation, misheard words;
+- `fields`: what each field *in this request* is (`excerpt`, `opening`,
   `closing`, `title`, `direction`, `lines`, `posts`), and nothing else.
 
 Before, only the gate state had a one-line note ("…cut from a podcast,
@@ -106,7 +106,7 @@ context ("Sekarang kok berani jualan seri Note di harga flagship?" 0.83-0.89;
 of "the right question is not enough": before, any line ≥ 0.7 was replayed
 and Jev's "none" was overwritten by the rules' hook. Now the teaser is
 compared with the clip's own opening (same question, same request), and Jev's
-decision stands — a clip that opens with its strongest line (0.89) gets no
+decision stands: a clip that opens with its strongest line (0.89) gets no
 replay; one that opens with "Halo guys…" (~0.2) replays "Ini adalah HP
 Infinix termahal yang pernah dijual di Indonesia." (~0.6), in 3 of 3 runs.
 
@@ -114,7 +114,7 @@ Infinix termahal yang pernah dijual di Indonesia." (~0.6), in 3 of 3 runs.
 
 - **Post copy** per platform at publish time (Jev then checks it).
 - **✨ Auto-discover**: the agent that decides what to search for and which
-  channels/videos are worth importing — open-ended search is LLM work.
+  channels/videos are worth importing: open-ended search is LLM work.
 - **Director without Jev** (§2), and the brief, which Jev-first doesn't make.
 
 ### Limits (measured, not fixed)
@@ -123,11 +123,11 @@ Infinix termahal yang pernah dijual di Indonesia." (~0.6), in 3 of 3 runs.
   final 0.69, rendered) passed with `needs_prior_context` 0.67. In run 4 it
   wasn't a candidate (it failed screening or lost the overlap to its
   neighbour; screening answers aren't stored), and the window one line
-  earlier (25.6-51.2 s) passed screening, then failed the gate at 0.72 — so
+  earlier (25.6-51.2 s) passed screening, then failed the gate at 0.72, so
   run 4's best was 0.64, just under BACKUP, and nothing rendered. A third window went 0.67 → 0.70
   (PASS → FAIL). Answers move little, but a hard threshold turns a small move
   into a different verdict near the line. **Decision (owner, 2026-10-28):
-  accepted — trust Jev's answer for the run; no re-asking or averaging.** A
+  accepted: trust Jev's answer for the run; no re-asking or averaging.** A
   clip that close to the line is borderline either way, and it stays
   renderable on request. (Since run 4, a FAIL clip can no longer win an
   overlap against a passing one in SCORE.)
@@ -147,7 +147,7 @@ Infinix termahal yang pernah dijual di Indonesia." (~0.6), in 3 of 3 runs.
 
 Before: the LLM saw rule-made 10-60 s windows (cut at pauses) in batches of 6,
 truncated to 900 characters, with no idea what the video was about. It could
-re-rate them and write copy — it couldn't choose *where a clip starts or
+re-rate them and write copy; it couldn't choose *where a clip starts or
 ends*, which line is the hook, or follow what the creator wanted.
 
 ### What the LLM decides now (`backend/src/director.ts`)
@@ -163,12 +163,12 @@ ends*, which line is the hook, or follow what the creator wanted.
 Rule windows are always kept as candidates; after scoring, any two candidates
 overlapping by more than half of the shorter one keep only the better-scored.
 
-**Direction** — a free-text field at import (UI *Options*, `sorot import
+**Direction**: a free-text field at import (UI *Options*, `sorot import
 --direction "…"`, API `options.direction`, ≤ 500 chars): "only the funny
 parts", "Pak Budi's money advice", "for TikTok, 30-45 s". It reaches the
 brief, the moment picks, the review score and the post copy.
 
-**Cost/latency** — about `1 + minutes/4.25 + candidates/6` LLM calls per video
+**Cost/latency**: about `1 + minutes/4.25 + candidates/6` LLM calls per video
 (an hour: ~1 + 14 + ~20). `LLM_DIRECTOR=false` (or the Settings toggle) goes
 back to review-only. After 2 failed parts in a row the director stops and the
 rules carry on; the stage text shows "LLM picking moments 3/14".
@@ -184,12 +184,12 @@ local models, and every LLM output is checked in code before it is used.
 ### Why Jev here
 
 Jev (TypeSafe's "System One" decision model) doesn't write text: it answers
-typed questions — `noul` (probability of yes), `choice`, `score` (ordered
-levels) — about a `state`, with calibrated probabilities. That is what a gate
+typed questions about a `state`, with calibrated probabilities: `noul`
+(probability of yes), `choice`, `score` (ordered levels). That is what a gate
 needs: bounded answers code can threshold, cheap enough to run on every clip.
 Per TypeSafe's model page (checked 2026-10-28; prices change): `jev-1.14.0`,
 $0.042 per million input tokens, output free, 64k tokens per request / 32k per
-question, **English is its best language** — "test on your own content before
+question, **English is its best language**: "test on your own content before
 relying on Jev for a non-English workload".
 Sources: [Models](https://docs.typesafe.ai/models.md),
 [System One API](https://docs.typesafe.ai/api/system-one.md).
@@ -208,7 +208,7 @@ Sources: [Models](https://docs.typesafe.ai/models.md),
    warning on the draft (you decide).
 4. **Connection test** in Settings.
 
-### The questions — and why each is the "right" one
+### The questions, and why each is the "right" one
 
 TypeSafe's own guidance, which the questions follow (and `tests/clipGate.test.ts`
 checks mechanically):
@@ -226,9 +226,9 @@ checks mechanically):
   question (never inverted), with Indonesian markers as examples (`"dia"`,
   `"yang tadi"`, `"oke jadi"`) because Jev reads literally and English is its
   strongest language.
-- **No counting, lengths or timing** asked of the model — durations, limits
+- **No counting, lengths or timing** asked of the model: durations, limits
   and overlaps are code.
-- **Risks as separate Nouls, not one Choice** — they can co-occur, and a Choice
+- **Risks as separate Nouls, not one Choice**: they can co-occur, and a Choice
   "leans toward the option that comes first".
 - **Score levels that stand alone** (no "better than the previous").
 - **Context in the state** (Jev has no system prompt; see §1): the same
@@ -239,7 +239,7 @@ checks mechanically):
 | id | type | asks | used for |
 |---|---|---|---|
 | `hook_opening` | noul | Would `opening`, heard at the very start of a short video, make a viewer want to keep watching? | FAIL with a cut-off ending; note alone |
-| `needs_prior_context` | noul | Does `excerpt` depend on something that was said before it started? | FAIL ≥ 0.7 — the #1 reason a cut clip doesn't work |
+| `needs_prior_context` | noul | Does `excerpt` depend on something that was said before it started? | FAIL ≥ 0.7: the #1 reason a cut clip doesn't work |
 | `ends_complete` | noul | Does `closing` finish the point that `excerpt` was making? | FAIL with a weak opening; note alone |
 | `mostly_filler` | noul | Is most of `excerpt` greetings, thanks, sponsor reads, channel promotion, housekeeping or small talk? | FAIL ≥ 0.7 |
 | `payoff` | score 0-2 | What does a viewer get from `excerpt` by watching it to the end? | FAIL ≤ 0.5 *and* confidence ≥ 0.5 |
@@ -254,7 +254,7 @@ checks mechanically):
 if any risk ≥ 0.5; else PASS. Risks never FAIL a clip: a person decides
 (publishing a REVIEW clip needs an explicit confirmation; a FAIL clip needs
 `override`). Thresholds 0.7 / 0.3 are TypeSafe's suggested *starting points*
-for a Noul — **not yet calibrated on Indonesian clips**. A `quality` composite
+for a Noul: **not yet calibrated on Indonesian clips**. A `quality` composite
 (0-1) is stored with the raw answers on each clip (`clip.gate`) so later
 training can use them as features.
 
@@ -267,7 +267,7 @@ opening starts with *tapi / terus / makanya / karena…* (0.8) or a back-referen
 (*dia, itu, yang tadi*: 0.6); ending = cut on a comma or a word a sentence
 can't end on (*dan, yang, adalah, di…*: 0.15), a full stop (0.8), an open
 question (0.3); filler = share of greeting/promo sentences; risks = keyword
-lists that only ever flag REVIEW. No payoff or title answer — the rules can't
+lists that only ever flag REVIEW. No payoff or title answer. The rules can't
 judge those. Same verdict code. `clip.gate.by` says which answered.
 
 ### Is the question right? Measure it
@@ -276,7 +276,7 @@ judge those. Same verdict code. `clip.gate.by` says which answered.
 runs Jev **and** the rules over labelled excerpts and prints, per question, how
 many answers land on the right side of 0.7 / 0.3, how many are unsure, and the
 separation between the yes- and no-labelled means. The shipped fixture
-(`backend/tests/fixtures/jev-gate-eval.json`, 16 cases) is **synthetic** —
+(`backend/tests/fixtures/jev-gate-eval.json`, 16 cases) is **synthetic**:
 written to exercise each question, not real data.
 
 First live run (2026-10-28, `jev-1.14.0`, 16 cases, ~22k input tokens):
@@ -287,13 +287,13 @@ First live run (2026-10-28, `jev-1.14.0`, 16 cases, ~22k input tokens):
 | Separation (yes-mean − no-mean) | 0.74 – 0.95 | 0.20 – 0.60 (0.30 for needs-context after the fix) |
 | Verdicts | 11/12, then 12/12 after two label fixes | 10/12, then 9/12 after the fixes |
 
-The two misses were my labels, not the questions — and I fixed them *after*
+The two misses were my labels, not the questions, and I fixed them *after*
 seeing Jev's answers, so 12/12 is partly circular: the payoff rubric itself
 calls a concrete savings rule "useful information" (level 2, I had written 1),
 and the SARA example refers to "suku itu / mereka" without naming them, which
 is exactly `needs_prior_context` (FAIL beats REVIEW). On a synthetic set this
 says the questions read as intended; it is not evidence about real clips.
-Next: label 50+ of your own clips, run the eval, then move thresholds — or
+Next: label 50+ of your own clips, run the eval, then move thresholds, or
 rewrite a question whose separation stays small.
 
 ---
@@ -310,7 +310,7 @@ Discord and Pinterest through one REST API (`https://api.tebar.app/v1`,
 [profiles](https://docs.tebar.app/api/profile), [errors](https://docs.tebar.app/api/error)
 (re-read 2026-10-28).
 API access needs a paid plan (Starter, Basic or Pro; the free plan answers
-`403 plan_required`, new accounts get a 14-day Pro trial —
+`403 plan_required`, new accounts get a 14-day Pro trial:
 [plans](https://docs.tebar.app/paket)).
 
 ### Flow (`backend/src/publisher.ts`, `tebar.ts`; studio Publish panel or `sorot publish`)
@@ -324,7 +324,7 @@ API access needs a paid plan (Starter, Basic or Pro; the free plan answers
    profile (`403 owner_key_required`) or a single workspace sees one list.
    The pickers group by workspace and only allow one at a time; accounts that
    can't take a single video (Pinterest) are shown but not selectable.
-1. **Draft** `POST /api/clips/{id}/publish/draft {accountIds}` — nothing sent:
+1. **Draft** `POST /api/clips/{id}/publish/draft {accountIds}` (nothing sent):
    LLM copy per platform (template without it), Jev copy check, platform limits
    from Tebar's limits page (TikTok 2 200 chars / 10 min, Instagram 2 200 + 30
    hashtags / 3 s-15 min, Threads 500, YouTube title 100 + description 5 000,
@@ -336,7 +336,7 @@ API access needs a paid plan (Starter, Basic or Pro; the free plan answers
    TikTok app's inbox to finish there, no privacy needed), YouTube title and
    **made for kids** (asked every upload), schedule time. The CLI asks these
    on a terminal and needs flags in a script; it never picks for you.
-3. **Publish** `POST /api/clips/{id}/publish` — upload the finished clip
+3. **Publish** `POST /api/clips/{id}/publish`: upload the finished clip
    (`POST /media/upload` raw under 95 MB, else `/media/uploads` parts), then
    `POST /posts` with an `Idempotency-Key`. A missing TikTok privacy choice is
    caught *before* the upload. The row (`social_post`) and the exact request
@@ -384,7 +384,7 @@ doesn't have.
 LLM, Jev and Tebar (URL, model, key, on/off; a director toggle for the LLM and Jev) are set in **Settings**
 (studio dock) or `sorot connect`, saved in SQLite (`setting` table) and win
 over the env; *Use .env* / `--reset` clears them. Changes apply without a
-restart. Keys are never returned — only "set" and the last four characters;
+restart. Keys are never returned: only "set" and the last four characters;
 `sorot connect … --key -` reads the key from stdin (not shell history).
 `sorot connect test llm|jev|tebar` makes one small real call.
 

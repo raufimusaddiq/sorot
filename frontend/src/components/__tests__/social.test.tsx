@@ -26,6 +26,7 @@ describe('ConnectionsPanel', () => {
     expect(within(llm).getByText(/the rules find, score and title the clips/)).toBeInTheDocument();
     expect(within(region('Tebar publishing')).queryByLabelText(/Director/)).not.toBeInTheDocument();
 
+    fireEvent.click(within(llm).getByRole('button', { name: 'Use a different provider' }));
     const save = within(llm).getByRole('button', { name: 'Save' });
     const key = within(llm).getByLabelText('LLM API key');
     expect(save).toBeDisabled();
@@ -53,7 +54,8 @@ describe('ConnectionsPanel', () => {
     state.tests.jev = { ok: true, ms: 87, model: 'jev-1.14.0', detail: 'answered 0.97' };
     state.fail['POST /api/settings/llm/test'] = 'backend down';
     render(<ConnectionsPanel api={api} />);
-    await screen.findByRole('region', { name: 'LLM' });
+    const llm = await screen.findByRole('region', { name: 'LLM' });
+    fireEvent.click(within(llm).getByRole('button', { name: 'Use a different provider' }));
     for (const [name, result] of [['Jev quality gate', 'OK in 87 ms · jev-1.14.0 · answered 0.97'],
       ['Tebar publishing', 'Failed: Not configured'], ['LLM', 'Failed: backend down']] as const) {
       fireEvent.click(within(region(name)).getByRole('button', { name: 'Test' }));
@@ -62,6 +64,62 @@ describe('ConnectionsPanel', () => {
     state.fail['PUT /api/settings/tebar'] = 'apiKey must not contain spaces';
     fireEvent.click(within(region('Tebar publishing')).getByLabelText(/Use Tebar publishing/));
     expect(await within(region('Tebar publishing')).findByRole('alert')).toHaveTextContent('apiKey must not contain spaces');
+  });
+
+  it('Kenari: a fresh install offers it first, fetches the live model list, and only saves after the key validates', async () => {
+    state.kenariModels = [{ id: 'kenari/auto', free: false }, { id: 'step-3-7-flash:free', free: true }];
+    render(<ConnectionsPanel api={api} />);
+    const llm = await screen.findByRole('region', { name: 'LLM' });
+    fireEvent.click(within(llm).getByRole('button', { name: 'Connect Kenari' }));
+    expect(await within(llm).findByRole('option', { name: 'step-3-7-flash:free (free)' })).toBeInTheDocument();
+    const save = within(llm).getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    const testKey = within(llm).getByRole('button', { name: 'Test key' });
+    expect(testKey).toBeDisabled();   // no key typed yet
+
+    fireEvent.change(within(llm).getByLabelText('Kenari API key'), { target: { value: 'kn-bad' } });
+    state.kenariProbe = { ok: false, ms: 1, error: 'LLM HTTP 401: invalid key' };
+    fireEvent.click(testKey);
+    expect(await within(llm).findByText('Failed: LLM HTTP 401: invalid key')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+
+    state.kenariProbe = { ok: true, ms: 50, model: 'kenari/auto', detail: 'OK' };
+    fireEvent.click(testKey);
+    expect(await within(llm).findByText('Key works · kenari/auto')).toBeInTheDocument();
+    expect(save).toBeEnabled();
+    state.kenariAccount = { plan: 'Studio', balanceRp: 0,
+      windows: { week: { budgetRp: 300000, remainingRp: 233222, usedFrac: 0.2226, resetsAt: '2026-11-07T00:58:27Z' } },
+      usage: { requests: 42, promptTokens: 1000, completionTokens: 200 } };
+    fireEvent.click(save);
+    await waitFor(() => expect(sent('PUT', '/api/settings/llm')).toEqual([
+      { baseUrl: 'https://kenari.id/v1', model: 'kenari/auto', apiKey: 'kn-bad' },
+    ]));
+    expect(await within(llm).findByText('Studio plan — Rp 0 balance')).toBeInTheDocument();
+    expect(within(llm).getByText(/Rp 233\.222 left this week of Rp 300\.000/)).toBeInTheDocument();
+    expect(within(llm).getByText('42 requests this period')).toBeInTheDocument();
+  });
+
+  it('Kenari: a restricted key still connects, but balance/usage are explained as unavailable', async () => {
+    state.settings = makeConnections({ llm: { baseUrl: 'https://kenari.id/v1', model: 'kenari/auto', active: true, apiKeySet: true } });
+    state.kenariAccount = null;
+    render(<ConnectionsPanel api={api} />);
+    const llm = await screen.findByRole('region', { name: 'LLM' });
+    expect(await within(llm).findByText(/Balance and usage aren.t available for this key/)).toBeInTheDocument();
+  });
+
+  it('Kenari: "Use a different provider" is reachable with no key, and an already-saved custom provider is shown as-is', async () => {
+    const first = render(<ConnectionsPanel api={api} />);
+    const fresh = await screen.findByRole('region', { name: 'LLM' });
+    fireEvent.click(within(fresh).getByRole('button', { name: 'Use a different provider' }));
+    expect(within(fresh).queryByLabelText('Kenari API key')).not.toBeInTheDocument();
+    expect(within(fresh).getByLabelText('LLM Base URL')).toBeInTheDocument();
+    first.unmount();
+
+    state.settings = makeConnections({ llm: { baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b', active: true } });
+    render(<ConnectionsPanel api={api} />);
+    const existing = await screen.findByRole('region', { name: 'LLM' });
+    expect(within(existing).queryByRole('button', { name: 'Connect Kenari' })).not.toBeInTheDocument();
+    expect(within(existing).getByLabelText('LLM Base URL')).toHaveValue('http://localhost:11434/v1');
   });
 });
 
@@ -322,6 +380,7 @@ describe('GenerateConnections (Settings)', () => {
     state.settings = generateSettings();
     render(<ConnectionsPanel api={api} />);
     const image = await screen.findByRole('region', { name: 'Scene images' });
+    fireEvent.click(within(image).getByRole('button', { name: 'Use a different service' }));
     fireEvent.change(within(image).getByLabelText('Image Base URL'), { target: { value: 'http://img/v1' } });
     fireEvent.change(within(image).getByLabelText('Image Model'), { target: { value: 'flux' } });
     fireEvent.change(within(image).getByLabelText('Image API key'), { target: { value: 'img-key-9999' } });
@@ -332,6 +391,35 @@ describe('GenerateConnections (Settings)', () => {
     await waitFor(() => expect(within(image).getByRole('button', { name: 'Test' })).toBeEnabled());   // the save has come back
     fireEvent.click(within(image).getByRole('button', { name: 'Test' }));
     expect(await within(image).findByText('Failed: Not configured')).toBeInTheDocument();
+  });
+
+  it('scene images: Kenari offers a fetched model list and saves baseUrl/model together', async () => {
+    state.settings = generateSettings();
+    state.kenariImageModels = [{ id: 'gpt-image-2', free: false }, { id: 'other-image:free', free: true }];
+    render(<ConnectionsPanel api={api} />);
+    const image = await screen.findByRole('region', { name: 'Scene images' });
+    fireEvent.click(within(image).getByRole('button', { name: 'Connect Kenari' }));
+    expect(await within(image).findByRole('option', { name: 'other-image:free (free)' })).toBeInTheDocument();
+    fireEvent.change(within(image).getByLabelText('Kenari image model'), { target: { value: 'other-image:free' } });
+    fireEvent.change(within(image).getByLabelText('Image API key'), { target: { value: 'kn-good' } });
+    fireEvent.click(within(image).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sent('PUT', '/api/settings/image')[0]).toEqual({ baseUrl: 'https://kenari.id/v1', model: 'other-image:free', apiKey: 'kn-good' }));
+  });
+
+  it('narration voice: Kenari (openai engine only) offers fetched models and per-model voices', async () => {
+    state.settings = generateSettings({ voice: { engine: 'openai' } });
+    state.kenariVoiceModels = [{ id: 'gemini-3-1-flash-tts', voices: ['Kore', 'Aoede'] }];
+    render(<ConnectionsPanel api={api} />);
+    const voice = await screen.findByRole('region', { name: 'Narration voice' });
+    fireEvent.click(within(voice).getByRole('button', { name: 'Connect Kenari' }));
+    expect(await within(voice).findByRole('option', { name: 'gemini-3-1-flash-tts' })).toBeInTheDocument();
+    expect(within(voice).queryByLabelText('Voice base URL')).not.toBeInTheDocument();   // auto-filled, no field to type it in
+    fireEvent.change(within(voice).getByLabelText('Voice for Indonesian'), { target: { value: 'Kore' } });
+    fireEvent.change(within(voice).getByLabelText('Voice API key'), { target: { value: 'kn-good' } });
+    fireEvent.click(within(voice).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sent('PUT', '/api/settings/voice')[0]).toEqual({
+      baseUrl: 'https://kenari.id/v1', model: 'gemini-3-1-flash-tts', voices: { id: 'Kore' }, apiKey: 'kn-good',
+    }));
   });
 
   it('custom commands: add, edit and remove rows, save the list; an install that turns them off says so and locks the card', async () => {

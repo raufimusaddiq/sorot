@@ -8,7 +8,7 @@ Checked against the code on 2026-10-29.
 | Part | What it really is | Where |
 |---|---|---|
 | Speech → text | **Neural network**: faster-whisper (`large-v3-turbo` in Docker) with word timestamps | `ai-pipeline/transcribe.py` |
-| Faces, smiles | **Classic machine learning**: OpenCV Haar cascades (pre-trained, 2001-era detectors). MediaPipe is used only if installed — it is not, by default | `ai-pipeline/features/visual.py`, `reframe.py` |
+| Faces, smiles | **Classic machine learning**: OpenCV Haar cascades (pre-trained, 2001-era detectors). MediaPipe is used only if installed: it is not, by default | `ai-pipeline/features/visual.py`, `reframe.py` |
 | Motion | Signal processing: Farneback optical flow | `features/visual.py` |
 | Scene changes | Signal processing: colour-histogram difference | `features/visual.py` |
 | Audio energy, onsets | Signal processing: RMS ratio, onset counting | `features/audio.py` |
@@ -24,7 +24,7 @@ Checked against the code on 2026-10-29.
 
 So, out of the box: one neural model (Whisper), one classic detector (Haar),
 and everything else is rules and signal processing. That is a deliberate
-trade — it is fast, explainable, deterministic and runs offline on a laptop —
+trade (it is fast, explainable, deterministic and runs offline on a laptop),
 but it should be described as *heuristic scoring*, not "AI that predicts virality".
 
 ## What the LLM adds (when configured)
@@ -35,7 +35,7 @@ but it should be described as *heuristic scoring*, not "AI that predicts viralit
   `scoredBy` (`rules`, `llm+rules` or `jev+rules`) and a one-sentence `reason`.
   If the LLM fails, that batch keeps the formula.
 - **Auto-discover agent** (`discoveryAgent.ts`): a tool-calling loop at
-  temperature 0.8 — `web_search` (Bing HTML or SearXNG), `youtube_search`,
+  temperature 0.8: `web_search` (Bing HTML or SearXNG), `youtube_search`,
   `analyze_video`, `channel_videos`, `source_channels`. Only videos the tools
   actually returned can be picked, and every pick carries the LLM's reason.
   Without an LLM, or when it fails, the algorithm path runs instead (random
