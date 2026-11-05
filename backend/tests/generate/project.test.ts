@@ -284,6 +284,9 @@ describe("project housekeeping", () => {
     // over HTTP, where a missing flag once arrived as false
     const mk = async (input: Record<string, unknown>) => (await env.json("POST", "/api/generate/projects", { brief: "Jelaskan bunga majemuk", ...input })).body.data.project.narration;
     expect([await mk({ recipeId: "story" }), await mk({ recipeId: "story", narration: false }), await mk({})]).toEqual([1, 0, 0]);
+    // the other choices sent with it arrive too
+    const sent = (await env.json("POST", "/api/generate/projects", { brief: "x", buildWithoutStopping: true })).body.data.project;
+    expect(sent.briefFlags).toEqual({ buildWithoutStopping: true });
     await gen().whenIdle();   // their first steps run in the background: let them end before the database closes
   });
 
