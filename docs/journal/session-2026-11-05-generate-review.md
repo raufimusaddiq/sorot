@@ -37,3 +37,36 @@ Gate review of branch `claude/brave-hamilton-a69okw` against `specs/001-2d-video
 ## Gate
 OPEN: backend 1309 pass, 98.19% lines, `tsc` clean; cli 146 pass, binary builds; frontend 236
 pass, static build; ai-pipeline 230 pass.
+
+## Live runs and what they found (later the same day)
+
+The open tasks run for real: a 20-brief bench (GLM, then Qwen 8B at kit, then Kimi; CPU, 4 cores, one
+build at a time), the quickstart scenarios on a second server, and the story brief built five times.
+Numbers: `specs/001-2d-video-generator/research.md` (S8 part 1 and 2, the quickstart run, the bench's
+TECHNICAL failures, a subject too dark to see).
+
+Fixed (T183 to T195), each with a test that fails without it:
+- API projects lost `buildWithoutStopping`/`ideaId` (my own comment had swallowed them); narration default
+  was off for every project made over the API, CLI or UI.
+- An interrupted unattended build couldn't be resumed by naming its idea.
+- Numeric plans: CSS tracking, GSAP eases with settings, outline repair noise; an unsourced or forbidden
+  number now named with its shot and words, and a no-numbers brief holds the plan and script to it.
+- Plan slips set right in code: a total within 25% scaled; kit parts and registry blocks swapped back.
+- The voice keeps the script's order; a voice up to 10% too long is sped up instead of failing.
+- The look step asks about three shots a call (HTTP 413 on a whole film); the look tool's read and checks
+  run together.
+- The session stays inside `GEN_CONTEXT_TOKENS`; the provider's input and cached tokens are kept per call.
+- SC-021 raised above 90% by the owner: the director's look frames are 360×640 in its conversation and
+  `look`/`check` reuse its last draft; the story brief went 82.1% → 90.8%, 34% faster.
+- The jump measure flagged flashes, counters ticking and moves starting: 23 bench jumps were 2 real ones.
+- CLI: current plan after a restore, `idea add` flags, `--no-narration`, step states and idea titles in
+  `gen show`; `voice.json` listed instead of a file nothing wrote.
+
+Settled without a measurement here: T095 (no original agent pipeline to compare), T100's publish half
+(Tebar not connected; covered by `social.test.ts`). Left for the GPU: T067, T096, T120. Running: the
+bench
+(T150, T172, T192).
+
+## Gate (after the fixes)
+OPEN: backend 1326 pass, 98.19% / 99.45%, `tsc` clean; cli 146 pass, binary builds; frontend 236 pass,
+static build (the ESLint parser error also shows on master's code); ai-pipeline 230 pass.
