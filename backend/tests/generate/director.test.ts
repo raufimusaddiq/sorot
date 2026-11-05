@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
 import { LOOK_FIRST, TOOL_DEFS } from "../../src/generate/directorTools";
+import { estimateTokens } from "../../src/generate/compaction";
 import { Director, DirectorError, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { validatePlan, type Plan, type PlanContext } from "../../src/generate/planSchema";
@@ -440,13 +441,16 @@ describe("director: scenes", () => {
     expect(b!.slice(0, a!.length)).toEqual(a);                                     // the next turn extends the last
     expect(c!.slice(0, b!.length)).toEqual(b);
     expect([a, b, c].map((m) => JSON.parse(m!.at(-1)!.content)).map((t) => [t.request, t.compositionId])).toEqual([["scene", "shot-01"], ["scene", "shot-02"], ["repair", "shot-02"]]);
-    // past its budget the session starts again from the opening and the latest shots
-    const small = rig([json({ html: HTML }), json({ html: HTML })], { genSession: true, genContextTokens: 1 });
+    // past its budget the session starts again from the opening and the newest shots that fit (here one of two)
+    const opening = estimateTokens(a!.slice(0, 2));
+    const one = estimateTokens([{ role: "user", content: JSON.stringify({ shotsSoFar: [{ shot: 2, file: "compositions/shot-02.html", latest: HTML }], task: "x".repeat(160) }) }]);
+    const small = rig([json({ html: HTML }), json({ html: HTML }), json({ html: HTML })], { genSession: true, genContextTokens: Math.ceil(opening + one + 20) });
     await small.director.scene({ ...session, index: 0 });
     await small.director.scene(session);
-    const again = small.requests[1]!.messages;
+    await small.director.scene({ ...session, index: 2 });
+    const again = small.requests[2]!.messages;
     expect(again).toHaveLength(4);
-    expect(JSON.parse(again[2]!.content).shotsSoFar).toEqual([{ shot: 1, file: "compositions/shot-01.html", latest: HTML }]);
+    expect(JSON.parse(again[2]!.content).shotsSoFar.map((x: any) => x.shot)).toEqual([2]);
   });
 
   test("a turn's tool loop: tool results go back in order, limits and errors answer the model, the last step is forced to submit, and every tool call is logged", async () => {
@@ -540,6 +544,17 @@ describe("director: scenes", () => {
     expect(after[0]).toMatchObject({ role: "tool", name: "look" });
     expect((after[1].content as unknown as Array<{ type: string }>).filter((p) => p.type === "image_url")).toHaveLength(2);
     expect(r.events().find((e) => e.kind === "look")!.response).toContain("+2 image(s)");
+  });
+
+  test("a turn also stays inside the window: with a big turn budget, a small GEN_CONTEXT_TOKENS still cuts its older frames", async () => {
+    const look = tool("look", 5, async () => ({ result: { n: 1 }, images: ["data:image/png;base64,AAA"] }));
+    const turn = [new Calls([["look", { html: "x", times: [1] }]]), new Calls([["look", { html: "y", times: [2] }]]), json({ html: HTML })];
+    const probe = rig([json({ html: HTML })], { genSession: true });
+    await probe.director.scene({ ...input(), session: "v-probe" });
+    const opening = estimateTokens(probe.requests[0]!.messages.slice(0, 3));
+    const r = rig(turn, { genSession: true, genTurnTokens: 500_000, genContextTokens: Math.ceil(opening + 1000) });
+    await r.director.scene({ ...input(), session: "v-window", tools: { steps: 4, tools: { look } } });
+    expect(JSON.stringify(r.requests[2]!.messages)).toContain("look #1 removed: see #2");
   });
 
   test("compaction: an accepted turn leaves a note and its answer, a failed turn leaves nothing, and a turn past its budget cuts its older tool results; earlier requests stay an exact prefix", async () => {

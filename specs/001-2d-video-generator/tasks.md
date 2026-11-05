@@ -584,6 +584,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 
 - [X] T188 [US6] The look step asks about three shots a call (`LOOK_SHOTS_PER_CALL`, 9 frames, about 4 MB) and puts the answers together; a 40 s story sent all its frames at once and the gateway refused it (HTTP 413). Test in `backend/tests/generate/look.test.ts`
 
+- [X] T189 [US10] The session stays inside `GEN_CONTEXT_TOKENS` (SC-024): a restart keeps the opening and the newest shots that fit (all of a 9-shot film's shots were already past 20,000), and a turn's own budget is the smaller of `GEN_TURN_TOKENS` and what the window leaves after the turn's start; measured at 20,000: requests reached 51,133 before. Tests in `backend/tests/generate/director.test.ts`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.

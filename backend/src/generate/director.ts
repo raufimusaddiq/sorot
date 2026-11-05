@@ -525,7 +525,8 @@ export class Director {
     const used = loop.used;
     for (let step = 0; ; step++) {
       loop.signal?.throwIfAborted();
-      stubTurn(messages, loop.start, loop.tokens);   // a turn that grew past its budget cuts its older tool results first
+      // a turn that grew past its budget, or past what the window leaves after the turn's start, cuts its older tool results first
+      stubTurn(messages, loop.start, Math.min(loop.tokens, Math.max(0, this.llm.genContextTokens - estimateTokens(messages.slice(0, loop.start)))));
       const forced = step >= loop.tools.steps;
       const reply = await callModel(forced);
       // a fast model skips optional steps (GLM submitted 7 scenes of 7 without a look): the first submit
@@ -997,8 +998,13 @@ export class Director {
    */
   private trim(session: Session): void {
     if (estimateTokens(session.messages) <= this.llm.genContextTokens) return;
-    const shots = [...session.latest].sort((a, b) => a[0] - b[0]).map(([i, latest]) => ({ shot: i + 1, file: shotFile(i), latest }));
-    session.messages = [...session.messages.slice(0, session.opening), { role: "user", content: JSON.stringify({ shotsSoFar: shots, task: "The conversation was shortened to fit: these are the latest versions of the shots written so far. Carry on from them." }) }];
+    const opening = session.messages.slice(0, session.opening);
+    const note = (shots: unknown[]) => ({ role: "user" as const, content: JSON.stringify({ shotsSoFar: shots, task: "The conversation was shortened to fit: these are the latest versions of the shots written so far (the newest that fit). Carry on from them." }) });
+    // the newest shots first, as many as fit: all of a long film's shots were already past a small window (SC-024)
+    const all = [...session.latest].sort((a, b) => b[0] - a[0]).map(([i, latest]) => ({ shot: i + 1, file: shotFile(i), latest }));
+    const kept: typeof all = [];
+    for (const s of all) if (estimateTokens([...opening, note([s, ...kept])]) <= this.llm.genContextTokens) kept.unshift(s);
+    session.messages = [...opening, note(kept)];
   }
 
   /** What a scene call says about its own shot (the session said the rest at its start). */
