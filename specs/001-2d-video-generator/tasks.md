@@ -576,6 +576,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 
 - [X] T184 [US10] The provider's input and cached tokens are kept per director call (`gen_event.input_tokens`, `cached_tokens`; `llm.ts` reads `prompt_tokens` and `prompt_tokens_details.cached_tokens` or `prompt_cache_hit_tokens`), so SC-021 is read from a build's own log, with tests in `backend/tests/llm.test.ts`, `backend/tests/generate/director.test.ts`
 
+- [X] T185 [US7] An unattended run whose build failed or was cut off by a restart goes on when its idea is named again: the failed version is queued again from its failed step (on the plan it was started from; a new version otherwise), in `service.unattendedNext`; before, the project stopped at WAITING with nothing built. Found in the 20-brief bench; test in `backend/tests/generate/ideas.test.ts`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.

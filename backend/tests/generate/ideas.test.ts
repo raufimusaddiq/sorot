@@ -335,5 +335,14 @@ describe("unattended runs", () => {
     await env!.json("POST", `${base}/run`, { ideaId: "IDEA-1" });
     await env!.app.generate.whenIdle();
     expect(env!.app.store.genVersionsForProject(id)).toHaveLength(2);
+
+    // a build cut off by a restart (the sweep marks the project and the version "interrupted") goes on in the same version
+    const cut = env!.app.store.genVersionsForProject(id)[0]!;
+    env!.app.store.updateGenVersion(cut.id, { status: "FAILED", errorMessage: "interrupted" });
+    env!.app.store.updateGenProject(id, { status: "FAILED", errorMessage: "interrupted" });
+    scriptLlm(env!, [...SCENES, JUDGE, COPY]);
+    await env!.json("POST", `${base}/run`, { ideaId: "IDEA-1" });
+    await env!.app.generate.whenIdle();
+    expect(env!.app.store.genVersionsForProject(id).map((x) => [x.id, x.status])).toEqual([[cut.id, "BUILT"], expect.anything()]);
   });
 });

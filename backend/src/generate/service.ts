@@ -440,9 +440,14 @@ export class GenerateService {
    */
   private unattendedNext(projectId: string): void {
     const p = this.store.getGenProject(projectId);
-    if (!p || !this.flagsOf(p).buildWithoutStopping || p.status !== "WAITING" || this.store.genVersionsForProject(projectId).length) return;
+    if (!p || !this.flagsOf(p).buildWithoutStopping || p.status !== "WAITING") return;
+    const newest = this.store.genVersionsForProject(projectId)[0];
+    if (newest && newest.status !== "FAILED" && newest.status !== "CANCELLED") return;   // built, or a fix round: not this hook's
     try {
-      this.queueVersion(p, this.assertCanBuild(projectId));
+      const plan = this.assertCanBuild(projectId);
+      // a build that failed or was cut off by a restart goes on from its failed step, on the plan it was started from
+      if (newest?.status === "FAILED" && newest.planId === plan.id) this.requeue(newest);
+      else this.queueVersion(p, plan);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;   // not approved yet: it waits for the owner
     }
@@ -794,10 +799,15 @@ export class GenerateService {
     if (v.status !== "FAILED") throw new HttpError(409, "Only a build that failed can be retried");
     // the build goes on with the plan it was started from: an edited or unapproved plan needs a new build
     if (this.assertCanBuild(v.projectId).id !== v.planId) throw new HttpError(409, "The plan has changed since this build: start a new build");
-    this.store.updateGenVersion(v.id, { status: "QUEUED", errorMessage: null });
-    this.store.updateGenProject(p.id, { status: "BUILDING", errorMessage: null });
-    this.queue.enqueue(v.id);
+    this.requeue(v);
     return this.mustVersion(versionId);
+  }
+
+  /** A failed version back in the queue: it goes on from its failed step (finished steps are reused). */
+  private requeue(v: GenVersion): void {
+    this.store.updateGenVersion(v.id, { status: "QUEUED", errorMessage: null });
+    this.store.updateGenProject(v.projectId, { status: "BUILDING", errorMessage: null });
+    this.queue.enqueue(v.id);
   }
 
   /**
