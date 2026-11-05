@@ -358,7 +358,7 @@ describe("plans and scripts refuse numbers nothing has verified", () => {
     ctx.settings = settingsOf("plan", undefined);
     ctx.connected = () => false;
     ctx.catalog = async () => [];
-    await expect(STEPS.plan.run(ctx)).rejects.toThrow("these numbers have no verified fact: 5,75%");
+    await expect(STEPS.plan.run(ctx)).rejects.toThrow('these numbers have no verified fact: 5,75% (in s01 title "Bunga 5,75% per tahun")');
     expect(r.store.genPlansForProject("p1")).toHaveLength(0);
 
     r.fact("f1", { status: "verified", claim: "Bunga acuan 5,75 persen", value: "5,75%" });

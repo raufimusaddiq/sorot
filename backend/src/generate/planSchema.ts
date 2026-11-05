@@ -296,7 +296,12 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
 
   // A factual recipe shows only numbers it can source: an error here gets the director's repair call.
   const unsourced = ctx.unsourced?.(shots.flatMap((s) => [...s.text.map((t) => t.value), s.narration ?? ""])) ?? [];
-  if (unsourced.length) errors.push(`these numbers have no verified fact: ${unsourced.join(", ")}; show only numbers from the brief or the verified facts, or none`);
+  if (unsourced.length) {
+    // where each one is, so a repair can rewrite those words (a model told only "dua" kept a storyline's "Dua Jalur" twice)
+    const where = shots.flatMap((s) => [...s.text.map((t) => [`${s.id} ${t.role}`, t.value]), [`${s.id} narration`, s.narration ?? ""]]
+      .filter(([, v]) => v && ctx.unsourced!([v]).length).map(([at, v]) => `${at} "${v}"`));
+    errors.push(`these numbers have no verified fact: ${unsourced.join(", ")} (in ${where.join("; ")}); rewrite those words without the number (spelled-out numbers count too), or use only numbers from the brief or the verified facts`);
+  }
 
   const numeric = ctx.numeric ? checkNumeric(raw, shots, total, look, ctx, errors) : undefined;
 
