@@ -95,7 +95,7 @@ words and approve it.
 has nothing to build from, and it already gives value on its own as a reviewable creative brief.
 
 **Independent Test**: submit a brief, receive three storylines, pick one, edit one shot, approve
-the plan — all without any video being rendered.
+the plan, all without any video being rendered.
 
 **Acceptance Scenarios**:
 
@@ -370,7 +370,10 @@ rate, and the build takes at most twice as long.
 - The image provider fails or refuses a prompt: the shot falls back to a non-generated treatment
   and the plan says so; the user can upload an image instead (FR-017).
 - The narration is longer than its shot: the TECHNICAL verdict flags it; the director shortens
-  the script or lengthens the shot on the next fix round (FR-018).
+  the script or lengthens the shot on the next fix round (FR-018). Narration longer than the whole
+  film is caught earlier: the voice step measures it and has the script written again (FR-054);
+  still too long after that, the step fails with the measured seconds and the user shortens the
+  script or lengthens the video.
 - A build fails or is cancelled: no partial file is offered for export; the plan and earlier
   versions are kept; the user can retry.
 - The TECHNICAL verdict cannot run (checker error): treated as not passed; export stays blocked
@@ -429,7 +432,8 @@ rate, and the build takes at most twice as long.
 - **FR-008**: The system MUST build a complete, playable draft video from an approved plan, matching
   the plan's shots, order, text, and durations.
 - **FR-009**: Builds MUST show progress, MUST be cancellable, and MUST produce the same video when
-  rebuilt from the same plan and assets.
+  rebuilt from the same plan and assets. A cancel MUST take effect between steps and before each
+  shot is asked for (a model call already sent may finish), and the version MUST end CANCELLED.
 - **FR-010**: When the recipe renders a draft, users MUST be able to watch it before any
   full-quality export. When it renders only at final quality, users MUST be able to watch that
   render before accepting it.
@@ -459,7 +463,9 @@ rate, and the build takes at most twice as long.
 - **FR-016**: Generation MUST require a configured AI director. When none is configured, the
   Generate area MUST show that it is unavailable and how to connect one, and clipping MUST keep
   working unchanged. When the director fails mid-project, work already done (brief, plans,
-  versions) MUST be kept and the user MUST be able to retry once it is back.
+  versions) MUST be kept and the user MUST be able to retry once it is back. A build that failed
+  MUST be able to go on from its failed step as the same version, keeping every finished step and
+  shot, as long as the approved plan is still the one it started from.
 - **FR-017**: Visuals MUST be built from anything the director can draw (FR-038), including text,
   shapes, icons, charts, kit parts, and the user's own uploads. When an image-generation provider is connected in
   Settings, the director MAY also generate 2D images for shots; the plan MUST mark which shots use generated images, and the user MUST be able
@@ -536,8 +542,9 @@ rate, and the build takes at most twice as long.
 **Self-review and final checks**
 
 - **FR-031**: When a recipe enables self-review, before the final render the director MUST look
-  at sample frames of every beat. It describes each one as a stranger would and compares it with
-  the plan. It audits the recipe's list of defaults and fixes what it finds, up to the recipe's
+  at three pictures of every shot (early, mid-move and settled). It describes each shot as a
+  stranger would, from what is on screen at the end, says whether the main move can be seen across
+  the pictures, and compares it with the plan. It audits the recipe's list of defaults and fixes what it finds, up to the recipe's
   round limit. A warning kept on purpose MUST be marked with its reason, and the reason MUST show
   in the verdict.
 - **FR-032**: When a recipe sets final-render verdicts, both verdicts MUST be given on the real
@@ -599,9 +606,12 @@ rate, and the build takes at most twice as long.
   from its opening and the latest version of each shot. It MAY be switched off (`GEN_SESSION`).
 - **FR-049**: Within a shot's turn the director MUST be able to use tools before it submits:
   search the HyperFrames registry, install a block and read its source, look at its own rendered
-  draft, and check its draft (Sorot's scene rules and HyperFrames lint). The steps per turn and
-  per tool MUST be limited by the recipe; the last allowed step MUST be forced to the submit tool;
-  a tool error MUST go back to the model as the tool's result.
+  draft, and check its draft (Sorot's scene rules and HyperFrames lint, plus the scene probe and the
+  motion measure on a draft render of just that shot, so a collision or a jump is found before the
+  build). The steps per turn and per tool MUST be limited by the recipe; the last allowed step MUST
+  be forced to the submit tool; a tool error MUST go back to the model as the tool's result. The
+  first submit of a scene turn that can look and hasn't MUST be turned back once, asking for a look.
+  A draft MUST change the version's files only when it is accepted.
 - **FR-050**: Looking MUST include a stranger's read: a fresh call to the same model, with only the
   frames (no conversation, no plan intent), whose answer code turns into the look findings
   (`look_unexplained` must-fix, `look_mismatch`, `look_hero_hidden`) returned to the director in
@@ -616,6 +626,19 @@ rate, and the build takes at most twice as long.
 - **FR-053**: Generate MAY use a model per role (`plan`: storylines, plan, effects, facts; `scene`:
   scenes, repairs, kit shots, and the one the model record is about; `judge`: the CREATIVE
   judge), each defaulting to the LLM's model.
+- **FR-054**: The narration's length MUST be a target the director is given, not a rule that fails
+  the run. After the voice is made, speech more than 0.5 s longer than the video MUST send the
+  script back to the director, told each line's measured seconds, up to twice; still too long, the
+  step MUST fail with the measured and the allowed seconds. The rewritten script is what later
+  steps are built from.
+- **FR-055**: Scene calls MUST carry two worked examples in different styles (one built from kit
+  parts, one drawn by hand), each passing Sorot's scene rules, so the director learns the craft they
+  share (text clear of the drawing, words whole on the first frame, one hero move) rather than
+  copying one look.
+- **FR-056**: The scene probe MUST count shapes drawn from styled boxes (colour, gradient or clip
+  path) as drawings when it looks for words sitting on a drawing. A box a fifth of the frame or more
+  is a card the words sit on, and a text lying wholly inside a drawing at least five times its own
+  area is a label on it; only a partial overlap is a collision.
 ### Key Entities
 
 - **Generation project**: one user idea; holds brief, format, length, language, style notes,
@@ -715,7 +738,8 @@ rate, and the build takes at most twice as long.
   must-fix finding (3 on the first build without tools, 2026-11-02), and in the 20-brief set fewer
   than 1 shot in 10 has one.
 - **SC-023**: A build with the tool loop takes at most twice the time of the same build without it,
-  on the same machine and model.
+  on the same machine and model. (Not yet measured against a build without it; the in-loop probe and
+  motion render add about 20 s to each `check` and `look`. A full GLM build with them took 18.3 min.)
 - **SC-024**: No request in a session exceeds `GEN_CONTEXT_TOKENS`, and after compaction a turn
   never holds more than its latest frames.
 

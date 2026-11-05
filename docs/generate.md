@@ -58,7 +58,7 @@ conversation, keyed by the version id: the system message and the whole film (pl
 sent once, then each turn asks for one shot (`request: scene | repair | kitshot`, its level and its own
 fields) and the answer stays in the conversation. Turns run one at a time, in the order they are asked.
 Each request extends the last, so the provider's prompt cache covers almost all of it (separate calls
-reached at most 44–51% on real builds, 2026-11-02), and every shot sees the shots before it.
+reached at most 44 to 51% on real builds, 2026-11-02), and every shot sees the shots before it.
 `GEN_CONTEXT_TOKENS` (default 600000) caps the conversation; past it the session restarts from its
 opening and the latest version of each shot. `GEN_SESSION=off` goes back to one fresh call per shot.
 
@@ -66,7 +66,12 @@ opening and the latest version of each shot. `GEN_SESSION=off` goes back to one 
 (the HyperFrames registry: words and tags), `use_block` (installs a block and returns its source to
 adapt), `look` (renders frames of its draft and returns them with a stranger's read: a fresh call
 that sees only the frames; the look findings come back in the same turn) and `check` (Sorot's scene
-rules and HyperFrames lint on the draft). The recipe's `author.toolSteps` (default 8; 0 = one forced
+rules and HyperFrames lint on the draft). `check` and `look` also run the scene probe and the motion
+measure on the draft (a draft render of just that shot) in a scratch copy of the project, about 20 s,
+and return this shot's findings; the draft sits in the shot's file only while the tools read it, so
+only an accepted submit changes the version. The first submit of a scene turn that has `look` is
+turned back once, asking for a look first (repairs and kit shots are not made to look). Every scene
+call carries two worked examples: one built from kit parts, one drawn by hand from SVG and boxes. The recipe's `author.toolSteps` (default 8; 0 = one forced
 call) and `author.looks` (default 2) limit it; past a tool's limit its call answers "limit reached:
 submit now", and the step after the last is forced to the submit tool. A turn's tool exchanges are
 replaced by a one-line note once its answer is accepted; a turn past `GEN_TURN_TOKENS` (default
@@ -79,7 +84,7 @@ records "looked in the loop" and makes no vision call of its own.
 |---|---|
 | `idea` | takes the recipe's next idea from the idea bank (or a named one) |
 | `facts` | builds or checks the fact list against its sources |
-| `script`, `voice`, `align` | narration lines, voice, word timings (engine timestamps or Whisper) |
+| `script`, `voice`, `align` | narration lines (the film's length is a word target, not a rule), voice, word timings (engine timestamps or Whisper); a voice that runs more than 0.5 s past the film has the script written again, up to twice, told each line's measured seconds |
 | `storylines` | N different films in words (gate: owner / director) |
 | `concept` | names the visual mechanism and checks it against past work |
 | `plan` | the shot-by-shot plan, numeric (hex palette, type, easing, frames) (**required gate**) |
@@ -110,7 +115,7 @@ Before rendering, the check step also probes each scene in the browser (`scenePr
 the root only while `hyperframes check` runs) and sends what it finds back as repairs: `hard_swap`
 (two large elements swapping visibility in ≤ 0.3 s), `fighting_tweens` (a kit part and another tween
 on the same property at once), `text_over_object` (≥ 30% of a text on a drawn object in most samples),
-`first_frame_partial_text` (text 5–95% clipped on a shot's first frame after a cut) and
+`first_frame_partial_text` (text 5 to 95% clipped on a shot's first frame after a cut) and
 `first_frame_no_text` (the film's first frame shows none of the opening shot's planned words). The faults
 come from real Kimi and GLM films on 2026-11-02; HyperFrames' own lint and layout checks missed them.
 
@@ -193,6 +198,22 @@ finished, and whether the motion moves smoothly and with weight.
 A step before the build that failed (a voice that could not be made, say) is never skipped: the
 build is refused until the video is retried. A retry reuses the approved plan unless something the
 plan was made from changed. Fish speaks with its default voice when no voice id is set.
+
+A build that failed (a gateway error, an interruption) can go on from its failed step: `POST
+/versions/{id}/retry`, `sorot gen resume`, or "Continue from the failed step" in the window. It is the
+same version, and every step and shot already finished is kept. It is refused (409) once the plan is
+no longer the approved one the build started from; build again then.
+
+Cancelling a build stops it between steps and before each shot is asked for. A model call already sent
+finishes first; nothing after it runs, and the version ends CANCELLED.
+
+## Install settings
+
+`GEN_CONCURRENCY` (default 1) is how many builds run at once. `GEN_KEEP_VERSIONS` (default 10) is
+how many versions of a project keep their files; older drafts are removed (the accepted version and a
+running build stay; the rows, plans and exports stay). `GEN_COMMANDS=1` lets a hosted install
+(`SOROT_HOSTED`) run the local check commands recipes may name; they are always allowed on a local
+install.
 
 ## The voice compute rule
 

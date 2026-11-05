@@ -8,7 +8,7 @@ columns. Errors: 400 bad input, 404 unknown id, 409 wrong state, 503 Generate un
 |---|---|---|---|---|
 | GET | `/api/generate/status` | | `{available, reasons[], hyperframes:{ok,version}, llm, jev, image, voice:{engines[], localAvailable, localReason?}, compute:"cpu"\|"gpu", presets[]}` | `available` is false without an LLM or with a failing `doctor` (FR-016); `localAvailable` is false on CPU-only installs (FR-018a) |
 | GET | `/api/generate/projects` | | `{projects[]}` | newest first |
-| POST | `/api/generate/projects` | `{brief, recipeId?, ideaId?, facts?[], format?, targetSec?, language?, styleNotes?, preset?, narration?, buildWithoutStopping?}` | `{project}` | runs the recipe's first steps (facts / narration / storylines); 503 if unavailable, 409 if the recipe is unavailable |
+| POST | `/api/generate/projects` | `{brief, recipeId?, ideaId?, facts?[], format?, targetSec?, language?, styleNotes?, preset?, narration?, buildWithoutStopping?, forbiddenNumbers?: true \| string[]}` | `{project}` | runs the recipe's first steps (facts / narration / storylines); 503 if unavailable, 409 if the recipe is unavailable |
 | GET | `/api/generate/projects/:id` | | `{project, plans[], versions[], assets[], exports[]}` | the plan list is newest first |
 | PATCH | `/api/generate/projects/:id` | `{title?, narration?, styleNotes?}` | `{project}` | |
 | DELETE | `/api/generate/projects/:id` | | `{deleted:true}` | removes files; 409 while building |
@@ -24,8 +24,8 @@ columns. Errors: 400 bad input, 404 unknown id, 409 wrong state, 503 Generate un
 | POST | `/api/generate/projects/:id/versions` | | `{version}` | build; 409 without an approved plan (FR-006) |
 | GET | `/api/generate/versions/:id` | | `{version, verdicts[]}` | poll while building |
 | POST | `/api/generate/versions/:id/cancel` | | `{version}` | kills the process tree |
-| POST | `/api/generate/versions/:id/retry` | | `{version}` | a FAILED version goes on from its failed step (same version; finished steps and shots kept); else 409 |
-| POST | `/api/generate/versions/:id/fix` | `{findingIds?[], note?, shotId?}` | `{version}` | new version; no ids = all must-fix |
+| POST | `/api/generate/versions/:id/retry` | | `{version}` | a FAILED version goes on from its failed step (same version; finished steps and shots kept); 409 unless it failed, while the project is working, or when the approved plan is no longer the one the version was started from (start a new build then) |
+| POST | `/api/generate/versions/:id/fix` | `{findingIds?[], note?, shotId?}` | `{version \| null, plan \| null, needsApproval, summary}` | 201 with the new version when one is queued; 200 with the revised plan (`needsApproval`) when the fix changes the plan first; no ids = all must-fix |
 | POST | `/api/generate/versions/:id/restore` | | `{project}` | makes this version's plan the current one |
 | POST | `/api/generate/versions/:id/accept` | | `{project}` | 409 if TECHNICAL = FAIL (FR-014) |
 | POST | `/api/generate/versions/:id/export` | `{title?, description?}` | `{export}` | delivery render; 409 if TECHNICAL = FAIL |
@@ -33,7 +33,9 @@ columns. Errors: 400 bad input, 404 unknown id, 409 wrong state, 503 Generate un
 | GET | `/api/generate/versions/:id/sheets/:name` | | `image/jpeg` | `review-beats`, `review-phone` |
 | GET | `/api/generate/exports/:id/file` | `?download=1` | `video/mp4` | |
 | GET | `/api/generate/projects/:id/events` | `?limit=` | `{events[]}` | director log; no secrets |
+| GET | `/api/generate/projects/:id/files` | | `{files[]}` | the names of the mirrored files that exist |
 | GET | `/api/generate/projects/:id/files/:name` | | text | the mirrored files (BRIEF.md, SPEC.md, MOTION_REVIEW.md, ...) |
+| GET | `/api/generate/exports` | | `{exports[]}` | the Generated library, every project's exports |
 
 ### Recipes (FR-022 to FR-025, FR-035 to FR-037)
 
@@ -71,6 +73,7 @@ columns. Errors: 400 bad input, 404 unknown id, 409 wrong state, 503 Generate un
 | GET | `/api/generate/ideas` | `?status=` | `{ideas[]}` | |
 | POST | `/api/generate/ideas` | `{id?, slug, brief, flags?, facts?[]}` | `{idea}` | how the user or an outside agent fills the bank |
 | PATCH / DELETE | `/api/generate/ideas/:id` | | `{idea}` | |
+| POST | `/api/generate/import-history` | `{concepts?[], ideas?[]}` | `{concepts, ideas, skipped}` | loads past concepts (each `{mechanism, concept, recipeId?, date?}`) and ideas into the bank; a concept already known for its recipe is skipped; 400 on an unknown recipe or a concept missing either field |
 | POST | `/api/generate/run` | `{recipeId, ideaId?}` | `{project}` | next new idea (moves the cursor) or the named one (resume, cursor unchanged); runs to a checked final version without stopping when every gate is `director` |
 
 ## Publishing (changed)
@@ -101,7 +104,7 @@ cancel) is unchanged (Principle VI).
 - (removed 2026-11-02: `llm.vision`, `llm.visionModel`; the LLM's own model sees)
 - `llm.contextTokens`: whole number 20000 to 2000000, how far a build session may grow (env `GEN_CONTEXT_TOKENS`, default 600000)
 - `llm.planModel`, `llm.sceneModel`, `llm.judgeModel`: text, a model per Generate role (empty = `llm.model`; env `GEN_PLAN_MODEL`, `GEN_SCENE_MODEL`, `GEN_JUDGE_MODEL`)
-- `llm.turnTokens` (to come, FR-051): whole number, the turn budget before mid-turn compaction (env `GEN_TURN_TOKENS`, default 60000)
+- `llm.turnTokens`: whole number 5000 to 500000, the turn budget before mid-turn compaction (FR-051; env `GEN_TURN_TOKENS`, default 60000)
 - `llm.genMaxTokens`: whole number 256 to 200000, the output budget of each Generate director call (env `GEN_LLM_MAX_TOKENS`, default 32000; a form may send it as text)
 
 `image` and `voice` get `/api/settings/:kind/test`, like `llm`, `jev` and `tebar`.
@@ -113,12 +116,12 @@ cancel) is unchanged (Principle VI).
 | GET | `/api/generate/kit` | | `{parts[]}` | built-in and user parts with manifest and `checkedAt` |
 | GET | `/api/generate/kit/:name` | | `{part}` | |
 | POST | `/api/generate/kit` | multipart `file` (.zip of a part folder) | `{part}` | validates, renders the example twice; 400 with the findings if it fails |
-| DELETE | `/api/generate/kit/:name` | | `{ok}` | user parts only; 409 for a built-in |
+| DELETE | `/api/generate/kit/:name` | | `{deleted:true}` | user parts only; 409 for a built-in |
 | GET | `/api/generate/kit/:name/export` | | .zip | |
 | GET | `/api/generate/capabilities` | `?level=` | `{capabilities}` | what a director call would be told right now |
-| GET | `/api/generate/models` | | `{records[]}` | `gen_model_record` per model and level, with the level `auto` would pick |
-| POST | `/api/generate/models/calibrate` | `{model?}` | `{run}` | three sample shots per level; progress like a build |
-| PUT | `/api/generate/models/:model/level` | `{level \| null}` | `{record}` | pin or unpin a model's level |
+| GET | `/api/generate/models` | | `{current, models:[{model, pin, records[], auto, proven}], calibration}` | per model: its `gen_model_record` rows, its pin, the level `auto` would pick and the highest level it has proven; `calibration` is the run in progress or null |
+| POST | `/api/generate/models/calibrate` | `{model?}` | `{run}` (202) | three sample shots per level, in the background; progress like a build |
+| PUT | `/api/generate/models/:model/level` | `{level \| null}` | `{model}` | pin or unpin a model's level; the answer is the model's entry as `GET /models` lists it |
 
 Versions gain `kit` and `shotLevels` (camelCase of the new columns); plans gain `shots[].level`
 and `shots[].look`. All additive.

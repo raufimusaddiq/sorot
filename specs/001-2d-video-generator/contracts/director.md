@@ -18,7 +18,7 @@ Functions: `submit_storylines`, `submit_plan`, `submit_revision` (`plan` + `chan
 |---|---|---|---|
 | `facts.verify` | one fact (claim, value), source page text (fetched by Sorot) | `{status: "verified"\|"corrected"\|"unverifiable", value?, evidence}` | no new facts; a headline-only source → unverifiable |
 | `facts.research` (tools) | brief, existing facts, recipe rules; tools `fetch_url`, `search_web`, `query_data` (read-only, SELECT only, row cap) | `{facts: [{claim, value, sourceUrl, evidence}]}` | `Llm.runTools`, ≤ 8 steps, `finalPrompt` asks for the JSON |
-| `script` | brief, verified facts, language, target window, recipe guidance | `{lines: [{id, text}]}` with numbers spelled out | every number must map to a fact (checked in code) |
+| `script` | brief, verified facts, language, target window, `targetWords` (the film's length at about 1.8 words a second, a target only), recipe guidance; on a rewrite also `overrun: {spokenSec, filmSec, lines: [{id, text, sec}]}` (the voice step's measured speech) | `{lines: [{id, text}]}` with numbers spelled out | every number must map to a fact (checked in code); only the recipe's `maxWords` is a hard limit |
 | `storylines` | brief, format, targetSec, language, styleNotes, preset hints, asset list, `note?`, story guidance, the step's settings and the user's prompt text, the script if `script` ran earlier | `{storylines: [N × Storyline]}`; exactly one has `recommended: true`, one has `bold: true` | N different films (world, device, form), each with the first 2 s, beats and look |
 | `gate` (a step with `gate: director`) | the step's output (storylines or plan), the step's `pickRule` / the user's prompt text | `{decision, index?, reason}` (one clause) | logged in `step_state` |
 | `concept` | picked storyline, topic, last `lastN` concepts of the recipe | `{mechanism, whyThisTopic, sameAsPrevious: false}` | code also checks text similarity; a repeat → ask again once, then fail |
@@ -26,7 +26,7 @@ Functions: `submit_storylines`, `submit_plan`, `submit_revision` (`plan` + `chan
 | `revise` | current plan, request | `{plan, changeSummary}` | code diffs the plans; changed fields outside the request's shots are rejected and asked again once |
 | `scene` | one shot, look, format size, block snippets used by the shot, asset paths, authoring contract | `{html}`: one `compositions/shot-NN.html` | plan-lock and lint/check in code |
 | `repair` | the shot, its current html, its findings (lint/check/plan-lock) | `{html}` or `{html, holds: [{code, reason}]}` (warnings kept with `data-hold`) | ≤ recipe rounds per shot per version (default 3) |
-| `look` (vision) | per beat: frame image(s) at beat +0.3 s, the shot's `reads`/`heroMove`, review sheets, the recipe's `rules.defaultsAudit` | `{beats: [{shotId, frame, strangerDescription, objects[], unexplained[], matchesShot: bool, defaultsSeen[]}]}` | separate call from the director; ≤ the step's `rounds`; unexplained objects → must-fix |
+| `look` (vision) | three pictures of each shot, early to late (at 20%, 55% and 90% of it), `meant: [{shotId, reads, heroMove, pictures}]`, the recipe's `rules.defaultsAudit` | `{frames: [{shotId, description, objects[], unexplained[], matches: bool, heroVisible: bool}], defaultsSeen[]}`, one entry per shot: `objects` and `unexplained` are what is on screen in its last picture, `matches` whether it reads as meant by then, `heroVisible` whether the move shows across the pictures | separate call from the director; a shot answered once per picture counts once (its last answer; the move is seen if any answer saw it); ≤ the step's `rounds`; unexplained objects → must-fix |
 | `fix` | approved plan, findings chosen by the user, user note | `{planEdits?: Plan, sceneEdits: [{shotId, instruction}], summary}` | a `planEdits` that changes approved text or durations needs re-approval |
 | `judge` (LLM CREATIVE) | brief, approved plan, built facts per shot (rendered text, read time, motion, timings), optional review sheets (vision) | `{criteria: {mainMessage, followsStoryline, followsLook, openingHolds, pacingFits, endingLands}: {answer: "yes"\|"partly"\|"no", reason, shotId?, fromSec?, toSec?, suggestedFix?}}` | fresh messages, no director history (R7) |
 | `copy` | plan title, message, platform limits | `{title, description, hashtags[]}` | reuses publisher copy rules; Jev copy check |
@@ -83,28 +83,38 @@ flagged blocking rule is a must-fix.
 ## Additions for the director loop (2026-11-02)
 
 **Session** (FR-048): `scene`, `repair` and `kitshot` are turns of one conversation per version.
-Opening: system (the three jobs, the authoring contract, the worked example, the step prompt) and
+Opening: system (the three jobs, the authoring contract, the two worked examples, the step prompt) and
 one user message `{capabilities, film: {title, message, look, language, shots}, size, assets,
 fonts, task}`. Each turn's user message: `{request, level, levelMeans, …the shot's own fields,
 currentHtml?, findings?, task}`. All three submit tools are offered on every turn; the request
-names which one ends it.
+names which one ends it. The tool list is set by the session's first turn that has tools (a kit shot or a
+look-step repair has none) and stays the same for every later request.
 
-**Tools in a turn** (FR-049, to build). Offered with `tool_choice: "auto"`; the last allowed step
-forces the submit tool. Every result is JSON; an error is `{ "error": "…" }`.
+**Tools in a turn** (FR-049). Offered with `tool_choice: "auto"`; the last allowed step forces the
+submit tool, and that step ends the loop even if a provider ignores the forced choice. Every result
+is JSON; an error is `{ "error": "…" }`. A cancelled build starts no further turn or tool step.
+**Look first** (FR-049): the first submit of a `scene` turn that has `look` and hasn't looked is
+turned back once with `{accepted: false, problems: ["look at your draft first…"]}` (no retry is used);
+repairs and kit shots are not made to look. A turn's tool counts and this rule hold across its second
+attempt.
 
 | Tool | Arguments | Result |
 |---|---|---|
 | `search_blocks` | `{query: string ≤ 120, type?: "block" \| "component", limit?: 1..8}` | `{matches: [{name, type, title, description, tags, width, height, duration}]}` |
-| `use_block` | `{name: string}` | `{name, files: string[], source: string (≤ 24 KB), cut: boolean}`; refused when the recipe's plan step has `blocks: false` |
-| `look` | `{html: string, times: number[1..3]}` (seconds inside the shot) | content parts: the frames as images, then `{findings: [{code, severity, message, hint}], seen: {description, objects, unexplained}}` from a fresh call that sees only the frames |
-| `check` | `{html: string}` | `{findings: [{code, severity, message, hint}]}` from `checkScene` and `hyperframes lint` |
+| `use_block` | `{name: string}` | `{name, files: string[], source: string (≤ 24 KB), cut: boolean, external?: string[], note?}` (`external`: URLs the block loads from the web, which a render can't); not offered when the recipe's plan step has `blocks: false` |
+| `look` | `{html: string, times: number[1..3]}` (seconds inside the shot, sorted early to late) | content parts: the frames as images, then `{frames, findings: [{code, severity, message, hint, atShotSec?}], seen: {description, objects, unexplained}}`: the stranger's read (a fresh call that sees only the frames, one answer for the shot) plus the same probe and motion findings as `check` |
+| `check` | `{html: string}` | `{findings: [{code, severity, message, hint, atShotSec?}]}` from `checkScene`, `hyperframes lint`, the scene probe (`text_over_object`, `first_frame_*`, `fighting_tweens`, `hard_swap`) and the motion measure on a draft render of just this shot (`motion_jump`, `motion_stall`); the last two run on a scratch copy of the project with a placeholder for each shot not yet written. `atShotSec` is shot time (the probe's own messages count film time) |
 | `submit_scene` / `submit_repair` / `submit_shot_kit` | as before | `{accepted: true}` or `{accepted: false, problems}` (one more try) |
 
 Limits per turn (recipe): `toolSteps` 8, `search_blocks` 4, `use_block` 2, `look` (`looks`) 2,
 `check` 3. Past a tool's limit its call returns `{ "error": "limit reached: submit now" }`.
+`look` and `check` put the draft in the shot's file only while they read it, then put back what was
+there: only an accepted submit changes the version's file.
 
 **Compaction** (FR-051): after `{accepted: true}`, the turn becomes `user (task)` → `user ("tools
-used: …")` → `assistant (submit_*)` → `tool ({accepted: true})`. Mid-turn past `GEN_TURN_TOKENS`:
+used: …")` → `assistant (submit_*)` → `tool ({accepted: true})`. An answer the model gave as plain text
+(possible with `tool_choice: "auto"`) stays as its one assistant message after the note, so no tool
+result is left without its call. Mid-turn past `GEN_TURN_TOKENS`:
 earlier tool results in the turn become `{ "stub": "<kind> #n removed: see #m" }`.
 
 **Pictures** (FR-052): a call with images goes to its role's model (`judge` for the CREATIVE

@@ -377,7 +377,7 @@ Sorot's gates, checks, levels and the two verdicts are unchanged.
 | Build session, `GEN_CONTEXT_TOKENS`, `GEN_SESSION` (FR-048) | built (`3c1ae8a`); measured 87% prefix reuse on a real build |
 | Model per role (FR-053) | built (`053d706`) |
 | No separate vision model (FR-052) | built (`8ba50db`) |
-| Tool loop (FR-049), stranger look (FR-050), compaction (FR-051) | **to build** (phases 20 to 22) |
+| Tool loop (FR-049), stranger look (FR-050), compaction (FR-051) | built (phases 20 to 22); probe and motion in the tools, look-first rule (phase 24) |
 
 ### Technical context (changes only)
 

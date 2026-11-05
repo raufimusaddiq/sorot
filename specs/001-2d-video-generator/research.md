@@ -586,8 +586,8 @@ are `STORYLINES.md`, `SPEC.md`, `MOTION_PLAN.md` and `CONCEPT.txt`.
   warning is handled by `warnings`: `fix`; `fix-or-hold` (keep it with `data-hold` and a reason
   the director must give, which is saved as a kept finding and shown in MOTION_REVIEW.md); or
   `report`.
-- `look` (needs a vision model, or `when: "connection:vision"`): `snapshot --review` plus
-  `snapshot --at` each beat + `beatOffsetSec`. A **separate** call describes every beat frame as
+- `look` (needs the director's model to see, or `when: "connection:vision"`): three pictures of
+  each shot (early, middle, settled; `beatOffsetSec` was removed). A **separate** call describes the frames as
   a stranger would, names its objects (an object that needs explaining is a must-fix), compares
   the frame with the shot's `reads`/`heroMove`, and names any `rules.defaultsAudit` item it sees.
   The director then fixes the scenes, for up to `rounds` rounds. This is the author's

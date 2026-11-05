@@ -27,8 +27,8 @@ TEXT and are validated in code (`planSchema.ts`).
 | step_index | INTEGER NOT NULL DEFAULT 0 | position in the frozen recipe's `steps` (project-level steps) |
 | step_state | TEXT | JSON per step id: `{status: done\|waiting\|failed\|skipped, inputHash, outputRef, reason?}`; `reason` holds a director gate decision |
 | narration | INTEGER NOT NULL DEFAULT 0 | user toggle (FR-018) |
-| storylines | TEXT | JSON array of 3 [Storyline](#storyline-json), or null for ≤ 15 s |
-| picked_storyline | INTEGER | index 0 to 2 |
+| storylines | TEXT | JSON array of [Storyline](#storyline-json) (the `storylines` step's `count`, default 3), or null when skipped |
+| picked_storyline | INTEGER | index into `storylines` |
 | status | TEXT NOT NULL | see [state machine](#project-state-machine) |
 | current_plan_id | TEXT | → gen_plan |
 | accepted_version_id | TEXT | → gen_version |
@@ -174,7 +174,7 @@ become `'clip'`.
 New connection groups `image`, `voice` (`engine: elevenlabs | fish | openai | local`, voice id
 per language; `local` only on GPU installs; for Fish the `model` goes in a header) and `data`
 (registered read-only data sources:
-`{name, kind: "sqlite", path}`), and `llm.vision` / `llm.visionModel`. Keys are masked like the
+`{name, kind: "sqlite", path}`). (`llm.vision` / `llm.visionModel` were removed: the director's own model sees.) Keys are masked like the
 others, and secrets also go in `.env.llm` (`ELEVENLABS_API_KEY`, `FISH_API_KEY`, `VOICE_API_KEY`,
 `IMAGE_API_KEY`).
 
@@ -266,6 +266,7 @@ RUNNING ──(reaches author)──► BUILDING (a gen_version runs the build s
 BUILDING ──► BUILT ──fix (owner) or autoFixRounds──► BUILDING (new version; unchanged steps reused)
 BUILT ──accept──► ACCEPTED ──export──► EXPORTED
 any ──director/step failure──► FAILED (work kept; retry resumes at the failed step)
+FAILED version ──retry (same plan revision only)──► QUEUED, resumes at the failed step
 BUILDING ──cancel──► CANCELLED version; project back to BUILT/WAITING as before
 ```
 
@@ -308,8 +309,8 @@ unchanged and old plans stay valid.
 | version | TEXT | from `part.json` |
 | manifest | TEXT | the `part.json` as validated ([contracts/kit.md](contracts/kit.md)) |
 | path | TEXT | folder holding the part (`generator/kit/...` or `data/kit/...`) |
-| checkedAt | TEXT | when its example last passed `lint`/`check` and rendered the same twice |
-| createdAt, updatedAt | TEXT | |
+| checked_at | TEXT | when its example last passed `lint`/`check` and rendered the same twice |
+| created_at, updated_at | TEXT | |
 
 Built-in parts are synced from `generator/kit/` at start; a user part with a built-in's name is
 refused.
@@ -321,13 +322,13 @@ refused.
 | model | TEXT | as sent to the LLM endpoint |
 | level | TEXT | `kit`, `compose`, `free`, or `plan` for plan calls |
 | asked | INTEGER | answers requested |
-| firstPass | INTEGER | passed their checks with no repair |
+| first_pass | INTEGER | passed their checks with no repair |
 | repaired | INTEGER | passed after repair |
 | dropped | INTEGER | shots rebuilt one level down |
 | malformed | INTEGER | answers that weren't valid JSON / the asked shape |
 | ms | INTEGER | total time spent |
-| calibratedAt | TEXT NULL | set by Calibrate |
-| updatedAt | TEXT | |
+| calibrated_at | TEXT NULL | set by Calibrate |
+| updated_at | TEXT | |
 
 Primary key (model, level). The level choice reads it (research R25).
 
@@ -335,7 +336,7 @@ Primary key (model, level). The level choice reads it (research R25).
 
 - `gen_version.kit` TEXT NULL: JSON `{ "version": "...", "parts": ["shade", "camera"] }`, what the
   build used.
-- `gen_version.shotLevels` TEXT NULL: JSON `{ "s01": { "planned": "compose", "built": "kit", "reason": "..." } }`.
+- `gen_version.shot_levels` TEXT NULL: JSON `{ "s01": { "planned": "compose", "built": "kit", "reason": "..." } }`.
 - `gen_recipe` / frozen recipe: the `author` step's `level`, `maxLevel` and `require` (part names),
   the `render` step's `motionBlur` ([contracts/recipe.md](contracts/recipe.md)).
 
@@ -357,7 +358,7 @@ Primary key (model, level). The level choice reads it (research R25).
 
 `look.description` and `look.values` are the director's own terms (FR-041); only `parts` is
 checked against the kit (unknown part or setting → repair). `level` is what the plan expects; the
-build records what it actually used in `gen_version.shotLevels`.
+build records what it actually used in `gen_version.shot_levels`.
 
 ### Kit-level shot JSON (`submit_shot_kit`)
 
@@ -394,10 +395,10 @@ No new tables or columns.
   `search_blocks` | `use_block` | `look` | `check`; `request` = the arguments; `response` = the
   result with images replaced by their count; `ms`; `ok`). The stranger's read inside `look` is its
   own row (`kind` = `look`), as the look step's call is today.
-- **`gen_version.step_state.look`**: `{status: "done", reason: "looked in the loop"}` when every
+- **`gen_version.step_state.look`**: `{status: "done", outputRef: "looked in the loop"}` when every
   shot was looked at in its turn; the look step runs as before otherwise.
 - **Settings (`setting` table, `llm.*`)**: added `contextTokens` (20000 to 2000000),
-  `planModel`, `sceneModel`, `judgeModel` (text, empty = `llm.model`), and `turnTokens` (to come,
+  `planModel`, `sceneModel`, `judgeModel` (text, empty = `llm.model`), and `turnTokens` (5000 to 500000,
   FR-051); removed `vision`, `visionModel` (saved rows are ignored).
 - **Recipe step settings**: `author.toolSteps` (0 to 16, default 8; 0 = one forced call as before),
   `author.looks` (0 to 4, default 2).

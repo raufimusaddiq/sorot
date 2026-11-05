@@ -587,13 +587,13 @@ envelope; `409` means the step is not allowed in the project's current state, `4
 | Projects | `GET/POST /projects` · `GET/PATCH/DELETE /projects/{id}` · `POST /projects/{id}/retry` · `GET /projects/{id}/events` (progress) · `GET /projects/{id}/files[/{name}]` (mirrored files) |
 | Storylines and plan | `POST /projects/{id}/storylines` · `POST …/storylines/{index}/pick` · `PUT …/plan` · `POST …/plan/revise` · `POST …/plan/approve` · `POST …/steps/{stepId}/approve` |
 | Assets | `POST /projects/{id}/assets` · `DELETE /assets/{id}` |
-| Builds | `POST /projects/{id}/versions` · `GET /projects/{id}/estimate` · `GET /versions/{id}` · `POST /versions/{id}/cancel\|retry\|fix\|restore\|accept` · `GET /versions/{id}/draft` · `GET /versions/{id}/sheets/{name}` |
+| Builds | `POST /projects/{id}/versions` · `GET /projects/{id}/estimate` · `GET /versions/{id}` · `POST /versions/{id}/cancel\|retry\|fix\|restore\|accept` (retry: a FAILED version goes on from its failed step; `409` once its plan is no longer the approved one) · `GET /versions/{id}/draft` · `GET /versions/{id}/sheets/{name}` |
 | Facts | `GET/POST /projects/{id}/facts` · `POST …/facts/verify` · `PATCH/DELETE /facts/{id}` |
 | Recipes | `GET/POST /recipes` · `GET/PUT/DELETE /recipes/{id}` · `POST /recipes/validate\|import` · `GET /recipes/{id}/export` |
 | Ideas and runs | `GET/POST /ideas` · `GET/PATCH/DELETE /ideas/{id}` · `POST /run` · `POST /import-history` |
 | Export and publish | `POST /versions/{id}/export` · `GET /exports` · `GET /exports/{id}/file` · `POST /exports/{id}/publish/draft\|publish` · `GET /exports/{id}/posts` |
 | Kit ([generate-kit.md](generate-kit.md)) | `GET/POST /kit` (POST: multipart `file`, a `.zip` of one part; `400` with `findings` when it doesn't pass) · `GET/DELETE /kit/{name}` (`409` for a built-in) · `GET /kit/{name}/export` (`.zip`) |
-| Levels | `GET /capabilities?level=kit\|compose\|free` (what a director call is told now) · `GET /models` (records, pins, `auto`, the last calibration) · `POST /models/calibrate` (`202`, runs in the background) · `PUT /models/{model}/level` (`{level}` or `{level: null}` for auto) |
+| Levels | `GET /capabilities?level=kit\|compose\|free` (what a director call is told now) · `GET /models` (per model: records, pin, `auto`, the `proven` level; the calibration in progress) · `POST /models/calibrate` (`202`, runs in the background) · `PUT /models/{model}/level` (`{level}` or `{level: null}` for auto) |
 
 Versions carry `kit` (`{version, parts, partVersions}`: the parts the build loaded) and `shotLevels`
 (`{shotId: {planned, built, reason?}}`); plans carry each shot's `level` and `look`. All additive.
