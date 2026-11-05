@@ -26,6 +26,8 @@ export interface LookFrame {
   objects: string[];
   /** The ones the stranger cannot tell the purpose of. */
   unexplained: string[];
+  /** The ones hard to make out because they barely stand out from what is behind them (text aside). */
+  faint?: string[];
   /** Does the frame read as the shot is meant to (`reads`)? */
   matches: boolean;
   /** Is the shot's hero move (the thing that moves most) visible in the frame? */
@@ -75,7 +77,7 @@ export function lookFindings(answer: LookAnswer, plan: Plan, times: number[], au
 export interface StrangerRead {
   findings: NewFinding[];
   /** What the stranger saw, for the director to read as well. */
-  seen: { description: string; objects: string[]; unexplained: string[] };
+  seen: { description: string; objects: string[]; unexplained: string[]; faint: string[] };
 }
 
 /**
@@ -90,10 +92,13 @@ export async function strangerRead(
   const meant = expectations(input.plan)[input.index]!;
   const answer = await director.look({ project: input.project, step: input.step, expected: [{ ...meant, pictures: input.images.length }], audit: [], images: input.images });
   const seen = new Set<string>();
-  const findings = lookFindings(answer, input.plan, [], false).filter((f) => !seen.has(`${f.code} ${f.description}`) && !!seen.add(`${f.code} ${f.description}`));
+  // what the stranger finds too faint is told to the director only: in a film something weak can be the point, and
+  // neither pixels nor a stranger tell a dim subject from dim scenery well enough for a verdict (research.md, T183)
+  const faint = answer.frames.flatMap((f) => (f.faint ?? []).map((object) => find(f.shotId, "look_faint", `"${object}" in ${f.shotId} barely stands out from what is behind it: on a phone it is hard to make out.`, `If "${object}" matters, make it clearly lighter or darker than its ground (or give it an outline); leave it if it is meant to be weak.`, "should-fix")));
+  const findings = [...lookFindings(answer, input.plan, [], false), ...faint].filter((f) => !seen.has(`${f.code} ${f.description}`) && !!seen.add(`${f.code} ${f.description}`));
   const first = answer.frames[0];
   return {
     findings,
-    seen: { description: first?.description ?? "", objects: [...new Set(answer.frames.flatMap((f) => f.objects))], unexplained: [...new Set(answer.frames.flatMap((f) => f.unexplained))] },
+    seen: { description: first?.description ?? "", objects: [...new Set(answer.frames.flatMap((f) => f.objects))], unexplained: [...new Set(answer.frames.flatMap((f) => f.unexplained))], faint: [...new Set(answer.frames.flatMap((f) => f.faint ?? []))] },
   };
 }

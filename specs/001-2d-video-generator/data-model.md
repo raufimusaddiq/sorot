@@ -377,7 +377,8 @@ Validated against the capability description; Sorot writes the scene from it.
 `motion_stall` (from the `motion` measure; must-fix above the hard threshold, should-fix
 otherwise), `kit_unknown_part` and `kit_bad_setting` (plan or scene named something not
 installed; a validation error during the build, a must-fix if left), `frame_budget` (a shot too
-heavy to draw in time on this machine).
+heavy to draw in time on this machine), `look_faint` (should-fix, only in the director's own `look`
+tool result, never saved: a thing too close to its ground to make out, FR-057).
 
 ## Additions for the director loop (2026-11-02, FR-048 to FR-053)
 

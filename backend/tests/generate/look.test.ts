@@ -45,9 +45,9 @@ describe("look: where to look and what it means", () => {
     expect(expectations(p)[0]).toEqual({ shotId: "s01", reads: "a seed", heroMove: "it falls", pictures: 1 });
   });
 
-  test("an unexplained object is must-fix; a frame that reads wrongly, a hidden hero move and a visible default are should-fix", () => {
+  test("an unexplained object is must-fix; a frame that reads wrongly, a hidden hero move and a visible default are should-fix; what is faint stays out of the look step", () => {
     const found = lookFindings({
-      frames: [frame("s01", { unexplained: ["floating ring", "grey bar"] }), frame("s02", { matches: false, description: "a blank grid" }), frame("s03", { heroVisible: false }), frame("ghost")],
+      frames: [frame("s01", { unexplained: ["floating ring", "grey bar"], faint: ["navy router"] }), frame("s02", { matches: false, description: "a blank grid" }), frame("s03", { heroVisible: false }), frame("ghost")],
       defaultsSeen: ["a centred title on a dark gradient"],
     } as LookAnswer, plan(), [0.3, 10.3, 20.3], true);
     expect(found.map((f) => [f.severity, f.code, f.shotId, f.fromSec])).toEqual([
@@ -110,12 +110,12 @@ function rig(replies: string[], over: { vision?: string; handlers?: Record<strin
 }
 
 describe("a stranger's read in the director's turn", () => {
-  test("one fresh call with only the pictures, one answer for the shot from all of them; what was seen goes back to the director", async () => {
-    const r = rig([answer([frame("s02", { unexplained: ["grey sphere"], description: "A grey ball.", objects: ["seed", "ball"], matches: false })])]);
+  test("one fresh call with only the pictures, one answer for the shot from all of them; what was seen, and what is too faint to make out, goes back to the director", async () => {
+    const r = rig([answer([frame("s02", { unexplained: ["grey sphere"], faint: ["seed"], description: "A grey ball.", objects: ["seed", "ball"], matches: false })])]);
     const read = await strangerRead(r.ctx.director, { project: r.ctx.project, step: r.ctx.step, plan: plan(), index: 1, images: ["data:image/png;base64,A", "data:image/png;base64,B"] });
     expect(JSON.parse(r.requests[0].messages[1].content[0].text)).toMatchObject({ pictures: 2, shots: ["s02"], meant: [{ shotId: "s02", pictures: 2 }] });
-    expect(read.findings.map((f) => [f.code, f.severity, f.shotId])).toEqual([["look_unexplained", "must-fix", "s02"], ["look_mismatch", "should-fix", "s02"]]);
-    expect(read.seen).toEqual({ description: "A grey ball.", objects: ["seed", "ball"], unexplained: ["grey sphere"] });
+    expect(read.findings.map((f) => [f.code, f.severity, f.shotId])).toEqual([["look_unexplained", "must-fix", "s02"], ["look_mismatch", "should-fix", "s02"], ["look_faint", "should-fix", "s02"]]);
+    expect(read.seen).toEqual({ description: "A grey ball.", objects: ["seed", "ball"], unexplained: ["grey sphere"], faint: ["seed"] });
   });
 
   test("a shot answered once per picture counts once: the last answer decides, the move is seen if any answer saw it", async () => {

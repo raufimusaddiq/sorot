@@ -169,9 +169,10 @@ const TOOLS = {
   look: tool("submit_look", "Submit what you see in the frames, as a stranger would.", {
     frames: {
       type: "array", items: {
-        type: "object", required: ["shotId", "description", "objects", "unexplained", "matches", "heroVisible"], properties: {
+        type: "object", required: ["shotId", "description", "objects", "unexplained", "faint", "matches", "heroVisible"], properties: {
           shotId: str("the shot the picture belongs to"), description: str("what a stranger sees, in a sentence or two, written before you look at what was meant"),
           objects: { type: "array", items: { type: "string" }, description: "the things visible on screen" }, unexplained: { type: "array", items: { type: "string" }, description: "things that ARE on screen, listed in `objects`, whose purpose a stranger could not tell; never something missing or not visible (say what is missing in `description` or with `matches`)" },
+          faint: { type: "array", items: { type: "string" }, description: "things in `objects` (not text) so close in colour and brightness to what is behind them that a viewer on a phone would struggle to make them out" },
           matches: { type: "boolean", description: "does the picture read as `reads` says?" }, heroVisible: { type: "boolean", description: "can the hero move be seen?" },
         },
       },
@@ -1155,11 +1156,11 @@ export class Director {
   /** A fresh look at the pictures of a build, by the vision model: each shot comes with `pictures` of it, early to late, and every shot must be answered once. */
   async look(input: {
     project: GenProject; step: RecipeStep; expected: Array<{ shotId: string; reads: string; heroMove: string; pictures?: number }>; audit: string[]; images: string[];
-  }): Promise<{ frames: Array<{ shotId: string; description: string; objects: string[]; unexplained: string[]; matches: boolean; heroVisible: boolean }>; defaultsSeen: string[] }> {
+  }): Promise<{ frames: Array<{ shotId: string; description: string; objects: string[]; unexplained: string[]; faint: string[]; matches: boolean; heroVisible: boolean }>; defaultsSeen: string[] }> {
     return this.ask(
       input.project, "look", input.step,
       { pictures: input.images.length, shots: input.expected.map((e) => e.shotId), meant: input.expected, defaultsAudit: input.audit },
-      "Describe each shot as a stranger, from its pictures, then compare it with `meant`. Answer once for every shot: the pictures come in the order of `shots`, and each shot has `pictures` of them (in `meant`), early to late. `objects` are what is on screen in the shot's last picture; `unexplained` are the ones still there in the last picture whose purpose you cannot tell (something only arriving or leaving in an earlier picture does not count); `matches` says whether the shot reads as meant by its last picture; `heroVisible` says whether the main move can be seen happening across its pictures (it may show as a change from one picture to the next).",
+      "Describe each shot as a stranger, from its pictures, then compare it with `meant`. Answer once for every shot: the pictures come in the order of `shots`, and each shot has `pictures` of them (in `meant`), early to late. `objects` are what is on screen in the shot's last picture; `unexplained` are the ones still there in the last picture whose purpose you cannot tell (something only arriving or leaving in an earlier picture does not count); `faint` are things (not text) so close to what is behind them in colour and brightness that a phone viewer would struggle to see them; `matches` says whether the shot reads as meant by its last picture; `heroVisible` says whether the main move can be seen happening across its pictures (it may show as a change from one picture to the next).",
       (parsed) => {
         const raw = parsed as { frames?: unknown; defaultsSeen?: unknown };
         const list = Array.isArray(raw.frames) ? raw.frames : [];
@@ -1168,7 +1169,7 @@ export class Director {
           const o = (typeof f === "object" && f !== null ? f : {}) as Record<string, unknown>;
           const shotId = clip(o.shotId, 20);
           return shotId && clip(o.description, 400) && typeof o.matches === "boolean" && typeof o.heroVisible === "boolean"
-            ? [{ shotId, description: clip(o.description, 400), objects: texts(o.objects), unexplained: texts(o.unexplained), matches: o.matches, heroVisible: o.heroVisible }] : [];
+            ? [{ shotId, description: clip(o.description, 400), objects: texts(o.objects), unexplained: texts(o.unexplained), faint: texts(o.faint), matches: o.matches, heroVisible: o.heroVisible }] : [];
         });
         const missing = input.expected.filter((e) => !frames.some((f) => f.shotId === e.shotId)).map((e) => e.shotId);
         // a shot answered once per picture (a model that missed "once per shot") counts once: its last answer, the settled picture, decides;

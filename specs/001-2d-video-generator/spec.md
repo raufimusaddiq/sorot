@@ -639,6 +639,11 @@ rate, and the build takes at most twice as long.
   path) as drawings when it looks for words sitting on a drawing. A box a fifth of the frame or more
   is a card the words sit on, and a text lying wholly inside a drawing at least five times its own
   area is a label on it; only a partial overlap is a collision.
+- **FR-057**: The stranger's read MUST also name the things (not text) too close in colour and
+  brightness to what is behind them to make out on a phone. In the director's own turn they come
+  back as `look_faint` (should-fix, the director decides); the look step leaves them out of the
+  verdict, because something weak can be the point of a shot and no measure tried told a dim subject
+  from dim scenery (research.md "S8, a subject too dark to see").
 ### Key Entities
 
 - **Generation project**: one user idea; holds brief, format, length, language, style notes,

@@ -1099,6 +1099,14 @@ calls:
 
 - **Contrast alone can't tell a subject from scenery.** Both films draw navy shapes at about 1.2 to 1.35:1; in
   `d8c3` they are walls behind a white router, in `a54d` they are the subject itself.
+- **The stranger's read, live** (GLM, one draft frame a shot, both builds): it called something faint in
+  3 of 5 `a54d` shots (the phone outline, the dashed Wi-Fi arcs on the phone panel, the houses) but not the
+  router and wall of shot 4, and in 6 of 6 `d8c3` shots (the dim walls, and the weak waves of "jauh =
+  lemah", which are weak on purpose). Noisy both ways.
+- **Decision (built, FR-057)**: the stranger's `faint` list goes to the director in its own turn as
+  `look_faint` should-fix, where it knows what is meant to be weak; the look step keeps it out of the
+  verdict, since as a TECHNICAL should-fix it would have marked most films REVIEW. The pixel rule below
+  stays unbuilt until more films are labelled.
 - **Candidate**: a frame where nothing drawn stands out (every sizeable non-text region under about 1.5:1
   against what it sits on) is a should-fix. Tested on two films only, so the threshold is uncalibrated; it
   needs the probe's text boxes to leave text out, misses thin bright strokes under the size floor, and must be
