@@ -42,5 +42,6 @@ export function planContext({ project, recipe, assets, connected, catalog, capab
     limits: { maxShots: Number(settings.maxShots) },
     numeric: settings.numeric === true, motionPlan: settings.motionPlan === true, fps: recipe.output.fps,
     ...(capabilities && kit ? { kit: (refs, path) => checkPartRefs(refs, capabilities, kit, path).map((p) => `${p.code}: ${p.message}`) } : {}),
+    ...(kit ? { kitParts: kit.map((p) => p.name) } : {}),
   };
 }

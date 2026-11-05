@@ -29,7 +29,7 @@ describe("validatePlan", () => {
     ["shot too short", first((s) => ({ ...s, durationSec: 0.5 })), {}, "durationSec must be between 1 and 15"],
     ["shot too long", first((s) => ({ ...s, durationSec: 16 })), {}, "durationSec must be between 1 and 15"],
     ["duration missing", first((s) => ({ ...s, durationSec: undefined })), {}, "durationSec must be between"],
-    ["total 15% over", first((s) => ({ ...s, durationSec: 14.5 })), {}, "add up to 34.5 s; the target is 30 s (allowed 27 to 33 s)"],
+    ["total 40% over (too far to scale)", first((s) => ({ ...s, durationSec: 22 })), {}, "add up to 42 s; the target is 30 s (allowed 27 to 33 s)"],
     ["total too short", (p) => shots(p, (s) => s.slice(0, 2)), {}, "add up to 20 s"],
     ["title of 7 words", first((s) => ({ ...s, text: [{ role: "title", value: "satu dua tiga empat lima enam tujuh" }] })), {}, "has 7 words; the limit is 6"],
     ["title of 7 words around a symbol", first((s) => ({ ...s, text: [{ role: "title", value: "satu dua tiga = empat lima enam tujuh" }] })), {}, "has 7 words; the limit is 6"],
@@ -133,7 +133,18 @@ describe("validatePlan", () => {
   test("limits can be tightened by the recipe", () => {
     expect(validatePlan(samplePlan(), ctx({ limits: { maxShots: 2 } })).errors.join()).toContain("needs 1 to 2 shots");
     expect(validatePlan(samplePlan(), ctx({ limits: { maxShotSec: 8 } })).errors.join()).toContain("between 1 and 8");
-    expect(validatePlan(samplePlan(), ctx({ limits: { sumTolerance: 0 }, targetSec: 31 })).errors.join()).toContain("add up to 30 s");
+    expect(validatePlan(samplePlan(), ctx({ limits: { sumTolerance: 0 }, targetSec: 50 })).errors.join()).toContain("add up to 30 s");
+  });
+
+  test("set right in code: a total a little off is scaled to the target; kit parts and registry blocks swapped between the two lists move back", () => {
+    const over = validatePlan(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, durationSec: 14.5 } : s)) }), ctx());
+    expect(over.errors).toEqual([]);
+    expect(over.plan!.shots.reduce((n, s) => n + s.durationSec, 0)).toBeCloseTo(30, 5);
+    expect(over.notes.join()).toContain("added up to 34.5 s");
+    const mixed = samplePlan({ blocks: ["shape"], shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, look: { description: "a card", parts: [{ part: "data-chart" }, { part: "shade" }] } } : s)) });
+    const fixed = validatePlan(mixed, ctx({ blocks: ["data-chart"], kitParts: ["shape", "shade"] }));
+    expect(fixed.errors).toEqual([]);
+    expect([fixed.plan!.blocks, fixed.plan!.shots[0]!.look!.parts!.map((p) => p.part)]).toEqual([["data-chart"], ["shade"]]);
   });
 
   test("number extraction unifies the decimal comma", () => {

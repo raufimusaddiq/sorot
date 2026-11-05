@@ -142,6 +142,8 @@ export interface PlanContext {
   unsourced?: (texts: string[]) => string[];
   /** Checks kit part references (`look.parts`) against the capability description: one message each (FR-045, FR-047). */
   kit?: (refs: Array<{ part: string; settings: Record<string, unknown> }>, path: string) => string[];
+  /** The installed kit parts' names: a plan that lists one as a registry block (or a block as a part) is set right in code. */
+  kitParts?: string[];
 }
 
 const MAX_LOOK_VALUES = 2000;
@@ -223,7 +225,21 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
   if (!wantsNarration && ctx.narration) notes.push("narration stays on: the project asks for a voice");
   const narrationOn = ctx.narration;
 
-  const blocks = strs(raw.blocks);
+  // kit parts and registry blocks are two lists a fast model mixes up both ways (bench, 2026-11-05): a kit part named as a block
+  // is dropped (every part is offered anyway), a block named as a part moves to the blocks
+  const blocks = strs(raw.blocks).filter((b) => !(ctx.kitParts?.includes(b) && !ctx.blocks?.includes(b) && notes.push(`${b} is a kit part, not a registry block: dropped from blocks`)));
+  for (const s of Array.isArray(raw.shots) ? raw.shots : []) {
+    const look = isObj(s) && isObj(s.look) && Array.isArray(s.look.parts) ? s.look : null;
+    if (!look || !ctx.blocks) continue;
+    const parts = look.parts as unknown[];
+    look.parts = parts.filter((p) => {
+      const name = isObj(p) ? str(p.part) : "";
+      if (!ctx.blocks!.includes(name) || ctx.kitParts?.includes(name)) return true;
+      if (!blocks.includes(name)) blocks.push(name);
+      notes.push(`${name} is a registry block, not a kit part: moved to blocks`);
+      return false;
+    });
+  }
   if (blocks.length && ctx.blocksAllowed === false) errors.push("this recipe doesn't allow registry blocks: leave blocks empty and draw everything");
   else if (ctx.blocks) {
     const unknown = blocks.filter((b) => !ctx.blocks!.includes(b));
@@ -276,9 +292,17 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     };
   });
 
-  const total = round1(shots.reduce((n, s) => n + (Number.isFinite(s.durationSec) ? s.durationSec : 0), 0));
+  let total = round1(shots.reduce((n, s) => n + (Number.isFinite(s.durationSec) ? s.durationSec : 0), 0));
   const low = ctx.targetSec * (1 - L.sumTolerance);
   const high = ctx.targetSec * (1 + L.sumTolerance);
+  // a total a little off is scaled in code (a model added 26 s for 30 twice); a numeric plan's frames come from the lengths, so not there
+  const scale = ctx.targetSec / total;
+  if (shots.length && (total < low - 1e-9 || total > high + 1e-9) && !ctx.numeric && scale >= 0.75 && scale <= 1.33 && shots.every((s) => Number.isFinite(s.durationSec))) {
+    for (const s of shots) s.durationSec = Math.min(L.maxShotSec, Math.max(L.minShotSec, round1(s.durationSec * scale)));
+    shots.at(-1)!.durationSec = round1(shots.at(-1)!.durationSec + ctx.targetSec - shots.reduce((n, s) => n + s.durationSec, 0));
+    notes.push(`the shots added up to ${total} s: each was scaled to fit ${ctx.targetSec} s`);
+    total = round1(shots.reduce((n, s) => n + s.durationSec, 0));
+  }
   if (shots.length && (total < low - 1e-9 || total > high + 1e-9)) {
     errors.push(`the shots add up to ${total} s; the target is ${ctx.targetSec} s (allowed ${round1(low)} to ${round1(high)} s)`);
   }

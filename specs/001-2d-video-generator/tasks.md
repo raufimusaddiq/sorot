@@ -586,6 +586,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 
 - [X] T189 [US10] The session stays inside `GEN_CONTEXT_TOKENS` (SC-024): a restart keeps the opening and the newest shots that fit (all of a 9-shot film's shots were already past 20,000), and a turn's own budget is the smaller of `GEN_TURN_TOKENS` and what the window leaves after the turn's start; measured at 20,000: requests reached 51,133 before. Tests in `backend/tests/generate/director.test.ts`
 
+- [X] T190 [US1] Plan mistakes a fast model makes are set right in code, with a note on the plan: a total within 25% of the target is scaled to it (not for numeric plans, whose frames come from the lengths); a kit part listed as a registry block is dropped from `blocks`; a registry block named as a kit part moves to `blocks` (`planSchema`, `planContext.kitParts`). Found in the 20-brief bench (A-12 to A-14 failed their plans on exactly these). Test in `backend/tests/generate/planSchema.test.ts`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.
