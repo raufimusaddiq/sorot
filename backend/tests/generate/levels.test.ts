@@ -38,7 +38,8 @@ describe("model record", () => {
   test.each<[string, LevelChoice["record"], string]>([
     // what the record shows the owner (it never caps a shot)
     ["no record", {}, "kit"],
-    ["8 shots, 60% first time, 10% malformed", { compose: r(10, 6, 1) }, "compose"],
+    ["60% first time, 10% malformed", { compose: r(10, 6, 1) }, "compose"],
+    ["exactly 8 shots", { compose: r(8, 5) }, "compose"],
     ["too few shots", { compose: r(7, 7) }, "kit"],
     ["too many malformed", { compose: r(10, 9, 2) }, "kit"],
     ["the highest proven level", { compose: r(10, 9), free: r(10, 8) }, "free"],

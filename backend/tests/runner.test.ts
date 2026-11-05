@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../src/config";
-import { createPythonRunner, killTree, parseEnvelope, spawnCapture, timeoutFor } from "../src/runner";
+import { createPythonRunner, drain, killTree, parseEnvelope, spawnCapture, timeoutFor } from "../src/runner";
 
 let dir: string;
 const scripts: Record<string, string> = {
@@ -144,6 +144,15 @@ describe("spawnCapture", () => {
     const res = await spawnCapture(process.execPath, [join(dir, "noisy.js")], { stdoutTail: 10 });
     expect(res.exitCode).toBe(0);
     expect(res.stdout).toStartWith("…[truncated]…");
+  });
+
+  test.each<[string, string[], string]>([
+    ["clipped while reading (a chunk past twice the tail)", ["x".repeat(30), "END"], "…[truncated]…\nxxxxxxxEND"],
+    ["clipped at the end (never past twice the tail)", ["x".repeat(8), "END"], "…[truncated]…\nxxxxxxxEND"],
+    ["kept whole", ["END"], "END"],
+  ])("drain: %s", async (_name, chunks, out) => {
+    const stream = new ReadableStream<Uint8Array>({ start(c) { for (const x of chunks) c.enqueue(new TextEncoder().encode(x)); c.close(); } });
+    expect(await drain(stream, 10)).toBe(out);
   });
 });
 

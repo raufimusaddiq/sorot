@@ -485,6 +485,12 @@ describe("director: scenes", () => {
     expect(orphan).toBe(false);                                                                    // a provider refuses a tool result with no call before it
     await expect(r.director.scene({ ...s, index: 0, signal: AbortSignal.abort() })).rejects.toThrow();
     expect(r.requests).toHaveLength(4);
+    // cancelled while a tool runs: the tool's own error goes up, it isn't handed to the model as an answer
+    const ctl = new AbortController();
+    const stops = tool("check", 3, async () => { ctl.abort(); throw new Error("render stopped"); });
+    const c = rig([new Calls([["check", { html: "x" }]]), json({ html: HTML })], { genSession: true });
+    await expect(c.director.scene({ ...input(), session: "v-cancel", signal: ctl.signal, tools: { steps: 4, tools: { check: stops } } })).rejects.toThrow("render stopped");
+    expect(c.requests).toHaveLength(1);
   });
 
   test("the forced step ends the loop even when the provider ignores the forced choice, and a turn's tool limits hold across its retry", async () => {
