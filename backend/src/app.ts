@@ -332,7 +332,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
       brief: b.brief, recipeId: strArg(b, "recipeId") || undefined, format: strArg(b, "format") || undefined,
       targetSec: typeof b.targetSec === "number" ? b.targetSec : undefined, language: strArg(b, "language") || undefined,
       styleNotes: strArg(b, "styleNotes") || undefined, preset: strArg(b, "preset") || undefined,
-      narration: b.narration === true, buildWithoutStopping: b.buildWithoutStopping === true, ideaId: strArg(b, "ideaId") || undefined,
+      narration: typeof b.narration === "boolean" ? b.narration : undefined,   // not said: the recipe decides buildWithoutStopping: b.buildWithoutStopping === true, ideaId: strArg(b, "ideaId") || undefined,
       facts: Array.isArray(b.facts) ? b.facts : undefined, forbiddenNumbers: b.forbiddenNumbers === true ? true : Array.isArray(b.forbiddenNumbers) ? b.forbiddenNumbers : undefined,
     });
     return ok({ project: projectView(project) }, 201);

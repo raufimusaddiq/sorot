@@ -190,7 +190,7 @@ const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => ty
 const words = (s: string) => s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const EASING = /^(?:none|linear|(?:power[1-4]|sine|expo|circ|back|elastic|bounce)\.(?:in|out|inOut)|cubic-bezier\(\s*-?\d*\.?\d+(?:\s*,\s*-?\d*\.?\d+){3}\s*\))$/;
+const EASING = /^(?:none|linear|(?:power[1-4]|sine|expo|circ|back|elastic|bounce)\.(?:in|out|inOut)(?:\(\s*\d*\.?\d+(?:\s*,\s*\d*\.?\d+)?\s*\))?|cubic-bezier\(\s*-?\d*\.?\d+(?:\s*,\s*-?\d*\.?\d+){3}\s*\))$/;
 const int = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 const record = (v: unknown): Record<string, unknown> => (isObj(v) ? v : {});
 
@@ -369,8 +369,10 @@ function checkNumeric(raw: Record<string, unknown>, shots: Shot[], totalSec: num
     if (!ctx.fonts.some((f) => f.toLowerCase() === font.toLowerCase())) errors.push(`numeric.typography.${role}: the font "${font}" isn't available (${ctx.fonts.join(", ")})`);
     if (!int(weight) || weight < 100 || weight > 900 || weight % 100) errors.push(`numeric.typography.${role}: weight is 100, 200 ... 900`);
     if (typeof t.px !== "number" || t.px < 8 || t.px > 400) errors.push(`numeric.typography.${role}: px is a number from 8 to 400`);
-    if (typeof t.tracking !== "number" || t.tracking < -0.2 || t.tracking > 0.5) errors.push(`numeric.typography.${role}: tracking is in em, from -0.2 to 0.5`);
-    typography[role] = { font, weight: weight as number, px: t.px as number, tracking: t.tracking as number };
+    // "0.02em" is how CSS writes it: read the number (a model wrote it so on every try)
+    const tracking = typeof t.tracking === "string" && /^\s*-?\d*\.?\d+\s*(?:em)?\s*$/.test(t.tracking) ? parseFloat(t.tracking) : t.tracking;
+    if (typeof tracking !== "number" || tracking < -0.2 || tracking > 0.5) errors.push(`numeric.typography.${role}: tracking is a number in em (0.02, not "2px"), from -0.2 to 0.5`);
+    typography[role] = { font, weight: weight as number, px: t.px as number, tracking: tracking as number };
   }
 
   const shadow = str(n.shadow);

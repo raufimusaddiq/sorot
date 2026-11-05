@@ -163,7 +163,7 @@ Using the `narrated-explainer` example, or a copy:
    ```
 
    Expected: it uses IDEA-001 and moves the cursor. The wrong fact is `corrected`, with the
-   evidence. The voice comes from this install's Settings (`audio_meta.json` names the engine and
+   evidence. The voice comes from this install's Settings (`voice.json` names the engine and
    voice). Director gate decisions are logged with their reasons. STORYLINES.md, SPEC.md (hex,
    px and frame values), MOTION_PLAN.md and CONCEPT.txt are written. It renders once at delivery.
 

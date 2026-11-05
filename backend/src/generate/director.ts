@@ -731,8 +731,9 @@ export class Director {
       `Write the film and its shot list for this ${input.project.targetSec}-second ${input.project.format} video: the shot durations add up to ${input.project.targetSec} seconds. Leave out each shot's heroMove, reads, handoff and motionPlan: they come next.`,
       (parsed) => {
         draft = withPlaceholders(parsed, fps);
-        const check = validatePlan(draft, planCtx);
-        return check.ok ? { value: true } : { errors: check.errors };
+        // the motion plans are Sorot's placeholders here (asked for next): their errors are not the model's to fix
+        const errors = validatePlan(draft, planCtx).errors?.filter((e) => !/\): motionPlan\b/.test(e)) ?? [];
+        return errors.length ? { errors } : { value: true };
       },
     );
     const shots = draft.shots as Array<Record<string, unknown>>;

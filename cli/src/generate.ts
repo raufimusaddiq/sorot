@@ -59,8 +59,11 @@ const shotTable = (plan: Json) => table(
   ]),
 );
 
+/** The project's current plan (a restore makes an older revision current), else the newest. */
+const currentPlan = (detail: Json): Json | undefined => (detail.plans as Json[]).find((p) => p.id === detail.project.currentPlanId) ?? (detail.plans as Json[])[0];
+
 function printPlan(d: Deps, detail: Json): void {
-  const current = (detail.plans as Json[])[0] as Json;
+  const current = currentPlan(detail) as Json;
   const plan = current.plan as Json;
   d.out(`${plan.title} — revision ${current.revision}, ${current.approvedAt ? "approved" : "not approved yet"}`);
   d.out(`${plan.message}`);
@@ -107,6 +110,7 @@ async function newCmd(d: Deps, a: Args): Promise<number> {
   if (str(a, "style")) body.styleNotes = str(a, "style");
   if (str(a, "preset")) body.preset = str(a, "preset");
   if (has(a, "narration")) body.narration = true;
+  if (has(a, "no-narration")) body.narration = false;   // neither: a recipe with a voice step speaks
   if (has(a, "no-stop")) body.buildWithoutStopping = true;
   if (has(a, "no-numbers")) body.forbiddenNumbers = true;
   if (str(a, "facts")) body.facts = readFactsFile(d, str(a, "facts") as string);
@@ -167,7 +171,7 @@ async function pickCmd(d: Deps, a: Args): Promise<number> {
 async function planCmd(d: Deps, a: Args): Promise<number> {
   const id = await projectId(d, need(a, 2, "project"));
   const detail = await d.api.get(`${BASE}/${id}`);
-  const current = (detail.plans as Json[])[0];
+  const current = currentPlan(detail);
   if (!current) throw new UsageError("This project has no plan yet");
   if (!has(a, "edit")) {
     if (!json(d, a, current)) printPlan(d, detail);
@@ -210,7 +214,7 @@ async function reviseCmd(d: Deps, a: Args): Promise<number> {
 async function approveCmd(d: Deps, a: Args): Promise<number> {
   const id = await projectId(d, need(a, 2, "project"));
   const detail = await d.api.get(`${BASE}/${id}`);
-  const current = (detail.plans as Json[])[0];
+  const current = currentPlan(detail);
   if (!current) throw new UsageError("This project has no plan yet");
   await d.api.post(`${BASE}/${id}/plan/approve`, { planId: current.id });
   const after = await settle(d, id);
@@ -471,7 +475,7 @@ async function ideasCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
-/** sorot gen idea add BRIEF.md [--id IDEA-042] [--slug s] [--facts facts.md] | show <id> */
+/** sorot gen idea add BRIEF.md [--id IDEA-042] [--slug s] [--facts facts.md] [--length S --lang L --format F --preset P --narration|--no-narration --no-numbers] | show <id> */
 async function ideaCmd(d: Deps, a: Args): Promise<number> {
   const sub = a.positionals[2];
   if (sub === "show") {
@@ -492,6 +496,16 @@ async function ideaCmd(d: Deps, a: Args): Promise<number> {
   const body: Json = { slug, brief: d.fs.readText(path).trim() };
   if (str(a, "id")) body.id = str(a, "id");
   if (str(a, "facts")) body.facts = readFactsFile(d, str(a, "facts") as string);
+  // the same choices as gen new, kept on the idea for the run that takes it
+  const flags: Json = {};
+  if (num(a, "length") !== undefined) flags.targetSec = num(a, "length");
+  if (str(a, "lang")) flags.language = str(a, "lang");
+  if (str(a, "format")) flags.format = str(a, "format");
+  if (str(a, "preset")) flags.preset = str(a, "preset");
+  if (has(a, "narration")) flags.narration = true;
+  if (has(a, "no-narration")) flags.narration = false;
+  if (has(a, "no-numbers")) flags.market_data = false;
+  if (Object.keys(flags).length) body.flags = flags;
   const { idea } = await d.api.post(IDEAS, body);
   if (!json(d, a, idea)) d.out(`Added ${idea.slug} (${idea.id}). Run it with: sorot gen run --recipe <id> --idea ${idea.id}`);
   return 0;

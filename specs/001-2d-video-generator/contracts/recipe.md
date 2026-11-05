@@ -177,7 +177,7 @@ placeholders that the user sets in their own Settings. The example ships as
 ## Files written per project
 
 From the database, for people and outside agents to read (read-only mirrors), into
-`data/generate/{projectId}/`: `BRIEF.md`, `facts.md`, `audio_request.json`, `audio_meta.json`,
+`data/generate/{projectId}/`: `BRIEF.md`, `facts.md`, `audio_request.json`, `voice.json`,
 `STORYLINES.md`, `SPEC.md`, `MOTION_PLAN.md`, `CONCEPT.txt`, `v{n}/` (the HyperFrames project) and
 `MOTION_REVIEW.md` (both verdicts, findings, kept warnings and their reasons). A file is written
 only when the step that produces it is in the recipe.

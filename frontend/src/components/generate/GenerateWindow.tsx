@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ApiClient } from '@/lib/api';
 import { reportError } from '@/lib/errors';
-import type { GenCreateBody, GenEstimate, GenPlan, GenProject, GenProjectDetail, GenVerdict, GenerateStatus } from '@/types';
+import type { GenCreateBody, GenEstimate, GenPlan, GenProject, GenProjectDetail, GenRecipeItem, GenVerdict, GenerateStatus } from '@/types';
 import { Window } from '../Window';
 import { BriefForm, type PendingFile } from './BriefForm';
 import { BuildPanel } from './BuildPanel';
@@ -41,7 +41,8 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
   const [notice, setNotice] = useState<string | null>(null);
   const [showRecipes, setShowRecipes] = useState(false);
   const [showIdeas, setShowIdeas] = useState(false);
-  const [recipes, setRecipes] = useState<Array<{ id: string; name: string }>>([]);
+  const [recipes, setRecipes] = useState<Array<{ id: string; name: string; speaks: boolean }>>([]);
+  const listed = (r: { recipes: GenRecipeItem[] }) => r.recipes.filter((x) => x.available).map((x) => ({ id: x.id, name: x.name, speaks: x.recipe.steps.some((s) => s.use === 'voice') }));
 
   useEffect(() => {
     let live = true;
@@ -51,7 +52,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
         setStatus(s);
         if (!s.available) return;
         try {
-          api.listGenerateRecipes().then((r) => { if (live) setRecipes(r.recipes.filter((x) => x.available).map((x) => ({ id: x.id, name: x.name }))); }, () => {});
+          api.listGenerateRecipes().then((r) => { if (live) setRecipes(listed(r)); }, () => {});
           const { projects: list } = await api.listGenerateProjects();
           if (!live) return;
           setProjects(list);
@@ -167,7 +168,7 @@ export function GenerateWindow({ api, onOpenSettings, pollMs = 2000 }: { api: Ap
   if (showRecipes) {
     return (
       <Window title="Recipes" bar="bg-sun" right="your pipelines">
-        <button className="btn mb-3" onClick={() => { setShowRecipes(false); api.listGenerateRecipes().then((r) => setRecipes(r.recipes.filter((x) => x.available).map((x) => ({ id: x.id, name: x.name }))), () => {}); }}>← Back to videos</button>
+        <button className="btn mb-3" onClick={() => { setShowRecipes(false); api.listGenerateRecipes().then((r) => setRecipes(listed(r)), () => {}); }}>← Back to videos</button>
         <RecipeEditor api={api} />
       </Window>
     );

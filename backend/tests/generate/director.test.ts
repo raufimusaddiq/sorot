@@ -161,6 +161,14 @@ describe("director: a numeric plan in parts", () => {
     expect(plan.numeric!.totalFrames).toBe(900);
   });
 
+  test("an outline without its numeric spec is sent back for the spec alone, not for the motion plans that come later", async () => {
+    const r = rig([json({ ...outline, numeric: undefined }), json(outline), specs([1, 2, 3, 4]), specs([5, 6])]);
+    await r.director.plan({ project, step: step({ use: "plan" }), settings: {}, assets: [], storyline: null, planCtx: ctx, catalog: [] });
+    const problems = JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems as string[];
+    expect(problems.some((m) => m.startsWith("numeric.typography"))).toBe(true);
+    expect(problems.filter((m) => m.includes("motionPlan"))).toEqual([]);
+  });
+
   test("a batch that stays wrong fails the plan", async () => {
     const r = rig([json(outline), specs([1, 2, 3]), specs([1, 2, 3])]);
     await expect(r.director.plan({ project, step: step({ use: "plan" }), settings: {}, assets: [], storyline: null, planCtx: ctx, catalog: [] })).rejects.toThrow("give the detail of s04");

@@ -36,6 +36,10 @@ describe("gen new", () => {
     expect(h.text()).toContain("1) Film 1 (recommended)");
     expect(h.text()).toContain("First 2 s: Opening 2");
     expect(h.text()).toContain("sorot gen pick 11111111 <1-3>");
+    // --no-narration says so; without either flag nothing is sent and the recipe decides
+    expect(await h.run("gen", "new", "x", "--no-narration", "--no-wait")).toBe(0);
+    expect(await h.run("gen", "new", "x", "--no-wait")).toBe(0);
+    expect(h.requests.filter((r) => r.method === "POST").slice(1).map((r) => (r.body as { narration?: boolean }).narration)).toEqual([false, undefined]);
   });
 
   test("with only a brief it sends only the brief; --no-wait returns at once; --json prints the data", async () => {
@@ -262,7 +266,7 @@ describe("gen plan, revise, approve", () => {
     expect(await harness().run("gen", "revise", "1111")).toBe(2);
   });
 
-  test("approve sends the current revision's id", async () => {
+  test("approve sends the current revision's id (after a restore, an older one)", async () => {
     const h = withPlan([row(3), row(2), row(1)], { [`POST ${BASE}/${ID}/plan/approve`]: { project: project() } });
     expect(await h.run("gen", "approve", "1111")).toBe(0);
     expect(h.requests.find((r) => r.path.endsWith("/approve"))!.body).toEqual({ planId: "plan-3" });
@@ -271,6 +275,9 @@ describe("gen plan, revise, approve", () => {
     expect(await j.run("gen", "approve", "1111", "--json")).toBe(0);
     const none = withPlan([]);
     expect(await none.run("gen", "approve", "1111")).toBe(2);
+    const restored = harness({ [`GET ${BASE}`]: { projects: [project()] }, [`GET ${BASE}/${ID}`]: detail({ currentPlanId: "plan-1" }, [row(2), row(1)]), [`POST ${BASE}/${ID}/plan/approve`]: { project: project() } });
+    expect(await restored.run("gen", "approve", "1111")).toBe(0);
+    expect(restored.requests.find((r) => r.path.endsWith("/approve"))!.body).toEqual({ planId: "plan-1" });
     const stale = withPlan([row(1)], { [`POST ${BASE}/${ID}/plan/approve`]: new Fail(409, "That isn't the current plan") });
     expect(await stale.run("gen", "approve", "1111")).toBe(1);
   });

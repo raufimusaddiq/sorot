@@ -578,6 +578,8 @@ Found in real GLM builds, in an A/B against a hand-written film, and in a code r
 
 - [X] T185 [US7] An unattended run whose build failed or was cut off by a restart goes on when its idea is named again: the failed version is queued again from its failed step (on the plan it was started from; a new version otherwise), in `service.unattendedNext`; before, the project stopped at WAITING with nothing built. Found in the 20-brief bench; test in `backend/tests/generate/ideas.test.ts`
 
+- [X] T186 Fixes from running quickstart scenarios 3, 4, 6, 8 and 9 on a real server (2026-11-05): a project made over the API, CLI or UI without saying `narration` lets the recipe decide (a voice step speaks; `app.ts` sent false), the UI's box starts from the recipe and `gen new --no-narration` says no; a numeric plan reads tracking written as CSS (`"0.02em"`) and GSAP eases with settings (`back.out(1.7)`); an outline is not sent back for the motion plans Sorot fills in later; `gen show`, `plan` and `approve` use the project's current plan (after a restore, an older revision); `gen idea add` takes the run's flags (`--length --lang --format --preset --narration --no-narration --no-numbers`); a version's files list `voice.json` (the never-written `audio_meta.json` is gone), with tests in `backend/tests/generate/{project,planSchema,director,mirror}.test.ts`, `cli/tests/generate-{projects,ideas}.test.ts`, `frontend/src/components/generate/__tests__/plan.test.tsx`
+
 ### Part 4 dependencies
 
 - Phase 19 is done.

@@ -165,7 +165,7 @@ describe("validatePlan: a numeric plan", () => {
   const errorsOf = (plan: unknown, c = numericCtx()) => validatePlan(plan, c).errors;
   const shotsOf = (f: (s: any, i: number) => any) => numericPlan({ shots: numericPlan().shots.map(f) });
 
-  test("a complete spec passes, and keeps its numbers on the plan and its shots", () => {
+  test("a complete spec passes, and keeps its numbers on the plan and its shots; tracking written as CSS and a GSAP ease with settings are read", () => {
     const check = validatePlan(numericPlan(), numericCtx());
     expect(check.errors).toEqual([]);
     expect(check.plan!.numeric).toEqual({
@@ -178,6 +178,10 @@ describe("validatePlan: a numeric plan", () => {
     const local = numericPlan();
     local.shots[1].motionPlan = [{ token: "enter", fromFrame: 0, toFrame: 18, target: "title" }];
     expect(validatePlan(local, numericCtx()).plan!.shots[1]!.motionPlan).toEqual([{ token: "enter", fromFrame: 300, toFrame: 318, target: "title" }]);
+    const css = numericPlan() as any;   // tracking as a CSS string, as models write it
+    css.numeric.typography.title.tracking = "-0.02em";
+    css.numeric.easing.enter = "back.out(1.7)";
+    expect(validatePlan(css, numericCtx()).plan!.numeric).toMatchObject({ typography: { title: { tracking: -0.02 } }, easing: { enter: "back.out(1.7)" } });
   });
 
   test("a plan that is not numeric is untouched by all this", () => {
@@ -193,7 +197,7 @@ describe("validatePlan: a numeric plan", () => {
     ["a font that isn't there", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Comic", weight: 700, px: 96, tracking: 0 } } } }), 'the font "Comic" isn\'t available'],
     ["a weight of 450", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 450, px: 96, tracking: 0 } } } }), "weight is 100"],
     ["a 2 px font", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 2, tracking: 0 } } } }), "px is a number from 8 to 400"],
-    ["wild tracking", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 40, tracking: 3 } } } }), "tracking is in em"],
+    ["wild tracking", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 40, tracking: 3 } } } }), "tracking is a number in em"],
     ["no shadow", (p) => ({ ...p, numeric: { ...p.numeric, shadow: "" } }), "numeric.shadow"],
     ["a made-up ease", (p) => ({ ...p, numeric: { ...p.numeric, easing: { enter: "smooth" } } }), "numeric.easing.enter"],
     ["no easing", (p) => ({ ...p, numeric: { ...p.numeric, easing: {} } }), "numeric.easing: give an easing curve"],

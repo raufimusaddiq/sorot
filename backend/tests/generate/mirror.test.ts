@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -84,6 +84,9 @@ describe("mirrored files", () => {
     expect(readMirror(cfg, "p1", "MOTION_REVIEW.md")).toBeNull();
     expect(readMirror(cfg, "p1", "../p1/BRIEF.md")).toBeNull();
     expect(MIRROR_FILES).toContain("SPEC.md");
+    // the voice step's own file, naming the engine and voice, is one of them
+    writeFileSync(join(cfg.genDir, "p1", "voice.json"), '{"engine":"openai"}');
+    expect(readMirror(cfg, "p1", "voice.json")).toContain("openai");
   });
 });
 

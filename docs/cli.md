@@ -68,7 +68,7 @@ Briefs to finished 2D videos ([generate.md](generate.md); full flags in
 | Command | What it does |
 |---|---|
 | `gen status` | Is Generate available, and what is missing (LLM, voice, vision). |
-| `gen new "<brief>" [--recipe R --facts F --preset P --format F --length S --lang id\|en --style "…" --narration --no-numbers --no-stop --no-wait]` | Create a video; prints the storylines or the plan. |
+| `gen new "<brief>" [--recipe R --facts F --preset P --format F --length S --lang id\|en --style "…" --narration\|--no-narration --no-numbers --no-stop --no-wait]` | Create a video; prints the storylines or the plan. |
 | `gen list`, `gen show <p>`, `gen plan <p>`, `gen files <p> [name]` | Videos, one video's state, its plan as a shot table, its mirrored files. |
 | `gen retry <p>` | After a failure before the build: the failed step runs again; finished steps are kept. |
 | `gen storylines`, `pick <p> <1-3>`, `revise <p> "<request>"`, `approve <p>`, `approve-step <p> <step>` | Work the storylines and plan; pass an owner gate. |
@@ -76,7 +76,7 @@ Briefs to finished 2D videos ([generate.md](generate.md); full flags in
 | `gen export <v> [--title --out]`, then `publish --generated <id>` / `posts --generated <id>` | Delivery render into the library; publish it like a clip. |
 | `gen steps`, `recipes`, `recipe show\|new\|copy\|edit\|validate\|export\|import` | The step library and your pipelines. |
 | `gen facts <p> [add\|rm\|verify]` | Facts with sources. |
-| `gen ideas`, `idea add <BRIEF.md> [--id --slug --facts]`, `idea show <id>` | The idea bank. |
+| `gen ideas`, `idea add <BRIEF.md> [--id --slug --facts --length S --lang L --format F --preset P --narration\|--no-narration --no-numbers]`, `idea show <id>` | The idea bank. |
 | `gen run --recipe R [--idea ID]` | An unattended run on the next (or named) idea; exit 0 only when a video was exported. |
 | `gen import-history <file.json>` | Bring in past concepts and ideas. |
 | `gen kit`, `kit show <name>`, `kit add <folder\|.zip>`, `kit export <name> [-o file.zip]`, `kit remove <name>` | The kit parts directors build with; yours are checked (rendered twice) before they are offered. |

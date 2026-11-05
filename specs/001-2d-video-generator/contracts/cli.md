@@ -7,13 +7,13 @@ raw API data.
 | Command | Does | Key flags |
 |---|---|---|
 | `sorot gen status` | availability and reasons | |
-| `sorot gen new "<brief>"` | create a project → prints storylines (or the plan) | `--recipe <id>` `--facts facts.md` `--format 9:16\|16:9\|1:1` `--length <sec>` `--lang id\|en` `--style "<notes>"` `--preset <name>` `--narration` `--no-stop` `--no-numbers` (forbid numbers no fact supports) `--no-wait` (return at once) |
+| `sorot gen new "<brief>"` | create a project → prints storylines (or the plan) | `--recipe <id>` `--facts facts.md` `--format 9:16\|16:9\|1:1` `--length <sec>` `--lang id\|en` `--style "<notes>"` `--preset <name>` `--narration` / `--no-narration` (neither: a recipe with a voice step speaks) `--no-stop` `--no-numbers` (forbid numbers no fact supports) `--no-wait` (return at once) |
 | `sorot gen run --recipe <id>` | unattended run on the next new idea | `--idea <ID>` resume without moving the cursor · `--json` (for outside agents and schedulers) |
 | `sorot gen steps` | list the step library with settings and dependencies | `--json` |
 | `sorot gen recipes` / `recipe show <id>` | list recipes with availability / print one | |
 | `sorot gen recipe new <id>` / `recipe validate <file>` | start an empty recipe (plan + two verdicts) / check a file | |
 | `sorot gen recipe copy <from> <id>` / `recipe edit <id>` / `recipe export <id>` / `recipe import <file>` | customise recipes | `edit` opens `$EDITOR` on the JSON, validated on save |
-| `sorot gen idea add <BRIEF.md>` / `ideas` / `idea show <id>` | idea bank | `--facts facts.md` `--id IDEA-042` `--slug <s>` |
+| `sorot gen idea add <BRIEF.md>` / `ideas` / `idea show <id>` | idea bank | `--facts facts.md` `--id IDEA-042` `--slug <s>`; the idea's flags: `--length` `--lang` `--format` `--preset` `--narration` / `--no-narration` `--no-numbers` (`market_data: false`) |
 | `sorot gen facts <project>` / `facts verify <project>` | list or re-verify facts | |
 | `sorot gen facts add <project> "<claim>"` / `facts rm <project> <fact>` | add a fact with its source / delete one | `--source <url>` (required) `--value <v>` |
 | `sorot gen files <project> [<name>]` | list or print the mirrored files | |

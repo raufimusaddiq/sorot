@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ApiClient } from '@/lib/api';
 import { assetKind, BriefForm } from '../BriefForm';
 import { DirectorLog } from '../DirectorLog';
@@ -38,7 +38,7 @@ describe('BriefForm', () => {
     fireEvent.change(screen.getByLabelText('Format'), { target: { value: '16:9' } });
     fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'en' } });
     fireEvent.click(go);
-    expect(onCreate).toHaveBeenCalledWith({ brief: 'Jelaskan bunga majemuk', format: '16:9', targetSec: 45, language: 'en' }, []);
+    expect(onCreate).toHaveBeenCalledWith({ brief: 'Jelaskan bunga majemuk', format: '16:9', targetSec: 45, language: 'en', narration: false }, []);
     expect(screen.queryByLabelText('Recipe')).not.toBeInTheDocument();
   });
 
@@ -61,12 +61,12 @@ describe('BriefForm', () => {
     fireEvent.change(screen.getByLabelText('More files'), { target: { files: [font, song] } });
     fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
     expect(onCreate).toHaveBeenCalledWith(
-      { brief: 'x', format: '9:16', targetSec: 30, language: 'id', styleNotes: 'tenang', recipeId: 'story' },
+      { brief: 'x', format: '9:16', targetSec: 30, language: 'id', styleNotes: 'tenang', recipeId: 'story', narration: false },
       [{ file: logo, kind: 'logo' }, { file: font, kind: 'font' }, { file: song, kind: 'music' }],
     );
   });
 
-  it('narration is offered only when a voice engine is set up, with a hint when it is not; sent only when ticked', () => {
+  it('narration is offered only when a voice engine is set up, with a hint when it is not; a recipe with a voice step starts it ticked', () => {
     const onCreate = jest.fn();
     const none = render(<BriefForm busy={false} onCreate={onCreate} voiceEngines={[]} />);
     expect(screen.getByLabelText('Narrate it')).toBeDisabled();
@@ -78,10 +78,14 @@ describe('BriefForm', () => {
     expect(screen.queryByText(/Needs a voice engine/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Brief'), { target: { value: 'Jelaskan bunga majemuk' } });
     fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
-    expect(onCreate.mock.calls[0]![0]).not.toHaveProperty('narration');
+    expect(onCreate.mock.calls[0]![0]).toMatchObject({ narration: false });
     fireEvent.click(screen.getByLabelText('Narrate it'));
     fireEvent.click(screen.getByRole('button', { name: 'Plan my video' }));
     expect(onCreate.mock.calls[1]![0]).toMatchObject({ narration: true });
+    cleanup();
+
+    render(<BriefForm busy={false} onCreate={onCreate} voiceEngines={['elevenlabs']} recipes={[{ id: 'narrated', name: 'Narrated', speaks: true }, { id: 'quick', name: 'Quick' }]} />);
+    expect(screen.getByLabelText('Narrate it')).toBeChecked();
   });
 
   it('a format preset sets the length, explains itself and is sent with the brief; without presets there is no picker', () => {
