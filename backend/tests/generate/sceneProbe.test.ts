@@ -21,7 +21,8 @@ const moment = (t: number, text: Partial<ProbeFrame["texts"][number]> | null, ob
   texts: text ? [{ el: "t", r: [10, 10, 40, 10], o: 1, v: 1, ...text }] : [],
   objects: object ? [{ el: "b", r: object, o: 1, ...(box ? { box: 1 as const } : {}) }] : [],
 });
-const house: [number, number, number, number] = [0, 0, 60, 60];
+// text [10, 10, 40, 10] half over a small drawing: a collision unless a rule says otherwise
+const over: [number, number, number, number] = [30, 0, 40, 40];
 const codes = (d: Partial<ProbeData>, p = plan(6)) => probeFindings(data(d), p).map((f) => [f.code, f.severity, f.shot, f.time]);
 
 describe("scene probe", () => {
@@ -42,15 +43,15 @@ describe("scene probe", () => {
       tweens: [tween("camera#0", 0, 6), tween(null, 1, 4, ["opacity"]), tween(null, 1, 4, ["y"], "b"), tween(null, 1, 4, ["y"], "a", true), tween("camera#0", 2, 5)],
     }, []],
     // 3. text over drawn objects
-    ["text partly over a drawing in 2 of its 3 moments", { frames: [moment(1, {}, [30, 0, 40, 40]), moment(2, {}, [30, 0, 40, 40]), moment(3, {}, null)] }, [["text_over_object", "warning", 0, 1]]],
-    ["a drawing passing under the text once", { frames: [moment(1, {}, house), moment(2, {}, null), moment(3, {}, null)] }, []],
+    ["text partly over a drawing in 2 of its 3 moments", { frames: [moment(1, {}, over), moment(2, {}, over), moment(3, {}, null)] }, [["text_over_object", "warning", 0, 1]]],
+    ["a drawing passing under the text once", { frames: [moment(1, {}, over), moment(2, {}, null), moment(3, {}, null)] }, []],
     ["text on a small shape drawn from CSS boxes (a hull of divs) counts like an svg", { frames: [moment(1, {}, [0, 0, 40, 40], false, true), moment(2, {}, [0, 0, 40, 40], false, true)] }, [["text_over_object", "warning", 0, 1]]],
-    ["text on a CSS-drawn panel or card (a fifth of the frame or more) is a label on its card, but the same size svg is a drawing", { frames: [moment(1, {}, house, false, true), moment(2, {}, house, false, true)] }, []],
+    ["text on a CSS-drawn panel or card (a fifth of the frame or more) is on its card", { frames: [moment(1, {}, [20, 0, 60, 60], false, true), moment(2, {}, [20, 0, 60, 60], false, true)] }, []],
     ["a text wholly inside a drawing much bigger than itself is a label on it; one only partly over a drawing is not", { frames: [moment(1, {}, [0, 0, 80, 50]), moment(2, {}, [0, 0, 80, 50])] }, []],
-    ["a backdrop behind the text", { frames: [moment(1, {}, [0, 0, 100, 60]), moment(2, {}, [0, 0, 100, 60])] }, []],
+    ["a backdrop behind the text", { frames: [moment(1, {}, [20, 0, 80, 70]), moment(2, {}, [20, 0, 80, 70])] }, []],
     ["text only grazing the drawing", { frames: [moment(1, {}, [45, 0, 40, 40]), moment(2, {}, [45, 0, 40, 40])] }, []],
     ["a label kept on purpose (data-layout-allow-overlap), or text not yet readable", {
-      frames: [moment(1, { overlap: true }, house), moment(2, { overlap: true }, house), moment(3, { o: 0.2 }, house), moment(4, { v: 0.2 }, house)],
+      frames: [{ overlap: true }, { overlap: true }, { o: 0.2 }, { o: 0.2 }, { v: 0.2 }, { v: 0.2 }].map((t, i) => moment(i + 1, t, over)),
     }, []],
     // 4. first frames
     ["a title half out of its mask on the film's first frame", { frames: [moment(0, { v: 0.5 }, null, true)] }, [["first_frame_partial_text", "warning", 0, 0]]],

@@ -197,19 +197,14 @@ describe("technical step", () => {
     expect(r.calls.map((c) => c[0])).toEqual(["/usr/bin/ffprobe", "/usr/bin/ffmpeg"]);   // the frames' motion; the plan has no sound: no volume measurement
   });
 
-  test("motion: a planted one-frame jump is a must-fix with its shot and moment; the smooth renders of spike S7 have none; the recipe tunes the ratio", async () => {
-    const fixture = (name: string) => readFileSync(join(import.meta.dir, "../fixtures/motion", `${name}.txt`), "utf8");
-    const planted = rig({ media: { diffs: fixture("planted") } });
-    await STEPS.technical.run(planted.ctx);
-    expect(readFindings(planted.dir)).toMatchObject([{ code: "motion_jump", severity: "must-fix", shotId: "s01", fromSec: 3, rule: "motion" }]);
-    for (const name of ["smooth", "fast-noblur", "three"]) {
-      const smooth = rig({ media: { diffs: fixture(name) } });
-      await STEPS.technical.run(smooth.ctx);
-      expect(readFindings(smooth.dir)).toEqual([]);
-    }
-    const lenient = rig({ media: { diffs: fixture("planted") }, measures: { motion: { jumpRatio: 50 } } });
-    await STEPS.technical.run(lenient.ctx);
-    expect(readFindings(lenient.dir)).toEqual([]);
+  test.each<[string, object | undefined, object[]]>([
+    ["planted", undefined, [{ code: "motion_jump", severity: "must-fix", shotId: "s01", fromSec: 3, rule: "motion" }]],
+    ["smooth", undefined, []], ["fast-noblur", undefined, []], ["three", undefined, []],   // the smooth renders of spike S7
+    ["planted", { motion: { jumpRatio: 50 } }, []],   // the recipe tunes the ratio
+  ])("motion: the %s frames with measures %j give these findings", async (name, measures, want) => {
+    const r = rig({ media: { diffs: readFileSync(join(import.meta.dir, "../fixtures/motion", `${name}.txt`), "utf8") }, measures });
+    await STEPS.technical.run(r.ctx);
+    expect(readFindings(r.dir)).toMatchObject(want);
   });
 
   test("the build steps' findings count: a must-fix from the author step fails it, a kept warning does not", async () => {

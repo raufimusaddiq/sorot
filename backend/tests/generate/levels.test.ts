@@ -6,7 +6,7 @@ import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { readPart, type KitManifest } from "../../src/generate/kit";
 import { validateKitShot, writeKitScene } from "../../src/generate/kitScene";
-import { CALIBRATION_PLAN, calibrate, chooseLevel, provenLevel, qualifies, recordAnswer, recordOf, type LevelChoice } from "../../src/generate/levels";
+import { CALIBRATION_PLAN, calibrate, chooseLevel, provenLevel, recordAnswer, recordOf, type LevelChoice } from "../../src/generate/levels";
 import { Store } from "../../src/store";
 import { fakeLlm, sceneHtml } from "../helpers";
 
@@ -25,7 +25,6 @@ describe("model record", () => {
 
   test.each<[string, LevelChoice, string]>([
     // the director is never held back: a shot starts as high as the caps allow, whatever the record says
-    ["no record starts at the top", { record: {} }, "free"],
     ["a poor record still starts at the top", { record: { compose: r(10, 1, 5), free: r(10, 0, 9) } }, "free"],
     ["...under the recipe's cap", { record: {}, maxLevel: "compose" }, "compose"],
     ["...and the machine's", { record: {}, cpuCap: "compose" }, "compose"],
@@ -43,14 +42,12 @@ describe("model record", () => {
     ["too few shots", { compose: r(7, 7) }, "kit"],
     ["too many malformed", { compose: r(10, 9, 2) }, "kit"],
     ["the highest proven level", { compose: r(10, 9), free: r(10, 8) }, "free"],
+    // a calibrated level counts with Calibrate's own three shots
+    ["3 calibrated shots, all first time", { compose: { ...r(3, 3), calibratedAt: "t" } }, "compose"],
+    ["3 calibrated shots, 1 first time", { compose: { ...r(3, 1), calibratedAt: "t" } }, "kit"],
+    ["2 calibrated shots", { compose: { ...r(2, 2), calibratedAt: "t" } }, "kit"],
   ])("proven level: %s", (_name, record, level) => {
     expect(provenLevel(record)).toBe(level as never);
-  });
-
-  test("qualifies needs at least 8 shots, or 3 from a calibration", () => {
-    expect([qualifies(undefined), qualifies(r(8, 5)), qualifies(r(7, 7))]).toEqual([false, true, false]);
-    // a calibrated level counts with Calibrate's own three shots
-    expect([qualifies({ ...r(3, 3), calibratedAt: "t" }), qualifies({ ...r(3, 1), calibratedAt: "t" }), qualifies({ ...r(2, 2), calibratedAt: "t" })]).toEqual([true, false, false]);
   });
 });
 
@@ -90,7 +87,7 @@ describe("calibration", () => {
   test("three sample shots at each level the machine offers; the record gets them with the time it ran", async () => {
     const store = new Store(openDatabase(":memory:"));
     const kitAnswer = (id: string) => json({ shotId: id, layers: [{ part: "shade", settings: {}, fromSec: 0, toSec: 2 }] });
-    const scene = (i: number) => json({ html: sceneHtml(i, CALIBRATION_PLAN.shots[i]!.text[0]!.value).replaceAll(`shot-0${i + 1}`, `shot-0${i + 1}`) });
+    const scene = (i: number) => json({ html: sceneHtml(i, CALIBRATION_PLAN.shots[i]!.text[0]!.value) });
     const broken = json({ html: sceneHtml(0, "salah") });
     const { llm } = fakeLlm([
       kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03"),

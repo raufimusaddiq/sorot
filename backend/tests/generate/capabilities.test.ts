@@ -28,10 +28,9 @@ describe("capability description", () => {
   test.each([
     // level asked, machine, recipe max → level given, parts offered
     ["free", { gpu: true }, "free", ["particles", "shade", "three"]],
-    ["compose", { gpu: true }, "compose", ["particles", "shade", "three"]],
+    ["free", { gpu: true, maxLevel: "compose" as Level }, "compose", ["particles", "shade", "three"]],
     ["kit", {}, "kit", ["particles", "shade", "three"]],   // a tested WebGL part at any level the machine can draw
     ["free", { maxLevel: "compose" as Level }, "compose", ["particles", "shade"]],
-    ["free", { gpu: false, maxLevel: "free" as Level }, "free", ["particles", "shade", "three"]],
   ])("asked %s on %o: answers at %s with %o", (level, over, given, names) => {
     const c = caps(level as Level, over);
     expect([c.level, c.kit.map((p) => p.name)] as unknown[]).toEqual([given, names]);

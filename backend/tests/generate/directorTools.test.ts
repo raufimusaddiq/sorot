@@ -114,6 +114,12 @@ describe("tools on a version's project", () => {
     expect(existsSync(join(dir, "assets/a.png"))).toBe(true);                                                                            // and the version's own files are not
     const broken = { lint: async () => ({ ok: true, findings: [] }), check: async () => { throw new Error("no browser"); }, render: async () => { throw new Error("no render"); } } as never;
     expect(((await checkDraft(env({ hyperframes: broken, plan, frameDiffs }), { html: HTML })).result as any).findings.map((f: any) => f.code)).not.toEqual(expect.arrayContaining(["text_over_object", "motion_jump"]));
+    // cancelled during the probe: the error goes up and the draft render never starts
+    const ctl = new AbortController();
+    let rendered = false;
+    const cancelled = { lint: async () => ({ ok: true, findings: [] }), check: async () => { ctl.abort(); throw new Error("aborted"); }, render: async () => { rendered = true; } } as never;
+    await expect(checkDraft(env({ hyperframes: cancelled, plan, frameDiffs, signal: ctl.signal }), { html: HTML })).rejects.toThrow("aborted");
+    expect(rendered).toBe(false);
   });
 
   test("look renders frames at film time (clamped into the shot, at most three), returns them with the stranger's read, and remembers which file was looked at", async () => {
