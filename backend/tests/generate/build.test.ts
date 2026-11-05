@@ -173,7 +173,8 @@ describe("author step", () => {
 
   test("the root loads the kit parts the recipe requires, the plan's looks name and the scenes mount; the version records them", async () => {
     const mount = `<script>SorotKitRuntime.mount("particles", document.body, {}, { tl: gsap.timeline(), duration: 2 }); SorotKit["neon"];</script>`;
-    const r = rig([html(0), html(1, SAMPLE_TITLES[1], mount), html(2)]);
+    let whileWriting: string[] = [];
+    const r = rig([html(0), () => { whileWriting = [...readFileSync(join(r.dir, "index.html"), "utf-8").matchAll(/assets\/kit\/([\w-]+)\/part\.js/g)].map((m) => m[1]!); return html(1, SAMPLE_TITLES[1], mount); }, html(2)]);
     const looked = { ...r.plan, shots: r.plan.shots.map((s, i) => (i === 0 ? { ...s, look: { description: "lit coin", values: { lightAngleDeg: 290 }, parts: [{ part: "shade", settings: {} }] } } : s)) };
     r.store.saveGenPlan({ ...r.store.getGenPlan("pl1")!, plan: JSON.stringify(looked) });
     const kit = new Kit(r.config, r.store, new Hyperframes(r.config, r.fake.exec), r.fake.exec);
@@ -181,6 +182,8 @@ describe("author step", () => {
     await STEPS.author.run(r.ctxFor("author", { require: ["kit:camera", "typography"] }, { kit }));
     const root = readFileSync(join(r.dir, "index.html"), "utf-8");
     expect([...root.matchAll(/assets\/kit\/([\w-]+)\/part\.js/g)].map((m) => m[1])).toEqual(["camera", "particles", "shade"]);
+    // while the shots were written every installed part was loaded, so a draft mounting one the plan didn't name still draws
+    expect(whileWriting).toEqual(kit.manifests().map((m) => m.name).sort());
     expect(root).toContain('"keyLightDeg":290');
     expect(existsSync(join(r.dir, "assets/kit/_runtime.js")) && existsSync(join(r.dir, "assets/kit/particles/part.js"))).toBe(true);
     // "neon" isn't installed: nothing to load (the scene check reports it)

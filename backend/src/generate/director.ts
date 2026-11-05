@@ -321,6 +321,8 @@ export interface SceneInput {
   session?: string;
   /** The tools this shot's turn may use before it submits (FR-049); none = one forced call. Only a session has turns. */
   tools?: SceneTools | null;
+  /** The build's cancel: a cancelled build starts no further turn or tool step (a model call already sent still finishes). */
+  signal?: AbortSignal;
 }
 
 /** One answer's outcome, for the model's record (research R25). Scene kinds report their level; plan kinds report `plan`. */
@@ -333,9 +335,13 @@ const SESSION_TOOLS: ToolDef[] = [TOOLS.scene, TOOLS.repair, TOOLS.kitshot];
 /** Builds whose sessions stay open (one per pipeline; a few for retries and fixes). */
 const MAX_SESSIONS = 4;
 /** The tool loop of one turn: its tools, where its request sits in the conversation, and the size past which older tool results are cut to stubs. */
-interface TurnLoop { tools: SceneTools; start: number; tokens: number }
+interface TurnLoop {
+  tools: SceneTools; start: number; tokens: number; signal?: AbortSignal;
+  /** Per turn, across both attempts of `converse`: how often each tool ran, and whether the look-first rule already turned a submit back. */
+  used: Record<string, number>; turnedBack: boolean;
+}
 /** One build's conversation: the opening (instructions, film), every turn since, and the latest answer for each shot. */
-interface Session { messages: ChatInput[]; opening: number; latest: Map<number, string>; turn: Promise<unknown>; /** The tool definitions offered on every turn of the session, fixed when it opens. */ tools: ToolDef[] }
+interface Session { messages: ChatInput[]; opening: number; latest: Map<number, string>; turn: Promise<unknown>; /** The tool definitions offered on every turn of the session, fixed by its first turn that has tools. */ tools: ToolDef[] }
 
 /** A capability query: the call's level and the parts whose full settings it gets (none for plan calls). */
 export interface CapabilityQuery { level?: Level; parts?: string[] }
@@ -515,13 +521,16 @@ export class Director {
     callModel: (force: boolean) => Promise<{ message: ChatMessage; call: ToolCall | undefined }>,
     lookFirst: boolean,
   ): Promise<{ message: ChatMessage; call: ToolCall | undefined }> {
-    const used: Record<string, number> = {};
+    const used = loop.used;
     for (let step = 0; ; step++) {
+      loop.signal?.throwIfAborted();
       stubTurn(messages, loop.start, loop.tokens);   // a turn that grew past its budget cuts its older tool results first
-      const reply = await callModel(step >= loop.tools.steps);
+      const forced = step >= loop.tools.steps;
+      const reply = await callModel(forced);
       // a fast model skips optional steps (GLM submitted 7 scenes of 7 without a look): the first submit
       // of a scene turn that has a look is turned back once (repairs and kit shots may look, but are not made to), inside the turn, so it costs no retry
-      if (lookFirst && reply.call && loop.tools.tools.look && !used.look && step < loop.tools.steps) {
+      if (lookFirst && !loop.turnedBack && reply.call && loop.tools.tools.look && !used.look && !forced) {
+        loop.turnedBack = true;
         messages.push(
           { role: "assistant", content: "", tool_calls: [reply.call] },
           { role: "tool", tool_call_id: reply.call.id || submit, name: submit, content: JSON.stringify({ accepted: false, problems: [LOOK_FIRST] }) },
@@ -529,7 +538,9 @@ export class Director {
         continue;
       }
       const calls = reply.message.tool_calls ?? [];
-      if (reply.call || !calls.length) return reply;
+      // the forced step ends the loop whatever came back: a provider that ignores the named tool choice
+      // gets "you didn't call ..." from converse, not another round of tools
+      if (reply.call || !calls.length || forced) return reply;
       messages.push({ role: "assistant", content: reply.message.content ?? "", tool_calls: calls });
       const seen: string[] = [];
       for (const c of calls) {
@@ -551,6 +562,7 @@ export class Director {
             result = out.result;
             seen.push(...(out.images ?? []));
           } catch (e) {
+            if (loop.signal?.aborted) throw e;   // a cancelled build stops here; any other failure is the tool's answer
             result = { error: (e as Error).message };
           }
         }
@@ -923,13 +935,17 @@ export class Director {
     if (!input.session || !this.llm.genSession) return this.ask(input.project, kind, input.step, { ...this.sceneBase(input), ...extra }, task, validate);
     const session = this.sessionFor(input);
     const turn = session.turn.then(async () => {
+      input.signal?.throwIfAborted();   // a turn queued behind others doesn't start once the build is cancelled
+      // the session's tool list comes from its first turn that has tools (a kit shot or a look-step repair
+      // has none); fixed from then on, so every later request keeps the same prefix
+      if (!session.tools.length && input.tools) session.tools = TOOL_ORDER.filter((n) => input.tools?.tools[n]).map((n) => TOOL_DEFS[n]);
       this.trim(session);
       const level = input.level ?? "compose";
       const levelMeans = this.capabilities ? this.capabilities({ level }).levelMeans : undefined;
       const start = session.messages.length;
       session.messages.push({ role: "user", content: JSON.stringify({ request: kind, level, ...(levelMeans ? { levelMeans } : {}), ...this.sceneOwn(input), ...extra, task }) });
       try {
-        const loop = input.tools ? { tools: input.tools, start, tokens: this.llm.genTurnTokens } : null;
+        const loop: TurnLoop | null = input.tools ? { tools: input.tools, start, tokens: this.llm.genTurnTokens, signal: input.signal, used: {}, turnedBack: false } : null;
         const { value } = await this.converse<T>(input.project, kind, session.messages, [...session.tools, ...SESSION_TOOLS], task, validate, level, false, loop);
         endTurn(session.messages, start);   // the tools' bulk is gone; the request and the accepted answer stay
         session.latest.set(input.index, keep(value));

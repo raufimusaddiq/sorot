@@ -42,8 +42,10 @@ export interface Prepared {
   blocks: Record<string, string>;
   /** Rewrites the root with these kit parts loaded (copied into assets/kit/); returns their manifests. */
   writeRoot: (parts: string[]) => KitManifest[];
-  /** The installed parts the plan and the recipe name, loaded by the root as first written. */
+  /** The installed parts the plan and the recipe name (always kept by settleKit). */
   planned: string[];
+  /** Every installed part: what the root loads while the shots are written. */
+  loaded: string[];
 }
 
 /** Lays out the version's HyperFrames project: folder, local GSAP, fonts, the owner's files, blocks, the kit parts, and the root composition. */
@@ -113,8 +115,11 @@ export async function prepareProject(ctx: StepContext, dir: string, plan: Plan):
   };
   const required = ctx.step.use === "author" ? ctx.settings.require : ctx.recipe.steps.find((s) => s.use === "author")?.with?.require;
   const planned = plannedParts(plan, required, installed).filter((n) => installed.has(n));
-  writeRoot(planned);
-  return { blocks, writeRoot, planned };
+  // while the shots are written the root loads every installed part, so a draft that mounts one the plan
+  // didn't name still draws in look, the probe and the motion render; settleKit then keeps the ones used
+  const loaded = [...installed].sort();
+  writeRoot(loaded);
+  return { blocks, writeRoot, planned, loaded };
 }
 
 /** After the scenes are written: the root loads every installed part a scene mounts, and the version records them. */
@@ -122,7 +127,7 @@ export function settleKit(ctx: StepContext, dir: string, plan: Plan, prepared: P
   const installed = new Set((ctx.kit?.manifests() ?? []).map((m) => m.name));
   const mounted = plan.shots.flatMap((_, i) => partsInScene(readScene(dir, i) ?? ""));
   const used = [...new Set([...prepared.planned, ...mounted])].filter((n) => installed.has(n)).sort();
-  const manifests = used.join() === prepared.planned.join() ? null : prepared.writeRoot(used);
+  const manifests = used.join() === prepared.loaded.join() ? null : prepared.writeRoot(used);
   if (ctx.version) {
     const versions = Object.fromEntries((manifests ?? ctx.kit?.manifests().filter((m) => used.includes(m.name)) ?? []).map((m) => [m.name, m.version]));
     ctx.store.updateGenVersion(ctx.version.id, { kit: used.length ? JSON.stringify({ version: KIT_FORMAT, parts: used, partVersions: versions }) : null });
@@ -159,7 +164,7 @@ export function shotWriter(ctx: StepContext, dir: string, plan: Plan, blocks: Re
 
   const attempt = async (shot: Shot, i: number, level: Level, fix: Fix | null) => {
     const input: SceneInput = {
-      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level, ...(ctx.version ? { session: ctx.version.id, tools: sceneToolsFor(ctx, dir, plan, i, level) } : {}),
+      project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level, signal: ctx.signal, ...(ctx.version ? { session: ctx.version.id, tools: sceneToolsFor(ctx, dir, plan, i, level) } : {}),
       blocks: shot.visual.block && blocks[shot.visual.block] ? { [shot.visual.block]: blocks[shot.visual.block] as string } : {},
     };
     const rules = sceneRules(ctx, level);

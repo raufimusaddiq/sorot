@@ -78,9 +78,13 @@ describe("tools on a version's project", () => {
     expect(out.note).toContain("loads scripts, fonts or files from the web");
   });
 
-  test("check writes the draft as the shot's file and returns Sorot's rules and this shot's lint only", async () => {
-    const out = (await checkDraft(env(), { html: HTML })).result as { findings: Array<{ code: string }> };
-    expect(readFileSync(join(dir, "compositions/shot-02.html"), "utf-8")).toBe(HTML);
+  test("check lints the draft in the shot's file, then puts back what was there (only a submit changes it), and returns Sorot's rules and this shot's lint only", async () => {
+    writeFileSync(join(dir, "compositions/shot-02.html"), "accepted before");
+    const linted: string[] = [];
+    const base = env();
+    const e = env({ hyperframes: { ...base.hyperframes, lint: async (d: string) => { linted.push(readFileSync(join(d, "compositions/shot-02.html"), "utf-8")); return base.hyperframes.lint(d); } } as never });
+    const out = (await checkDraft(e, { html: HTML })).result as { findings: Array<{ code: string }> };
+    expect([linted, readFileSync(join(dir, "compositions/shot-02.html"), "utf-8")]).toEqual([[HTML], "accepted before"]);
     expect(out.findings.map((f) => f.code)).toEqual(expect.arrayContaining(["mine"]));
     expect(out.findings.map((f) => f.code)).not.toContain("other");
     expect(((await checkDraft(env(), { html: "  " })).result as any).error).toContain("empty");
@@ -125,9 +129,12 @@ describe("tools on a version's project", () => {
     expect(asked).toEqual([[3, 5, 3 + (shot.durationSec - 0.05)].map((t) => Math.round(t * 100) / 100)]);
     expect(out.images).toEqual([0, 1, 2].map((i) => `data:image/png;base64,${Buffer.from(`PIC${i}`).toString("base64")}`));
     expect(out.result).toMatchObject({ frames: [0, 2, shot.durationSec - 0.05], findings: [{ code: "look_unexplained", severity: "must-fix", hint: "Label it." }] });
-    expect(readFileSync(join(dir, "compositions/shot-02.html"), "utf-8")).toBe(HTML);
+    expect(existsSync(join(dir, "compositions/shot-02.html"))).toBe(false);   // the draft was only there for the look
     const plan2 = { shots: [{ id: "s02" }] } as unknown as Plan;
+    // the accepted file is stored without a fence and trimmed: a draft looked at with a fence still counts as looked at
     expect([lookedInLoop(dir, plan2, () => HTML), lookedInLoop(dir, plan2, () => HTML + "<!-- changed -->"), lookedInLoop(dir, plan2, () => null)]).toEqual([true, false, false]);
+    await lookAtDraft(e, read, { html: "```html\n" + HTML + "\n```" });
+    expect(lookedInLoop(dir, plan2, () => HTML)).toBe(true);
     expect(await lookAtDraft(e, read, { html: "" })).toEqual({ result: { error: "html: the draft is empty" } });
     asked.length = 0;
     await lookAtDraft(e, read, { html: HTML });

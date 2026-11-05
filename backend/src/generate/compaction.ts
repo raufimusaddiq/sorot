@@ -43,12 +43,15 @@ function toolNote(turn: ChatInput[]): string {
 }
 
 /**
- * A turn's answer was accepted: everything between its request (`turnStart`) and the accepted submit
- * exchange (the last two messages) becomes one note on what the tools were; the request and the answer
- * stay. A turn that used no tool is left as it is.
+ * A turn's answer was accepted: everything between its request (`turnStart`) and the accepted answer
+ * becomes one note on what the tools were; the request and the answer stay. The answer is the submit
+ * exchange (a call and its result: the last two messages) or, when the model answered in plain text, the
+ * last message alone; folding a tool result into the note while keeping the answer would leave a tool
+ * message with no call before it, which a provider refuses. A turn that used no tool is left as it is.
  */
 export function endTurn(messages: ChatInput[], turnStart: number): void {
-  const between = messages.slice(turnStart + 1, messages.length - 2);
+  const answer = messages[messages.length - 1]?.role === "tool" ? 2 : 1;
+  const between = messages.slice(turnStart + 1, messages.length - answer);
   if (!between.some((m) => m.role === "tool" || (m.role === "assistant" && "tool_calls" in m && m.tool_calls))) return;
   const note = toolNote(between);
   messages.splice(turnStart + 1, between.length, { role: "user", content: note });

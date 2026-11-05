@@ -472,6 +472,31 @@ describe("director: scenes", () => {
     expect(r.events().filter((e) => e.kind === "check").map((e) => e.ok)).toEqual([0, 0]);
   });
 
+  test("a session: the tool list comes from the first turn that has tools, an answer given as plain text folds without leaving an orphan tool result, and a cancelled turn never starts", async () => {
+    const check = { def: TOOL_DEFS.check, limit: 3, run: async () => ({ result: { findings: [] } }) };
+    const r = rig([json({ html: HTML }), new Calls([["check", { html: "x" }]]), new AsText(json({ html: HTML })), json({ html: HTML })], { genSession: true });
+    const s = { ...input(), session: "v-text" };
+    await r.director.scene({ ...s, index: 0 });                                                   // a turn with no tools (a kit shot, a look-step repair)
+    await r.director.scene({ ...s, index: 1, tools: { steps: 4, tools: { check } } });            // answers in plain text after a check
+    await r.director.scene({ ...s, index: 2, tools: { steps: 4, tools: { check } } });
+    expect(r.requests[1]!.tools.map((x: any) => x.function.name)).toContain("check");
+    const msgs = r.requests[3]!.messages as any[];
+    const orphan = msgs.some((m, i) => m.role === "tool" && !msgs.slice(0, i).reverse().find((x) => x.role !== "tool")?.tool_calls);
+    expect(orphan).toBe(false);                                                                    // a provider refuses a tool result with no call before it
+    await expect(r.director.scene({ ...s, index: 0, signal: AbortSignal.abort() })).rejects.toThrow();
+    expect(r.requests).toHaveLength(4);
+  });
+
+  test("the forced step ends the loop even when the provider ignores the forced choice, and a turn's tool limits hold across its retry", async () => {
+    let checks = 0;
+    const check = { def: TOOL_DEFS.check, limit: 1, run: async () => { checks++; return { result: { findings: [] } }; } };
+    const r = rig([new Calls([["check", { html: "x" }]]), new Calls([["check", { html: "x" }]]), new Calls([["check", { html: "x" }]]), json({ html: HTML })], { genSession: true });
+    expect(await r.director.scene({ ...input(), session: "v-forced-ignored", tools: { steps: 1, tools: { check } } })).toBe(HTML);
+    expect(JSON.stringify(r.requests[2]!.messages.at(-1))).toContain("didn't call submit_scene");   // the ignored forced step ended the first try
+    expect(checks).toBe(1);                                                                          // the retry got "limit reached", not a fresh limit
+    expect(JSON.parse((r.requests[3]!.messages as any[]).filter((m) => m.role === "tool").at(-1).content)).toEqual({ error: "limit reached: submit now" });
+  });
+
   test("when the turn can look, the first submit is turned back once inside the turn (no retry used); after a look, or at the last step, it is accepted", async () => {
     const look = { def: TOOL_DEFS.look, limit: 2, run: async () => ({ result: { findings: [] } }) };
     const r = rig([json({ html: HTML }), new Calls([["look", { html: HTML, times: [1] }]]), json({ html: HTML })], { genSession: true });
@@ -484,6 +509,10 @@ describe("director: scenes", () => {
     const last = rig([json({ html: HTML })], { genSession: true });
     expect(await last.director.scene({ ...input(), session: "v-forced", tools: { steps: 0, tools: { look } } })).toBe(HTML);
     expect(last.requests).toHaveLength(1);
+    // a model that won't look is turned back once, not on every submit
+    const stubborn = rig([json({ html: HTML }), json({ html: HTML })], { genSession: true });
+    expect(await stubborn.director.scene({ ...input(), session: "v-stubborn", tools: { steps: 4, tools: { look } } })).toBe(HTML);
+    expect(stubborn.requests).toHaveLength(2);
     // a repair turn may look but is not made to: its first submit stands
     const fix = rig([json({ html: HTML, holds: [] })], { genSession: true });
     await fix.director.repair({ ...input(), session: "v-repair", tools: { steps: 4, tools: { look } }, html: "x", findings: [] });

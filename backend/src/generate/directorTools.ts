@@ -158,11 +158,33 @@ export function writeDraft(env: ToolEnv, html: string): void {
   writeFileSync(join(env.dir, shotFile(env.index)), html);
 }
 
+/**
+ * Puts the draft in the shot's file while `fn` runs (lint, snapshot and the scratch copy read it from there),
+ * then puts back what was there before: only an accepted submit changes the version's file. A draft left
+ * behind by a turn that then failed or was cancelled would otherwise be taken for "a clean scene from an
+ * earlier try" and built without ever being submitted.
+ */
+async function withDraft<T>(env: ToolEnv, html: string, fn: () => Promise<T>): Promise<T> {
+  const file = join(env.dir, shotFile(env.index));
+  const before = existsSync(file) ? readFileSync(file, "utf-8") : null;
+  writeDraft(env, html);
+  try {
+    return await fn();
+  } finally {
+    if (before === null) rmSync(file, { force: true });
+    else writeFileSync(file, before);
+  }
+}
+
+/** A draft as the submit stores it (no markdown fence, trimmed), so a looked-at draft and the accepted file hash the same. */
+const normalDraft = (html: string) => html.replace(/^\s*```(?:html)?\s*\n/i, "").replace(/\n```\s*$/, "").trim();
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 /** A project's shot file that doesn't exist yet: HyperFrames' check refuses a root whose hosts point at nothing. */
 const stub = (id: string, w: number, h: number) =>
   `<!doctype html><html><body><div data-composition-id="${id}" data-width="${w}" data-height="${h}"><script>window.__timelines = window.__timelines || {}; window.__timelines["${id}"] = gsap.timeline({ paused: true });</script></div></body></html>`;
 
-type Evaluated = { code: string; severity: string; message: string; hint?: string };
+type Evaluated = { code: string; severity: string; message: string; hint?: string; /** Seconds from the start of this shot (the probe's messages count film time). */ atShotSec?: number };
 
 /**
  * What the build's own checks would say about the draft, while the director can still change it: the scene probe
@@ -182,13 +204,15 @@ export async function evaluateDraft(env: ToolEnv): Promise<Evaluated[]> {
   try {
     for (const f of ["index.html", "hyperframes.json", "package.json", "meta.json"]) if (existsSync(join(env.dir, f))) cpSync(join(env.dir, f), join(copy, f));
     mkdirSync(join(copy, "assets"));
-    if (existsSync(join(env.dir, "assets"))) for (const name of readdirSync(join(env.dir, "assets"))) symlinkSync(join(env.dir, "assets", name), join(copy, "assets", name));
-    mkdirSync(join(copy, "compositions"));
+    // linked, not copied (fonts, voice, images are large); the probe script is the copy's own, written by withProbe
+    if (existsSync(join(env.dir, "assets"))) for (const name of readdirSync(join(env.dir, "assets"))) if (name !== "sorot-probe.js") symlinkSync(join(env.dir, "assets", name), join(copy, "assets", name));
+    // every composition (installed blocks included), then a placeholder for each shot not written yet
+    if (existsSync(join(env.dir, "compositions"))) cpSync(join(env.dir, "compositions"), join(copy, "compositions"), { recursive: true });
+    mkdirSync(join(copy, "compositions"), { recursive: true });
     const root = existsSync(join(copy, "index.html")) ? readFileSync(join(copy, "index.html"), "utf-8") : "";
     plan.shots.forEach((_, i) => {
       const file = shotFile(i);
-      if (existsSync(join(env.dir, file))) cpSync(join(env.dir, file), join(copy, file));
-      else {
+      if (!existsSync(join(copy, file))) {
         const size = new RegExp(`data-composition-id="shot-0*${i + 1}"[^>]*data-width="(\\d+)"[^>]*data-height="(\\d+)"`).exec(root);
         writeFileSync(join(copy, file), stub(`shot-${String(i + 1).padStart(2, "0")}`, Number(size?.[1] ?? 1080), Number(size?.[2] ?? 1920)));
       }
@@ -198,18 +222,23 @@ export async function evaluateDraft(env: ToolEnv): Promise<Evaluated[]> {
       const result = await withProbe(copy, probeConfig(plan, fps), () => env.hyperframes.check(copy, { signal: env.signal }));
       const messages = Object.values(result).flatMap((v) => (v && typeof v === "object" && Array.isArray((v as { findings?: unknown }).findings) ? (v as { findings: HfFinding[] }).findings : [])).map((f) => f.message).filter((m) => m.startsWith(PROBE_PREFIX));
       const data = readProbe(messages);
-      if (data) found.push(...probeFindings(data, plan).filter((f) => f.shot === env.index).map((f) => ({ code: f.code, severity: f.severity, message: f.message, hint: f.hint })));
-    } catch { /* no probe this time */ }
+      if (data) found.push(...probeFindings(data, plan).filter((f) => f.shot === env.index).map((f) => ({ code: f.code, severity: f.severity, message: f.message, hint: f.hint, atShotSec: round2(f.time - env.startSec) })));
+    } catch (e) {
+      if (env.signal?.aborted) throw e;   // a cancelled build stops; anything else means no probe this time
+    }
     if (env.frameDiffs) {
       try {
         const clip = join(copy, "motion.mp4");
         await env.hyperframes.render(copy, { output: clip, quality: "draft", fps, durationSec: env.shot.durationSec, span: { start: env.startSec, end: env.startSec + env.shot.durationSec } }, { signal: env.signal });
         const diffs = await env.frameDiffs(clip);
-        if (diffs.length) found.push(...shotMotionFindings(diffs, plan, env.index, fps).map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })));
-      } catch { /* no render this time */ }
+        if (diffs.length) found.push(...shotMotionFindings(diffs, plan, env.index, fps).map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix, ...(f.fromSec !== undefined ? { atShotSec: f.fromSec } : {}) })));
+      } catch (e) {
+        if (env.signal?.aborted) throw e;
+      }
     }
     return found;
-  } catch {
+  } catch (e) {
+    if (env.signal?.aborted) throw e;
     return [];
   } finally {
     rmSync(copy, { recursive: true, force: true });
@@ -220,12 +249,13 @@ export async function evaluateDraft(env: ToolEnv): Promise<Evaluated[]> {
 export async function checkDraft(env: ToolEnv, args: ToolArgs): Promise<ToolOutcome> {
   const html = typeof args.html === "string" ? args.html : "";
   if (!html.trim()) return { result: { error: "html: the draft is empty" } };
-  writeDraft(env, html);
   const rules = checkScene(html, env.shot, env.index, env.rules).map(fromIssue);
-  const lint = await env.hyperframes.lint(env.dir, { signal: env.signal });
-  const mine = shotFile(env.index);
-  const own = lint.findings.filter((f) => `${f.file ?? ""} ${f.sourceFile ?? ""} ${f.selector ?? ""}`.includes(mine) || (!f.file && !f.sourceFile)).map(fromLint);
-  return { result: { findings: [...rules, ...own, ...(await evaluateDraft(env))] } };
+  return withDraft(env, html, async () => {
+    const lint = await env.hyperframes.lint(env.dir, { signal: env.signal });
+    const mine = shotFile(env.index);
+    const own = lint.findings.filter((f) => `${f.file ?? ""} ${f.sourceFile ?? ""} ${f.selector ?? ""}`.includes(mine) || (!f.file && !f.sourceFile)).map(fromLint);
+    return { result: { findings: [...rules, ...own, ...(await evaluateDraft(env))] } };
+  });
 }
 
 /** The tool definitions the model sees (all of them, so the list never changes between turns). */
@@ -266,7 +296,7 @@ const hashOf = (html: string) => createHash("sha1").update(html).digest("hex").s
 export function markLooked(dir: string, shotId: string, html: string): void {
   const file = join(dir, LOOKED);
   const now = existsSync(file) ? (JSON.parse(readFileSync(file, "utf-8")) as Record<string, string>) : {};
-  writeFileSync(file, JSON.stringify({ ...now, [shotId]: hashOf(html) }));
+  writeFileSync(file, JSON.stringify({ ...now, [shotId]: hashOf(normalDraft(html)) }));
 }
 
 /** Was every shot looked at in its own turn, and is each scene file still the one that was looked at? */
@@ -274,7 +304,7 @@ export function lookedInLoop(dir: string, plan: Plan, sceneOf: (index: number) =
   const file = join(dir, LOOKED);
   if (!existsSync(file)) return false;
   const looked = JSON.parse(readFileSync(file, "utf-8")) as Record<string, string>;
-  return plan.shots.every((s, i) => { const html = sceneOf(i); return html !== null && looked[s.id] === hashOf(html); });
+  return plan.shots.every((s, i) => { const html = sceneOf(i); return html !== null && looked[s.id] === hashOf(normalDraft(html)); });
 }
 
 /** The most seconds of a shot one look takes frames at. */
@@ -290,14 +320,15 @@ export async function lookAtDraft(env: ToolEnv, read: (images: string[]) => Prom
   const asked = (Array.isArray(args.times) ? args.times : []).filter((t): t is number => typeof t === "number" && Number.isFinite(t)).slice(0, MAX_LOOK_TIMES);
   const last = Math.max(0, env.shot.durationSec - 0.05);
   const inShot = (asked.length ? asked : [env.shot.durationSec / 2]).map((t) => Math.round(Math.min(Math.max(t, 0), last) * 100) / 100).sort((x, y) => x - y);   // the stranger reads them early to late
-  writeDraft(env, html);
-  const images = await framesAt(env.hyperframes, env.dir, inShot.map((t) => Math.round((env.startSec + t) * 100) / 100), env.signal);
-  const { findings, seen } = await read(images);
-  markLooked(env.dir, env.shot.id, html);
-  return {
-    result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...(await evaluateDraft(env))] },
-    images,
-  };
+  return withDraft(env, html, async () => {
+    const images = await framesAt(env.hyperframes, env.dir, inShot.map((t) => Math.round((env.startSec + t) * 100) / 100), env.signal);
+    const { findings, seen } = await read(images);
+    markLooked(env.dir, env.shot.id, html);
+    return {
+      result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...(await evaluateDraft(env))] },
+      images,
+    };
+  });
 }
 
 /** The most one turn may use of each tool (the recipe sets `toolSteps` and `looks`). */

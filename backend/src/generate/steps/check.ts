@@ -179,7 +179,7 @@ export const run: RunFn = async (ctx) => {
     for (const i of shots) {
       const mine = todo.filter((f) => f.shot === i);
       const level = levelOfShot(ctx, plan, i);
-      const input = { project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level, ...(ctx.version ? { session: ctx.version.id, tools: sceneToolsFor(ctx, dir, plan, i, level) } : {}) };
+      const input = { project: ctx.project, step: ctx.step, plan, index: i, ...size, assets, level, signal: ctx.signal, ...(ctx.version ? { session: ctx.version.id, tools: sceneToolsFor(ctx, dir, plan, i, level) } : {}) };
       const findings = mine.map((f) => ({ code: f.code, message: f.message, hint: f.hint }));
       if (level === "kit") {
         // a kit-level shot is fixed as kit parts, never rewritten as the model's own HTML (a real repair did that)
