@@ -44,6 +44,7 @@ describe("root composition", () => {
     [["#0B1020", "#3FA7FF", "#FFFFFF"], "#3FA7FF"],               // the ink (white) comes last
     [["#0B1020", "#FFD23F"], "#FFD23F"],                           // only ground and ink: the ink
     [["#0B1020", "red"], "#ffffff"],                               // no second hex colour
+    [["#000000", "#ffffff", "#008000", "#a0a0a0"], "#008000"],     // six-digit hex read whole: green, not the grey
   ])("the wipe paints the accent, not the ink: %p", (palette, accent) => {
     expect(accentOf(palette)).toBe(accent);
   });

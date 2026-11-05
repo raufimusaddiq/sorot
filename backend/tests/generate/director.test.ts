@@ -598,11 +598,11 @@ describe("director: scenes", () => {
   test("repair without holds, and an unusable file", async () => {
     const r = rig([json({ html: HTML })]);
     expect((await r.director.repair(input({ html: "x", findings: [] }))).holds).toEqual([]);
-    const bad = rig([json({ html: "no" }), json({ holds: [] })]);
+    const bad = rig([json({ html: "no" }), json({ holds: [] })], { genSceneModel: "scene-m", genPlanModel: "plan-m" });
     const told: string[] = [];
-    bad.director.onAnswer = (e) => told.push(e.outcome);
+    bad.director.onAnswer = (e) => told.push(`${e.outcome} by ${e.model}`);
     await expect(bad.director.repair(input({ html: "x", findings: [] }))).rejects.toThrow("didn't pass the checks");
-    expect(told).toEqual(["malformed", "failed"]);   // malformed once per ask, however many tries
+    expect(told).toEqual(["malformed by scene-m", "failed by scene-m"]);   // malformed once per ask; the model that answered, per role
   });
 });
 

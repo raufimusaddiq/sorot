@@ -124,7 +124,7 @@ export class GenerateService {
     this.director.capabilities = (q) => this.capabilities(q.level, q.parts);
     // every answer feeds the model's record (R25): plan calls count here; a scene's pass is the author step's to count
     this.director.onAnswer = (e) => {
-      const model = this.director.model;
+      const model = e.model ?? this.director.model;   // the model that answered (the plan role may use another)
       if (e.level === "plan") recordAnswer(store, model, "plan", e.outcome, e.ms);
       else if (e.outcome === "malformed") recordAnswer(store, model, e.level, "malformed");
       else store.addGenModelRecord(model, e.level, { ms: e.ms });
@@ -792,6 +792,8 @@ export class GenerateService {
     const v = this.mustVersion(versionId);
     const p = this.idle(v.projectId);
     if (v.status !== "FAILED") throw new HttpError(409, "Only a build that failed can be retried");
+    // the build goes on with the plan it was started from: an edited or unapproved plan needs a new build
+    if (this.assertCanBuild(v.projectId).id !== v.planId) throw new HttpError(409, "The plan has changed since this build: start a new build");
     this.store.updateGenVersion(v.id, { status: "QUEUED", errorMessage: null });
     this.store.updateGenProject(p.id, { status: "BUILDING", errorMessage: null });
     this.queue.enqueue(v.id);

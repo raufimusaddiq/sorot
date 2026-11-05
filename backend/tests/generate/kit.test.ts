@@ -253,6 +253,7 @@ describe("kit API", () => {
     expect((await env!.json("PUT", "/api/generate/models/m/level", { level: "kit" })).body.data.model).toMatchObject({ pin: "kit" });
     expect((await env!.json("PUT", "/api/generate/models/m/level", { level: null })).body.data.model.pin).toBeNull();
     expect((await env!.json("PUT", "/api/generate/models/m/level", { level: "max" })).status).toBe(400);
+    expect((await env!.json("PUT", "/api/generate/models/a%25b/level", { level: "kit" })).body.data.model).toMatchObject({ model: "a%b", pin: "kit" });   // decoded once
     expect((await env!.json("POST", "/api/generate/models/calibrate", {})).status).toBe(409);   // no LLM connected
   });
 

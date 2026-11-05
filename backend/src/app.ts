@@ -480,7 +480,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   router.on("PUT", "/api/generate/models/:model/level", async (c) => {
     const level = (await c.body()).level ?? null;
     if (level !== null && !isLevel(level)) return fail(400, "level must be kit, compose, free or null (auto)");
-    return ok({ model: generate.pinModel(decodeURIComponent(c.params.model as string), level) });
+    return ok({ model: generate.pinModel(c.params.model as string, level) });   // the router already decoded it
   });
   router.on("GET", "/api/generate/kit/:name/export", (c) => {
     const name = c.params.name as string;

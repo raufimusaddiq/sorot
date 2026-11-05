@@ -287,6 +287,18 @@ describe("cancel, failure and restart", () => {
     expect((await env.json("POST", `${base}/versions/${v1}/retry`)).status).toBe(409);
   });
 
+  test("a failed build whose plan has changed since can't be retried (it would build the old plan): nothing is left BUILDING", async () => {
+    const { id } = await approved({ replies: [SCENES[0]!, new Error("quota exceeded")] });
+    const v1 = (await env.json("POST", `${base}/projects/${id}/versions`)).body.data.version.id as string;
+    await gen().whenIdle();
+    const current = JSON.parse(store().getGenPlan(store().getGenProject(id)!.currentPlanId!)!.plan);
+    expect((await env.json("PUT", `${base}/projects/${id}/plan`, { plan: { ...current, title: "Edited" } })).status).toBe(200);
+    const refused = await env.json("POST", `${base}/versions/${v1}/retry`);
+    expect([refused.status, refused.body.error]).toEqual([409, expect.stringContaining("plan")]);
+    expect(store().getGenVersion(v1)!.status).toBe("FAILED");
+    expect(store().getGenProject(id)!.status).not.toBe("BUILDING");
+  });
+
   test("a build that was still queued when the app stopped starts again at the next start", async () => {
     const { id } = await approved();
     const t = new Date().toISOString();

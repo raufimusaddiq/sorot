@@ -324,7 +324,7 @@ export interface SceneInput {
 }
 
 /** One answer's outcome, for the model's record (research R25). Scene kinds report their level; plan kinds report `plan`. */
-export interface AnswerEvent { kind: string; level: Level | "plan"; outcome: "firstPass" | "repaired" | "malformed" | "failed"; ms: number }
+export interface AnswerEvent { kind: string; level: Level | "plan"; outcome: "firstPass" | "repaired" | "malformed" | "failed"; ms: number; /** The model that answered (per role). */ model?: string }
 /** Calls whose outcome is the plan's record; scene calls count at their level (their real pass is decided by the author step). */
 const PLAN_KINDS: ReadonlySet<string> = new Set(["plan", "outline", "specs", "revise"]);
 const SCENE_KINDS: ReadonlySet<string> = new Set(["scene", "repair", "kitshot"]);
@@ -570,7 +570,7 @@ export class Director {
   ): Promise<{ value: T; call: ToolCall | undefined }> {
     const name = TOOLS[kind].function.name;
     let problems: string[] = [];
-    const tell = (outcome: AnswerEvent["outcome"], ms: number) => { if (level && this.onAnswer) this.onAnswer({ kind, level, outcome, ms }); };
+    const tell = (outcome: AnswerEvent["outcome"], ms: number) => { if (level && this.onAnswer) this.onAnswer({ kind, level, outcome, ms, model }); };
     const started = Date.now();
     const model = this.llm.modelFor(roleOf(kind));
     for (let attempt = 0; attempt < 2; attempt++) {

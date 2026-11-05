@@ -61,7 +61,8 @@ export function seamColour(kind: string, palette: string[]): string | null {
 
 /** Chroma (max - min channel, 0 to 1) of a hex colour that `luminance` accepts. */
 function chroma(hex: string): number {
-  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})/i.exec(hex.trim())!;
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(hex.trim());
+  if (!m) return 0;
   const h = m[1]!.length === 3 ? [...m[1]!].map((c) => c + c).join("") : m[1]!;
   const ch = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
   return (Math.max(...ch) - Math.min(...ch)) / 255;
