@@ -118,6 +118,12 @@ describe("a stranger's read in the director's turn", () => {
     expect(read.seen).toEqual({ description: "A grey ball.", objects: ["seed", "ball"], unexplained: ["grey sphere"] });
   });
 
+  test("a shot answered once per picture counts once: the last answer decides, the move is seen if any answer saw it", async () => {
+    const r = rig([answer([frame("s02", { unexplained: ["early blob"], heroVisible: true }), frame("s02", { unexplained: ["purple star"], heroVisible: false })])]);
+    const read = await strangerRead(r.ctx.director, { project: r.ctx.project, step: r.ctx.step, plan: plan(), index: 1, images: ["data:image/png;base64,A", "data:image/png;base64,B"] });
+    expect(read.findings.map((f) => f.description)).toEqual([expect.stringContaining("purple star")]);   // not the early blob, and no hero_hidden
+  });
+
   test("a shot's tools include the look when the model sees: frames at film time, the stranger's read; none at the kit level, and no look without sight", async () => {
     const withTools = (r: ReturnType<typeof rig>) => { r.ctx.recipe = { ...r.ctx.recipe, steps: r.ctx.recipe.steps.map((s: RecipeStep) => (s.use === "author" ? { use: "author" } : s)) }; return r; };
     const r = withTools(rig([answer([frame("s02")])]));

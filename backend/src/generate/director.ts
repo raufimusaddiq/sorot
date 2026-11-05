@@ -1155,7 +1155,10 @@ export class Director {
             ? [{ shotId, description: clip(o.description, 400), objects: texts(o.objects), unexplained: texts(o.unexplained), matches: o.matches, heroVisible: o.heroVisible }] : [];
         });
         const missing = input.expected.filter((e) => !frames.some((f) => f.shotId === e.shotId)).map((e) => e.shotId);
-        return missing.length ? { errors: [`you didn't describe: ${missing.join(", ")}`] } : { value: { frames, defaultsSeen: texts(raw.defaultsSeen) } };
+        // a shot answered once per picture (a model that missed "once per shot") counts once: its last answer, the settled picture, decides;
+        // the move counts as seen if any answer saw it
+        const once = frames.filter((f, i) => frames.findLastIndex((g) => g.shotId === f.shotId) === i).map((f) => ({ ...f, heroVisible: frames.some((g) => g.shotId === f.shotId && g.heroVisible) }));
+        return missing.length ? { errors: [`you didn't describe: ${missing.join(", ")}`] } : { value: { frames: once, defaultsSeen: texts(raw.defaultsSeen) } };
       },
       input.images,
     );
