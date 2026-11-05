@@ -219,7 +219,7 @@ export const TOOL_DEFS: Record<(typeof TOOL_ORDER)[number], ToolDef> = {
   }),
   look: tool("look", "Render frames of your draft and see them, with how a stranger who doesn't know the plan reads them (what is there, what can't be told apart).", {
     html: { type: "string", description: "the complete draft of compositions/shot-NN.html" },
-    times: { type: "array", items: { type: "number" }, description: "1 to 3 moments, in seconds from the start of this shot" },
+    times: { type: "array", items: { type: "number" }, description: "1 to 3 moments, in seconds from the start of this shot, spread from early in it to near its end: the stranger reads them as one shot, so the move you drew can show across them" },
   }),
   check: tool("check", "Check your draft against the scene rules and HyperFrames' lint, before you submit it.", {
     html: { type: "string", description: "the complete draft of compositions/shot-NN.html" },
@@ -268,7 +268,7 @@ export async function lookAtDraft(env: ToolEnv, read: (images: string[]) => Prom
   if (!html.trim()) return { result: { error: "html: the draft is empty" } };
   const asked = (Array.isArray(args.times) ? args.times : []).filter((t): t is number => typeof t === "number" && Number.isFinite(t)).slice(0, MAX_LOOK_TIMES);
   const last = Math.max(0, env.shot.durationSec - 0.05);
-  const inShot = (asked.length ? asked : [env.shot.durationSec / 2]).map((t) => Math.round(Math.min(Math.max(t, 0), last) * 100) / 100);
+  const inShot = (asked.length ? asked : [env.shot.durationSec / 2]).map((t) => Math.round(Math.min(Math.max(t, 0), last) * 100) / 100).sort((x, y) => x - y);   // the stranger reads them early to late
   writeDraft(env, html);
   const images = await framesAt(env.hyperframes, env.dir, inShot.map((t) => Math.round((env.startSec + t) * 100) / 100), env.signal);
   const { findings, seen } = await read(images);

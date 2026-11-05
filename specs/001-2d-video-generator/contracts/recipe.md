@@ -85,7 +85,7 @@ and the closing `task` field stay Sorot's, so a custom prompt can't break parsin
 | `music` | picks or uses a music bed | `track?`, `duckUnderVoiceDb` | |
 | `author` | writes one scene per shot | `require: [...]`, `repairRounds: 0..5` | |
 | `check` | HyperFrames `lint` + `check` loop | `warnings: fix \| fix-or-hold \| report`, `rounds` | |
-| `look` | vision self-review of beat frames + defaults audit | `rounds: 0..5`, `beatOffsetSec`, `audit: true` | |
+| `look` | vision self-review: three pictures of each shot (at 20%, 55% and 90% of it), one stranger's answer per shot, + defaults audit | `rounds: 0..5`, `audit: true` | |
 | `render` | renders the video | `quality: draft \| standard \| delivery`, `fps?`, `workers` | |
 | `command` | runs a **local command registered in Settings**; its findings join a verdict | `name`, `counts: technical \| creative` | |
 | `technical` | TECHNICAL verdict (code) | `measures` (below), `autoFixRounds: 0..3` | |

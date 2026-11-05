@@ -3,13 +3,13 @@ import { join } from "node:path";
 import { checkScene, shotFile, sizeFor } from "../composer";
 import { saveFindings, type NewFinding } from "../findings";
 import { framesAt, lookedInLoop } from "../directorTools";
-import { beatTimes, expectations, lookFindings } from "../look";
+import { expectations, lookFindings, lookTimes } from "../look";
 import { buildTarget, levelOfShot, readScene, sceneAssets, sceneRules } from "./build";
 import type { RunFn, StepContext } from "./types";
 
 /**
- * The vision self-review: frames at each beat, described by a stranger, compared with what the plan
- * meant. Objects nobody can explain are must-fix. Up to `rounds` times a shot with must-fix
+ * The vision self-review: three pictures of each shot (early, middle, settled), described by a stranger
+ * shot by shot, compared with what the plan meant. Objects nobody can explain are must-fix. Up to `rounds` times a shot with must-fix
  * findings has its scene rewritten and is looked at again; whatever is left stays a finding.
  */
 export const run: RunFn = async (ctx) => {
@@ -23,13 +23,14 @@ export const run: RunFn = async (ctx) => {
   const rounds = Number(ctx.settings.rounds);
   const audit = ctx.settings.audit !== false;
   const defaults = ((ctx.recipe.rules?.defaultsAudit as string[] | undefined) ?? []).slice(0, 20);
-  const times = beatTimes(plan, Number(ctx.settings.beatOffsetSec));
+  const moments = lookTimes(plan);   // three pictures of each shot, early to late
+  const times = moments.map((m) => m[m.length - 1]!);
   const size = sizeFor(ctx.project.format, ctx.recipe.output);
   const assets = sceneAssets(ctx);
 
   let found: NewFinding[] = [];
   for (let round = 0; ; round++) {
-    const answer = await ctx.director.look({ project: ctx.project, step: ctx.step, expected: expectations(plan), audit: audit ? defaults : [], images: await framesAt(ctx.hyperframes, dir, times, ctx.signal) });
+    const answer = await ctx.director.look({ project: ctx.project, step: ctx.step, expected: expectations(plan, moments[0]?.length ?? 1), audit: audit ? defaults : [], images: await framesAt(ctx.hyperframes, dir, moments.flat(), ctx.signal) });
     found = lookFindings(answer, plan, times, audit);
     ctx.progress(Math.min(95, ((round + 1) / (rounds + 1)) * 100));
     const broken = [...new Set(found.filter((f) => f.severity === "must-fix" && f.shotId).map((f) => f.shotId as string))];

@@ -9,7 +9,7 @@ import { DirectorLog } from "../../src/generate/events";
 import { readFindings } from "../../src/generate/findings";
 import { Hyperframes } from "../../src/generate/hyperframes";
 import { markLooked } from "../../src/generate/directorTools";
-import { beatTimes, expectations, lookFindings, strangerRead, type LookAnswer } from "../../src/generate/look";
+import { expectations, lookFindings, lookTimes, strangerRead, type LookAnswer } from "../../src/generate/look";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
 import { STEPS, settingsOf } from "../../src/generate/steps";
@@ -30,18 +30,19 @@ const answer = (frames: object[], defaultsSeen: string[] = []) => json({ frames,
 const CLEAN = answer(["s01", "s02", "s03"].map((id) => frame(id)));
 
 describe("look: where to look and what it means", () => {
-  test("one frame per shot, a little after it starts and never past its end", () => {
-    expect(beatTimes(plan(), 0.3)).toEqual([0.3, 10.3, 20.3]);
-    expect(beatTimes(plan(), 0)).toEqual([0, 10, 20]);
-    expect(beatTimes(plan(), 50)).toEqual([9.9, 19.9, 29.9]);
+  test("three pictures of each shot, early to late (coming in, mid-move, settled), never past its end", () => {
+    expect(lookTimes(plan())).toEqual([[2, 5.5, 9], [12, 15.5, 19], [22, 25.5, 29]]);
+    const short = plan();
+    short.shots[0]!.durationSec = 0.5;   // a very short shot keeps its pictures inside it
+    expect(lookTimes(short)[0]!.every((t) => t < 0.5)).toBeTrue();
   });
 
   test("what the plan meant: what each shot reads as, and its hero move (else the visual and the motion)", () => {
-    expect(expectations(plan())[0]).toEqual({ shotId: "s01", reads: "visual 1", heroMove: "slide in" });
+    expect(expectations(plan(), 3)[0]).toEqual({ shotId: "s01", reads: "visual 1", heroMove: "slide in", pictures: 3 });
     const p = plan();
     p.shots[0]!.reads = "a seed";
     p.shots[0]!.heroMove = "it falls";
-    expect(expectations(p)[0]).toEqual({ shotId: "s01", reads: "a seed", heroMove: "it falls" });
+    expect(expectations(p)[0]).toEqual({ shotId: "s01", reads: "a seed", heroMove: "it falls", pictures: 1 });
   });
 
   test("an unexplained object is must-fix; a frame that reads wrongly, a hidden hero move and a visible default are should-fix", () => {
@@ -53,8 +54,8 @@ describe("look: where to look and what it means", () => {
       ["must-fix", "look_unexplained", "s01", 0.3], ["must-fix", "look_unexplained", "s01", 0.3],
       ["should-fix", "look_mismatch", "s02", 10.3], ["should-fix", "look_hero_hidden", "s03", 20.3], ["should-fix", "look_default", null, undefined],
     ]);
-    expect(found[0]!.description).toBe('A stranger can\'t tell what "floating ring" is for in s01.');
-    expect(found[2]!.description).toContain('looks like "a blank grid", but it should read as "visual 2"');
+    expect(found[0]!.description).toBe('A stranger can\'t tell what "floating ring" is for in s01, where it is still on screen at the end.');
+    expect(found[2]!.description).toContain('ends up looking like "a blank grid", but it should read as "visual 2"');
     expect(found.every((f) => f.rule === "look" && f.state === "open")).toBeTrue();
     expect(lookFindings({ frames: [], defaultsSeen: ["x"] }, plan(), [], false)).toEqual([]);
   });
@@ -109,10 +110,10 @@ function rig(replies: string[], over: { vision?: string; handlers?: Record<strin
 }
 
 describe("a stranger's read in the director's turn", () => {
-  test("one fresh call with only the pictures; repeats across pictures collapse into one finding; what was seen goes back to the director", async () => {
-    const r = rig([answer([frame("s02", { unexplained: ["grey sphere"], description: "A grey ball." }), frame("s02", { unexplained: ["grey sphere"], objects: ["seed", "ball"], matches: false })])]);
+  test("one fresh call with only the pictures, one answer for the shot from all of them; what was seen goes back to the director", async () => {
+    const r = rig([answer([frame("s02", { unexplained: ["grey sphere"], description: "A grey ball.", objects: ["seed", "ball"], matches: false })])]);
     const read = await strangerRead(r.ctx.director, { project: r.ctx.project, step: r.ctx.step, plan: plan(), index: 1, images: ["data:image/png;base64,A", "data:image/png;base64,B"] });
-    expect(JSON.parse(r.requests[0].messages[1].content[0].text)).toMatchObject({ pictures: 2, shots: ["s02", "s02"] });
+    expect(JSON.parse(r.requests[0].messages[1].content[0].text)).toMatchObject({ pictures: 2, shots: ["s02"], meant: [{ shotId: "s02", pictures: 2 }] });
     expect(read.findings.map((f) => [f.code, f.severity, f.shotId])).toEqual([["look_unexplained", "must-fix", "s02"], ["look_mismatch", "should-fix", "s02"]]);
     expect(read.seen).toEqual({ description: "A grey ball.", objects: ["seed", "ball"], unexplained: ["grey sphere"] });
   });
@@ -141,16 +142,16 @@ describe("a stranger's read in the director's turn", () => {
 });
 
 describe("look step", () => {
-  test("shows the LLM's model one picture per shot, in shot order, without asking for anything the stranger shouldn't know first", async () => {
+  test("shows the LLM's model three pictures of each shot, in shot order and time order, and asks for one answer per shot", async () => {
     const r = rig([CLEAN], { settings: { rounds: 0 } });
     expect(await STEPS.look.run(r.ctx)).toEqual({ status: "done", outputRef: "0 findings" });
-    expect(r.snaps).toEqual([[0.3, 10.3, 20.3]]);
+    expect(r.snaps).toEqual([[2, 5.5, 9, 12, 15.5, 19, 22, 25.5, 29]]);
     const req = r.requests[0]!;
     expect(req.model).toBe("text");
     expect(req.tool_choice.function.name).toBe("submit_look");
     const parts = req.messages[1].content;
-    expect(parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url)).toEqual([0, 1, 2].map((i) => `data:image/png;base64,${Buffer.from(`PIC${i}`).toString("base64")}`));
-    expect(JSON.parse(parts[0].text)).toMatchObject({ pictures: 3, shots: ["s01", "s02", "s03"], defaultsAudit: ["a centred title on a dark gradient"] });
+    expect(parts.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => `data:image/png;base64,${Buffer.from(`PIC${i}`).toString("base64")}`));
+    expect(JSON.parse(parts[0].text)).toMatchObject({ pictures: 9, shots: ["s01", "s02", "s03"], meant: [{ pictures: 3 }, { pictures: 3 }, { pictures: 3 }], defaultsAudit: ["a centred title on a dark gradient"] });
     expect(readFindings(r.dir)).toEqual([]);
   });
 

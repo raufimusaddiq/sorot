@@ -73,6 +73,18 @@ fifth of the frame or more (`panelShare`), which is a card the words sit on; and
 drawing at least 5 times its own area (`labelShare`, `labelSize`) is a label on it, not a collision (GLM's
 labels on its own panels were flagged until then). A text only partly over a drawing is the collision.
 
+## Looking at a shot, not at one frame
+
+The look step used to take one frame 0.3 s into each shot and judge it against what the shot was meant to
+show. A shot's picture, its hero move and its objects arrive later than that, so every build had three or four
+"a stranger can't tell what this is" must-fixes and "the hero move can't be seen" warnings about things that
+were still on their way in, whoever the director was (the same on a hand-drawn film as on GLM's, 2026-11-05).
+Now the step takes three pictures of each shot, at 20%, 55% and 90% of its length, and the stranger answers once
+per shot from all of them: `objects` and `unexplained` are what is on screen in the last picture (something
+only arriving or leaving earlier doesn't count), `matches` is whether the shot reads as meant by then, and
+`heroVisible` whether the move can be seen across the pictures. The director's own `look` tool does the same
+with the times it picks (sorted early to late; it is told to spread them). `beatOffsetSec` is gone.
+
 ## Vision: who looks at what
 
 One model sees: **the director's own model.** There is no separate vision model (`LLM_VISION` and

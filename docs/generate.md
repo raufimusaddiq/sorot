@@ -85,7 +85,7 @@ records "looked in the loop" and makes no vision call of its own.
 | `plan` | the shot-by-shot plan, numeric (hex palette, type, easing, frames) (**required gate**) |
 | `images`, `music` | generated images for marked shots; a music bed with ducking under the voice |
 | `author`, `check` | one scene per shot, then HyperFrames `lint` + `check` with repair rounds |
-| `look` | the model looks at beat frames (vision) and audits for defaults |
+| `look` | the model looks at three pictures of each shot (early, mid-move, settled; vision), answers once per shot, and audits for defaults |
 | `render` | `draft`, `standard` or `delivery` |
 | `command` | a local command registered in Settings; its findings join a verdict |
 | `technical`, `creative` | the two verdicts |

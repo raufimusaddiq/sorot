@@ -86,7 +86,7 @@ export const STEP_SPECS: Record<StepType, StepSpec> = {
     // No defaults (a default joins every step's hash): level auto and maxLevel free (or the machine's), in code.
     level: { t: "enum", values: ["auto", "kit", "compose", "free"] }, maxLevel: { t: "enum", values: ["kit", "compose", "free"] } } },
   check: { gates: none, fields: { warnings: { t: "enum", values: ["fix", "fix-or-hold", "report"] }, rounds: { t: "int", min: 0, max: 5 } } },
-  look: { gates: none, fields: { rounds: { t: "int", min: 0, max: 5 }, beatOffsetSec: { t: "num", min: 0, max: 2 }, audit: { t: "bool" } } },
+  look: { gates: none, fields: { rounds: { t: "int", min: 0, max: 5 }, audit: { t: "bool" } } },
   render: { gates: none, fields: {
     quality: { t: "enum", values: QUALITIES }, fps: { t: "int", min: 12, max: 60 }, workers: { t: "int", min: 1, max: 16 },
     // No default in DEFAULTS: auto (blur on the shots the plan marks fast), in code.

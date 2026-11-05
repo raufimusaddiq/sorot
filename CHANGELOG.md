@@ -7,6 +7,9 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 ## [Unreleased]
 
 ### Generate: briefs to finished 2D videos
+- The look step judges a shot from three pictures of it (early, mid-move, settled) instead of one frame 0.3 s in,
+  and the model answers once per shot: things still arriving no longer count as "a stranger can't tell what this
+  is", and a hero move that happens later is no longer "hidden". The `beatOffsetSec` setting is gone.
 - Scene calls carry a second worked example, drawn by hand from SVG and plain boxes, next to the kit-built one
   (a model shown one style copies it): on the same brief GLM put its words in a zone on top and its drawings
   below, and none of its text sat on a drawing (14 to 16% of its text moments did before).

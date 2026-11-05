@@ -253,7 +253,7 @@ const INSTRUCTIONS = {
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
   fix: "You are the director of a short 2D motion video. The video was built and judged; fix the findings the owner chose (and do what their note says). Prefer sceneEdits: they change how a shot looks and moves and cost little. Change the plan (planEdits) only when a finding cannot be fixed without it, because changing the plan's words or timing makes the owner approve again. Keep everything the findings don't touch exactly as it is.",
   verify: "You check one claim against the text of its source page. Verified: the page says it, and you can copy the passage that does. Corrected: the page gives a different value; copy the passage and give the value it states. Unverifiable: the page does not say it, or only a headline does. Never add a fact the page does not state and never guess.",
-  look: "You are a stranger who has never heard of this video. You are shown one picture per shot. For each, first say what you see, as plainly as you can, and list the things on screen; name any whose purpose you cannot tell. Only then compare it with what was meant, and say whether the picture reads that way and whether the main move can be seen. Also say which of the listed defaults you can see.",
+  look: "You are a stranger who has never heard of this video. You are shown pictures of each shot, taken at a few moments from early to late. For each shot, first say what you see, as plainly as you can, and list the things on screen at the end; name any whose purpose you cannot tell. Only then compare it with what was meant, and say whether the shot reads that way and whether the main move can be seen across the pictures. Also say which of the listed defaults you can see.",
   concept: "You are the director of a short 2D motion video. Before any plan, name the ONE visual mechanism this video is built on: an idea that grows out of this topic and could not be moved onto another one. It must differ from the earlier concepts you are shown. Then say, honestly, whether it is a bolt-on.",
   sameidea: "You compare video concepts. Two concepts are the same idea when they rest on the same visual mechanism, even in different words or for different topics. Answer for the new concept against the earlier ones.",
   script: "You write the narration of a short 2D motion video: what a voice says over it. Plain spoken language in the project's language, short sentences, one idea per line, no stage directions, nothing a voice cannot say. Use only facts and numbers from the brief.",
@@ -1136,14 +1136,14 @@ export class Director {
 
   // ---- look ------------------------------------------------------------------
 
-  /** A fresh look at the frames of a build, by the vision model. Every shot with a picture must be answered. */
+  /** A fresh look at the pictures of a build, by the vision model: each shot comes with `pictures` of it, early to late, and every shot must be answered once. */
   async look(input: {
-    project: GenProject; step: RecipeStep; expected: Array<{ shotId: string; reads: string; heroMove: string }>; audit: string[]; images: string[];
+    project: GenProject; step: RecipeStep; expected: Array<{ shotId: string; reads: string; heroMove: string; pictures?: number }>; audit: string[]; images: string[];
   }): Promise<{ frames: Array<{ shotId: string; description: string; objects: string[]; unexplained: string[]; matches: boolean; heroVisible: boolean }>; defaultsSeen: string[] }> {
     return this.ask(
       input.project, "look", input.step,
       { pictures: input.images.length, shots: input.expected.map((e) => e.shotId), meant: input.expected, defaultsAudit: input.audit },
-      "Describe each picture as a stranger, then compare it with `meant`. Answer for every shot: the pictures come in the order of `shots`.",
+      "Describe each shot as a stranger, from its pictures, then compare it with `meant`. Answer once for every shot: the pictures come in the order of `shots`, and each shot has `pictures` of them (in `meant`), early to late. `objects` are what is on screen in the shot's last picture; `unexplained` are the ones still there in the last picture whose purpose you cannot tell (something only arriving or leaving in an earlier picture does not count); `matches` says whether the shot reads as meant by its last picture; `heroVisible` says whether the main move can be seen happening across its pictures (it may show as a change from one picture to the next).",
       (parsed) => {
         const raw = parsed as { frames?: unknown; defaultsSeen?: unknown };
         const list = Array.isArray(raw.frames) ? raw.frames : [];

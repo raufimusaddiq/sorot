@@ -127,8 +127,8 @@ shows which are on; each has a limit per shot):
   has (a chart, a map, a 3D object, a walking character, kinetic type, an overlay), search for it and
   adapt the block's source to this film's size, colours and timing instead of drawing it from
   rectangles. Skip it when nothing fits; don't force a block into the film's look.
-- `look`: renders your draft and shows you the frames, with what a stranger who doesn't know the plan
-  makes of them. Sorot asks for one look before it accepts a scene. Fix what a stranger can't name
+- `look`: renders your draft and shows you the frames (up to 3 `times`: spread them from early in the shot to near
+  its end), with what a stranger who doesn't know the plan makes of them, reading them as one shot. Sorot asks for one look before it accepts a scene. Fix what a stranger can't name
   (an object nobody can tell) before you submit; don't explain it away.
 - `check`: runs the scene rules and HyperFrames' lint on your draft, so you fix findings before the
   submit instead of after the build. `check` and `look` also run Sorot's scene probe on the draft and
