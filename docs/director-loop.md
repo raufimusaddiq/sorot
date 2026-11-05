@@ -69,7 +69,9 @@ nothing said so. Now `check` and `look` both return the probe's findings for the
 check refuses a project whose shots are missing, so the probe runs on a scratch copy: the root, the shots so
 far, a placeholder for each shot not yet written, the assets linked; the version's own folder is never touched.
 It takes about 5 s. A probe that can't run adds nothing. CSS-drawn boxes count as drawings, except a box a
-fifth of the frame or more (`panelShare`), which is a card the words sit on.
+fifth of the frame or more (`panelShare`), which is a card the words sit on; and a text lying wholly inside a
+drawing at least 5 times its own area (`labelShare`, `labelSize`) is a label on it, not a collision (GLM's
+labels on its own panels were flagged until then). A text only partly over a drawing is the collision.
 
 ## Vision: who looks at what
 

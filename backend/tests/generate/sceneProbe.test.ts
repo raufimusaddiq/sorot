@@ -42,10 +42,11 @@ describe("scene probe", () => {
       tweens: [tween("camera#0", 0, 6), tween(null, 1, 4, ["opacity"]), tween(null, 1, 4, ["y"], "b"), tween(null, 1, 4, ["y"], "a", true), tween("camera#0", 2, 5)],
     }, []],
     // 3. text over drawn objects
-    ["text on a drawing in 2 of its 3 moments", { frames: [moment(1, {}, house), moment(2, {}, house), moment(3, {}, null)] }, [["text_over_object", "warning", 0, 1]]],
+    ["text partly over a drawing in 2 of its 3 moments", { frames: [moment(1, {}, [30, 0, 40, 40]), moment(2, {}, [30, 0, 40, 40]), moment(3, {}, null)] }, [["text_over_object", "warning", 0, 1]]],
     ["a drawing passing under the text once", { frames: [moment(1, {}, house), moment(2, {}, null), moment(3, {}, null)] }, []],
     ["text on a small shape drawn from CSS boxes (a hull of divs) counts like an svg", { frames: [moment(1, {}, [0, 0, 40, 40], false, true), moment(2, {}, [0, 0, 40, 40], false, true)] }, [["text_over_object", "warning", 0, 1]]],
     ["text on a CSS-drawn panel or card (a fifth of the frame or more) is a label on its card, but the same size svg is a drawing", { frames: [moment(1, {}, house, false, true), moment(2, {}, house, false, true)] }, []],
+    ["a text wholly inside a drawing much bigger than itself is a label on it; one only partly over a drawing is not", { frames: [moment(1, {}, [0, 0, 80, 50]), moment(2, {}, [0, 0, 80, 50])] }, []],
     ["a backdrop behind the text", { frames: [moment(1, {}, [0, 0, 100, 60]), moment(2, {}, [0, 0, 100, 60])] }, []],
     ["text only grazing the drawing", { frames: [moment(1, {}, [45, 0, 40, 40]), moment(2, {}, [45, 0, 40, 40])] }, []],
     ["a label kept on purpose (data-layout-allow-overlap), or text not yet readable", {

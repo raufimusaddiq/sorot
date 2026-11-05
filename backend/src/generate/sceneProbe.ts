@@ -38,6 +38,9 @@ export interface ProbeSettings {
   backdropShare: number;
   /** A CSS-drawn box this big is a panel or card the words sit on, not a drawing: it is left out (an svg or picture this big is a backdrop at `backdropShare`). */
   panelShare: number;
+  /** A text this much inside a drawing at least `labelSize` times its own area is a label sitting on it (a card, a panel), not a collision. */
+  labelShare: number;
+  labelSize: number;
   /** On a first frame, text showing more than this share of itself (and less than `wholeShare`) is cut off. */
   slicedShare: number;
   /** A box showing this much is whole (an edge kissing the mask isn't a cut). */
@@ -48,7 +51,7 @@ export interface ProbeSettings {
 
 export const PROBE_DEFAULTS: ProbeSettings = {
   swapSec: 0.3, swapShare: 0.4, swapGapSec: 0.1, swapFullShare: 0.8, fightSec: 0.05,
-  coverShare: 0.3, coverTime: 0.5, coverMoments: 2, backdropShare: 0.5, panelShare: 0.2, slicedShare: 0.05, wholeShare: 0.95, moments: 4,
+  coverShare: 0.3, coverTime: 0.5, coverMoments: 2, backdropShare: 0.5, panelShare: 0.2, labelShare: 0.95, labelSize: 5, slicedShare: 0.05, wholeShare: 0.95, moments: 4,
 };
 
 /** Shown means at least this opaque; hidden means at most `HIDDEN` (a fade's two ends). */
@@ -208,7 +211,8 @@ export function probeFindings(data: ProbeData, plan: Plan, settings: Partial<Pro
       if (t.o < READABLE || (t.v >= 0 && t.v < READABLE) || t.overlap || area(t.r) <= 0) continue;
       const entry = byText.get(t.el) ?? { k, shown: 0, over: new Map(), at: f.t };
       entry.shown++;
-      const hit = objects.find((o) => overlap(t.r, o.r) / area(t.r) >= s.coverShare);
+      // a text lying wholly inside a drawing much bigger than itself is a label on a card or panel; one only partly over it is a collision
+      const hit = objects.find((o) => { const share = overlap(t.r, o.r) / area(t.r); return share >= s.coverShare && !(share >= s.labelShare && area(o.r) >= s.labelSize * area(t.r)); });
       if (hit) {
         if (!entry.over.size) entry.at = f.t;
         entry.over.set(hit.el, (entry.over.get(hit.el) ?? 0) + 1);
