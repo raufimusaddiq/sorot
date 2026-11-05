@@ -13,7 +13,7 @@ import { expectations, lookFindings, lookTimes, strangerRead, type LookAnswer } 
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
 import { STEPS, settingsOf } from "../../src/generate/steps";
-import { sceneToolsFor } from "../../src/generate/steps/build";
+import { sceneToolsFor, shrinkFrames, SESSION_FRAME_WIDTH } from "../../src/generate/steps/build";
 import { Llm } from "../../src/llm";
 import { Store } from "../../src/store";
 import { fakeHyperframes, procOk, quickRecipe, samplePlan, sceneHtml, SAMPLE_TITLES, type HfHandler } from "../helpers";
@@ -226,5 +226,23 @@ describe("look step", () => {
     const r = rig([CLEAN], { settings: { rounds: 0 }, rules: {} });
     await STEPS.look.run(r.ctx);
     expect(JSON.parse(r.requests[0].messages[1].content[0].text).defaultsAudit).toEqual([]);
+  });
+});
+
+describe("frames kept in the director's conversation", () => {
+  test("are shrunk to the session width by ffmpeg; one ffmpeg can't shrink, or that isn't a picture, stays as it was", async () => {
+    const calls: string[][] = [];
+    const exec = async (_cmd: string, args: string[]) => {
+      calls.push(args);
+      if (args.includes("FAIL")) return { exitCode: 1, stdout: "", stderr: "x" };
+      writeFileSync(args.at(-1)!, "SMALL");
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    const ctx = { exec, config: { ffmpegPath: "ffmpeg" }, signal: undefined } as never;
+    const png = `data:image/png;base64,${Buffer.from("BIG").toString("base64")}`;
+    expect(await shrinkFrames(ctx, [png, "not a picture"])).toEqual([`data:image/png;base64,${Buffer.from("SMALL").toString("base64")}`, "not a picture"]);
+    expect(calls[0]).toContain(`scale=${SESSION_FRAME_WIDTH}:-2`);
+    const failing = { exec: async (c: string, a: string[]) => exec(c, [...a, "FAIL"]), config: { ffmpegPath: "ffmpeg" } } as never;
+    expect(await shrinkFrames(failing, [png])).toEqual([png]);
   });
 });

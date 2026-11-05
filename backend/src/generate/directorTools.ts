@@ -45,7 +45,7 @@ export const TOOL_ORDER = ["search_blocks", "use_block", "look", "check"] as con
 /** The text a call past its limit gets back. */
 export const LIMIT_REACHED = { error: "limit reached: submit now" };
 /** What the first submit gets back when the turn can look and hasn't. */
-export const LOOK_FIRST = "look at your draft first: call look with this html (and 1 to 3 moments of the shot), see what a stranger sees, fix what they can't name, then submit again";
+export const LOOK_FIRST = "look at your draft first: call look (leave out html: the draft you just submitted is used) with 1 to 3 moments of the shot, see what a stranger sees, fix what they can't name, then submit again";
 
 const MAX_QUERY = 120;
 const MAX_MATCHES = 8;
@@ -103,6 +103,8 @@ export interface ToolEnv {
   fps?: number;
   /** The change from each frame of a rendered clip to the next (motion.ts): with it, `check` and `look` also measure the draft's motion. */
   frameDiffs?: (file: string) => Promise<number[]>;
+  /** Smaller copies of look frames for the director's own conversation (the stranger reads the full ones): a 1080×1920 frame is 2,700 tokens, 360×640 about 300. */
+  shrink?: (images: string[]) => Promise<string[]>;
   /** 0-based position of the shot in the plan. */
   index: number;
   /** Where the shot starts in the film, seconds (frames are taken at film time). */
@@ -269,11 +271,11 @@ export const TOOL_DEFS: Record<(typeof TOOL_ORDER)[number], ToolDef> = {
     name: { type: "string", description: "a name from search_blocks" },
   }),
   look: tool("look", "Render frames of your draft and see them, with how a stranger who doesn't know the plan reads them (what is there, what can't be told apart).", {
-    html: { type: "string", description: "the complete draft of compositions/shot-NN.html" },
+    html: { type: "string", description: "the complete draft of compositions/shot-NN.html; leave it out to use your latest draft (the one you last submitted, looked at or checked)" },
     times: { type: "array", items: { type: "number" }, description: "1 to 3 moments, in seconds from the start of this shot, spread from early in it to near its end: the stranger reads them as one shot, so the move you drew can show across them" },
   }),
   check: tool("check", "Check your draft against the scene rules and HyperFrames' lint, before you submit it.", {
-    html: { type: "string", description: "the complete draft of compositions/shot-NN.html" },
+    html: { type: "string", description: "the complete draft of compositions/shot-NN.html; leave it out to use your latest draft" },
   }),
 };
 
@@ -326,7 +328,7 @@ export async function lookAtDraft(env: ToolEnv, read: (images: string[]) => Prom
     markLooked(env.dir, env.shot.id, html);
     return {
       result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...(await evaluateDraft(env))] },
-      images,
+      images: env.shrink ? await env.shrink(images) : images,
     };
   });
 }

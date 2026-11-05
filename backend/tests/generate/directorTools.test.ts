@@ -131,7 +131,13 @@ describe("tools on a version's project", () => {
       return { ok: true, outputDir: d, frames: what.at.map((t, i) => { const path = join(d, `f${i}.png`); writeFileSync(path, `PIC${i}`); return { path, time: t }; }) };
     } } as never;
     const read = async (images: string[]) => ({ findings: [{ code: "look_unexplained", severity: "must-fix", description: "A stranger can't tell what \"dome\" is for in s02.", suggestedFix: "Label it." }], seen: { description: "a dome", objects: ["dome"], unexplained: ["dome"] }, n: images.length } as never);
+    const strangerSaw: string[][] = [];
+    const reading = async (images: string[]) => { strangerSaw.push(images); return read(images); };
     const e = env({ hyperframes: { ...env().hyperframes, ...(hf as object) } });
+    const small = await lookAtDraft({ ...e, shrink: async (imgs) => imgs.map((_, i) => `small${i}`) }, reading, { html: HTML, times: [2] });
+    expect([small.images, strangerSaw[0]!.length]).toEqual([["small0"], 1]);   // the director keeps small copies; the stranger saw the frame itself
+    expect(strangerSaw[0]![0]).toStartWith("data:image/png;base64,");
+    asked.length = 0;
     const out = await lookAtDraft(e, read, { html: HTML, times: [-1, 2, 99, 5] });   // a fourth is dropped; 99 is clamped to the shot's last moment
     expect(asked).toEqual([[3, 5, 3 + (shot.durationSec - 0.05)].map((t) => Math.round(t * 100) / 100)]);
     expect(out.images).toEqual([0, 1, 2].map((i) => `data:image/png;base64,${Buffer.from(`PIC${i}`).toString("base64")}`));

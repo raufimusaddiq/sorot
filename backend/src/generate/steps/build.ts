@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HttpError } from "../../http";
 import { shotFile, shotStarts, type SceneKit } from "../composer";
@@ -98,6 +99,7 @@ export function sceneToolsFor(ctx: StepContext, dir: string, plan: Plan, index: 
   const looks = Number.isInteger(authorWith.looks) ? (authorWith.looks as number) : DEFAULT_LOOKS;
   const env = { dir, hyperframes: ctx.hyperframes, catalog: ctx.catalog, blocksAllowed: planWith.blocks !== false, shot: plan.shots[index]!, plan, fps: ctx.recipe.output.fps, frameDiffs: async (file: string) => { const res = await ctx.exec(ctx.config.ffmpegPath, frameDiffArgs(file), { signal: ctx.signal, timeoutMs: 120_000 }); return res.exitCode === 0 ? parseFrameDiffs(res.stdout) : []; }, index, startSec: shotStarts(plan)[index]!, rules: sceneRules(ctx, level), signal: ctx.signal };
   const read = (images: string[]) => strangerRead(ctx.director, { project: ctx.project, step: ctx.step, plan, index, images });
+  Object.assign(env, { shrink: (images: string[]) => shrinkFrames(ctx, images) });
   return sceneTools(env, { steps, looks, ...(ctx.director.canSee ? { look: (e, args) => lookAtDraft(e, read, args) } : {}) });
 }
 
@@ -113,4 +115,24 @@ export function shotIndexOf(finding: { file?: string; sourceFile?: string; selec
     return i >= 0 ? i : null;
   }
   return null;
+}
+
+/** The width of the look frames the director keeps in its conversation (a 1080×1920 frame costs 2,700 tokens, 360 wide about 300). */
+export const SESSION_FRAME_WIDTH = 360;
+
+/** Smaller PNG copies of frames (data URLs), for the director's own conversation; a frame ffmpeg can't shrink is kept as it was. */
+export async function shrinkFrames(ctx: Pick<StepContext, "exec" | "config" | "signal">, images: string[]): Promise<string[]> {
+  const dir = mkdtempSync(join(tmpdir(), "sorot-shrink-"));
+  try {
+    return await Promise.all(images.map(async (url, i) => {
+      const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(url);
+      if (!m) return url;
+      const from = join(dir, `in${i}.${m[1] === "jpeg" ? "jpg" : "png"}`), to = join(dir, `out${i}.png`);
+      writeFileSync(from, new Uint8Array(Buffer.from(m[2]!, "base64")));
+      const res = await ctx.exec(ctx.config.ffmpegPath, ["-v", "error", "-y", "-i", from, "-vf", `scale=${SESSION_FRAME_WIDTH}:-2`, to], { signal: ctx.signal, timeoutMs: 30_000 });
+      return res.exitCode === 0 && existsSync(to) ? `data:image/png;base64,${readFileSync(to).toString("base64")}` : url;
+    }));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

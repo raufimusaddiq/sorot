@@ -396,7 +396,7 @@ describe("director: scenes", () => {
   const input = <T extends object>(extra: T = {} as T) => ({
     project, step: step({ use: "author" }), plan, index: 1, width: 1080, height: 1920, assets: ["assets/ab-logo.png"], ...extra,
   });
-  const tool = (name: keyof typeof TOOL_DEFS, limit: number, run: () => Promise<any> = async () => ({ result: { findings: [] } })) => ({ def: TOOL_DEFS[name], limit, run });
+  const tool = (name: keyof typeof TOOL_DEFS, limit: number, run: (args?: any) => Promise<any> = async () => ({ result: { findings: [] } })) => ({ def: TOOL_DEFS[name], limit, run });
 
   test("scene: one call for one shot with the film around it, the authoring contract and the one function to call", async () => {
     const r = rig([json({ html: HTML }), json({ html: HTML })]);
@@ -515,13 +515,15 @@ describe("director: scenes", () => {
     expect(JSON.parse((r.requests[3]!.messages as any[]).filter((m) => m.role === "tool").at(-1).content)).toEqual({ error: "limit reached: submit now" });
   });
 
-  test("when the turn can look, the first submit is turned back once inside the turn (no retry used); after a look, or at the last step, it is accepted", async () => {
-    const look = tool("look", 2);
-    const r = rig([json({ html: HTML }), new Calls([["look", { html: HTML, times: [1] }]]), json({ html: HTML })], { genSession: true });
+  test("when the turn can look, the first submit is turned back once inside the turn (no retry used); a look without html sees that draft; after a look, or at the last step, it is accepted", async () => {
+    const looked: unknown[] = [];
+    const look = tool("look", 2, async (a?: any) => { looked.push(a?.html); return { result: { findings: [] } }; });
+    const r = rig([json({ html: HTML }), new Calls([["look", { times: [1] }]]), json({ html: HTML })], { genSession: true });
     expect(await r.director.scene({ ...input(), session: "v-lookfirst", tools: { steps: 4, tools: { look } } })).toBe(HTML);
     const turned = r.requests[1]!.messages.at(-1) as any;
     expect([turned.role, JSON.parse(turned.content)]).toEqual(["tool", { accepted: false, problems: [LOOK_FIRST] }]);
     expect(r.events().map((e) => e.kind)).toEqual(["scene", "scene", "look", "scene"]);
+    expect(looked).toEqual([HTML]);   // the submitted draft, not sent a second time
     // no steps left: the submit stands (the forced step), and without a look tool nothing is asked
     const last = rig([json({ html: HTML })], { genSession: true });
     expect(await last.director.scene({ ...input(), session: "v-forced", tools: { steps: 0, tools: { look } } })).toBe(HTML);

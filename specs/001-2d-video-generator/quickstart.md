@@ -217,7 +217,7 @@ Prerequisites: an LLM whose model reasons and sees (e.g. `glm-5-3-flash`), Setti
 2. In `gen_event` for the second build: scene, repair and tool rows share one session (each
    request extends the previous); tool rows show `search_blocks`, `use_block`, `look`, `check`
    within the limits; no turn ends without a `submit_*`.
-3. The provider's usage for the second build: at least 75% of input tokens from its cache (SC-021).
+3. The provider's usage for the second build: more than 90% of input tokens from its cache (SC-021).
 4. The second build's findings: no `look_unexplained` must-fix (SC-022); the look step says
    "looked in the loop".
 5. Build time of the second build at most twice the first (SC-023).

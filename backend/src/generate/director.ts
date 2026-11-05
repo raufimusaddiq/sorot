@@ -338,6 +338,8 @@ const MAX_SESSIONS = 4;
 /** The tool loop of one turn: its tools, where its request sits in the conversation, and the size past which older tool results are cut to stubs. */
 interface TurnLoop {
   tools: SceneTools; start: number; tokens: number; signal?: AbortSignal;
+  /** The turn's latest draft (submitted, looked at or checked): a look or check without html uses it, so the html isn't sent twice. */
+  draft?: string;
   /** Per turn, across both attempts of `converse`: how often each tool ran, and whether the look-first rule already turned a submit back. */
   used: Record<string, number>; turnedBack: boolean;
 }
@@ -533,6 +535,8 @@ export class Director {
       // of a scene turn that has a look is turned back once (repairs and kit shots may look, but are not made to), inside the turn, so it costs no retry
       if (lookFirst && !loop.turnedBack && reply.call && loop.tools.tools.look && !used.look && !forced) {
         loop.turnedBack = true;
+        const submitted = parseJson(typeof reply.call.function.arguments === "string" ? reply.call.function.arguments : JSON.stringify(reply.call.function.arguments ?? {}));
+        if (submitted && typeof submitted === "object" && typeof (submitted as { html?: unknown }).html === "string") loop.draft = (submitted as { html: string }).html;
         messages.push(
           { role: "assistant", content: "", tool_calls: [reply.call] },
           { role: "tool", tool_call_id: reply.call.id || submit, name: submit, content: JSON.stringify({ accepted: false, problems: [LOOK_FIRST] }) },
@@ -555,6 +559,8 @@ export class Director {
           let args: Record<string, unknown> = {};
           const parsed = typeof c.function.arguments === "string" ? parseJson(c.function.arguments) : c.function.arguments;   // no JSON: the tool says what it needed
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) args = parsed as Record<string, unknown>;
+          if (typeof args.html === "string" && args.html.trim()) loop.draft = args.html;
+          else if (loop.draft && (toolName === "look" || toolName === "check")) args = { ...args, html: loop.draft };
           try {
             const out = await this.log.track(
               { projectId: project.id, kind: toolName, model, request: JSON.stringify(args).slice(0, 4000) },
