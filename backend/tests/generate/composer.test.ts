@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { buildRoot, bundledFontFaces, checkScene, shotFile, shotId, shotStarts, visibleText } from "../../src/generate/composer";
+import { buildRoot, bundledFontFaces, checkScene, motionBlurOf, shotFile, shotId, shotStarts, visibleText } from "../../src/generate/composer";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
-import { contrastOf, luminance, seamColour, seams, TRANSITION_NAMES } from "../../src/generate/transitions";
+import { accentOf, contrastOf, luminance, seamColour, seams, TRANSITION_NAMES } from "../../src/generate/transitions";
 import { samplePlan, sceneHtml as scene } from "../helpers";
 
 const planOf = (over: Record<string, unknown> = {}): Plan =>
@@ -39,6 +39,15 @@ describe("root composition", () => {
     expect([contrastOf("#000", "#ffffff"), contrastOf("#0B1020", "#0B1020"), contrastOf("red", "#fff"), luminance("#ffffff80")]).toEqual([21, 1, null, 1]);
     expect(["flash", "wipe", "light-leak", "zoom"].map((k) => seamColour(k, ["#0B1020", "red", "#FFD23F"]))).toEqual(["#ffffff", "#FFD23F", "#ffc890", null]);
   });
+  test.each([
+    [["#F2D3AC", "#2D1C17", "#C85F3D", "#9A8F84"], "#C85F3D"],   // ground, ink, accent: the dark ink is not the band
+    [["#0B1020", "#3FA7FF", "#FFFFFF"], "#3FA7FF"],               // the ink (white) comes last
+    [["#0B1020", "#FFD23F"], "#FFD23F"],                           // only ground and ink: the ink
+    [["#0B1020", "red"], "#ffffff"],                               // no second hex colour
+    [["#000000", "#ffffff", "#008000", "#a0a0a0"], "#008000"],     // six-digit hex read whole: green, not the grey
+  ])("the wipe paints the accent, not the ink: %p", (palette, accent) => {
+    expect(accentOf(palette)).toBe(accent);
+  });
   test.each(TRANSITION_NAMES.filter((k) => k !== "cut"))("every kind of seam is built from tweens inside the two shots: %s", (kind) => {
     const s = seams({ transitions: ["cut", kind], starts: [0, 3], durations: [3, 1], ground: "#000000", accent: "#ffffff", host: (i) => `host-0${i + 1}` });
     expect(s.used).toEqual([{ index: 1, kind }]);
@@ -68,6 +77,18 @@ describe("root composition", () => {
     expect(html).toContain('font-family: "Odd&quot;Font"');
     expect(html).toContain('<audio id="music" class="clip" src="assets/ab-lagu.mp3" data-start="0" data-duration="30" data-track-index="1" data-volume="0.12"></audio>');
     expect(html).toContain('lang="i&quot;d"');
+  });
+
+  test("motion blur: auto blurs only the shots the plan marks fast (the others opt out), on blurs all, off none; kit parts' render(t) is blurred too", () => {
+    const plan = planOf();
+    const fast = { ...plan, shots: plan.shots.map((s, i) => (i === 1 ? { ...s, look: { description: "a dash", values: { speed: "fast" } } } : s)) };
+    expect(motionBlurOf(fast, "auto", true)).toEqual({ on: true, off: [0, 2], events: true });
+    expect([motionBlurOf(plan, "auto", true).on, motionBlurOf(plan, "on", false), motionBlurOf(fast, "off", true).on]).toEqual([false, { on: true, off: [], events: false }, false]);
+    const html = buildRoot({ plan: fast, width: 1080, height: 1920, fonts: [], motionBlur: motionBlurOf(fast, "auto", true) });
+    expect(html).toContain('data-height="1920" data-motion-blur="on" data-motion-blur-events="on">');
+    expect(html).toContain('data-composition-src="compositions/shot-01.html" data-start="0" data-duration="10" data-width="1080" data-height="1920" data-track-index="0" data-motion-blur="off">');
+    expect(html).not.toContain('shot-02.html" data-start="10" data-duration="10" data-width="1080" data-height="1920" data-track-index="0" data-motion-blur');
+    expect(buildRoot({ plan, width: 1080, height: 1920, fonts: [], motionBlur: motionBlurOf(plan, "auto", false) })).not.toContain("motion-blur");
   });
 
   test("names", () => {
@@ -120,6 +141,21 @@ describe("scene checks (plan-lock)", () => {
     ["an asset that doesn't exist", scene(0, "Bunga berbunga?", '<img src="assets/missing.png">'), "scene_unknown_asset"],
   ])("flags %s", (_name, html, code) => {
     expect(codes(html)).toContain(code);
+  });
+
+  test.each<[string, string, "kit" | "compose" | "free", boolean, string[]]>([
+    // a mount in the scene's script, the level, whether the machine draws WebGL → the codes found
+    ["an allowed part", `SorotKitRuntime.mount("shade", el, {}, { tl, duration: 2 });`, "compose", true, []],
+    ["a part that isn't installed", `SorotKit["neon"].mount(el, {}, ctx);`, "compose", true, ["kit_unknown_part"]],
+    ["the three part below free", `SorotKitRuntime.mount('three', el, {}, { tl, duration: 2 });`, "compose", true, ["kit_not_allowed"]],
+    ["WebGL of its own at compose", `el.getContext("webgl2");`, "compose", true, ["scene_webgl_not_allowed"]],
+    ["Three.js of its own at free", `const s = new THREE.Scene();`, "free", true, []],
+    ["WebGL at free on a machine without it", `el.getContext("webgl");`, "free", false, ["scene_webgl_not_allowed"]],
+    ["a 2D canvas at compose", `el.getContext("2d");`, "compose", true, []],
+  ])("kit rules: %s", (_name, js, level, webgl, found) => {
+    const allowed = level === "free" && webgl ? ["shade", "three"] : ["shade"];
+    const html = scene(0, "Bunga berbunga?").replace("tl.fromTo", `const el = document.body; ${js} tl.fromTo`);
+    expect(checkScene(html, shot, 0, { assets: [], kit: { installed: ["shade", "three"], allowed, level, webgl } }).map((i) => i.code)).toEqual(found);
   });
 
   test("assets that exist are fine, however they are referenced; the hint lists what exists", () => {

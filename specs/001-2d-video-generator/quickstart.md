@@ -163,7 +163,7 @@ Using the `narrated-explainer` example, or a copy:
    ```
 
    Expected: it uses IDEA-001 and moves the cursor. The wrong fact is `corrected`, with the
-   evidence. The voice comes from this install's Settings (`audio_meta.json` names the engine and
+   evidence. The voice comes from this install's Settings (`voice.json` names the engine and
    voice). Director gate decisions are logged with their reasons. STORYLINES.md, SPEC.md (hex,
    px and frame values), MOTION_PLAN.md and CONCEPT.txt are written. It renders once at delivery.
 
@@ -208,6 +208,22 @@ Contracts: [kit.md](contracts/kit.md). Run with one small local model and one st
 7. **Malformed answer**: point the LLM at a fake that returns a plan with one missing brace.
    Expected: the repair call quotes the text around the error; with a malformed record the next
    plan is asked in parts.
+## 12. The director loop (US10, FR-048 to FR-053)
+
+Prerequisites: an LLM whose model reasons and sees (e.g. `glm-5-3-flash`), Settings → LLM.
+
+1. Build the story brief ("Kisah pendek: seorang nenek penjual jamu gendong…", recipe `story`) with
+   `author.toolSteps: 0`, then build the same plan again with the default (8).
+2. In `gen_event` for the second build: scene, repair and tool rows share one session (each
+   request extends the previous); tool rows show `search_blocks`, `use_block`, `look`, `check`
+   within the limits; no turn ends without a `submit_*`.
+3. The provider's usage for the second build: more than 90% of input tokens from its cache (SC-021).
+4. The second build's findings: no `look_unexplained` must-fix (SC-022); the look step says
+   "looked in the loop".
+5. Build time of the second build at most twice the first (SC-023).
+6. Set `GEN_CONTEXT_TOKENS` to 20000 and build again: the session restarts from its opening and the
+   latest shots, and the build finishes (SC-024).
+
 ## 10. Gates
 
 ```bash

@@ -53,3 +53,34 @@ Jev). Measurements and decisions: `research.md` (T114, Part 3 R22 to R31, spike 
 
 **Verify (before commit)**: backend 1124 pass, 0 fail, 98.0% functions / 99.4% lines, typecheck
 clean; CLI 134 pass, 97.0% / 99.7%; frontend 227 pass, 98.3% functions / 99.1% lines. No skips.
+
+## 2026-11-02: any look, any director (phases 14 to 18)
+
+- **Kit** (`kit.ts`, `generator/kit/`): nine built-in parts and a small runtime (`ctx`, seeded random,
+  `render(t)` driven by a timeline tween). Each built-in example rendered twice with identical frames
+  (`framemd5`) with HyperFrames 0.8.223 on a 4-core CPU; a contact sheet confirmed they draw (the
+  contact shadow and the Three.js coin were fixed after that look). Three.js r159 vendored (last plain
+  browser build; tarball checked against npm's sha512). User parts: `.zip` or folder, a small zip
+  reader/writer of our own (no new dependency), refused for a clock/random/network in `part.js` or
+  frames that differ between two renders.
+- **Capabilities** (`capabilities.ts`): one description per call; plans' shot looks and scenes checked
+  against it (unknown part or setting, a WebGL part or WebGL code below `free`).
+- **Levels** (`levels.ts`, `kitScene.ts`): the kit level writes the scene in code from
+  `submit_shot_kit`; a shot that fails drops a level (`level_drop`), heavy shots are timed with
+  snapshots against the frame budget (`frame_budget`). The test env pins its model to `compose`,
+  since a new model now starts at `kit` (R25). `require` names parts as `kit:<name>` so free-form
+  entries in older recipes stay hints.
+- **Motion** (`motion.ts`): ffmpeg's scene score and freezedetect read a slowly moving small element as
+  still, so the measure uses the luma difference per frame pair; a planted 400 px one-frame jump
+  measured 45× its neighbours, the smooth spike renders at most 2×.
+- **Spike S7, CPU half**: 2D movers 1.0 s per second of video, with motion blur 3.5 s; software WebGL
+  (six Three.js coins) 2.3 s, with blur 3.6 s. CPU installs keep `maxLevel: free`. Chrome's "GPU stall
+  due to ReadPixels" console warnings come from the capture and are dropped by the check step.
+- **Still open**: T067 (local voice listen-test), T095 (rebuild an agent-pipeline video), T096 (60 s
+  narrated delivery render + vision look review), T100 and T150 (quickstart runs), the RTX 4060 half of
+  T120, and T147 (motion thresholds on real builds; calibrating deepseek models and a small local
+  model). Each needs the owner's GPU, keys, models or own pipeline.
+
+**Verify (before commit)**: backend 1218 pass, 0 fail, 98.3% functions / 99.3% lines, typecheck
+clean; CLI 140 pass, 98.2% / 99.7%, build ok; frontend 231 pass, 97.9% functions / 99.0% lines,
+static build ok. No skips.

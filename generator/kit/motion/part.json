@@ -1,0 +1,20 @@
+{
+  "name": "motion",
+  "version": "1.0.0",
+  "does": "Moves elements with eases by role (arrive, travel, leave), precomputed springs, an arc path and a stagger.",
+  "runtime": "dom",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "target": { "t": "str", "max": 120 },
+    "role": { "t": "enum", "values": ["arrive", "travel", "leave"] },
+    "from": { "t": "enum", "values": ["below", "above", "left", "right", "scale", "fade"] },
+    "distance": { "t": "num", "min": 0, "max": 1200 },
+    "at": { "t": "num", "min": 0, "max": 90 },
+    "length": { "t": "num", "min": 0.1, "max": 30 },
+    "stagger": { "t": "num", "min": 0, "max": 2 },
+    "spring": { "t": "bool" },
+    "path": { "t": "enum", "values": ["straight", "arc"] }
+  },
+  "defaults": { "target": "", "role": "arrive", "from": "below", "distance": 160, "at": 0, "length": 0.8, "stagger": 0.08, "spring": false, "path": "straight" },
+  "example": "Three cards arrive from below one after another with a spring: {\"target\": \".card\", \"role\": \"arrive\", \"spring\": true}."
+}

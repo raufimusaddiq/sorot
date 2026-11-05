@@ -28,6 +28,14 @@ describe("step registry", () => {
     expect(settingsOf("storylines", { count: 5 })).toMatchObject({ count: 5, requireBold: false });
   });
 
+  test.each<[Record<string, unknown>, number]>([
+    [{ toolSteps: 0, looks: 0 }, 0], [{ toolSteps: 16, looks: 4 }, 0], [{ toolSteps: -1, looks: 5 }, 2], [{ toolSteps: 17, looks: 1.5 }, 2],
+  ])("the author's tool loop settings (%j) have %d errors", (values, count) => {
+    const errors: string[] = [];
+    checkObject(STEPS.author.spec.fields, values, "author", errors);
+    expect(errors).toHaveLength(count);
+  });
+
   test("a step type without a module fails loudly", async () => {
     await expect(notImplemented("dance")({} as StepContext)).rejects.toThrow("dance step is not implemented");
   });
@@ -111,6 +119,8 @@ describe("plan step", () => {
     const plans = r.store.genPlansForProject("p1");
     expect(plans.map((x) => [x.revision, x.approvedAt])).toEqual([[2, null], [1, null]]);
     expect(r.store.getGenProject("p1")).toMatchObject({ currentPlanId: plans[0]!.id, title: "Judul dua" });
+    // each shot shows the level `auto` gives it now (no kit here: compose is the floor)
+    expect((JSON.parse(plans[0]!.plan) as { shots: Array<{ level: string }> }).shots.map((x) => x.level)).toEqual(["compose", "compose", "compose"]);
   });
 
   test("the director's effects pass runs unless the step turns it off; a pass that fails leaves the plan as written", async () => {

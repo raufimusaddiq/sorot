@@ -59,7 +59,7 @@ describe("GenerateService availability", () => {
     env = makeEnv({ ...LLM, jevApiKey: "k" });
     expect(env.app.generate.connected("llm")).toBe(true);
     expect(env.app.generate.connected("jev")).toBe(true);
-    expect(["image", "vision", "voice", "other"].map((c) => env.app.generate.connected(c))).toEqual([false, false, false, false]);
+    expect(["image", "vision", "voice", "other"].map((c) => env.app.generate.connected(c))).toEqual([false, true, false, false]);   // the LLM's own model sees
   });
 
   test("the quick recipe is available; recipes that need a missing connection say why", () => {
@@ -69,13 +69,15 @@ describe("GenerateService availability", () => {
 
     expect(availability(withStep({ use: "images" })).reasons).toEqual(["images: needs the image connection in Settings"]);
     expect(availability(withStep({ use: "images", when: "connection:image" })).available).toBe(true);
-    expect(availability(withStep({ use: "look" })).reasons[0]).toContain("vision-capable model");
+    expect(availability(withStep({ use: "look" })).available).toBe(true);   // the LLM's own model looks
     expect(availability(withStep({ use: "command", with: { name: "lint-brand" } })).reasons[0]).toContain('"lint-brand" isn\'t registered');
     expect(availability(withStep({ use: "facts", with: { mode: "research", sources: ["prices"] } })).reasons[0]).toContain('data source "prices"');
     expect(availability(withStep({ use: "voice" })).reasons[0]).toContain("no voice engine");
     const creative = quickRecipe();
     creative.steps.find((s) => s.use === "creative")!.with = { vision: "on" };
-    expect(availability(creative).reasons[0]).toContain("vision-capable");
+    env.cleanup();
+    env = makeEnv({});
+    expect([availability(creative).reasons, availability(withStep({ use: "look" })).reasons].map((r) => r.some((x) => x.includes("needs the LLM")))).toEqual([true, true]);
   });
 
   test("a recipe pinning the local voice is unavailable on a CPU install, never swapped", () => {

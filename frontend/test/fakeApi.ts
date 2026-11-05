@@ -3,7 +3,7 @@
 // route return the error envelope. Every call is recorded in `calls`.
 
 import type {
-  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, KenariAccount, KenariModel, KenariVoiceModel, PublishDraft, SocialAccount, SocialPost, StageStatus, Video,
+  CaptionWord, Clip, ClipScore, Connections, ConnectionTest, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFinding, GenKitPart, GenModels, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenShot, GenStoryline, GenVerdict, GenVersion, GenerateStatus, Job, PublishDraft, SocialAccount, SocialPost, StageStatus, Video, KenariAccount, KenariModel, KenariVoiceModel,
 } from '@/types';
 
 export type Candidate = {
@@ -71,7 +71,15 @@ export interface FakeState {
   /** Verdicts by version id (GET /api/generate/versions/:id). */
   genVerdicts: Record<string, GenVerdict[]>;
   genNext: { storylines: GenStoryline[]; plan: GenPlan; revised: { plan: GenPlan; summary: string }; events: GenEvent[] };
+  /** The kit (Settings → Kit) and the models' records (Settings → Models). */
+  genKit: GenKitPart[];
+  genModels: GenModels;
 }
+
+export const makeKitPart = (name: string, source: GenKitPart['source'] = 'builtIn', over: Partial<GenKitPart['manifest']> = {}): GenKitPart => ({
+  name, source, version: '1.0.0', checkedAt: null,
+  manifest: { name, does: `${name} does things`, runtime: 'dom', needs: { gpu: 'no' }, example: `${name} example`, settings: {}, defaults: {}, ...over },
+});
 
 /** Every connection off by default; `over` changes fields of single connections. */
 export function makeConnections(over: { [K in keyof Connections]?: Partial<Connections[K]> } = {}): Connections {
@@ -230,6 +238,8 @@ export function emptyState(): FakeState {
     kenariImageModels: [], kenariVoiceModels: [], kenariAccount: null,
     accounts: [], draft: null, posts: {}, generate: makeGenerateStatus(),
     genProjects: [], genEstimate: { draftSec: 600, exportSec: 30 }, genNextFix: { needsApproval: false, summary: 'Judul diperbesar' }, genRecipes: [makeGenRecipe('quick', true)], genFacts: {}, genIdeas: [], genSteps: [{ type: 'author', gates: ['none'], fields: { repairRounds: { t: 'int', min: 0, max: 5 }, require: { t: 'strs', maxItems: 20 } }, required: [], defaults: {} }, { type: 'render', gates: ['none'], fields: { quality: { t: 'enum', values: ['draft', 'delivery'] } }, required: [], defaults: {} }, { type: 'export', gates: ['none', 'owner'], fields: {}, required: [], defaults: {} }], genValidation: { ok: true, errors: [], warnings: [] }, genFixBodies: [], genVerdicts: {}, genNext: { storylines: [makeStoryline(1), makeStoryline(2), makeStoryline(3)], plan: makeGenPlan(), revised: { plan: makeGenPlan({ title: 'Revisi' }), summary: 'Diubah' }, events: [] },
+    genKit: [makeKitPart('shade'), makeKitPart('three', 'builtIn', { runtime: 'webgl', needs: { gpu: 'preferred' } })],
+    genModels: { current: 'm1', calibration: null, models: [{ model: 'm1', pin: null, auto: 'kit', records: [] }] },
   };
 }
 
@@ -347,6 +357,26 @@ export function installFakeApi(state: FakeState) {
       return ok(state.autoRuns[0]);
     }
     if (method === 'GET' && path === '/api/generate/status') return ok(state.generate);
+    if (method === 'GET' && path === '/api/generate/kit') return ok({ parts: state.genKit });
+    if (method === 'POST' && path === '/api/generate/kit') {
+      const part = makeKitPart(String(body.fileName).replace(/\.zip$/, ''), 'user');
+      state.genKit = [...state.genKit.filter((p) => p.name !== part.name), part];
+      return ok({ part });
+    }
+    if (method === 'DELETE' && (m = path.match(/^\/api\/generate\/kit\/([^/]+)$/))) {
+      state.genKit = state.genKit.filter((p) => p.name !== decodeURIComponent(m![1]!));
+      return ok({ deleted: true });
+    }
+    if (method === 'GET' && path === '/api/generate/models') return ok(state.genModels);
+    if (method === 'POST' && path === '/api/generate/models/calibrate') {
+      state.genModels = { ...state.genModels, calibration: { model: state.genModels.current, startedAt: 'now', done: true, result: { kit: { asked: 3, firstPass: 3, repaired: 0, failed: 0 }, compose: { asked: 3, firstPass: 1, repaired: 1, failed: 1 } } } };
+      return ok({ run: state.genModels.calibration });
+    }
+    if (method === 'PUT' && (m = path.match(/^\/api\/generate\/models\/([^/]+)\/level$/))) {
+      const name = decodeURIComponent(m[1]!);
+      state.genModels = { ...state.genModels, models: state.genModels.models.map((x) => (x.model === name ? { ...x, pin: body.level } : x)) };
+      return ok({ model: state.genModels.models.find((x) => x.model === name) });
+    }
     if (method === 'GET' && path === '/api/generate/steps') return ok({ steps: state.genSteps });
     if (method === 'GET' && path === '/api/generate/recipes') return ok({ recipes: state.genRecipes });
     if (method === 'POST' && path === '/api/generate/recipes/validate') return ok(state.genValidation);

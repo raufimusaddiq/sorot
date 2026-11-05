@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ProcResult } from "../../src/runner";
-import { EFFECTS_DONE, makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, type TestEnv } from "../helpers";
+import { EFFECTS_DONE, makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, type TestEnv, judgeYes } from "../helpers";
 
 const json = JSON.stringify;
 const story = (i: number) => ({ title: `Film ${i}`, pitch: "satu", opening: "benih", beats: ["hook", "isi", "akhir"], look: "flat", sound: "tenang", bold: false, recommended: i === 1, reason: "k" });
@@ -10,10 +10,7 @@ const STORIES = json({ storylines: [story(1), story(2), story(3)] });
 /** A plan with three effects, so the always-checked effects floor passes. */
 const PLAN = json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => ({ ...s, transition: ["cut", "fade", "flash"][i], ...(i === 0 ? { effects: { glowPx: 20, reason: "the hook shines" } } : {}) })) }));
 const SCENES = [0, 1, 2].map((i) => json({ html: sceneHtml(i) }));
-const JUDGE = json({
-  criteria: ["opening", "pace", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })),
-  risks: ["misleading_claim", "flat_film"].map((id) => ({ id, flagged: false, reason: "" })),
-});
+const JUDGE = judgeYes(["opening", "pace"]);
 const CLEAN_CHECK = json({ ok: true, lint: { findings: [] }, runtime: { findings: [] }, layout: { findings: [] } });
 const probe = (over: { width?: number; duration?: string } = {}) => json({
   streams: [{ codec_type: "video", width: over.width ?? 1080, height: 1920, avg_frame_rate: "30/1", duration: over.duration ?? "30.0" }], format: { duration: over.duration ?? "30.0" },
@@ -61,7 +58,7 @@ describe("a build, from the approved plan to two verdicts", () => {
     expect(got.version).toMatchObject({ status: "BUILT", progress: 100, step: null, hyperframesVersion: env.config.hyperframesVersion });
     expect(Object.keys(got.version.stepState)).toEqual(["author", "check", "render", "technical", "creative"]);
     expect(got.version.draftPath).toEndWith("draft.mp4");
-    expect(got.verdicts.map((v: any) => [v.kind, v.status, v.judgedBy])).toEqual([["TECHNICAL", "PASS", "code"], ["CREATIVE", "PASS", "llm:m"]]);
+    expect(got.verdicts.map((v: any) => [v.kind, v.status, v.judgedBy])).toEqual([["TECHNICAL", "PASS", "code"], ["CREATIVE", "PASS", "llm-vision:m"]]);
     expect(got.verdicts[0].findings).toEqual([]);
     expect(store().getGenProject(id)!.status).toBe("BUILT");
     expect(llm.requests).toHaveLength(3 + 3 + 1);   // storylines, plan, effects, three scenes, the judge
@@ -247,6 +244,28 @@ describe("cancel, failure and restart", () => {
     expect(existsSync(`${env.config.genDir}/${id}/v1/compositions/shot-01.html`)).toBe(true);
   });
 
+  test("a cancel that lands during the author step's model calls (which can't be interrupted) stops the shots still to be written and ends the version before the next step", async () => {
+    let project = "";
+    // the first scene reply cancels the build, as the owner would while the director is writing
+    const cancelling = () => { gen().cancelVersion(store().genVersionsForProject(project)[0]!.id); return SCENES[0]!; };
+    const made = await approved({ replies: [cancelling, SCENES[1]!, SCENES[2]!, JUDGE] });
+    project = made.id;
+    // one shot at a time, so the shots after the first have not been asked for yet when the cancel lands
+    const recipe = JSON.parse(store().getGenProject(project)!.recipe);
+    for (const step of recipe.steps) if (step.use === "author") step.with = { ...(step.with ?? {}), concurrency: 1 };
+    store().updateGenProject(project, { recipe: JSON.stringify(recipe) });
+    let renders = 0;
+    const fallback = env.execHandler.fn;
+    env.execHandler.fn = (cmd, args, signal) => { if (cmd === env.config.nodePath && args[1] === "render") renders++; return fallback(cmd, args, signal); };
+    const asked = () => made.llm.requests.filter((r) => JSON.stringify(r).includes('\\"request\\":\\"scene\\"')).length;
+    const v = (await env.json("POST", `${base}/projects/${project}/versions`)).body.data.version.id as string;
+    await gen().whenIdle();
+    expect(store().getGenVersion(v)!.status).toBe("CANCELLED");
+    expect(asked()).toBe(1);                                   // shots 2 and 3 were never asked for
+    expect(renders).toBe(0);
+    expect(store().getGenProject(project)!.status).toBe("WAITING");
+  });
+
   test("a failing step fails the version with the reason, keeps its work, and a new build can follow", async () => {
     const { id } = await approved({ replies: [SCENES[0]!, new Error("quota exceeded")] });
     const v1 = (await env.json("POST", `${base}/projects/${id}/versions`)).body.data.version.id as string;
@@ -256,12 +275,28 @@ describe("cancel, failure and restart", () => {
     expect(store().getGenProject(id)).toMatchObject({ status: "FAILED" });
     expect(existsSync(`${env.config.genDir}/${id}/v1/compositions/shot-01.html`)).toBe(true);
 
-    scriptLlm(env, [...SCENES, JUDGE]);
-    const again = await env.json("POST", `${base}/projects/${id}/versions`);
-    expect(again.body.data.version.number).toBe(2);
+    // retrying the same version goes on from the failed step (only a failed one can be retried)
+    const left = scriptLlm(env, [SCENES[1]!, SCENES[2]!, JUDGE]);   // shot 1 is kept: only the shots after it are asked for
+    const retried = await env.json("POST", `${base}/versions/${v1}/retry`);
+    expect(retried.body.data.version).toMatchObject({ id: v1, errorMessage: null });
+    expect((await env.json("POST", `${base}/versions/${v1}/retry`)).status).toBe(409);
     await gen().whenIdle();
-    expect(store().getGenVersion(again.body.data.version.id)!.status).toBe("BUILT");
+    expect(left.left()).toBe(0);
+    expect(store().getGenVersion(v1)).toMatchObject({ status: "BUILT", number: 1 });
     expect(store().getGenProject(id)!.status).toBe("BUILT");
+    expect((await env.json("POST", `${base}/versions/${v1}/retry`)).status).toBe(409);
+  });
+
+  test("a failed build whose plan has changed since can't be retried (it would build the old plan): nothing is left BUILDING", async () => {
+    const { id } = await approved({ replies: [SCENES[0]!, new Error("quota exceeded")] });
+    const v1 = (await env.json("POST", `${base}/projects/${id}/versions`)).body.data.version.id as string;
+    await gen().whenIdle();
+    const current = JSON.parse(store().getGenPlan(store().getGenProject(id)!.currentPlanId!)!.plan);
+    expect((await env.json("PUT", `${base}/projects/${id}/plan`, { plan: { ...current, title: "Edited" } })).status).toBe(200);
+    const refused = await env.json("POST", `${base}/versions/${v1}/retry`);
+    expect([refused.status, refused.body.error]).toEqual([409, expect.stringContaining("plan")]);
+    expect(store().getGenVersion(v1)!.status).toBe("FAILED");
+    expect(store().getGenProject(id)!.status).not.toBe("BUILDING");
   });
 
   test("a build that was still queued when the app stopped starts again at the next start", async () => {

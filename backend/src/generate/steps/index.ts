@@ -42,7 +42,7 @@ const DEFAULTS: Record<StepType, Record<string, unknown>> = {
   music: {},
   author: { repairRounds: 3, concurrency: 1 },
   check: { warnings: "fix-or-hold", rounds: 3 },
-  look: { rounds: 3, beatOffsetSec: 0.3, audit: true },
+  look: { rounds: 3, audit: true },
   render: { quality: "draft", workers: 2 },
   command: { counts: "technical" },
   technical: { autoFixRounds: 0 },

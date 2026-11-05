@@ -77,11 +77,21 @@ const norm = (text: string) => wordsOf(text).join(" ");
 const probeBinary = (ffmpegPath: string) => ffmpegPath.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
 
 /** The length of an audio file in seconds. */
+/**
+ * A clip's length as it plays: the decoded samples over the sample rate. An MP3's header length counts
+ * the encoder's padding (6.312 s for a clip that plays 6.25 s), so every voice slot ran 0.06 s past its
+ * audio and HyperFrames flagged each one (2026-11-02). The header length stands when decoding can't count.
+ */
 export async function audioSeconds(exec: ExecFn, ffmpegPath: string, file: string, signal?: AbortSignal): Promise<number> {
-  const res = await exec(probeBinary(ffmpegPath), ["-v", "error", "-show_entries", "format=duration", "-of", "json", file], { signal, timeoutMs: 60_000 });
-  const seconds = res.exitCode === 0 ? Number((JSON.parse(res.stdout) as { format?: { duration?: string } }).format?.duration) : NaN;
+  const res = await exec(probeBinary(ffmpegPath), ["-v", "error", "-show_entries", "format=duration:stream=sample_rate", "-of", "json", file], { signal, timeoutMs: 60_000 });
+  const info = res.exitCode === 0 ? (JSON.parse(res.stdout) as { format?: { duration?: string }; streams?: Array<{ sample_rate?: string }> }) : {};
+  const seconds = Number(info.format?.duration);
   if (!Number.isFinite(seconds) || seconds <= 0) throw new Error(`Couldn't read the length of ${file}`);
-  return round3(seconds);
+  const rate = Number(info.streams?.[0]?.sample_rate);
+  const decoded = await exec(ffmpegPath, ["-v", "error", "-i", file, "-map", "0:a:0", "-af", "astats=metadata=1:reset=0,ametadata=print:key=lavfi.astats.Overall.Number_of_samples:file=-", "-f", "null", "-"], { signal, timeoutMs: 60_000 });
+  const counts = [...decoded.stdout.matchAll(/Number_of_samples=([\d.]+)/g)];
+  const samples = Number(counts.at(-1)?.[1]);
+  return round3(rate > 0 && samples > 0 ? samples / rate : seconds);
 }
 
 const GAP_SEC = 0.15;
@@ -107,11 +117,34 @@ export function placeLines(plan: Plan, lines: VoiceLine[]): Placed[] {
     }
   });
   let cursor = 0;
-  return lines.map((line) => {
-    const start = placed.get(line.id) ?? round3(cursor);
+  const out = lines.map((line) => {
+    // the script's order is the voice's: a line its shot puts before the one ahead of it waits for that one
+    // (a plan quoted l7 in a shot before l6's, and the film said them swapped, 2026-11-05)
+    const start = Math.max(placed.get(line.id) ?? 0, round3(cursor));
     cursor = start + line.durationSec + GAP_SEC;
     return { line, start };
   });
+  // every line ends inside the film: a late one moves earlier (and the ones before it), the pauses
+  // between them shrinking as far as needed (a real last line ran 0.31 s past a 30 s film, 2026-11-02).
+  // Lines never overlap: speech longer than the film keeps them back to back and runs past the end.
+  const end = round3(starts.at(-1)! + plan.shots.at(-1)!.durationSec);
+  const late = out.at(-1);
+  if (late && late.start + late.line.durationSec > end) {
+    const order = [...out].sort((a, b) => a.start - b.start);
+    const speech = order.reduce((n, p) => n + p.line.durationSec, 0);
+    const gap = order.length > 1 ? Math.max(0, Math.min(GAP_SEC, (end - speech) / (order.length - 1))) : 0;
+    let limit = end;
+    for (let i = order.length - 1; i >= 0; i--) {
+      const p = order[i]!;
+      if (p.start + p.line.durationSec > limit) p.start = round3(limit - p.line.durationSec) || 0;
+      limit = p.start - gap;
+    }
+    if (order[0]!.start < 0) {
+      let at = 0;
+      for (const p of order) { p.start = round3(at); at += p.line.durationSec; }
+    }
+  }
+  return out;
 }
 
 /**

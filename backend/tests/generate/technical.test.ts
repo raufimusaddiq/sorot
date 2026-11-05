@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -153,7 +153,7 @@ describe("technical step", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   /** A version with a rendered file; ffprobe and ffmpeg answer from `media`. */
-  function rig(opts: { planOver?: Record<string, unknown>; media?: { probe?: object | null; volume?: string }; rendered?: boolean; measures?: object; rules?: object; fps?: number } = {}) {
+  function rig(opts: { planOver?: Record<string, unknown>; media?: { probe?: object | null; volume?: string; diffs?: string }; rendered?: boolean; measures?: object; rules?: object; fps?: number } = {}) {
     tmp = mkdtempSync(join(tmpdir(), "vc-tech-"));
     const store = new Store(openDatabase(":memory:"));
     const recipe = quickRecipe();
@@ -176,6 +176,7 @@ describe("technical step", () => {
     const exec: ExecFn = async (cmd, args) => {
       calls.push([cmd, ...args]);
       if (cmd.includes("ffprobe")) return opts.media?.probe === null ? { ...procOk(), exitCode: 1 } : procOk(JSON.stringify(opts.media?.probe ?? probeOf({ audio: true })));
+      if (args.some((a) => a.includes("tblend"))) return procOk(opts.media?.diffs ?? "");
       return { ...procOk(), stderr: opts.media?.volume ?? "mean_volume: -20.0 dB\nmax_volume: -3.0 dB" };
     };
     const { llm } = fakeLlm([]);
@@ -192,9 +193,18 @@ describe("technical step", () => {
     const r = rig();
     expect(await STEPS.technical.run(r.ctx)).toEqual({ status: "done", outputRef: "PASS" });
     expect(r.verdict()).toMatchObject({ kind: "TECHNICAL", status: "PASS", judgedBy: "code", findings: "[]" });
-    expect(JSON.parse(r.verdict().inputs!)).toMatchObject({ render: { kind: "draft" }, shots: 3, measures: ["output", "planText", "layout", "readability", "firstFrame", "effects"] });
-    expect(r.calls[0]![0]).toBe("/usr/bin/ffprobe");
-    expect(r.calls).toHaveLength(1);   // the plan has no sound: no volume measurement
+    expect(JSON.parse(r.verdict().inputs!)).toMatchObject({ render: { kind: "draft" }, shots: 3, measures: ["output", "planText", "layout", "readability", "firstFrame", "effects", "motion"] });
+    expect(r.calls.map((c) => c[0])).toEqual(["/usr/bin/ffprobe", "/usr/bin/ffmpeg"]);   // the frames' motion; the plan has no sound: no volume measurement
+  });
+
+  test.each<[string, object | undefined, object[]]>([
+    ["planted", undefined, [{ code: "motion_jump", severity: "must-fix", shotId: "s01", fromSec: 3, rule: "motion" }]],
+    ["smooth", undefined, []], ["fast-noblur", undefined, []], ["three", undefined, []],   // the smooth renders of spike S7
+    ["planted", { motion: { jumpRatio: 50 } }, []],   // the recipe tunes the ratio
+  ])("motion: the %s frames with measures %j give these findings", async (name, measures, want) => {
+    const r = rig({ media: { diffs: readFileSync(join(import.meta.dir, "../fixtures/motion", `${name}.txt`), "utf8") }, measures });
+    await STEPS.technical.run(r.ctx);
+    expect(readFindings(r.dir)).toMatchObject(want);
   });
 
   test("the build steps' findings count: a must-fix from the author step fails it, a kept warning does not", async () => {
@@ -250,7 +260,7 @@ describe("technical step", () => {
     await STEPS.technical.run(missing.ctx);
     expect(missing.verdict().status).toBe("FAIL");
     expect(readFindings(missing.dir).map((f) => f.code)).toEqual(["audio_missing"]);
-    expect(missing.calls).toHaveLength(1);   // nothing to measure without a track
+    expect(missing.calls).toHaveLength(2);   // the probe and the motion; nothing to measure without a track
 
     const loud = rig({ planOver: sound, media: { volume: "mean_volume: -9.0 dB\nmax_volume: 0.0 dB" } });
     await STEPS.technical.run(loud.ctx);
@@ -294,7 +304,8 @@ describe("technical step", () => {
     const listed = forbiddenNumberFindings(p, ["16.000", "lima koma tujuh lima persen", 3], "x");
     expect(codes(listed)).toEqual([["number_forbidden", "s01"], ["number_forbidden", "s02"]]);
     expect(listed[1]!.description).toContain("must not appear");
-    expect(forbiddenNumberFindings(withTexts("Dua kamar", "Selesai", "Dua kamar"), true, "x")).toHaveLength(2);   // same word in two shots: one finding each
+    expect(forbiddenNumberFindings(withTexts("Dua belas kamar", "Selesai", "Dua belas kamar"), true, "x")).toHaveLength(2);   // same number in two shots: one finding each
+    expect(forbiddenNumberFindings(withTexts("Satu kunjungan, dua buah", "Selesai", "x"), true, "x")).toEqual([]);   // a small count in words is language, not a figure
   });
 
   test("a flagged blocking content rule is must-fix; clear ones are nothing", () => {

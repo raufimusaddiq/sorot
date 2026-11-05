@@ -4,7 +4,18 @@
 // approve: nothing is built from a plan that isn't approved. Every change is a new revision.
 
 import { useEffect, useState } from 'react';
-import type { GenPlan, GenPlanRow, GenShot } from '@/types';
+import type { GenLevel, GenPlan, GenPlanRow, GenShot } from '@/types';
+
+const LEVELS: Array<[GenLevel, string]> = [
+  ['kit', 'kit: built from kit parts'], ['compose', 'compose: the model writes it, with parts'], ['free', 'free: any drawing'],
+];
+
+/** A shot's look in one line: its description, its exact values and the kit parts it names. */
+export function lookLine(look: NonNullable<GenShot['look']>): string {
+  const values = Object.entries(look.values ?? {}).map(([k, v]) => `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+  const parts = (look.parts ?? []).map((p) => p.part);
+  return [look.description, values.join(', '), parts.length ? `parts: ${parts.join(', ')}` : ''].filter(Boolean).join(' · ');
+}
 
 const label = 'font-pixel text-xs text-fg block mb-1';
 const field = 'field w-full px-2 py-1.5';
@@ -61,6 +72,14 @@ export function PlanEditor({ plans, targetSec, busy, onSave, onRevise, onApprove
             <div className="flex items-center gap-2">
               <b className="font-pixel text-sm">{s.id}</b>
               <span className="text-xs text-subtle">{s.purpose}</span>
+              {s.level && (
+                <label className="text-xs flex items-center gap-1" title="How much of the scene the model writes. A shot that fails at its level is rebuilt one level down.">
+                  level
+                  <select aria-label={`Shot ${i + 1} level`} disabled={approved} value={s.level} onChange={(e) => shot(i, { level: e.target.value as GenLevel })} className="field px-1 py-0.5">
+                    {LEVELS.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+                  </select>
+                </label>
+              )}
               <label className="ml-auto text-xs flex items-center gap-1">
                 seconds
                 <input aria-label={`Shot ${i + 1} seconds`} type="number" min={1} max={15} step={0.5} disabled={approved} value={s.durationSec}
@@ -78,6 +97,7 @@ export function PlanEditor({ plans, targetSec, busy, onSave, onRevise, onApprove
               <textarea aria-label={`Shot ${i + 1} visual`} rows={2} disabled={approved} value={s.visual.description}
                 onChange={(e) => shot(i, { visual: { ...s.visual, description: e.target.value } })} className={field} />
             </label>
+            {s.look && <p className="text-xs text-subtle" aria-label={`Shot ${i + 1} look`}>Look: {lookLine(s.look)}</p>}
             <label>
               <span className={label}>How it moves</span>
               <input aria-label={`Shot ${i + 1} motion`} disabled={approved} value={s.motion} onChange={(e) => shot(i, { motion: e.target.value })} className={field} />

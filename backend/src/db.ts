@@ -264,6 +264,31 @@ CREATE TABLE IF NOT EXISTS gen_version (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS gen_kit_part (
+    name TEXT PRIMARY KEY,
+    source TEXT NOT NULL CHECK (source IN ('builtIn', 'user')),
+    version TEXT NOT NULL,
+    manifest TEXT NOT NULL,
+    path TEXT NOT NULL,
+    checked_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gen_model_record (
+    model TEXT NOT NULL,
+    level TEXT NOT NULL CHECK (level IN ('kit', 'compose', 'free', 'plan')),
+    asked INTEGER NOT NULL DEFAULT 0,
+    first_pass INTEGER NOT NULL DEFAULT 0,
+    repaired INTEGER NOT NULL DEFAULT 0,
+    dropped INTEGER NOT NULL DEFAULT 0,
+    malformed INTEGER NOT NULL DEFAULT 0,
+    ms INTEGER NOT NULL DEFAULT 0,
+    calibrated_at TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (model, level)
+);
+
 CREATE TABLE IF NOT EXISTS gen_verdict (
     id TEXT PRIMARY KEY,
     version_id TEXT NOT NULL REFERENCES gen_version(id),
@@ -326,6 +351,8 @@ CREATE TABLE IF NOT EXISTS gen_event (
     ok INTEGER NOT NULL,
     ms INTEGER,
     tokens INTEGER,
+    input_tokens INTEGER,
+    cached_tokens INTEGER,
     created_at TEXT NOT NULL
 );
 
@@ -401,6 +428,12 @@ const LEGACY_COLUMNS: Array<[table: string, column: string, type: string]> = [
   ["social_post", "profile_id", "TEXT"],
   // Generate (2026-11): what clip_id holds, a clip or a generated export
   ["social_post", "subject_kind", "TEXT NOT NULL DEFAULT 'clip'"],
+  // any look, any director (2026-11-01): the kit parts a build used, and each shot's level
+  ["gen_version", "kit", "TEXT"],
+  ["gen_version", "shot_levels", "TEXT"],
+  // the provider's input and cached tokens per director call (2026-11-05, SC-021)
+  ["gen_event", "input_tokens", "INTEGER"],
+  ["gen_event", "cached_tokens", "INTEGER"],
 ];
 
 // Fills a column just added to an old database, where the value can be recovered.

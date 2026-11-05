@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { jsonError, parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolDef, type ToolHandler } from "../llm";
+import { jsonError, parseJson, tool, withImages, type ChatInput, type ChatMessage, type Llm, type ToolCall, type ToolDef, type ToolHandler } from "../llm";
 import { isOnPage, headlineOnly, MIN_QUOTE } from "./facts";
 import { findPreset, presetBrief } from "./presets";
 import { numbersOf, sameNumber } from "./numbers";
@@ -10,6 +10,11 @@ import { shotFile, shotId } from "./composer";
 import { checkEffects, validatePlan, type Plan, type PlanContext } from "./planSchema";
 import { contrastOf, SEAM_MIN_CONTRAST, seamColour, TRANSITIONS, TRANSITION_NAMES, transitionKind } from "./transitions";
 import type { RecipeStep } from "./recipe";
+import type { Capabilities, Level } from "./capabilities";
+import type { KitManifest } from "./kit";
+import { validateKitShot, type KitShot } from "./kitScene";
+import { endTurn, estimateTokens, stubTurn } from "./compaction";
+import { LIMIT_REACHED, LOOK_FIRST, TOOL_DEFS, TOOL_ORDER, type SceneTools } from "./directorTools";
 
 // The bounded LLM director (contracts/director.md). Every call is one request and one TOOL CALL:
 // the model must call one function whose arguments are the answer, so a reasoning model can't
@@ -46,6 +51,8 @@ const malformed = (answer: string): string => {
 };
 
 const MAX_REASON = 240;
+/** What the log says for a gate decision the director gave no reason for, after being asked once. */
+export const NO_REASON = "(the director gave no reason)";
 const clip = (s: unknown, max: number) => (typeof s === "string" ? s.trim().slice(0, max) : "");
 
 const str = (description: string) => ({ type: "string", description });
@@ -58,7 +65,7 @@ const PLAN_PROPS: Json = {
       pacing: str("e.g. brisk"), notes: str("anything else about the look"),
     }, required: ["palette", "fonts", "pacing"],
   },
-  sound: { type: "object", properties: { music: str('"none" or an asset'), narration: { type: "boolean" } } },
+  sound: { type: "object", properties: { music: str('"none", or one of connections.music (uploaded tracks only; Sorot makes no music)'), narration: { type: "boolean" } } },
   narrationScript: { type: ["string", "null"] },
   blocks: { type: "array", items: str("a registry block name") },
   assumptions: { type: "array", items: str("anything you added that the brief did not say") },
@@ -88,6 +95,13 @@ const PLAN_PROPS: Json = {
           type: "object", description: "light, blur, depth and glow for this shot as exact values, only with a reason", properties: {
             light: { type: "object", properties: { angleDeg: { type: "number", description: "0 = from the top, clockwise" }, intensity: { type: "number", description: "0 to 1" }, color: str("#hex") } },
             blurPx: { type: "number", description: "background blur, 0 to 40" }, depthLayers: { type: "integer", description: "2 to 5 layers that move apart" }, glowPx: { type: "number", description: "0 to 80" }, reason: { type: "string" },
+          },
+        },
+        look: {
+          type: "object", description: "how this shot looks, in whatever terms it needs, with exact values where you have them; name kit parts from capabilities.kit only", properties: {
+            description: str("what the shot looks like, one or two sentences"),
+            values: { type: "object", description: "exact values: colours, angles, sizes, timings; speed: \"fast\" turns on motion blur for the shot" },
+            parts: { type: "array", items: { type: "object", required: ["part", "settings"], properties: { part: str("a kit part name"), settings: { type: "object" } } } },
           },
         },
         audio: { type: "string" }, narration: { type: ["string", "null"] }, hold: { type: "boolean" },
@@ -157,9 +171,10 @@ const TOOLS = {
   look: tool("submit_look", "Submit what you see in the frames, as a stranger would.", {
     frames: {
       type: "array", items: {
-        type: "object", required: ["shotId", "description", "objects", "unexplained", "matches", "heroVisible"], properties: {
+        type: "object", required: ["shotId", "description", "objects", "unexplained", "faint", "matches", "heroVisible"], properties: {
           shotId: str("the shot the picture belongs to"), description: str("what a stranger sees, in a sentence or two, written before you look at what was meant"),
-          objects: { type: "array", items: { type: "string" } }, unexplained: { type: "array", items: { type: "string" }, description: "objects whose purpose a stranger could not tell" },
+          objects: { type: "array", items: { type: "string" }, description: "the things visible on screen" }, unexplained: { type: "array", items: { type: "string" }, description: "things that ARE on screen, listed in `objects`, whose purpose a stranger could not tell; never something missing or not visible (say what is missing in `description` or with `matches`)" },
+          faint: { type: "array", items: { type: "string" }, description: "things in `objects` (not text) so close in colour and brightness to what is behind them that a viewer on a phone would struggle to make them out" },
           matches: { type: "boolean", description: "does the picture read as `reads` says?" }, heroVisible: { type: "boolean", description: "can the hero move be seen?" },
         },
       },
@@ -212,10 +227,25 @@ const TOOLS = {
       items: { type: "object", required: ["code", "reason"], properties: { code: { type: "string" }, reason: { type: "string" } } },
     },
   }, ["html"]),
+  kitshot: tool("submit_shot_kit", "Submit this shot as kit parts: which parts, their settings and when each runs. Sorot writes the scene from them.", {
+    shotId: str("the shot's id, as given"),
+    layers: {
+      type: "array", description: "1 to 8 parts, back to front; each runs from fromSec to toSec of the shot", items: {
+        type: "object", required: ["part", "settings", "fromSec", "toSec"], properties: {
+          part: str("a part name from capabilities.kit"), settings: { type: "object", description: "only settings the part has (capabilities.kitDetail)" },
+          fromSec: { type: "number" }, toSec: { type: "number" }, layer: { type: "integer", description: "stacking order, 0 at the back" },
+        },
+      },
+    },
+    text: {
+      type: "array", description: "the shot's planned lines, word for word, each with its role",
+      items: { type: "object", required: ["role", "value"], properties: { role: str("title, body, caption..."), value: str("the planned words") } },
+    },
+  }, ["shotId", "layers"]),
 } as const satisfies Record<string, ToolDef>;
 
 /** Top-level sections of story.md that apply to each job. */
-const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS | "effects", string[]> = { effects: ["Effects"], outline: ["Plan", "Effects"], specs: ["Plan"], storylines: ["Storylines"], plan: ["Plan", "Effects"], revise: ["Plan", "Effects", "Revising"], gate: [], scene: [], repair: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [], verify: [] };
+const GUIDANCE_SECTIONS: Record<keyof typeof TOOLS | "effects", string[]> = { effects: ["Effects"], outline: ["Plan", "Effects"], specs: ["Plan"], storylines: ["Storylines"], plan: ["Plan", "Effects"], revise: ["Plan", "Effects", "Revising"], gate: [], scene: [], repair: [], kitshot: [], judge: [], fix: ["Plan", "Revising"], copy: [], script: [], concept: [], sameidea: [], look: [], verify: [] };
 
 const INSTRUCTIONS = {
   storylines: "You are the director of a short 2D motion video. From the brief, write storylines: different films, not rewordings of one.",
@@ -226,7 +256,7 @@ const INSTRUCTIONS = {
   gate: "You are the director of a short 2D motion video, deciding for the owner who is not at the keyboard. Choose by the rule given, and state the reason in one clause.",
   fix: "You are the director of a short 2D motion video. The video was built and judged; fix the findings the owner chose (and do what their note says). Prefer sceneEdits: they change how a shot looks and moves and cost little. Change the plan (planEdits) only when a finding cannot be fixed without it, because changing the plan's words or timing makes the owner approve again. Keep everything the findings don't touch exactly as it is.",
   verify: "You check one claim against the text of its source page. Verified: the page says it, and you can copy the passage that does. Corrected: the page gives a different value; copy the passage and give the value it states. Unverifiable: the page does not say it, or only a headline does. Never add a fact the page does not state and never guess.",
-  look: "You are a stranger who has never heard of this video. You are shown one picture per shot. For each, first say what you see, as plainly as you can, and list the things on screen; name any whose purpose you cannot tell. Only then compare it with what was meant, and say whether the picture reads that way and whether the main move can be seen. Also say which of the listed defaults you can see.",
+  look: "You are a stranger who has never heard of this video. You are shown pictures of each shot, taken at a few moments from early to late. For each shot, first say what you see, as plainly as you can, and list the things on screen at the end; name any whose purpose you cannot tell. Only then compare it with what was meant, and say whether the shot reads that way and whether the main move can be seen across the pictures. Also say which of the listed defaults you can see.",
   concept: "You are the director of a short 2D motion video. Before any plan, name the ONE visual mechanism this video is built on: an idea that grows out of this topic and could not be moved onto another one. It must differ from the earlier concepts you are shown. Then say, honestly, whether it is a bolt-on.",
   sameidea: "You compare video concepts. Two concepts are the same idea when they rest on the same visual mechanism, even in different words or for different topics. Answer for the new concept against the earlier ones.",
   script: "You write the narration of a short 2D motion video: what a voice says over it. Plain spoken language in the project's language, short sentences, one idea per line, no stage directions, nothing a voice cannot say. Use only facts and numbers from the brief.",
@@ -235,17 +265,20 @@ const INSTRUCTIONS = {
   effects: "You are the director of a short 2D motion video. The plan is written; now choose its effects with the tools, as a film editor would: a transition only where something on screen causes it, light, blur, depth or glow only where a shot needs it, and a registry block only when it shows the shot's idea better than drawing it. Every choice needs a reason. A few strong effects beat many weak ones; a film with none looks flat.",
   scene: "You are the motion designer of a short 2D video. Write the scene file for the ONE shot you are given, exactly as the approved plan describes it, following the authoring contract below.",
   repair: "You are the motion designer of a short 2D video. Fix the scene file for the ONE shot you are given so that every finding listed is resolved, changing nothing else, following the authoring contract below. A warning that is intended may be kept: list it in holds with the reason.",
+  kitshot: "You are the motion designer of a short 2D video. Build the ONE shot you are given from the kit parts listed in capabilities: choose the parts, set only the settings each part has, and say when each runs inside the shot. Draw the shot's subject with drawing parts (shape draws circles, coins, petals, leaves, stars, bars and more in a layout; image-place an image from assets; particles). Parts with a target setting act on what is already there: the shot's text (.k-text, .t-title, .t-body, one class per role) or what a drawing part made ([data-kit=\"shape\"]); an empty target means the whole shot. Use the shot's look and the film's look. Keep it to the few parts the shot needs.",
 } as const;
 
 type Kind = keyof typeof TOOLS;
-const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, outline: 0.4, specs: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
+/** Which Generate role answers each call (Settings → LLM: plan, scene and judge models). */
+const roleOf = (kind: Kind | "effects" | "research"): "plan" | "scene" | "judge" => (kind === "judge" ? "judge" : SCENE_KINDS.has(kind as Kind) || kind === "look" ? "scene" : "plan");   // the look is the scene model's own eyes
+const TEMPERATURE: Record<Kind, number> = { storylines: 0.8, plan: 0.4, outline: 0.4, specs: 0.4, revise: 0.3, gate: 0.1, scene: 0.5, repair: 0.2, kitshot: 0.4, judge: 0.1, fix: 0.3, copy: 0.5, script: 0.6, concept: 0.9, sameidea: 0.1, look: 0.1, verify: 0.0 };
 /** Words a voice says per second, pauses between lines included: Fish in Indonesian measured 1.7 to 2.0 (2026-11-01). */
 const WORDS_PER_SEC = 1.8;
 
 /** The setting a director call's budget comes from, named when a reasoning model runs out of it. */
 export const GEN_BUDGET = "the Generate token budget (Settings → LLM, GEN_LLM_MAX_TOKENS)";
 /** Output budget by job, as a floor under GEN_LLM_MAX_TOKENS: a reasoning model thinks before it writes the arguments. */
-const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, outline: 12000, specs: 8000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000, verify: 4000 };
+const MIN_TOKENS: Record<Kind, number> = { storylines: 8000, plan: 12000, outline: 12000, specs: 8000, revise: 12000, gate: 3000, scene: 16000, repair: 16000, kitshot: 6000, judge: 8000, fix: 12000, copy: 3000, script: 6000, concept: 6000, sameidea: 3000, look: 8000, verify: 4000 };
 
 export interface JudgeAnswer {
   criteria: Array<{ id: string; answer: "yes" | "partly" | "no"; reason: string; shotId?: string; fromSec?: number; toSec?: number; suggestedFix?: string }>;
@@ -285,7 +318,40 @@ export interface SceneInput {
   assets: string[];
   /** Installed registry blocks the shot uses: name -> its source, as examples to follow. */
   blocks?: Record<string, string>;
+  /** The level the shot is written at (default compose). */
+  level?: Level;
+  /** The build's director session (its version id): every scene, repair and kit shot of a build is one conversation. */
+  session?: string;
+  /** The tools this shot's turn may use before it submits (FR-049); none = one forced call. Only a session has turns. */
+  tools?: SceneTools | null;
+  /** The build's cancel: a cancelled build starts no further turn or tool step (a model call already sent still finishes). */
+  signal?: AbortSignal;
 }
+
+/** One answer's outcome, for the model's record (research R25). Scene kinds report their level; plan kinds report `plan`. */
+export interface AnswerEvent { kind: string; level: Level | "plan"; outcome: "firstPass" | "repaired" | "malformed" | "failed"; ms: number; /** The model that answered (per role). */ model?: string }
+/** Calls whose outcome is the plan's record; scene calls count at their level (their real pass is decided by the author step). */
+const PLAN_KINDS: ReadonlySet<string> = new Set(["plan", "outline", "specs", "revise"]);
+const SCENE_KINDS: ReadonlySet<string> = new Set(["scene", "repair", "kitshot"]);
+/** A session offers all three scene tools every turn (the same list keeps the conversation's prefix the same). */
+const SESSION_TOOLS: ToolDef[] = [TOOLS.scene, TOOLS.repair, TOOLS.kitshot];
+/** Builds whose sessions stay open (one per pipeline; a few for retries and fixes). */
+const MAX_SESSIONS = 4;
+/** The tool loop of one turn: its tools, where its request sits in the conversation, and the size past which older tool results are cut to stubs. */
+interface TurnLoop {
+  tools: SceneTools; start: number; tokens: number; signal?: AbortSignal;
+  /** The turn's latest draft (submitted, looked at or checked): a look or check without html uses it, so the html isn't sent twice. */
+  draft?: string;
+  /** Per turn, across both attempts of `converse`: how often each tool ran, and whether the look-first rule already turned a submit back. */
+  used: Record<string, number>; turnedBack: boolean;
+}
+/** One build's conversation: the opening (instructions, film), every turn since, and the latest answer for each shot. */
+interface Session { messages: ChatInput[]; opening: number; latest: Map<number, string>; turn: Promise<unknown>; /** The tool definitions offered on every turn of the session, fixed by its first turn that has tools. */ tools: ToolDef[] }
+
+/** A capability query: the call's level and the parts whose full settings it gets (none for plan calls). */
+export interface CapabilityQuery { level?: Level; parts?: string[] }
+/** The calls that are told what this install can do (FR-047). */
+const CAPABLE: ReadonlySet<string> = new Set(["storylines", "plan", "outline", "specs", "revise", "scene", "repair", "kitshot", "fix"]);
 
 /** The scene's HTML from a call's arguments; a model sometimes wraps it in a markdown fence. */
 function htmlOf(parsed: unknown): { value?: string; errors?: string[] } {
@@ -338,12 +404,45 @@ export function withPlaceholders(parsed: unknown, fps: number): Record<string, u
 export class Director {
   private guide: string | null = null;
   private contract: string | null = null;
+  private sample: string | null = null;
+
+  /** Open build sessions by version id (the newest few). */
+  private readonly sessions = new Map<string, Session>();
+  /** The capability description for a call; set by the service (null: calls go without it). */
+  capabilities: ((q: CapabilityQuery) => Capabilities) | null = null;
+  /** Hears each answer's outcome; the service adds it to the model's record. */
+  onAnswer: ((e: AnswerEvent) => void) | null = null;
 
   constructor(private readonly llm: Llm, private readonly log: DirectorLog, private readonly generatorDir: string) {}
 
+  /**
+   * Calls that may name parts with settings (a plan's shot looks) get every usable part's settings: with
+   * the one-line summary alone a real plan invented settings (`fit`, `tiltDeg`, `keyLight`) and failed
+   * its check twice (2026-11-02). Storylines only need the summary.
+   */
+  private planCapabilities(kind: string): Capabilities {
+    const summary = (this.capabilities as (q: CapabilityQuery) => Capabilities)({});
+    return kind === "storylines" ? summary : (this.capabilities as (q: CapabilityQuery) => Capabilities)({ parts: summary.kit.map((p) => p.name) });
+  }
+
+  /**
+   * A scene call gets the full settings of every part its level may use: with only the parts the shot's
+   * look named, a real kit-level answer used `shape` (listed, but without its settings), guessed them and
+   * failed every retry (2026-11-02). The whole kit's settings are a few KB.
+   */
+  private sceneCapabilities(input: SceneInput): Capabilities | null {
+    if (!this.capabilities) return null;
+    const level = input.level ?? "compose";
+    return this.capabilities({ level, parts: this.capabilities({ level }).kit.map((p) => p.name) });
+  }
+
   /** The model that answers, and the one that looks at pictures (null when none is set up). */
-  get model(): string { return this.llm.model; }
-  get visionModel(): string | null { return this.llm.visionModel; }
+  /** The model that writes scenes: the one the level records and Calibrate are about. */
+  get model(): string { return this.llm.modelFor("scene"); }
+  /** The CREATIVE judge's model when it judges without pictures. */
+  get judgeModel(): string { return this.llm.modelFor("judge"); }
+  /** Whether the director can be shown pictures: a Generate director model reasons and sees, so whenever the LLM is on. */
+  get canSee(): boolean { return this.llm.enabled; }
 
   /** generator/prompts/authoring.md: the contract a scene must keep (read once). */
   private authoring(): string {
@@ -354,13 +453,34 @@ export class Director {
     return this.contract;
   }
 
+  /**
+   * generator/prompts/example-scene.html and example-scene-2.html: finished shots that keep the contract
+   * (zones that don't overlap, the title whole on the first frame, one hero move), for the model to learn
+   * the craft from. The first is built from kit parts, the second by hand from SVG shapes and plain boxes:
+   * a model shown one style copies it, and shown two it learns what they share. Read once; empty when the
+   * files are missing.
+   */
+  private example(): string {
+    if (this.sample === null) {
+      const read = (name: string) => {
+        const path = join(this.generatorDir, "prompts", name);
+        return existsSync(path) ? readFileSync(path, "utf-8").trim() : "";
+      };
+      const fence = (html: string) => `\n\n\`\`\`html\n${html}\n\`\`\``;
+      const [kit, hand] = [read("example-scene.html"), read("example-scene-2.html")];
+      this.sample = !kit ? "" : `\n\n# A worked example\n\nOne finished shot from another film; it uses only kit parts, so it fits the compose and free levels. Learn the craft from it (how the zones, parts, timing and text fit together); don't copy its content, colours or words.${fence(kit)}`
+        + (hand ? `\n\n# A second worked example\n\nAnother finished shot, drawn by hand from SVG shapes and plain boxes with no kit part. Learn what the two share: the text zone on top and every moving drawing in its own zone below, so nothing crosses the words; the words whole on the first frame; one hero move; shapes with a clear silhouette. Don't copy its content, colours or words.${fence(hand)}` : "");
+    }
+    return this.sample;
+  }
+
   /** The part of generator/prompts/story.md that applies to this job (the file is read once). */
   private guidance(kind: Kind | "effects"): string {
     if (this.guide === null) {
       const path = join(this.generatorDir, "prompts", "story.md");
       this.guide = existsSync(path) ? readFileSync(path, "utf-8").replace(/<!--[\s\S]*?-->/g, "").trim() : "";
     }
-    if (kind === "scene" || kind === "repair") return this.authoring();
+    if (kind === "scene" || kind === "repair") return `${this.authoring()}${this.example()}`;
     // story.md has one top-level section per job: each call gets its own.
     const wanted = GUIDANCE_SECTIONS[kind];
     return this.guide.split(/^(?=# )/m).filter((sec) => wanted.some((w) => sec.startsWith(`# ${w}`))).join("\n\n").trim();
@@ -383,45 +503,137 @@ export class Director {
     validate: (parsed: unknown) => Validated<T>,
     images: string[] = [],
   ): Promise<T> {
-    const def = TOOLS[kind];
-    const name = def.function.name;
+    // what this install can do goes with every planning and writing call; scene calls bring their own
+    if (CAPABLE.has(kind) && this.capabilities && !("capabilities" in payload)) payload = { capabilities: this.planCapabilities(kind), ...payload };   // shared prefix first (cache)
     const brief = JSON.stringify({ ...payload, task });
     const messages: ChatInput[] = [
       { role: "system", content: this.system(kind, step) },
       images.length ? withImages(brief, ...images) : { role: "user", content: brief },
     ];
+    const level: AnswerEvent["level"] | null = PLAN_KINDS.has(kind) ? "plan"
+      : SCENE_KINDS.has(kind) ? ((payload.capabilities as { level?: Level } | undefined)?.level ?? "compose") : null;
+    return (await this.converse<T>(project, kind, messages, [TOOLS[kind]], task, validate, level, images.length > 0)).value;
+  }
+
+  /**
+   * The tool steps of one turn: the model may call the turn's tools (`loop.tools`) before it submits;
+   * each result goes back as the tool's result (images, as a user message after them). Past a tool's
+   * limit it gets "limit reached: submit now"; the step after `loop.steps` is forced to the submit tool.
+   * A tool that fails returns its error to the model: it never fails the build.
+   */
+  private async useTools(
+    project: GenProject, model: string, messages: ChatInput[], loop: TurnLoop, submit: string,
+    callModel: (force: boolean) => Promise<{ message: ChatMessage; call: ToolCall | undefined }>,
+    lookFirst: boolean,
+  ): Promise<{ message: ChatMessage; call: ToolCall | undefined }> {
+    const used = loop.used;
+    for (let step = 0; ; step++) {
+      loop.signal?.throwIfAborted();
+      // a turn that grew past its budget, or past what the window leaves after the turn's start, cuts its older tool results first
+      stubTurn(messages, loop.start, Math.min(loop.tokens, Math.max(0, this.llm.genContextTokens - estimateTokens(messages.slice(0, loop.start)))));
+      const forced = step >= loop.tools.steps;
+      const reply = await callModel(forced);
+      // a fast model skips optional steps (GLM submitted 7 scenes of 7 without a look): the first submit
+      // of a scene turn that has a look is turned back once (repairs and kit shots may look, but are not made to), inside the turn, so it costs no retry
+      if (lookFirst && !loop.turnedBack && reply.call && loop.tools.tools.look && !used.look && !forced) {
+        loop.turnedBack = true;
+        const submitted = parseJson(typeof reply.call.function.arguments === "string" ? reply.call.function.arguments : JSON.stringify(reply.call.function.arguments ?? {}));
+        if (submitted && typeof submitted === "object" && typeof (submitted as { html?: unknown }).html === "string") loop.draft = (submitted as { html: string }).html;
+        messages.push(
+          { role: "assistant", content: "", tool_calls: [reply.call] },
+          { role: "tool", tool_call_id: reply.call.id || submit, name: submit, content: JSON.stringify({ accepted: false, problems: [LOOK_FIRST] }) },
+        );
+        continue;
+      }
+      const calls = reply.message.tool_calls ?? [];
+      // the forced step ends the loop whatever came back: a provider that ignores the named tool choice
+      // gets "you didn't call ..." from converse, not another round of tools
+      if (reply.call || !calls.length || forced) return reply;
+      messages.push({ role: "assistant", content: reply.message.content ?? "", tool_calls: calls });
+      const seen: string[] = [];
+      for (const c of calls) {
+        const toolName = c.function?.name ?? "";
+        const t = loop.tools.tools[toolName];
+        let result: unknown;
+        if (!t) result = { error: `no tool named ${toolName}: use ${[...Object.keys(loop.tools.tools), submit].join(", ")}` };
+        else if ((used[toolName] = (used[toolName] ?? 0) + 1) > t.limit) result = LIMIT_REACHED;
+        else {
+          let args: Record<string, unknown> = {};
+          const parsed = typeof c.function.arguments === "string" ? parseJson(c.function.arguments) : c.function.arguments;   // no JSON: the tool says what it needed
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) args = parsed as Record<string, unknown>;
+          if (typeof args.html === "string" && args.html.trim()) loop.draft = args.html;
+          else if (loop.draft && (toolName === "look" || toolName === "check")) args = { ...args, html: loop.draft };
+          try {
+            const out = await this.log.track(
+              { projectId: project.id, kind: toolName, model, request: JSON.stringify(args).slice(0, 4000) },
+              () => t.run(args),
+              (o) => ({ response: JSON.stringify(o.result).slice(0, 4000) + (o.images?.length ? ` +${o.images.length} image(s)` : "") }),
+            );
+            result = out.result;
+            seen.push(...(out.images ?? []));
+          } catch (e) {
+            if (loop.signal?.aborted) throw e;   // a cancelled build stops here; any other failure is the tool's answer
+            result = { error: (e as Error).message };
+          }
+        }
+        messages.push({ role: "tool", tool_call_id: c.id || toolName, name: toolName, content: JSON.stringify(result) });
+      }
+      if (seen.length) messages.push(withImages("Frames from your draft, in the order you asked.", ...seen));
+    }
+  }
+
+  /**
+   * One forced tool call on `messages`, validated; a failed validation goes back to the model as the
+   * tool's result and it gets one more try. The exchange stays in `messages` (a session keeps it).
+   */
+  private async converse<T>(
+    project: GenProject, kind: Kind, messages: ChatInput[], tools: ToolDef[], task: string,
+    validate: (parsed: unknown) => Validated<T>, level: AnswerEvent["level"] | null, seeing = false, loop: TurnLoop | null = null,
+  ): Promise<{ value: T; call: ToolCall | undefined }> {
+    const name = TOOLS[kind].function.name;
     let problems: string[] = [];
+    const tell = (outcome: AnswerEvent["outcome"], ms: number) => { if (level && this.onAnswer) this.onAnswer({ kind, level, outcome, ms, model }); };
+    const started = Date.now();
+    const model = this.llm.modelFor(roleOf(kind));
     for (let attempt = 0; attempt < 2; attempt++) {
       let answer = "";
-      const reply = await this.log.track(
-        { projectId: project.id, kind, model: images.length ? (this.llm.visionModel ?? this.llm.model) : this.llm.model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
+      // one model call: forced to the submit tool, or free to use the turn's other tools
+      const callModel = (force: boolean) => this.log.track(
+        { projectId: project.id, kind, model, request: messages.map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : `${m.content.length - 1} image(s), ${(m.content[0] as { text: string }).text}`}`).join("\n\n") },
         async () => {
-          const opts = { tools: [def], toolChoice: name, temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
-          const r = images.length ? await this.llm.see(messages, opts) : await this.llm.chat(messages as ChatMessage[], opts);
+          const opts = { tools, ...(force ? { toolChoice: name } : {}), temperature: TEMPERATURE[kind], maxTokens: Math.max(this.llm.genMaxTokens, MIN_TOKENS[kind]), budgetName: GEN_BUDGET };
+          const r = seeing ? await this.llm.see(messages, { ...opts, model }) : await this.llm.chat(messages as ChatMessage[], { ...opts, model });
           const call = r.tool_calls?.find((c) => c.function?.name === name);
           const args = call?.function.arguments;
           answer = typeof args === "string" ? args : args ? JSON.stringify(args) : r.content;
           return { message: r, call };
         },
-        (out) => ({ response: answer || out.message.content }),
+        (out) => ({ response: answer || out.message.content, tokens: out.message.usage, inputTokens: out.message.inputTokens, cachedTokens: out.message.cachedTokens }),
       );
+      const reply = loop ? await this.useTools(project, model, messages, loop, name, callModel, kind === "scene") : await callModel(true);
       const parsed = answer ? parseJson(answer) : null;
       const result: Validated<T> = parsed === null
         ? { errors: [reply.call ? malformed(answer) : `you didn't call ${name}`] }
         : validate(parsed);
-      if (result.value !== undefined) return result.value;
-      problems = result.errors ?? [];
-      const retry = JSON.stringify({ problems, task: `Fix these problems and call ${name} again with the full answer. ${task}` });
       if (reply.call) {
         messages.push(
           { role: "assistant", content: "", tool_calls: [reply.call] },
-          { role: "tool", tool_call_id: reply.call.id || name, name, content: JSON.stringify({ accepted: false, problems }) },
+          { role: "tool", tool_call_id: reply.call.id || name, name, content: JSON.stringify(result.value !== undefined ? { accepted: true } : { accepted: false, problems: result.errors ?? [] }) },
         );
       } else {
         messages.push({ role: "assistant", content: reply.message.content });
       }
-      messages.push({ role: "user", content: retry });
+      if (result.value !== undefined) {
+        tell(attempt === 0 ? "firstPass" : "repaired", Date.now() - started);
+        return { value: result.value, call: reply.call };
+      }
+      // not JSON, or (for a scene) not the asked shape: the model's record counts it, once per ask,
+      // so the malformed share stays a share (a record showed 41 malformed for 28 asks, 2026-11-02)
+      if ((parsed === null || SCENE_KINDS.has(kind)) && attempt === 0) tell("malformed", 0);
+      problems = result.errors ?? [];
+      messages.push({ role: "user", content: JSON.stringify({ problems, task: `Fix these problems and call ${name} again with the full answer. ${task}` }) });
     }
+    tell("failed", Date.now() - started);
     throw new DirectorError(`The director's ${kind} didn't pass the checks: ${problems.join("; ")}`);
   }
 
@@ -492,7 +704,7 @@ export class Director {
         ...this.base(input.project, input.assets), storyline: input.storyline,
         fonts: planCtx.fonts, maxShots: planCtx.limits?.maxShots ?? 20,
         blocks: planCtx.blocksAllowed === false ? [] : input.catalog.map((b) => ({ name: b.name, tags: b.tags })),
-        connections: { image: planCtx.imageConnected, narration: planCtx.narration },
+        connections: { image: planCtx.imageConnected, narration: planCtx.narration, music: planCtx.music ?? null },
         ...(input.voice?.length ? { voiceLines: input.voice } : {}),
         ...(input.concept ? { concept: input.concept } : {}),
       },
@@ -518,7 +730,7 @@ export class Director {
       ...this.base(input.project, input.assets), storyline: input.storyline,
       fonts: planCtx.fonts, maxShots: planCtx.limits?.maxShots ?? 20,
       blocks: planCtx.blocksAllowed === false ? [] : input.catalog.map((b) => ({ name: b.name, tags: b.tags })),
-      connections: { image: planCtx.imageConnected, narration: planCtx.narration },
+      connections: { image: planCtx.imageConnected, narration: planCtx.narration, music: planCtx.music ?? null },
       ...(input.voice?.length ? { voiceLines: input.voice } : {}),
       ...(input.concept ? { concept: input.concept } : {}),
     };
@@ -528,8 +740,9 @@ export class Director {
       `Write the film and its shot list for this ${input.project.targetSec}-second ${input.project.format} video: the shot durations add up to ${input.project.targetSec} seconds. Leave out each shot's heroMove, reads, handoff and motionPlan: they come next.`,
       (parsed) => {
         draft = withPlaceholders(parsed, fps);
-        const check = validatePlan(draft, planCtx);
-        return check.ok ? { value: true } : { errors: check.errors };
+        // the motion plans are Sorot's placeholders here (asked for next): their errors are not the model's to fix
+        const errors = validatePlan(draft, planCtx).errors?.filter((e) => !/\): motionPlan\b/.test(e)) ?? [];
+        return errors.length ? { errors } : { value: true };
       },
     );
     const shots = draft.shots as Array<Record<string, unknown>>;
@@ -671,14 +884,15 @@ export class Director {
     };
     const system = `${INSTRUCTIONS.effects}\n\n${this.guidance("effects")}`.trim();
     const brief = JSON.stringify({
+      ...(this.capabilities ? { capabilities: this.planCapabilities("effects") } : {}),
       plan: { title: plan.title, message: plan.message, look: plan.look, shots: plan.shots.map((s) => ({ id: s.id, purpose: s.purpose, seconds: s.durationSec, text: s.text.map((t) => t.value), visual: s.visual.description, motion: s.motion, transition: s.transition, hold: s.hold })) },
       blocksAllowed: blocksOn,
       task: "Choose this film's effects with the tools: a few seams with a transition that has a cause, and light, blur, depth or glow where a shot needs it. Search first, then set. When you are done, answer with one sentence on what you chose.",
     });
     const summary = await this.log.track(
-      { projectId: input.project.id, kind: "effects", model: this.llm.model, request: brief },
+      { projectId: input.project.id, kind: "effects", model: this.llm.modelFor("plan"), request: brief },
       () => this.llm.runTools([{ role: "system", content: system }, { role: "user", content: brief }], tools, handlers, {
-        maxSteps: input.maxSteps, tokenBudget: input.tokenBudget, temperature: TEMPERATURE.plan, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET,
+        maxSteps: input.maxSteps, tokenBudget: input.tokenBudget, temperature: TEMPERATURE.plan, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET, model: this.llm.modelFor("plan"),
         finalPrompt: "Stop choosing. Answer with one sentence on the effects you chose.",
       }),
       (out) => ({ response: { choices: notes, summary: out } }),
@@ -703,31 +917,125 @@ export class Director {
     const prev = plan.shots[index - 1];
     const next = plan.shots[index + 1];
     const shot = plan.shots[index]!;
+    // what every shot of the film shares comes first and the shot's own fields after it: providers cache
+    // a request's prefix, and with the shot first the 9 KB capabilities were never cached (34% cache
+    // hits on a real build, 2026-11-02)
     return {
+      ...(this.capabilities ? { capabilities: this.sceneCapabilities(input) } : {}),
+      film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, shots: plan.shots.length },
+      size: { width: input.width, height: input.height }, assets: input.assets, fonts: plan.look.fonts, blocks: input.blocks ?? {},
+      position: index + 1, compositionId: shotId(index), file: shotFile(index),
       shot, effects: shot.effects ?? null,
       enters: index === 0 ? "the film opens on this shot" : shot.transition, leaves: next ? next.transition : "the film ends on this shot",
       before: prev ? { id: prev.id, purpose: prev.purpose, lastText: prev.text.at(-1)?.value ?? null, handoff: prev.handoff ?? null } : null,
       after: next ? { id: next.id, purpose: next.purpose, firstText: next.text[0]?.value ?? null, opens: next.visual.description } : null,
-      compositionId: shotId(index), file: shotFile(index), size: { width: input.width, height: input.height },
-      film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, position: index + 1, of: plan.shots.length },
-      assets: input.assets, fonts: plan.look.fonts, blocks: input.blocks ?? {},
     };
+  }
+
+  /**
+   * A scene, repair or kit shot. With a session (the build's version id, GEN_SESSION on) it is the next
+   * turn of the build's one conversation: the film and the parts are said once at the start, every shot
+   * written so far stays in view (so the film stays consistent), and each call reuses the whole
+   * conversation from the provider's prompt cache. Turns take their place in line, one at a time.
+   * Without one it is a fresh call, as before.
+   */
+  private async askScene<T>(
+    input: SceneInput, kind: "scene" | "repair" | "kitshot", extra: Record<string, unknown>, task: string,
+    validate: (parsed: unknown) => Validated<T>, keep: (value: T) => string,
+  ): Promise<T> {
+    if (!input.session || !this.llm.genSession) return this.ask(input.project, kind, input.step, { ...this.sceneBase(input), ...extra }, task, validate);
+    const session = this.sessionFor(input);
+    const turn = session.turn.then(async () => {
+      input.signal?.throwIfAborted();   // a turn queued behind others doesn't start once the build is cancelled
+      // the session's tool list comes from its first turn that has tools (a kit shot or a look-step repair
+      // has none); fixed from then on, so every later request keeps the same prefix
+      if (!session.tools.length && input.tools) session.tools = TOOL_ORDER.filter((n) => input.tools?.tools[n]).map((n) => TOOL_DEFS[n]);
+      this.trim(session);
+      const level = input.level ?? "compose";
+      const levelMeans = this.capabilities ? this.capabilities({ level }).levelMeans : undefined;
+      const start = session.messages.length;
+      session.messages.push({ role: "user", content: JSON.stringify({ request: kind, level, ...(levelMeans ? { levelMeans } : {}), ...this.sceneOwn(input), ...extra, task }) });
+      try {
+        const loop: TurnLoop | null = input.tools ? { tools: input.tools, start, tokens: this.llm.genTurnTokens, signal: input.signal, used: {}, turnedBack: false } : null;
+        const { value } = await this.converse<T>(input.project, kind, session.messages, [...session.tools, ...SESSION_TOOLS], task, validate, level, false, loop);
+        endTurn(session.messages, start);   // the tools' bulk is gone; the request and the accepted answer stay
+        session.latest.set(input.index, keep(value));
+        return value;
+      } catch (e) {
+        session.messages.length = start;   // a turn that failed leaves nothing behind: what came before stays an exact prefix
+        throw e;
+      }
+    });
+    session.turn = turn.catch(() => undefined);
+    return turn;
+  }
+
+  /** The build's session, opened on its first turn: the instructions, then the whole film and what the parts can do. */
+  private sessionFor(input: SceneInput): Session {
+    const key = input.session as string;
+    const open = this.sessions.get(key);
+    if (open) return open;
+    const { plan } = input;
+    const film = {
+      ...(this.capabilities ? { capabilities: this.sceneCapabilities({ ...input, level: "free" }) } : {}),
+      film: { title: plan.title, message: plan.message, look: plan.look, language: plan.language, shots: plan.shots },
+      size: { width: input.width, height: input.height }, assets: input.assets, fonts: plan.look.fonts,
+      task: "This is the film you are building, and what this install can do. Each request that follows asks for one shot (request scene), a repair of one (repair) or a kit-level shot (kitshot), at the level it names (levelMeans says what that level allows). Keep the film one film: the same characters, objects, colours and drawing style from shot to shot.",
+    };
+    const session: Session = {
+      messages: [{ role: "system", content: this.sessionSystem(input.step) }, { role: "user", content: JSON.stringify(film) }],
+      opening: 2, latest: new Map(), turn: Promise.resolve(),
+      tools: TOOL_ORDER.filter((n) => input.tools?.tools[n]).map((n) => TOOL_DEFS[n]),
+    };
+    this.sessions.set(key, session);
+    while (this.sessions.size > MAX_SESSIONS) this.sessions.delete(this.sessions.keys().next().value as string);
+    return session;
+  }
+
+  /** The session's system message: the three jobs, the authoring contract with its worked example, and the step's own prompt. */
+  private sessionSystem(step: RecipeStep): string {
+    const own = step.prompt;
+    const jobs = `${INSTRUCTIONS.scene}\n\nRequests come one at a time in this conversation. A "repair" request: ${INSTRUCTIONS.repair.replace(/^You are[^.]*\. /, "")} A "kitshot" request: ${INSTRUCTIONS.kitshot.replace(/^You are[^.]*\. /, "")}`;
+    const instructions = own?.mode === "replace" ? own.text : `${jobs}\n\n${this.guidance("scene")}${own ? `\n\n${own.text}` : ""}`;
+    return `${instructions.trim()}\n\nGive each answer by calling the function its request names (submit_scene, submit_repair or submit_shot_kit). Do not write the answer as text.`;
+  }
+
+  /**
+   * Past GEN_CONTEXT_TOKENS (≈ 3.5 characters a token) the session starts again from its opening and
+   * the latest version of every shot written so far, so it never outgrows the model's window.
+   */
+  private trim(session: Session): void {
+    if (estimateTokens(session.messages) <= this.llm.genContextTokens) return;
+    const opening = session.messages.slice(0, session.opening);
+    const note = (shots: unknown[]) => ({ role: "user" as const, content: JSON.stringify({ shotsSoFar: shots, task: "The conversation was shortened to fit: these are the latest versions of the shots written so far (the newest that fit). Carry on from them." }) });
+    // the newest shots first, as many as fit: all of a long film's shots were already past a small window (SC-024)
+    const all = [...session.latest].sort((a, b) => b[0] - a[0]).map(([i, latest]) => ({ shot: i + 1, file: shotFile(i), latest }));
+    const kept: typeof all = [];
+    for (const s of all) if (estimateTokens([...opening, note([s, ...kept])]) <= this.llm.genContextTokens) kept.unshift(s);
+    session.messages = [...opening, note(kept)];
+  }
+
+  /** What a scene call says about its own shot (the session said the rest at its start). */
+  private sceneOwn(input: SceneInput) {
+    const base = this.sceneBase(input);
+    const { capabilities: _c, film: _f, size: _s, assets: _a, fonts: _o, ...own } = base as typeof base & { capabilities?: unknown };
+    return own;
   }
 
   /** The scene file for one shot (compositions/shot-NN.html). The checks run in code afterwards. */
   async scene(input: SceneInput): Promise<string> {
     const id = shotId(input.index);
-    return this.ask<string>(
-      input.project, "scene", input.step, this.sceneBase(input),
+    return this.askScene<string>(
+      input, "scene", {},
       `Write ${shotFile(input.index)} for shot ${input.index + 1} of ${input.plan.shots.length} as one complete HTML document, with data-composition-id="${id}".`,
-      (parsed) => htmlOf(parsed),
+      (parsed) => htmlOf(parsed), (html) => html,
     );
   }
 
   /** A scene that failed its checks goes back with its own findings; it may keep a warning with a reason. */
   async repair(input: SceneInput & { html: string; findings: Array<{ code: string; message: string; hint?: string }> }): Promise<{ html: string; holds: Array<{ code: string; reason: string }> }> {
-    return this.ask<{ html: string; holds: Array<{ code: string; reason: string }> }>(
-      input.project, "repair", input.step, { ...this.sceneBase(input), currentHtml: input.html, findings: input.findings },
+    return this.askScene<{ html: string; holds: Array<{ code: string; reason: string }> }>(
+      input, "repair", { currentHtml: input.html, findings: input.findings },
       `Repair ${shotFile(input.index)} so that every finding is resolved. Change only what the findings need, and keep the planned text and timeline.`,
       (parsed) => {
         const out = htmlOf(parsed);
@@ -739,6 +1047,21 @@ export class Director {
         });
         return { value: { html: out.value as string, holds } };
       },
+      (out) => out.html,
+    );
+  }
+
+  /**
+   * The kit level (FR-042): the model only picks parts, settings and times for the shot; Sorot writes
+   * the scene from the answer. The answer is checked against the capability description and the plan.
+   */
+  async kitShot(input: SceneInput & { kit: KitManifest[]; findings?: Array<{ code: string; message: string; hint?: string }> }): Promise<KitShot> {
+    const caps = this.sceneCapabilities({ ...input, level: "kit" }) ?? undefined;
+    const shot = input.plan.shots[input.index]!;
+    return this.askScene<KitShot>(
+      { ...input, level: "kit" }, "kitshot", input.findings ? { findings: input.findings } : {},
+      `Build shot ${shot.id} (${shot.durationSec} s) from kit parts: call submit_shot_kit with its layers and its planned lines.`,
+      (parsed) => validateKitShot(parsed, shot, caps, input.kit), (answer) => JSON.stringify(answer),
     );
   }
 
@@ -832,8 +1155,8 @@ export class Director {
     const brief = JSON.stringify({ brief: input.project.brief, language: input.project.language, alreadyKnown: input.known, task: "Find the facts the video needs, with their sources, then answer with the JSON." });
     const messages: ChatMessage[] = [{ role: "system", content: system }, { role: "user", content: brief }];
     const text = await this.log.track(
-      { projectId: input.project.id, kind: "research", model: this.llm.model, request: brief },
-      () => this.llm.runTools(messages, tools, input.handlers, { maxSteps: input.maxSteps, temperature: 0.2, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET, finalPrompt: "Stop researching. Answer now with the JSON of the facts you found, each with its source." }),
+      { projectId: input.project.id, kind: "research", model: this.llm.modelFor("plan"), request: brief },
+      () => this.llm.runTools(messages, tools, input.handlers, { model: this.llm.modelFor("plan"), maxSteps: input.maxSteps, temperature: 0.2, maxTokens: this.llm.genMaxTokens, budgetName: GEN_BUDGET, finalPrompt: "Stop researching. Answer now with the JSON of the facts you found, each with its source." }),
       (out) => ({ response: out }),
     );
     const list = (parseJson(text) as { facts?: unknown } | null)?.facts;
@@ -845,14 +1168,14 @@ export class Director {
 
   // ---- look ------------------------------------------------------------------
 
-  /** A fresh look at the frames of a build, by the vision model. Every shot with a picture must be answered. */
+  /** A fresh look at the pictures of a build, by the vision model: each shot comes with `pictures` of it, early to late, and every shot must be answered once. */
   async look(input: {
-    project: GenProject; step: RecipeStep; expected: Array<{ shotId: string; reads: string; heroMove: string }>; audit: string[]; images: string[];
-  }): Promise<{ frames: Array<{ shotId: string; description: string; objects: string[]; unexplained: string[]; matches: boolean; heroVisible: boolean }>; defaultsSeen: string[] }> {
+    project: GenProject; step: RecipeStep; expected: Array<{ shotId: string; reads: string; heroMove: string; pictures?: number }>; audit: string[]; images: string[];
+  }): Promise<{ frames: Array<{ shotId: string; description: string; objects: string[]; unexplained: string[]; faint: string[]; matches: boolean; heroVisible: boolean }>; defaultsSeen: string[] }> {
     return this.ask(
       input.project, "look", input.step,
       { pictures: input.images.length, shots: input.expected.map((e) => e.shotId), meant: input.expected, defaultsAudit: input.audit },
-      "Describe each picture as a stranger, then compare it with `meant`. Answer for every shot: the pictures come in the order of `shots`.",
+      "Describe each shot as a stranger, from its pictures, then compare it with `meant`. Answer once for every shot: the pictures come in the order of `shots`, and each shot has `pictures` of them (in `meant`), early to late. `objects` are what is on screen in the shot's last picture; `unexplained` are the ones still there in the last picture whose purpose you cannot tell (something only arriving or leaving in an earlier picture does not count); `faint` are things (not text) so close to what is behind them in colour and brightness that a phone viewer would struggle to see them; `matches` says whether the shot reads as meant by its last picture; `heroVisible` says whether the main move can be seen happening across its pictures (it may show as a change from one picture to the next).",
       (parsed) => {
         const raw = parsed as { frames?: unknown; defaultsSeen?: unknown };
         const list = Array.isArray(raw.frames) ? raw.frames : [];
@@ -861,10 +1184,13 @@ export class Director {
           const o = (typeof f === "object" && f !== null ? f : {}) as Record<string, unknown>;
           const shotId = clip(o.shotId, 20);
           return shotId && clip(o.description, 400) && typeof o.matches === "boolean" && typeof o.heroVisible === "boolean"
-            ? [{ shotId, description: clip(o.description, 400), objects: texts(o.objects), unexplained: texts(o.unexplained), matches: o.matches, heroVisible: o.heroVisible }] : [];
+            ? [{ shotId, description: clip(o.description, 400), objects: texts(o.objects), unexplained: texts(o.unexplained), faint: texts(o.faint), matches: o.matches, heroVisible: o.heroVisible }] : [];
         });
         const missing = input.expected.filter((e) => !frames.some((f) => f.shotId === e.shotId)).map((e) => e.shotId);
-        return missing.length ? { errors: [`you didn't describe: ${missing.join(", ")}`] } : { value: { frames, defaultsSeen: texts(raw.defaultsSeen) } };
+        // a shot answered once per picture (a model that missed "once per shot") counts once: its last answer, the settled picture, decides;
+        // the move counts as seen if any answer saw it
+        const once = frames.filter((f, i) => frames.findLastIndex((g) => g.shotId === f.shotId) === i).map((f) => ({ ...f, heroVisible: frames.some((g) => g.shotId === f.shotId && g.heroVisible) }));
+        return missing.length ? { errors: [`you didn't describe: ${missing.join(", ")}`] } : { value: { frames: once, defaultsSeen: texts(raw.defaultsSeen) } };
       },
       input.images,
     );
@@ -912,16 +1238,23 @@ export class Director {
     project: GenProject; step: RecipeStep; settings: Record<string, unknown>; assets: GenAsset[];
     /** A factual recipe: the numbers in these lines that nothing verified states (an error to repair). */
     unsourced?: (texts: string[]) => string[];
+    /** The voice ran past the film (measured after speaking): write it again to fit. */
+    overrun?: { spokenSec: number; filmSec: number; lines: Array<{ id: string; text: string; sec: number }> };
   }): Promise<Array<{ id: string; text: string }>> {
     const { settings, project } = input;
-    // The voice must fit the video: a recipe's maxWords is a ceiling, the length is the budget (a 60 s film once got 80 s of voice).
-    const fits = Math.max(10, Math.floor(project.targetSec * WORDS_PER_SEC));
-    const maxWords = Math.min(typeof settings.maxWords === "number" ? settings.maxWords : fits, fits);
+    // The voice must fit the video, but how many words that is depends on the voice: the length only sets a target in the
+    // prompt (a rule on a guess cost whole builds over two words), and the voice step measures the real speech afterwards.
+    // A recipe's maxWords stays a hard ceiling.
+    const ceiling = typeof settings.maxWords === "number" ? settings.maxWords : 600;
+    const target = Math.min(ceiling, Math.max(10, Math.floor(project.targetSec * WORDS_PER_SEC)));
+    const over = input.overrun;
     const spell = settings.spellNumbers === true;
     return this.ask(
       project, "script", input.step,
-      { ...this.base(project, input.assets), tone: typeof settings.tone === "string" ? settings.tone : null, maxWords, spellNumbers: spell },
-      `Write the narration for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: at most ${maxWords} words in all.${spell ? " Write every number out in words, as it is spoken." : ""}`,
+      { ...this.base(project, input.assets), tone: typeof settings.tone === "string" ? settings.tone : null, targetWords: target, ...(over ? { overrun: over } : {}), spellNumbers: spell },
+      over
+        ? `Write the narration again for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}. The last one takes ${over.spokenSec} s to speak (each line's seconds are in \`overrun.lines\`) and the video is ${over.filmSec} s: save at least ${Math.ceil(over.spokenSec - over.filmSec + 1)} s by cutting or shortening lines. Keep the story and the best lines.${spell ? " Write every number out in words, as it is spoken." : ""}`
+        : `Write the narration for this ${project.targetSec}-second video in ${project.language === "en" ? "English" : "Indonesian"}: about ${target} words in all (the voice has to fit ${project.targetSec} s).${spell ? " Write every number out in words, as it is spoken." : ""}`,
       (parsed) => {
         const raw = (parsed as { lines?: unknown }).lines;
         const list = Array.isArray(raw) ? raw : [];
@@ -933,7 +1266,7 @@ export class Director {
         if (!lines.length || lines.length > 40) errors.push("write between 1 and 40 lines");
         if (new Set(lines.map((l) => l.id)).size !== lines.length) errors.push("every line needs its own id");
         const words = lines.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
-        if (words > maxWords) errors.push(`the script has ${words} words; the most allowed is ${maxWords}`);
+        if (words > ceiling) errors.push(`the script has ${words} words; the most allowed is ${ceiling}`);
         if (spell && lines.some((l) => /\d/.test(l.text))) errors.push("write numbers out in words (no digits): a voice reads them aloud");
         const unsourced = input.unsourced?.(lines.map((l) => l.text)) ?? [];
         if (unsourced.length) errors.push(`these numbers have no verified fact: ${unsourced.join(", ")}; say only numbers from the brief or the verified facts, or none`);
@@ -1005,6 +1338,7 @@ export class Director {
     project: GenProject; step: RecipeStep; kind: "storylines" | "plan"; output: unknown; rule?: string;
   }): Promise<GateDecision> {
     const count = input.kind === "storylines" ? (input.output as Storyline[]).length : 0;
+    let askedWhy = false;
     return this.ask<GateDecision>(
       input.project, "gate", input.step,
       { stepOutput: input.output, kind: input.kind, brief: input.project.brief, rule: input.rule ?? null },
@@ -1013,8 +1347,10 @@ export class Director {
         : 'Decide whether this plan is ready for the owner to build from: decision "approve" or "reject".',
       (parsed) => {
         const o = parsed as { decision?: unknown; index?: unknown; reason?: unknown };
-        const reason = clip(o.reason, MAX_REASON);
-        if (!reason) return { errors: ['"reason" is required'] };
+        let reason = clip(o.reason, MAX_REASON);
+        // asked once for its reason; a decision without one still stands (10 of 19 small-model runs failed only on this)
+        if (!reason && !askedWhy) { askedWhy = true; return { errors: ['"reason" is required'] }; }
+        reason ||= NO_REASON;
         if (input.kind === "storylines") {
           return o.decision === "pick" && Number.isInteger(o.index) && (o.index as number) >= 0 && (o.index as number) < count
             ? { value: { decision: "pick", index: o.index as number, reason } }

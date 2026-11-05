@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="id">
+  <body>
+    <div data-composition-id="shot-03" data-width="1080" data-height="1920">
+      <!-- text zone (200-520 px) on top; the picture zone (640-1300 px) holds every moving drawing: nothing crosses the words -->
+      <h1 class="title">Dorong kecil, angkat besar</h1>
+      <p class="body">Tuas membuat tenaga kecil bekerja besar</p>
+      <svg class="lever" width="1080" height="1920" viewBox="0 0 1080 1920">
+        <polygon points="480,1180 600,1180 540,1060" fill="#1D2B3A"/>
+        <g class="plank-wrap"><rect class="plank" x="140" y="1038" width="800" height="26" rx="13" fill="#E4572E"/></g>
+        <g class="load"><rect x="170" y="918" width="170" height="120" rx="14" fill="#2E86AB"/><rect x="190" y="938" width="130" height="14" rx="7" fill="#BFE3F2"/></g>
+        <g class="push"><path d="M830 800 H890 V880 H930 L860 960 L790 880 H830 Z" fill="#1D2B3A"/></g>
+      </svg>
+      <style>
+        [data-composition-id="shot-03"] { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #F6F1E7; font-family: "Plus Jakarta Sans", sans-serif; }
+        [data-composition-id="shot-03"] .title { position: absolute; left: 90px; right: 90px; top: 210px; margin: 0; text-align: center; font-size: 104px; line-height: 1.05; font-weight: 800; color: #1D2B3A; }
+        [data-composition-id="shot-03"] .body { position: absolute; left: 110px; right: 110px; top: 470px; margin: 0; text-align: center; font-size: 50px; line-height: 1.25; font-weight: 700; color: #E4572E; }
+        [data-composition-id="shot-03"] .lever { position: absolute; left: 0; top: 0; }
+      </style>
+      <script>
+        (function () {
+          var root = document.querySelector('[data-composition-id="shot-03"]');
+          var q = function (s) { return root.querySelector(s); };
+          window.__timelines = window.__timelines || {};
+          var tl = gsap.timeline({ paused: true });
+          // the pivot is the fulcrum; the plank, the load and the push arrow move as one lever
+          // the push arrow pops in, then the plank tips with a small overshoot and the load rises with it
+          tl.fromTo(q(".push"), { scale: 0, svgOrigin: "860 880" }, { scale: 1, svgOrigin: "860 880", duration: 0.45, ease: "back.out(2)" }, 0.2);
+          tl.fromTo(q(".plank-wrap"), { rotation: 0, svgOrigin: "540 1051" }, { rotation: 11, svgOrigin: "540 1051", duration: 0.9, ease: "back.out(1.6)" }, 0.8);
+          tl.fromTo(q(".load"), { y: 0 }, { y: -76, duration: 0.9, ease: "back.out(1.6)" }, 0.8);
+          tl.fromTo(q(".push"), { y: 0 }, { y: 76, duration: 0.9, ease: "back.out(1.6)" }, 0.8);
+          window.__timelines["shot-03"] = tl;
+        })();
+      </script>
+    </div>
+  </body>
+</html>

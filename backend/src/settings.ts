@@ -24,7 +24,8 @@ export const CONNECTIONS: Record<string, Record<string, Field>> = {
   llm: {
     enabled: ["llmEnabled", "bool"], baseUrl: ["llmBaseUrl", "url"], model: ["llmModel", "text"],
     apiKey: ["llmApiKey", "secret"], director: ["llmDirector", "bool"],
-    vision: ["llmVision", "bool"], visionModel: ["llmVisionModel", "text"], genMaxTokens: ["genLlmMaxTokens", "tokens"],
+    genMaxTokens: ["genLlmMaxTokens", "tokens"],
+    contextTokens: ["genContextTokens", "tokens"], turnTokens: ["genTurnTokens", "tokens"], planModel: ["genPlanModel", "text"], sceneModel: ["genSceneModel", "text"], judgeModel: ["genJudgeModel", "text"],
   },
   jev: {
     enabled: ["jevEnabled", "bool"], url: ["jevUrl", "url"], model: ["jevModel", "text"], apiKey: ["jevApiKey", "secret"],
@@ -316,6 +317,9 @@ function testSources(sources: AppConfig["dataSources"]): Omit<TestResult, "ms"> 
   return { ok: true, detail: lines.join(", ") };
 }
 
+/** Allowed whole-token ranges by setting name; a name not listed takes 256 to 200000. */
+const TOKEN_RANGE: Record<string, [number, number]> = { contextTokens: [20_000, 2_000_000], turnTokens: [5_000, 500_000] };
+
 function validate(kind: Kind, value: unknown, name: string): unknown {
   if (kind === "sources") {
     if (!Array.isArray(value) || value.length > 20) throw new HttpError(400, `${name} must be a list of at most 20 data sources`);
@@ -358,8 +362,9 @@ function validate(kind: Kind, value: unknown, name: string): unknown {
     return value;
   }
   if (kind === "tokens") {
+    const [min, max] = TOKEN_RANGE[name] ?? [256, 200_000];
     const n = typeof value === "string" && value.trim() ? Number(value) : value;
-    if (typeof n !== "number" || !Number.isInteger(n) || n < 256 || n > 200_000) throw new HttpError(400, `${name} must be a whole number of tokens from 256 to 200000`);
+    if (typeof n !== "number" || !Number.isInteger(n) || n < min || n > max) throw new HttpError(400, `${name} must be a whole number of tokens from ${min} to ${max}`);
     return n;
   }
   if (kind === "bool") {

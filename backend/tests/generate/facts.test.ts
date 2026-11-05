@@ -358,7 +358,7 @@ describe("plans and scripts refuse numbers nothing has verified", () => {
     ctx.settings = settingsOf("plan", undefined);
     ctx.connected = () => false;
     ctx.catalog = async () => [];
-    await expect(STEPS.plan.run(ctx)).rejects.toThrow("these numbers have no verified fact: 5,75%");
+    await expect(STEPS.plan.run(ctx)).rejects.toThrow('these numbers have no verified fact: 5,75% (in s01 title "Bunga 5,75% per tahun")');
     expect(r.store.genPlansForProject("p1")).toHaveLength(0);
 
     r.fact("f1", { status: "verified", claim: "Bunga acuan 5,75 persen", value: "5,75%" });
@@ -372,6 +372,20 @@ describe("plans and scripts refuse numbers nothing has verified", () => {
     ok.catalog = async () => [];
     await STEPS.plan.run(ok);
     expect(again.store.genPlansForProject("p1")).toHaveLength(1);
+  });
+
+  test("a brief with no numbers (market_data false) holds the plan to it too: a number goes back to the director, not to the verdict at the end", async () => {
+    const withNumber = json(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, text: [{ role: "title", value: "Hemat 87 ribu" }] } : s)) }));
+    const r = rig([withNumber, json(samplePlan())]);
+    r.store.updateGenProject("p1", { briefFlags: JSON.stringify({ forbiddenNumbers: true }) });
+    const ctx = r.ctxFor();
+    ctx.step = { use: "plan", gate: "owner" };
+    ctx.settings = settingsOf("plan", undefined);
+    ctx.connected = () => false;
+    ctx.catalog = async () => [];
+    await STEPS.plan.run(ctx);
+    expect(JSON.stringify(r.requests[1])).toContain("87 ribu (in s01 title");
+    expect(r.store.genPlansForProject("p1")).toHaveLength(1);
   });
 
   test("the script step refuses the same way, after a repair call; a recipe that does not ask for sourced numbers is not held to it", async () => {

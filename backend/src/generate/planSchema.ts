@@ -34,6 +34,18 @@ export interface Shot {
   motionPlan?: MotionStep[];
   /** Light, blur, depth and glow as exact values, chosen by the director for this shot. */
   effects?: ShotEffects;
+  /** How the shot looks, in the director's own terms, with the kit parts it will use (FR-041). */
+  look?: ShotLook;
+  /** The level the plan expects the shot to be written at (kit, compose, free; FR-042). */
+  level?: string;
+}
+
+export interface ShotLook {
+  description: string;
+  /** Exact values in whatever terms the shot needs (colours, angles, sizes, timings). */
+  values: Record<string, unknown>;
+  /** Kit parts and their settings; checked against the installed kit. */
+  parts?: Array<{ part: string; settings: Record<string, unknown> }>;
 }
 
 export interface ShotEffects {
@@ -93,6 +105,16 @@ export const DEFAULT_PLAN_LIMITS: PlanLimits = {
   maxShots: 20, minShotSec: 1, maxShotSec: 15, sumTolerance: 0.1, titleWords: 6, textChars: 120,
 };
 
+/**
+ * Music is only ever the owner's upload: a plan can't promise a track that isn't there (a real plan
+ * described "acoustic guitar" with nothing uploaded, and the finished film failed audio_missing).
+ */
+function musicOf(music: string, ctx: PlanContext, notes: string[]): string {
+  if (music === "none" || ctx.music === undefined || ctx.music.length) return music;
+  notes.push("music was removed: no music track is uploaded");
+  return "none";
+}
+
 export interface PlanContext {
   brief: string;
   targetSec: number;
@@ -103,6 +125,8 @@ export interface PlanContext {
   imageConnected: boolean;
   /** Narration is on for the project and a voice engine can speak it. */
   narration: boolean;
+  /** The music tracks the film can use (uploads); undefined = not known, any choice is kept. */
+  music?: string[];
   /** Blocks from the HyperFrames catalog the plan may name; null = any. */
   blocks?: string[] | null;
   /** Do the recipe's plan step allow registry blocks? */
@@ -116,6 +140,40 @@ export interface PlanContext {
   fps?: number;
   /** A factual recipe (`sourcedNumbers`): the numbers in these texts that no verified fact or the brief states. */
   unsourced?: (texts: string[]) => string[];
+  /** Checks kit part references (`look.parts`) against the capability description: one message each (FR-045, FR-047). */
+  kit?: (refs: Array<{ part: string; settings: Record<string, unknown> }>, path: string) => string[];
+  /** The installed kit parts' names: a plan that lists one as a registry block (or a block as a part) is set right in code. */
+  kitParts?: string[];
+}
+
+const MAX_LOOK_VALUES = 2000;
+
+/** A shot's look: the director's own description and values, and the kit parts it names (FR-041). */
+export function checkShotLook(raw: unknown, path: string, errors: string[], kit?: PlanContext["kit"]): ShotLook | undefined {
+  if (!isObj(raw)) {
+    errors.push(`${path}: must be an object {description, values, parts?}`);
+    return undefined;
+  }
+  const description = str(raw.description);
+  if (!description) errors.push(`${path}.description: say what the shot looks like`);
+  if (description.length > 400) errors.push(`${path}.description: at most 400 characters`);
+  const values = isObj(raw.values) ? raw.values : {};
+  if (raw.values !== undefined && !isObj(raw.values)) errors.push(`${path}.values: an object of exact values`);
+  if (JSON.stringify(values).length > MAX_LOOK_VALUES) errors.push(`${path}.values: keep it under ${MAX_LOOK_VALUES} characters`);
+  const look: ShotLook = { description, values };
+  if (raw.parts !== undefined) {
+    if (!Array.isArray(raw.parts) || raw.parts.length > 8) errors.push(`${path}.parts: a list of at most 8 {part, settings}`);
+    else {
+      const parts = raw.parts.map((p, i) => {
+        const o = isObj(p) ? p : {};
+        if (!str(o.part)) errors.push(`${path}.parts[${i}]: name the part`);
+        return { part: str(o.part), settings: isObj(o.settings) ? o.settings : {} };
+      });
+      if (kit) errors.push(...kit(parts, `${path}.parts`));
+      look.parts = parts;
+    }
+  }
+  return look;
 }
 
 export interface PlanCheck {
@@ -134,7 +192,7 @@ const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => ty
 const words = (s: string) => s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const EASING = /^(?:none|linear|(?:power[1-4]|sine|expo|circ|back|elastic|bounce)\.(?:in|out|inOut)|cubic-bezier\(\s*-?\d*\.?\d+(?:\s*,\s*-?\d*\.?\d+){3}\s*\))$/;
+const EASING = /^(?:none|linear|(?:power[1-4]|sine|expo|circ|back|elastic|bounce)\.(?:in|out|inOut)(?:\(\s*\d*\.?\d+(?:\s*,\s*\d*\.?\d+)?\s*\))?|cubic-bezier\(\s*-?\d*\.?\d+(?:\s*,\s*-?\d*\.?\d+){3}\s*\))$/;
 const int = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 const record = (v: unknown): Record<string, unknown> => (isObj(v) ? v : {});
 
@@ -167,7 +225,21 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
   if (!wantsNarration && ctx.narration) notes.push("narration stays on: the project asks for a voice");
   const narrationOn = ctx.narration;
 
-  const blocks = strs(raw.blocks);
+  // kit parts and registry blocks are two lists a fast model mixes up both ways (bench, 2026-11-05): a kit part named as a block
+  // is dropped (every part is offered anyway), a block named as a part moves to the blocks
+  const blocks = strs(raw.blocks).filter((b) => !(ctx.kitParts?.includes(b) && !ctx.blocks?.includes(b) && notes.push(`${b} is a kit part, not a registry block: dropped from blocks`)));
+  for (const s of Array.isArray(raw.shots) ? raw.shots : []) {
+    const look = isObj(s) && isObj(s.look) && Array.isArray(s.look.parts) ? s.look : null;
+    if (!look || !ctx.blocks) continue;
+    const parts = look.parts as unknown[];
+    look.parts = parts.filter((p) => {
+      const name = isObj(p) ? str(p.part) : "";
+      if (!ctx.blocks!.includes(name) || ctx.kitParts?.includes(name)) return true;
+      if (!blocks.includes(name)) blocks.push(name);
+      notes.push(`${name} is a registry block, not a kit part: moved to blocks`);
+      return false;
+    });
+  }
   if (blocks.length && ctx.blocksAllowed === false) errors.push("this recipe doesn't allow registry blocks: leave blocks empty and draw everything");
   else if (ctx.blocks) {
     const unknown = blocks.filter((b) => !ctx.blocks!.includes(b));
@@ -210,16 +282,27 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
     const transition = i === 0 ? "cut" : transitionKind(str(o.transition));
     if (transition === null) errors.push(`${at} (${id}): transition "${str(o.transition)}" isn't one Sorot can build; use one of ${TRANSITION_NAMES.join(", ")}`);
     const effects = o.effects === undefined || o.effects === null ? undefined : checkEffects(o.effects, `${at} (${id}): effects`, errors);
+    const shotLook = o.look === undefined || o.look === null ? undefined : checkShotLook(o.look, `${at} (${id}): look`, errors, ctx.kit);
+    const level = o.level === undefined || o.level === null ? undefined : str(o.level);
+    if (level !== undefined && !["kit", "compose", "free"].includes(level)) errors.push(`${at} (${id}): level must be kit, compose or free`);
     return {
       id, purpose: str(o.purpose) || "beat", durationSec: round1(durationSec), text, visual, motion: str(o.motion),
       transition: transition ?? "cut", audio: str(o.audio), narration, hold: o.hold === true,
-      ...(effects ? { effects } : {}),
+      ...(effects ? { effects } : {}), ...(shotLook ? { look: shotLook } : {}), ...(level ? { level } : {}),
     };
   });
 
-  const total = round1(shots.reduce((n, s) => n + (Number.isFinite(s.durationSec) ? s.durationSec : 0), 0));
+  let total = round1(shots.reduce((n, s) => n + (Number.isFinite(s.durationSec) ? s.durationSec : 0), 0));
   const low = ctx.targetSec * (1 - L.sumTolerance);
   const high = ctx.targetSec * (1 + L.sumTolerance);
+  // a total a little off is scaled in code (a model added 26 s for 30 twice); a numeric plan's frames come from the lengths, so not there
+  const scale = ctx.targetSec / total;
+  if (shots.length && (total < low - 1e-9 || total > high + 1e-9) && !ctx.numeric && scale >= 0.75 && scale <= 1.33 && shots.every((s) => Number.isFinite(s.durationSec))) {
+    for (const s of shots) s.durationSec = Math.min(L.maxShotSec, Math.max(L.minShotSec, round1(s.durationSec * scale)));
+    shots.at(-1)!.durationSec = round1(shots.at(-1)!.durationSec + ctx.targetSec - shots.reduce((n, s) => n + s.durationSec, 0));
+    notes.push(`the shots added up to ${total} s: each was scaled to fit ${ctx.targetSec} s`);
+    total = round1(shots.reduce((n, s) => n + s.durationSec, 0));
+  }
   if (shots.length && (total < low - 1e-9 || total > high + 1e-9)) {
     errors.push(`the shots add up to ${total} s; the target is ${ctx.targetSec} s (allowed ${round1(low)} to ${round1(high)} s)`);
   }
@@ -237,7 +320,12 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
 
   // A factual recipe shows only numbers it can source: an error here gets the director's repair call.
   const unsourced = ctx.unsourced?.(shots.flatMap((s) => [...s.text.map((t) => t.value), s.narration ?? ""])) ?? [];
-  if (unsourced.length) errors.push(`these numbers have no verified fact: ${unsourced.join(", ")}; show only numbers from the brief or the verified facts, or none`);
+  if (unsourced.length) {
+    // where each one is, so a repair can rewrite those words (a model told only "dua" kept a storyline's "Dua Jalur" twice)
+    const where = shots.flatMap((s) => [...s.text.map((t) => [`${s.id} ${t.role}`, t.value]), [`${s.id} narration`, s.narration ?? ""]]
+      .filter(([, v]) => v && ctx.unsourced!([v]).length).map(([at, v]) => `${at} "${v}"`));
+    errors.push(`these numbers have no verified fact: ${unsourced.join(", ")} (in ${where.join("; ")}); rewrite those words without the number (spelled-out numbers count too), or use only numbers from the brief or the verified facts`);
+  }
 
   const numeric = ctx.numeric ? checkNumeric(raw, shots, total, look, ctx, errors) : undefined;
 
@@ -245,7 +333,7 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
   const plan: Plan = {
     title, message, format: ctx.format, totalSec: total, language: ctx.language,
     look: { palette: strs(look.palette), fonts, pacing: str(look.pacing), notes: str(look.notes) },
-    sound: { music: str(sound.music) || "none", narration: narrationOn },
+    sound: { music: musicOf(str(sound.music) || "none", ctx, notes), narration: narrationOn },
     narrationScript: narrationOn ? (str(raw.narrationScript) || null) : null,
     blocks, assumptions, shots,
     ...(numeric ? { numeric } : {}),
@@ -254,7 +342,7 @@ export function validatePlan(raw: unknown, ctx: PlanContext): PlanCheck {
   return { ok: true, plan, errors, notes };
 }
 
-/** A shot's effects, each an exact value in range; anything else is an error to fix. */
+/** A shot's effects, each an exact value: a number out of range is brought into it (a plan failed on depthLayers 6), anything else is an error to fix. */
 export function checkEffects(raw: unknown, at: string, errors: string[]): ShotEffects | undefined {
   if (!isObj(raw)) {
     errors.push(`${at} must be an object`);
@@ -263,11 +351,11 @@ export function checkEffects(raw: unknown, at: string, errors: string[]): ShotEf
   const out: ShotEffects = {};
   const num = (key: string, v: unknown, min: number, max: number): number | undefined => {
     if (v === undefined || v === null) return undefined;
-    if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) {
+    if (typeof v !== "number" || !Number.isFinite(v)) {
       errors.push(`${at}.${key} is a number from ${min} to ${max}`);
       return undefined;
     }
-    return v;
+    return Math.min(max, Math.max(min, v));
   };
   if (raw.light !== undefined && raw.light !== null) {
     const l = record(raw.light);
@@ -279,11 +367,11 @@ export function checkEffects(raw: unknown, at: string, errors: string[]): ShotEf
     else out.light = { angleDeg, intensity, ...(color && HEX.test(color) ? { color } : {}) };
   }
   const blurPx = num("blurPx", raw.blurPx, 0, 40);
-  const depthLayers = num("depthLayers", raw.depthLayers, 2, 5);
+  const layers = num("depthLayers", raw.depthLayers, 2, 5);
+  const depthLayers = layers === undefined ? undefined : Math.round(layers);
   const glowPx = num("glowPx", raw.glowPx, 0, 80);
-  if (depthLayers !== undefined && !Number.isInteger(depthLayers)) errors.push(`${at}.depthLayers is a whole number`);
   if (blurPx !== undefined) out.blurPx = blurPx;
-  if (depthLayers !== undefined && Number.isInteger(depthLayers)) out.depthLayers = depthLayers;
+  if (depthLayers !== undefined) out.depthLayers = depthLayers;
   if (glowPx !== undefined) out.glowPx = glowPx;
   if (str(raw.reason)) out.reason = str(raw.reason).slice(0, 200);
   return Object.keys(out).filter((k) => k !== "reason").length ? out : undefined;
@@ -310,8 +398,10 @@ function checkNumeric(raw: Record<string, unknown>, shots: Shot[], totalSec: num
     if (!ctx.fonts.some((f) => f.toLowerCase() === font.toLowerCase())) errors.push(`numeric.typography.${role}: the font "${font}" isn't available (${ctx.fonts.join(", ")})`);
     if (!int(weight) || weight < 100 || weight > 900 || weight % 100) errors.push(`numeric.typography.${role}: weight is 100, 200 ... 900`);
     if (typeof t.px !== "number" || t.px < 8 || t.px > 400) errors.push(`numeric.typography.${role}: px is a number from 8 to 400`);
-    if (typeof t.tracking !== "number" || t.tracking < -0.2 || t.tracking > 0.5) errors.push(`numeric.typography.${role}: tracking is in em, from -0.2 to 0.5`);
-    typography[role] = { font, weight: weight as number, px: t.px as number, tracking: t.tracking as number };
+    // "0.02em" is how CSS writes it: read the number (a model wrote it so on every try)
+    const tracking = typeof t.tracking === "string" && /^\s*-?\d*\.?\d+\s*(?:em)?\s*$/.test(t.tracking) ? parseFloat(t.tracking) : t.tracking;
+    if (typeof tracking !== "number" || tracking < -0.2 || tracking > 0.5) errors.push(`numeric.typography.${role}: tracking is a number in em (0.02, not "2px"), from -0.2 to 0.5`);
+    typography[role] = { font, weight: weight as number, px: t.px as number, tracking: tracking as number };
   }
 
   const shadow = str(n.shadow);

@@ -95,7 +95,7 @@ words and approve it.
 has nothing to build from, and it already gives value on its own as a reviewable creative brief.
 
 **Independent Test**: submit a brief, receive three storylines, pick one, edit one shot, approve
-the plan — all without any video being rendered.
+the plan, all without any video being rendered.
 
 **Acceptance Scenarios**:
 
@@ -311,10 +311,46 @@ down and the build finishes.
    will be built at.
 6. **Given** a user who wants a part the kit lacks, **When** they add it to their install, **Then**
    recipes and directors can use it like a built-in part, and it can be shared and imported.
+### User Story 10 - The director works with its tools (Priority: P2)
+
+A user builds a film with any connected model, including a fast, cheap one. The director doesn't
+write each shot blind: it finds and adapts what HyperFrames already offers (blocks, 3D, charts,
+maps, characters), draws with Three.js where that reads better, looks at its own frames, and checks
+its own draft before it hands it in. The shots of one film share one conversation, so the film
+stays one film, and the provider's prompt cache covers most of each request.
+
+**Why this priority**: real builds on 2026-11-02 drew people and objects as flat shapes a viewer
+couldn't name, each shot in a different style, and reused at most half of each request from the
+cache. The tools that fix this already ship with Sorot.
+
+**Independent Test**: build the same story brief twice with the same fast model, once with the
+loop off (one forced call per shot) and once with it on. With the loop on, fewer objects are
+reported as unrecognisable, the shots share one look, the provider reports a higher cache hit
+rate, and the build takes at most twice as long.
+
+**Acceptance Scenarios**:
+
+1. **Given** a build, **When** its scenes and repairs are written, **Then** they are one
+   conversation in which every shot sees the shots before it, and each request extends the last.
+2. **Given** a shot that needs a person, a chart or a map, **When** the director writes it,
+   **Then** it can search the HyperFrames registry and install a block to adapt, within the
+   recipe's limits.
+3. **Given** a draft shot, **When** the director looks at it, **Then** it gets the rendered frames
+   and a stranger's description of them as findings, and can redraw before submitting.
+4. **Given** a turn whose tool results grow large, **When** it continues, **Then** older results
+   are cut to stubs and the conversation before the turn is untouched.
+5. **Given** any connected model, **When** a call carries pictures, **Then** it goes to that
+   role's own model; there is no separate vision model to configure.
+
 ### Edge Cases
 
 - A model too weak to write a valid scene, or valid JSON, at the level asked: the shot drops a
   level (free, then compose, then kit), keeping what was planned; the drop is recorded and shown.
+- A director that loops on its tools without submitting: the last allowed step is forced to the
+  submit tool; a tool that fails returns its error to the model and never fails the build.
+- The app restarts mid-build: the session is rebuilt from its opening and the latest shot files.
+- A connected model that can't see images: calls with pictures fail with the provider's error;
+  Sorot doesn't fall back to a second model (FR-052).
 - A scene that is too heavy for the machine (a CPU-only install draws GPU effects in software):
   the render-time estimate says so before the build, the recipe can cap the level on such
   installs, and a scene over its frame-time budget is rebuilt one level down rather than stalling
@@ -334,7 +370,10 @@ down and the build finishes.
 - The image provider fails or refuses a prompt: the shot falls back to a non-generated treatment
   and the plan says so; the user can upload an image instead (FR-017).
 - The narration is longer than its shot: the TECHNICAL verdict flags it; the director shortens
-  the script or lengthens the shot on the next fix round (FR-018).
+  the script or lengthens the shot on the next fix round (FR-018). Narration longer than the whole
+  film is caught earlier: the voice step measures it and has the script written again (FR-054);
+  still too long after that, the step fails with the measured seconds and the user shortens the
+  script or lengthens the video.
 - A build fails or is cancelled: no partial file is offered for export; the plan and earlier
   versions are kept; the user can retry.
 - The TECHNICAL verdict cannot run (checker error): treated as not passed; export stays blocked
@@ -393,7 +432,8 @@ down and the build finishes.
 - **FR-008**: The system MUST build a complete, playable draft video from an approved plan, matching
   the plan's shots, order, text, and durations.
 - **FR-009**: Builds MUST show progress, MUST be cancellable, and MUST produce the same video when
-  rebuilt from the same plan and assets.
+  rebuilt from the same plan and assets. A cancel MUST take effect between steps and before each
+  shot is asked for (a model call already sent may finish), and the version MUST end CANCELLED.
 - **FR-010**: When the recipe renders a draft, users MUST be able to watch it before any
   full-quality export. When it renders only at final quality, users MUST be able to watch that
   render before accepting it.
@@ -423,7 +463,9 @@ down and the build finishes.
 - **FR-016**: Generation MUST require a configured AI director. When none is configured, the
   Generate area MUST show that it is unavailable and how to connect one, and clipping MUST keep
   working unchanged. When the director fails mid-project, work already done (brief, plans,
-  versions) MUST be kept and the user MUST be able to retry once it is back.
+  versions) MUST be kept and the user MUST be able to retry once it is back. A build that failed
+  MUST be able to go on from its failed step as the same version, keeping every finished step and
+  shot, as long as the approved plan is still the one it started from.
 - **FR-017**: Visuals MUST be built from anything the director can draw (FR-038), including text,
   shapes, icons, charts, kit parts, and the user's own uploads. When an image-generation provider is connected in
   Settings, the director MAY also generate 2D images for shots; the plan MUST mark which shots use generated images, and the user MUST be able
@@ -500,8 +542,9 @@ down and the build finishes.
 **Self-review and final checks**
 
 - **FR-031**: When a recipe enables self-review, before the final render the director MUST look
-  at sample frames of every beat. It describes each one as a stranger would and compares it with
-  the plan. It audits the recipe's list of defaults and fixes what it finds, up to the recipe's
+  at three pictures of every shot (early, mid-move and settled). It describes each shot as a
+  stranger would, from what is on screen at the end, says whether the main move can be seen across
+  the pictures, and compares it with the plan. It audits the recipe's list of defaults and fixes what it finds, up to the recipe's
   round limit. A warning kept on purpose MUST be marked with its reason, and the reason MUST show
   in the verdict.
 - **FR-032**: When a recipe sets final-render verdicts, both verdicts MUST be given on the real
@@ -555,6 +598,52 @@ down and the build finishes.
   connected, never written by hand, so a new part or connection reaches the director without code
   changes. Plans and scenes MUST be checked against it, and anything outside it goes back to the
   director to repair (FR-045).
+- **FR-048**: A build's scene work (scenes, repairs and kit shots, across the author, check and
+  look steps) MUST be one director conversation per version: the instructions, the whole plan and
+  the capability description are sent once; each shot is one turn that sees the turns before it;
+  turns run one at a time; each request extends the previous one so a provider's prefix cache can
+  reuse it. A context budget (`GEN_CONTEXT_TOKENS`, default 600000) MUST restart the conversation
+  from its opening and the latest version of each shot. It MAY be switched off (`GEN_SESSION`).
+- **FR-049**: Within a shot's turn the director MUST be able to use tools before it submits:
+  search the HyperFrames registry, install a block and read its source, look at its own rendered
+  draft, and check its draft (Sorot's scene rules and HyperFrames lint, plus the scene probe and the
+  motion measure on a draft render of just that shot, so a collision or a jump is found before the
+  build). The steps per turn and per tool MUST be limited by the recipe; the last allowed step MUST
+  be forced to the submit tool; a tool error MUST go back to the model as the tool's result. The
+  first submit of a scene turn that can look and hasn't MUST be turned back once, asking for a look.
+  A draft MUST change the version's files only when it is accepted.
+- **FR-050**: Looking MUST include a stranger's read: a fresh call to the same model, with only the
+  frames (no conversation, no plan intent), whose answer code turns into the look findings
+  (`look_unexplained` must-fix, `look_mismatch`, `look_hero_hidden`) returned to the director in
+  the same turn. The separate look step then has nothing left to do and records that.
+- **FR-051**: The conversation MUST stay compact: when a turn's answer is accepted its tool
+  exchanges MUST be replaced by a one-line note (the answer stays); a turn past `GEN_TURN_TOKENS`
+  (default 60000) MUST cut older tool results to stubs, keeping the latest of each kind whole.
+  Compaction MUST only rewrite the current turn, never what came before it.
+- **FR-052**: There MUST be no separate vision model: the director's model reasons and sees, and a
+  call with pictures goes to the model of its role. The CREATIVE verdict MUST stay a fresh
+  conversation without the director's history (FR-011).
+- **FR-053**: Generate MAY use a model per role (`plan`: storylines, plan, effects, facts; `scene`:
+  scenes, repairs, kit shots, and the one the model record is about; `judge`: the CREATIVE
+  judge), each defaulting to the LLM's model.
+- **FR-054**: The narration's length MUST be a target the director is given, not a rule that fails
+  the run. After the voice is made, speech more than 0.5 s longer than the video MUST send the
+  script back to the director, told each line's measured seconds, up to twice; still too long, the
+  step MUST fail with the measured and the allowed seconds. The rewritten script is what later
+  steps are built from. A voice still up to 10% past the film after both rewrites is sped up as recorded (`atempo`), not refused; further over fails the step.
+- **FR-055**: Scene calls MUST carry two worked examples in different styles (one built from kit
+  parts, one drawn by hand), each passing Sorot's scene rules, so the director learns the craft they
+  share (text clear of the drawing, words whole on the first frame, one hero move) rather than
+  copying one look.
+- **FR-056**: The scene probe MUST count shapes drawn from styled boxes (colour, gradient or clip
+  path) as drawings when it looks for words sitting on a drawing. A box a fifth of the frame or more
+  is a card the words sit on, and a text lying wholly inside a drawing at least five times its own
+  area is a label on it; only a partial overlap is a collision.
+- **FR-057**: The stranger's read MUST also name the things (not text) too close in colour and
+  brightness to what is behind them to make out on a phone. In the director's own turn they come
+  back as `look_faint` (should-fix, the director decides); the look step leaves them out of the
+  verdict, because something weak can be the point of a shot and no measure tried told a dim subject
+  from dim scenery (research.md "S8, a subject too dark to see").
 ### Key Entities
 
 - **Generation project**: one user idea; holds brief, format, length, language, style notes,
@@ -594,6 +683,8 @@ down and the build finishes.
   answers.
 - **Director level**: from choosing kit parts to drawing freely; the highest level a recipe
   allows, the level chosen for each shot and why, and any drop made during the build.
+- **Build session**: one version's director conversation (opening, turns, latest answer per shot),
+  held in memory, rebuilt from the opening and the shot files after a restart; never stored.
 - **Model record**: per connected model, how its answers fared on this install (first-time pass
   rate of plans and scenes, malformed answers, speed), used to choose the level.
 
@@ -645,6 +736,18 @@ down and the build finishes.
 - **SC-020**: A kit part added on an install is offered to the director on its next call with no
   code change, and in the test set no plan asks for something the install doesn't support without
   being sent back to repair.
+- **SC-021**: On a build's scene and repair calls the provider reports more than 90% of input tokens
+  served from its cache (`gen_event.cached_tokens` over `input_tokens`; raised from 75% by the owner,
+  2026-11-05: measured 78 to 85% on real builds, where each look's new frames and the turn's own new text
+  are the only uncached input).
+- **SC-022**: On the story brief with a fast model, the final build has no `look_unexplained`
+  must-fix finding (3 on the first build without tools, 2026-11-02), and in the 20-brief set fewer
+  than 1 shot in 10 has one.
+- **SC-023**: A build with the tool loop takes at most twice the time of the same build without it,
+  on the same machine and model. (Not yet measured against a build without it; the in-loop probe and
+  motion render add about 20 s to each `check` and `look`. A full GLM build with them took 18.3 min.)
+- **SC-024**: No request in a session exceeds `GEN_CONTEXT_TOKENS`, and after compaction a turn
+  never holds more than its latest frames.
 
 ## Assumptions
 

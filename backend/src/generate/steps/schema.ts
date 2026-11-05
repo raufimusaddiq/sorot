@@ -32,6 +32,8 @@ const MEASURES: Record<string, Field> = {
   firstFrame: { t: "flag", always: true },
   audio: { t: "flag", always: true, fields: { minMeanVolumeDb: { t: "num", min: -80, max: 0 }, maxTruePeakDb: { t: "num", min: -20, max: 3 } } },
   forbiddenNumbers: { t: "flag", always: true },
+  // jumps and stalls inside shots, from the rendered frames (research R28)
+  motion: { t: "flag", always: true, fields: { jumpRatio: { t: "num", min: 2, max: 50 }, stallFrames: { t: "int", min: 2, max: 120 } } },
   // Optional.
   speechMatch: { t: "flag", fields: { maxWordErrorRate: { t: "num", min: 0, max: 1 } } },
   voiceRoute: { t: "flag" },
@@ -77,10 +79,18 @@ export const STEP_SPECS: Record<StepType, StepSpec> = {
     novelty: { t: "obj", fields: { lastN: { t: "int", min: 1, max: 200 } } }, mechanismTest: { t: "bool" } } },
   images: { gates: none, fields: { style: { t: "str", max: 300 }, size: { t: "str", max: 20 } } },
   music: { gates: none, fields: { track: { t: "str", max: 200 }, duckUnderVoiceDb: { t: "num", min: -40, max: 0 } } },
-  author: { gates: none, fields: { require: { t: "strs", maxItems: 20, maxLen: 80 }, repairRounds: { t: "int", min: 0, max: 5 }, concurrency: { t: "int", min: 1, max: 4 } } },
+  author: { gates: none, fields: {
+    require: { t: "strs", maxItems: 20, maxLen: 80 }, repairRounds: { t: "int", min: 0, max: 5 }, concurrency: { t: "int", min: 1, max: 4 },
+    // The director's tool loop per shot (FR-049): steps before it must submit (0 = one forced call) and looks at its own draft; defaults 8 and 2 in code.
+    toolSteps: { t: "int", min: 0, max: 16 }, looks: { t: "int", min: 0, max: 4 },
+    // No defaults (a default joins every step's hash): level auto and maxLevel free (or the machine's), in code.
+    level: { t: "enum", values: ["auto", "kit", "compose", "free"] }, maxLevel: { t: "enum", values: ["kit", "compose", "free"] } } },
   check: { gates: none, fields: { warnings: { t: "enum", values: ["fix", "fix-or-hold", "report"] }, rounds: { t: "int", min: 0, max: 5 } } },
-  look: { gates: none, fields: { rounds: { t: "int", min: 0, max: 5 }, beatOffsetSec: { t: "num", min: 0, max: 2 }, audit: { t: "bool" } } },
-  render: { gates: none, fields: { quality: { t: "enum", values: QUALITIES }, fps: { t: "int", min: 12, max: 60 }, workers: { t: "int", min: 1, max: 16 } } },
+  look: { gates: none, fields: { rounds: { t: "int", min: 0, max: 5 }, audit: { t: "bool" } } },
+  render: { gates: none, fields: {
+    quality: { t: "enum", values: QUALITIES }, fps: { t: "int", min: 12, max: 60 }, workers: { t: "int", min: 1, max: 16 },
+    // No default in DEFAULTS: auto (blur on the shots the plan marks fast), in code.
+    motionBlur: { t: "enum", values: ["auto", "on", "off"] } } },
   command: { gates: none, required: ["name"], fields: { name: { t: "str", max: 80 }, counts: { t: "enum", values: ["technical", "creative"] } } },
   technical: { gates: none, fields: { measures: { t: "obj", fields: MEASURES }, autoFixRounds: { t: "int", min: 0, max: 3 } } },
   creative: { gates: none, fields: {
@@ -129,6 +139,54 @@ export function checkField(field: Field, value: unknown, path: string, errors: s
     case "obj":
       if (!isObject(value)) bad("must be an object");
       else checkObject(field.fields, value, path, errors, field.required);
+  }
+}
+
+/**
+ * Checks that `spec` is itself a field definition (a kit part's `settings` use the recipe schema).
+ * `flag` is left out: it only means something for TECHNICAL measures.
+ */
+export function checkFieldSpec(spec: unknown, path: string, errors: string[], depth = 0): spec is Field {
+  const bad = (msg: string) => { errors.push(`${path}: ${msg}`); return false; };
+  if (!isObject(spec)) return bad("must be a field definition like {\"t\": \"num\", \"min\": 0, \"max\": 1}");
+  const n = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  const known: Record<string, string[]> = {
+    bool: ["t"], int: ["t", "min", "max"], num: ["t", "min", "max"], enum: ["t", "values"], str: ["t", "max"],
+    strs: ["t", "maxItems", "maxLen"], obj: ["t", "fields", "required"], list: ["t", "max", "item"],
+  };
+  const t = spec.t;
+  if (typeof t !== "string" || !known[t]) return bad(`"t" must be one of ${Object.keys(known).join(", ")}`);
+  const extra = Object.keys(spec).filter((k) => !known[t]!.includes(k));
+  if (extra.length) return bad(`unknown keys for ${t}: ${extra.join(", ")}`);
+  if (depth > 3 && (t === "obj" || t === "list")) return bad("is nested too deep");
+  switch (t) {
+    case "int":
+    case "num":
+      if (!n(spec.min) || !n(spec.max) || (spec.min as number) > (spec.max as number)) return bad("needs numbers min ≤ max");
+      return true;
+    case "enum":
+      if (!Array.isArray(spec.values) || !spec.values.length || spec.values.some((v) => typeof v !== "string")) return bad("needs a non-empty list of text values");
+      return true;
+    case "str":
+      if (spec.max !== undefined && !n(spec.max)) return bad("max must be a number");
+      return true;
+    case "strs":
+      if (!n(spec.maxItems) || (spec.maxLen !== undefined && !n(spec.maxLen))) return bad("needs maxItems (and maxLen, if any) as numbers");
+      return true;
+    case "obj": {
+      if (!isObject(spec.fields)) return bad("needs fields");
+      const before = errors.length;
+      for (const [k, f] of Object.entries(spec.fields)) checkFieldSpec(f, `${path}.fields.${k}`, errors, depth + 1);
+      if (spec.required !== undefined && (!Array.isArray(spec.required) || spec.required.some((r) => typeof r !== "string" || !(r in (spec.fields as object))))) {
+        return bad("required must list names from fields");
+      }
+      return errors.length === before;
+    }
+    case "list":
+      if (!n(spec.max)) return bad("needs max as a number");
+      return checkFieldSpec(spec.item, `${path}.item`, errors, depth + 1);
+    default:
+      return true;
   }
 }
 

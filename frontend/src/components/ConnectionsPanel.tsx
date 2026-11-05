@@ -13,7 +13,7 @@ import { Toggle } from './ImportOptions';
 import { Window } from './Window';
 
 type CoreKind = 'llm' | 'jev' | 'tebar';
-type FieldDef = { key: 'baseUrl' | 'url' | 'model' | 'genMaxTokens'; label: string; placeholder: string };
+type FieldDef = { key: 'baseUrl' | 'url' | 'model' | 'genMaxTokens' | 'contextTokens' | 'turnTokens' | 'planModel' | 'sceneModel' | 'judgeModel'; label: string; placeholder: string };
 
 // Kenari (kenari.id): this project's default AI provider — one API key, no endpoint to type.
 // Still fully optional and swappable: "Use a different provider" reaches the same baseUrl/model
@@ -37,6 +37,14 @@ const CARDS: Record<CoreKind, { title: string; bar: string; about: string; fallb
       { key: 'model', label: 'Model', placeholder: 'qwen2.5:7b' },
       // Generate writes whole scene files: a reasoning model needs far more than a clip review.
       { key: 'genMaxTokens', label: 'Generate token budget', placeholder: '32000' },
+      // a build's scenes and repairs are one conversation; past this it restarts from the plan and the latest shots
+      { key: 'contextTokens', label: 'Generate context budget', placeholder: '600000' },
+      // inside it, one shot's tool results (frames, block sources) are cut to stubs past this
+      { key: 'turnTokens', label: 'Generate turn budget', placeholder: '60000' },
+      // Generate can give each role its own model (empty = the model above): a strong planner and judge, a cheap scene writer.
+      { key: 'planModel', label: 'Generate plan model', placeholder: 'same as Model' },
+      { key: 'sceneModel', label: 'Generate scene model', placeholder: 'same as Model' },
+      { key: 'judgeModel', label: 'Generate judge model', placeholder: 'same as Model' },
     ],
   },
   jev: {

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { createApp, type App } from "../src/app";
 import { loadConfig, type AppConfig } from "../src/config";
 import { openDatabase } from "../src/db";
+import { Store } from "../src/store";
 import { Jev } from "../src/jev";
 import { Llm } from "../src/llm";
 import type { ExecFn, ProcResult, ScriptOptions, ScriptRunner } from "../src/runner";
@@ -170,7 +171,22 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   };
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => fetchHandler.fn(String(input), init)) as typeof fetch;
-  const app = createApp(config, { db: openDatabase(":memory:"), runScript, exec, fetch: fetchFn, retryWaitMs: 0 });
+  const db = openDatabase(":memory:");
+  // Generate: the model writes its own scenes in these tests (a new model would start at the kit level, R25)
+  if (config.llmModel) new Store(db).setSetting(`gen.modelLevel.${config.llmModel}`, "compose");
+  const app = createApp(config, { db, runScript, exec, fetch: fetchFn, retryWaitMs: 0 });
+  // these tests script one forced call per shot: the shipped recipes' tool loop (author.toolSteps) has its own tests.
+  // Recipes are seeded when the app starts, so the patch follows it.
+  const recipes = new Store(db);
+  const start = app.generate.start.bind(app.generate);
+  app.generate.start = () => {
+    start();
+    for (const row of recipes.listGenRecipes()) {
+      const recipe = JSON.parse(row.recipe) as { steps: Array<{ use: string; with?: Record<string, unknown> }> };
+      recipe.steps = recipe.steps.map((st) => (st.use === "author" ? { ...st, with: { ...st.with, toolSteps: 0 } } : st));
+      recipes.updateGenRecipe(row.id, { recipe: JSON.stringify(recipe) });
+    }
+  };
   const req = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.fetch(new Request(`http://localhost${path}`, {
       method,
@@ -272,7 +288,15 @@ export function fakeHyperframes(handlers: Record<string, HfHandler> = {}) {
     catalog: () => procOk(JSON.stringify([{ name: "data-chart", type: "block", title: "Data chart", description: "d", tags: ["chart"] }])),
     lint: () => procOk(hfFixture("lint-ok")),
     check: () => procOk(hfFixture("check-ok")),
-    snapshot: () => procOk(hfFixture("snapshot-review")),
+    // the captured output, with its frames written into the project (a model that sees gets real files)
+    snapshot: (args) => {
+      const real = JSON.parse(hfFixture("snapshot-review")) as { outputDir: string; frames: Array<{ path: string }> };
+      const out = join(args[1] as string, ".hyperframes", "artifacts", "snapshots", "test");
+      mkdirSync(out, { recursive: true });
+      const frames = real.frames.map((f) => ({ ...f, path: join(out, f.path.split(/[\\/]/).pop() as string) }));
+      for (const f of frames) writeFileSync(f.path, "png");
+      return procOk(JSON.stringify({ ...real, outputDir: out, frames }));
+    },
     render: (args) => {
       const out = argAfter(args, "-o");
       mkdirSync(dirname(out), { recursive: true });
@@ -301,7 +325,7 @@ export const quickRecipe = (): Recipe => ({
     { use: "storylines", with: { count: 3, skipUnderSec: 15 }, gate: "owner" },
     // no effects pass and no effects floor: the sample plan is all cuts (both are tested on their own)
     { use: "plan", gate: "owner", with: { blocks: true, minEffects: 0, effects: false } },
-    { use: "author" }, { use: "check" },
+    { use: "author", with: { toolSteps: 0 } }, { use: "check" },   // one forced call per shot, unless a test turns the tool loop on
     { use: "render", with: { quality: "draft" } },
     { use: "technical" }, { use: "creative", with: { criteria: [{ id: "hook", question: "Does `opening` hold the eye?" }] } },
     { use: "export", with: { mode: "rerender" } },
@@ -339,6 +363,21 @@ export class Calls {
 /** The effects pass's answer when the director keeps the plan's effects as they are: no tool call ends the loop. */
 export const EFFECTS_DONE = new AsText("The plan's effects stand as written.");
 
+const SUBMIT_FOR = { scene: "submit_scene", repair: "submit_repair", kitshot: "submit_shot_kit" } as Record<string, string>;
+/**
+ * The function a request asks for: the one it forces, or, in a build session's tool-loop turn (tool_choice is
+ * "auto"), the submit tool its last message names (`request`). A fake model answers with that.
+ */
+export function calledTool(body: any): string | undefined {
+  if (body.tool_choice?.function?.name) return body.tool_choice.function.name;
+  const last = (body.messages ?? []).filter((m: any) => m.role === "user").at(-1)?.content;
+  try {
+    return SUBMIT_FOR[JSON.parse(typeof last === "string" ? last : last?.[0]?.text ?? "{}").request];
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The model's answer. When the request forces a function (tool_choice), a JSON string reply is that function's
  * arguments, as a real tool call would carry them; otherwise (or with AsText) it is the message text.
@@ -349,10 +388,11 @@ function completion(body: any, reply: string | AsText | Calls | ThoughtTooLong):
     const tool_calls = reply.calls.map(([name, args], i) => ({ id: `call_${i + 1}`, type: "function", function: { name, arguments: JSON.stringify(args) } }));
     return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls }, finish_reason: "tool_calls" }] });
   }
-  const forced = body.tool_choice?.function?.name as string | undefined;
+  const forced = calledTool(body);
   if (forced && typeof reply === "string") {
     const call = { id: "call_1", type: "function", function: { name: forced, arguments: reply } };
-    return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }] });
+    // the provider's usage, as an OpenAI-compatible gateway reports it
+    return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }], usage: { total_tokens: 30, prompt_tokens: 20, prompt_tokens_details: { cached_tokens: 12 } } });
   }
   return Response.json({ choices: [{ message: { role: "assistant", content: reply instanceof AsText ? reply.text : reply }, finish_reason: "stop" }] });
 }
@@ -361,7 +401,7 @@ function completion(body: any, reply: string | AsText | Calls | ThoughtTooLong):
 export const gatewayDown = () => Object.assign(new Error("upstream unavailable"), { status: 503 });
 
 /** An Llm whose replies come from `replies` in order (a string = the model's text; an Error = HTTP 400, or its `status`). `requests` logs each body. */
-export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>) {
+export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong | Error | ((body: any) => string)>, config: { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number; genTurnTokens?: number } = {}) {
   const requests: Array<{ messages: Array<{ role: string; content: string }>; [k: string]: any }> = [];
   const queue = [...replies];
   const fetchFn = (async (_url: string, init?: RequestInit) => {
@@ -372,7 +412,7 @@ export function fakeLlm(replies: Array<string | AsText | Calls | ThoughtTooLong 
     if (next instanceof Error) return new Response(next.message, { status: (next as Error & { status?: number }).status ?? 400 });
     return completion(body, typeof next === "function" ? next(body) : next);
   }) as unknown as typeof fetch;
-  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, genLlmMaxTokens: 4000 }, fetchFn, 0);
+  const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, genLlmMaxTokens: 4000, genSession: false, ...config }, fetchFn, 0);   // fresh calls unless a test opens a session
   return { llm, requests };
 }
 
@@ -393,6 +433,13 @@ export function scriptLlm(env: TestEnv, replies: Array<string | AsText | Calls |
   };
   return { requests, left: () => queue.length };
 }
+
+/** The criteria every CREATIVE verdict asks besides the recipe's own (FR-013, FR-046). */
+export const ALWAYS_ASKED = ["main_message", "finished", "motion"];
+/** A judge that answers yes to these criteria (plus the always-asked ones) and flags none of the risks. */
+export const judgeYes = (criteria: string[], risks = ["misleading_claim", "flat_film"]) => JSON.stringify({
+  criteria: [...new Set([...criteria, ...ALWAYS_ASKED])].map((id) => ({ id, answer: "yes", reason: "ok" })), risks: risks.map((id) => ({ id, flagged: false, reason: "" })),
+});
 
 /** The `kind` of a request to the director: its closing task field names the job. */
 export const userPayload = (req: { messages: Array<{ role: string; content: string }> }) => JSON.parse(req.messages.find((m) => m.role === "user")!.content);

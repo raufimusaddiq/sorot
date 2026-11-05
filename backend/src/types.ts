@@ -269,6 +269,38 @@ export interface GenVersion {
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
+  /** JSON `{version, parts}`: the kit parts the build loaded (null before any). */
+  kit?: string | null;
+  /** JSON `{shotId: {planned, built, reason}}`: the level each shot was planned at and built at. */
+  shotLevels?: string | null;
+}
+
+/** How one model fares at one level on this install (research R25). */
+export interface GenModelRecord {
+  model: string;
+  level: "kit" | "compose" | "free" | "plan";
+  asked: number;
+  firstPass: number;
+  repaired: number;
+  dropped: number;
+  malformed: number;
+  ms: number;
+  calibratedAt: string | null;
+  updatedAt: string;
+}
+
+/** One installed kit part (built in, or added by the owner). */
+export interface GenKitPart {
+  name: string;
+  source: "builtIn" | "user";
+  version: string;
+  /** The validated part.json. */
+  manifest: string;
+  /** The folder holding the part. */
+  path: string;
+  checkedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GenVerdict {
@@ -317,6 +349,8 @@ export interface GenEvent {
   ok: number;
   ms: number | null;
   tokens: number | null;
+  inputTokens: number | null;
+  cachedTokens: number | null;
   createdAt: string;
 }
 

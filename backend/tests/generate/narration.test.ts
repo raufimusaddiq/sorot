@@ -12,7 +12,7 @@ import { validatePlan, type Plan } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import { speechFindings, voiceRouteFindings } from "../../src/generate/technical";
-import { alignWords, placeLines, readVoice, snapToVoice, wordErrorRate, wordsOf, writeVoice, type VoiceLine, speechWords } from "../../src/generate/voice";
+import { alignWords, audioSeconds, placeLines, readVoice, snapToVoice, wordErrorRate, wordsOf, writeVoice, type VoiceLine, speechWords } from "../../src/generate/voice";
 import type { ExecFn } from "../../src/runner";
 import { Store } from "../../src/store";
 import { fakeLlm, procOk, quickRecipe, samplePlan } from "../helpers";
@@ -25,10 +25,11 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
 const LINES = [{ id: "l1", text: "Bunga majemuk membuat uang tumbuh." }, { id: "l2", text: "Mulai dari sekarang." }];
 
-function rig(replies: Parameters<typeof fakeLlm>[0] = [], opts: { narration?: number; script?: string | null; config?: object; fetch?: (u: any, i?: any) => Promise<Response>; run?: any; durations?: Record<string, number> } = {}) {
+function rig(replies: Parameters<typeof fakeLlm>[0] = [], opts: { narration?: number; script?: string | null; config?: object; fetch?: (u: any, i?: any) => Promise<Response>; run?: any; durations?: Record<string, number>; every?: number } = {}) {
   const config = { ...loadConfig({}), genDir: join(tmp, "generate"), ffmpegPath: "ffmpeg", voiceEngine: "openai", voiceApiKey: "k", voiceVoices: { id: "alloy" }, whisperDevice: "cpu", ...opts.config };
   const store = new Store(openDatabase(":memory:"));
   const recipe = quickRecipe();
+  if (opts.every && !recipe.steps.some((x) => x.use === "script")) recipe.steps.push({ use: "script" } as never);
   store.saveGenProject({
     id: "p1", title: null, brief: "Jelaskan bunga majemuk", format: "9:16", targetSec: 30, language: "id", styleNotes: null, preset: null, recipeId: "quick",
     recipe: json(recipe), ideaId: null, briefFlags: null, narrationScript: opts.script === undefined ? null : opts.script, concept: null, stepIndex: 0,
@@ -40,7 +41,7 @@ function rig(replies: Parameters<typeof fakeLlm>[0] = [], opts: { narration?: nu
   const exec: ExecFn = async (_cmd, args) => {
     seen.push(args);
     const file = args.at(-1) as string;
-    return procOk(json({ format: { duration: String(opts.durations?.[file.split(/[\\/]/).pop() as string] ?? 2.5) } }));
+    return procOk(json({ format: { duration: String(opts.durations?.[file.split(/[\\/]/).pop() as string] ?? opts.every ?? 2.5) } }));
   };
   let calls = 0;
   const f = opts.fetch ?? (async () => new Response(new Uint8Array([calls++, 2, 3])));
@@ -65,9 +66,12 @@ describe("script step", () => {
     const r = rig([scriptJson()]);
     expect(await STEPS.script.run(r.ctxFor("script"))).toEqual({ status: "done", outputRef: "script" });
     expect(json(JSON.parse(r.store.getGenProject("p1")!.narrationScript!))).toBe(scriptJson());
-    // the recipe allows 160 words, but 30 s of voice holds 54 (1.8 words a second): the length wins
-    expect(body(r.requests[0]!)).toMatchObject({ spellNumbers: true, maxWords: 54, targetSec: 30, language: "id" });
+    // the recipe allows 160 words; the length only sets a target in the prompt (1.8 words a second), it rejects nothing
+    expect(body(r.requests[0]!)).toMatchObject({ spellNumbers: true, targetWords: 54, targetSec: 30, language: "id" });
+    expect(body(r.requests[0]!).task).toContain("about 54 words");
     expect(body(r.requests[0]!).task).toContain("Write every number out in words");
+    const long = rig([scriptJson([{ id: "l1", text: Array.from({ length: 60 }, () => "kata").join(" ") }])]);
+    expect(await STEPS.script.run(long.ctxFor("script"))).toMatchObject({ status: "done" });   // 60 words in a 30 s film is the voice step's to measure
   });
 
   test("numbers must be spelled out, and a second try can fix it", async () => {
@@ -107,7 +111,22 @@ describe("voice step", () => {
     expect(r.progress).toEqual([50, 100]);
     expect(STEPS.voice.inputKey!(r.ctxFor("voice"))).toContain("alloy");
     await STEPS.voice.run(r.ctxFor("voice"));
-    expect(r.seen.filter((a) => a.includes("format=duration"))).toHaveLength(4);   // measured again, spoken from the cache
+    expect(r.seen.filter((a) => a.includes("format=duration:stream=sample_rate"))).toHaveLength(4);   // measured again, spoken from the cache
+  });
+
+  test("a voice that runs past the film gets the script written again up to twice, told how long it took; a little over is sped up; further over is an error with the numbers", async () => {
+    const fits = withScript({ every: 20 }, [scriptJson(), scriptJson([{ id: "l1", text: "Satu kalimat saja." }])]);   // fits on the second rewrite
+    expect(await STEPS.voice.run(fits.ctxFor("voice"))).toEqual({ status: "done", outputRef: "voice" });
+    expect(body(fits.requests[0]!).overrun).toMatchObject({ spokenSec: 40.2, filmSec: 30, lines: [{ id: "l1", sec: 20 }, { id: "l2", sec: 20 }] });
+    expect(readVoice(fits.config, "p1")!.lines).toHaveLength(1);
+    const still = withScript({ every: 20 }, [scriptJson(), scriptJson()]);
+    await expect(STEPS.voice.run(still.ctxFor("voice"))).rejects.toThrow("The voice takes 40.2 s and the video is 30 s");
+    expect(still.requests).toHaveLength(2);   // no third round
+    // a little long after both rewrites (31.35 s for 30): the clips are sped up 1.03× instead of failing
+    const close = withScript({ every: 15.6 }, [scriptJson(), scriptJson()]);
+    expect(await STEPS.voice.run(close.ctxFor("voice"))).toEqual({ status: "done", outputRef: "voice, sped up 1.03× to fit" });
+    expect(close.seen.some((a) => a.includes("atempo=1.03"))).toBeTrue();
+    expect(readVoice(close.config, "p1")!.lines.map((l) => [l.durationSec, l.file.endsWith("-x1.03.mp3")])).toEqual([[15.146, true], [15.146, true]]);
   });
 
   test("with ElevenLabs the word times come along and the voiceover counts as timed", async () => {
@@ -209,6 +228,23 @@ describe("voice helpers", () => {
     expect(placeLines(p, lines).map((x) => [x.line.id, x.start])).toEqual([["l1", 0], ["l2", 3.15], ["l3", 5.3]]);
     const second = plan([null, "mulai dari SEKARANG!", null]);
     expect(placeLines(second, lines.slice(1)).map((x) => x.start)).toEqual([10, 12.15]);
+    // a plan that quotes the lines out of order still speaks them in the script's order
+    const swapped = plan(["Mulai dari sekarang.", "Bunga majemuk membuat uang tumbuh.", null]);
+    expect(placeLines(swapped, lines.slice(0, 2)).map((x) => [x.line.id, x.start])).toEqual([["l1", 10], ["l2", 13.15]]);
+    // a line that would run past the film's end moves earlier, and the one before it makes room
+    const late = plan([null, null, "Bunga majemuk membuat uang tumbuh. Mulai dari sekarang."], [13, 13, 4]);
+    expect(placeLines(late, lines.slice(0, 2)).map((x) => x.start)).toEqual([24.85, 28]);
+    // speech that only just fits closes its pauses; speech longer than the film stays back to back, never overlapping
+    const silent = plan([null, null, null], [13, 13, 4]);
+    expect(placeLines(silent, [line("a", "x", 14), line("b", "y", 15.9)]).map((x) => x.start)).toEqual([0, 14.1]);
+    expect(placeLines(silent, [line("a", "x", 14), line("b", "y", 16.5)]).map((x) => x.start)).toEqual([0, 14]);
+  });
+
+  test("a clip's length is its decoded samples over the rate (an MP3 header counts the padding); the header when decoding can't count", async () => {
+    const run = (decoded: string): ExecFn => async (_cmd, args) =>
+      procOk(args.includes("-af") ? decoded : JSON.stringify({ format: { duration: "6.312" }, streams: [{ sample_rate: "24000" }] }));
+    expect(await audioSeconds(run("lavfi.astats.Overall.Number_of_samples=1000\nlavfi.astats.Overall.Number_of_samples=150000.000000\n"), "ffmpeg", "a.mp3")).toBe(6.25);
+    expect(await audioSeconds(run(""), "ffmpeg", "a.mp3")).toBe(6.312);
   });
 
   test("timingFrom voice: a shot lasts as long as its lines plus a breath; others keep their length", () => {

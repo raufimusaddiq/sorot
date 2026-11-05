@@ -1,8 +1,14 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HttpError } from "../../http";
-import { shotFile } from "../composer";
-import type { Plan } from "../planSchema";
+import { shotFile, shotStarts, type SceneKit } from "../composer";
+import { atMost, isLevel, recipeLevel, recipeMaxLevel, type Level } from "../capabilities";
+import { lookAtDraft, sceneTools, type SceneTools } from "../directorTools";
+import { strangerRead } from "../look";
+import { frameDiffArgs, parseFrameDiffs } from "../motion";
+import { chooseLevel, modelPin, recordOf } from "../levels";
+import type { Plan, Shot } from "../planSchema";
 import type { StepContext } from "./types";
 
 // What the steps of a build (author, check, render, the verdicts) share: where the version's
@@ -32,6 +38,71 @@ export const readScene = (dir: string, index: number): string | null => {
 export const sceneAssets = (ctx: StepContext): string[] =>
   ctx.store.genAssetsForProject(ctx.project.id).map((a) => a.path).sort();
 
+/** Each shot's level: planned and built, with why it dropped (gen_version.shotLevels). */
+export type ShotLevels = Record<string, { planned: Level; built: Level; reason?: string }>;
+
+export const readShotLevels = (ctx: StepContext): ShotLevels => {
+  const raw = ctx.version ? ctx.store.getGenVersion(ctx.version.id)?.shotLevels : null;
+  return raw ? (JSON.parse(raw) as ShotLevels) : {};
+};
+
+/**
+ * The level a shot starts at: a pin if there is one, else the highest the recipe and the machine allow
+ * (owner's requirement: the director is never held back; the kit is the floor a failing shot falls to).
+ */
+export function autoLevel(ctx: StepContext): Level {
+  const chosen = chooseLevel({
+    pin: modelPin(ctx.store, ctx.director.model), recipeLevel: recipeLevel(ctx.recipe), maxLevel: recipeMaxLevel(ctx.recipe),
+    cpuCap: ctx.capabilities?.("free").level ?? "free", record: recordOf(ctx.store, ctx.director.model),
+  });
+  // without a kit the levels mean nothing: the model writes its scene, as before levels existed
+  return !(ctx.kit && ctx.capabilities?.("kit").kit.length) ? "compose" : chosen;
+}
+
+/** The level a shot is planned at: the plan's (FR-042), never above what `auto` gives now (a worse record or a lower cap wins). */
+export function plannedLevel(ctx: StepContext, shot: Shot): Level {
+  const now = autoLevel(ctx);
+  return isLevel(shot.level) ? atMost(shot.level, now) : now;
+}
+
+/** The level a shot is written and checked at: what the build used, else its planned level. */
+export function levelOfShot(ctx: StepContext, plan: Plan, index: number, levels: ShotLevels = readShotLevels(ctx)): Level {
+  const shot = plan.shots[index]!;
+  return levels[shot.id]?.built ?? plannedLevel(ctx, shot);
+}
+
+/** What a scene is held to besides the plan: the project's files and, with a kit, the parts and drawing its level allows. */
+export function sceneRules(ctx: StepContext, level: Level): { assets: string[]; kit?: SceneKit } {
+  const assets = sceneAssets(ctx);
+  if (!ctx.capabilities || !ctx.kit) return { assets };
+  const caps = ctx.capabilities(level);
+  return {
+    assets,
+    kit: { installed: ctx.kit.manifests().map((m) => m.name), allowed: caps.kit.map((p) => p.name), level: caps.level, webgl: caps.renderer.runtimes.includes("webgl") },
+  };
+}
+
+/** Tool steps per shot turn and looks at its own draft when the recipe says nothing (FR-049). */
+export const DEFAULT_TOOL_STEPS = 8;
+export const DEFAULT_LOOKS = 2;
+
+/**
+ * The tools a shot's turn may use (search and install registry blocks, check its draft), per the recipe's
+ * `author.toolSteps` and `author.looks`; none at the kit level (Sorot writes that scene) or when the
+ * recipe sets `toolSteps: 0`.
+ */
+export function sceneToolsFor(ctx: StepContext, dir: string, plan: Plan, index: number, level: Level): SceneTools | null {
+  if (level === "kit") return null;
+  const authorWith = (ctx.recipe.steps.find((s) => s.use === "author")?.with ?? {}) as Record<string, unknown>;
+  const planWith = (ctx.recipe.steps.find((s) => s.use === "plan")?.with ?? {}) as Record<string, unknown>;
+  const steps = Number.isInteger(authorWith.toolSteps) ? (authorWith.toolSteps as number) : DEFAULT_TOOL_STEPS;
+  const looks = Number.isInteger(authorWith.looks) ? (authorWith.looks as number) : DEFAULT_LOOKS;
+  const env = { dir, hyperframes: ctx.hyperframes, catalog: ctx.catalog, blocksAllowed: planWith.blocks !== false, shot: plan.shots[index]!, plan, fps: ctx.recipe.output.fps, frameDiffs: async (file: string) => { const res = await ctx.exec(ctx.config.ffmpegPath, frameDiffArgs(file), { signal: ctx.signal, timeoutMs: 120_000 }); return res.exitCode === 0 ? parseFrameDiffs(res.stdout) : []; }, index, startSec: shotStarts(plan)[index]!, rules: sceneRules(ctx, level), signal: ctx.signal };
+  const read = (images: string[]) => strangerRead(ctx.director, { project: ctx.project, step: ctx.step, plan, index, images });
+  Object.assign(env, { shrink: (images: string[]) => shrinkFrames(ctx, images) });
+  return sceneTools(env, { steps, looks, ...(ctx.director.canSee ? { look: (e, args) => lookAtDraft(e, read, args) } : {}) });
+}
+
 /** The shot (0-based) a finding belongs to: its file, its selector, or the moment it happens. */
 export function shotIndexOf(finding: { file?: string; sourceFile?: string; selector?: string; time?: number }, starts: number[], durations: number[]): number | null {
   const named = /shot-(\d+)\b/.exec(`${finding.file ?? ""} ${finding.sourceFile ?? ""} ${finding.selector ?? ""}`);
@@ -44,4 +115,24 @@ export function shotIndexOf(finding: { file?: string; sourceFile?: string; selec
     return i >= 0 ? i : null;
   }
   return null;
+}
+
+/** The width of the look frames the director keeps in its conversation (a 1080×1920 frame costs 2,700 tokens, 360 wide about 300). */
+export const SESSION_FRAME_WIDTH = 360;
+
+/** Smaller PNG copies of frames (data URLs), for the director's own conversation; a frame ffmpeg can't shrink is kept as it was. */
+export async function shrinkFrames(ctx: Pick<StepContext, "exec" | "config" | "signal">, images: string[]): Promise<string[]> {
+  const dir = mkdtempSync(join(tmpdir(), "sorot-shrink-"));
+  try {
+    return await Promise.all(images.map(async (url, i) => {
+      const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(url);
+      if (!m) return url;
+      const from = join(dir, `in${i}.${m[1] === "jpeg" ? "jpg" : "png"}`), to = join(dir, `out${i}.png`);
+      writeFileSync(from, new Uint8Array(Buffer.from(m[2]!, "base64")));
+      const res = await ctx.exec(ctx.config.ffmpegPath, ["-v", "error", "-y", "-i", from, "-vf", `scale=${SESSION_FRAME_WIDTH}:-2`, to], { signal: ctx.signal, timeoutMs: 30_000 });
+      return res.exitCode === 0 && existsSync(to) ? `data:image/png;base64,${readFileSync(to).toString("base64")}` : url;
+    }));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }

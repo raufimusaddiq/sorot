@@ -6,6 +6,8 @@ import type { GenProject, GenVersion } from "../../types";
 import type { Director } from "../director";
 import type { DirectorLog } from "../events";
 import type { Hyperframes } from "../hyperframes";
+import type { Kit } from "../kit";
+import type { Capabilities, Level } from "../capabilities";
 import type { FactWeb } from "../facts";
 import type { ImageClient } from "../images";
 import type { Narrator } from "../narration";
@@ -39,6 +41,12 @@ export interface StepContext {
   connected: (connection: string) => boolean;
   /** Names and tags of the HyperFrames registry blocks, with their kind and description (empty when the CLI can't list them). */
   catalog: () => Promise<Array<{ name: string; tags: string[]; type?: string; description?: string }>>;
+  /** The installed kit parts (built in and the owner's). */
+  kit?: Kit;
+  /** Milliseconds, for timing a frame against the budget (tests pass their own). */
+  clock?: () => number;
+  /** What a director call may use here at `level` (FR-047); `parts` get their full settings. */
+  capabilities?: (level?: Level, parts?: string[]) => Capabilities;
   signal?: AbortSignal;
   /** Percent done of this step (shown on the version while it builds). */
   progress: (percent: number, label?: string) => void;

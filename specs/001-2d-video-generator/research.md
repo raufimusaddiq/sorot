@@ -586,8 +586,8 @@ are `STORYLINES.md`, `SPEC.md`, `MOTION_PLAN.md` and `CONCEPT.txt`.
   warning is handled by `warnings`: `fix`; `fix-or-hold` (keep it with `data-hold` and a reason
   the director must give, which is saved as a kept finding and shown in MOTION_REVIEW.md); or
   `report`.
-- `look` (needs a vision model, or `when: "connection:vision"`): `snapshot --review` plus
-  `snapshot --at` each beat + `beatOffsetSec`. A **separate** call describes every beat frame as
+- `look` (needs the director's model to see, or `when: "connection:vision"`): three pictures of
+  each shot (early, middle, settled; `beatOffsetSec` was removed). A **separate** call describes the frames as
   a stranger would, names its objects (an object that needs explaining is a must-fix), compares
   the frame with the shot's `reads`/`heroMove`, and names any `rules.defaultsAudit` item it sees.
   The director then fixes the scenes, for up to `rounds` rounds. This is the author's
@@ -870,3 +870,415 @@ seams are cuts", reversing the phase 12 text).
 | Cost of motion blur and of WebGL/Three.js scenes on the RTX 4060 and on CPU | Render seconds per video second recorded; `maxLevel` default for CPU installs chosen |
 | Thresholds for `motion` (jump, stall) on today's builds | No finding on the smooth builds, a finding on a planted jump |
 | Level thresholds (R25) | Calibration of both deepseek models and one small local model recorded; their levels look right |
+
+### S7 cost, CPU half (2026-11-02)
+
+One run each, native Linux (not the Docker image), 4-core Intel Xeon 2.1 GHz, no GPU, 16 GB;
+HyperFrames 0.8.223, `render -q draft -f 30 -w 2`, 10 s at 1080×1920 (300 frames). Chrome drew
+WebGL with SwiftShader (software). Treat these as single measurements.
+
+| Scene | Render | Seconds per video second |
+|---|---|---|
+| Six 2D cards darting across every 0.5 s (fast `expo.out` moves) | 10.3 s | 1.0 |
+| The same with `data-motion-blur="on"` (default samples) | 34.8 s | 3.5 |
+| `three` kit part: six lit metal coins, orbiting camera | 22.5 s | 2.3 |
+| The same with `data-motion-blur="on"` and `data-motion-blur-events="on"` | 36.2 s | 3.6 |
+
+- Motion blur costs about 3.4× on 2D movers: worth it only on shots the plan marks fast
+  (`render.motionBlur: auto`). On a WebGL canvas HyperFrames falls back to its filter blur (its log:
+  "html-in-canvas captures [WebGL] frozen (Chrome 152)").
+- Software WebGL is affordable for a simple 3D shot (2.3 s per second, far inside the 15 s planning
+  figure), so **CPU installs keep `maxLevel: free`** (`CPU_MAX_LEVEL`); a heavier shot is caught by the
+  frame budget (T139) and dropped a level.
+- Chrome logs "GPU stall due to ReadPixels" console warnings for a WebGL canvas; they come from the
+  frame capture, so the check step drops them.
+- The nine built-in parts each rendered their example twice with identical frames (framemd5) on this
+  machine, which is the check a user part must pass.
+- Still open: the same four scenes on the RTX 4060 Docker app.
+
+### S7 motion thresholds, first pass (2026-11-02)
+
+- ffmpeg's scene score (`select=gte(scene,0)`) and `freezedetect` were tried first. Both round a
+  small element's motion to zero: a 240 px box moving 4 px a frame scored 0.000, and `freezedetect`
+  reported 42 "freezes" in that smooth 6 s clip. Not usable for stalls or for small elements.
+- The measure uses the mean luma difference of each frame pair instead
+  (`tblend=all_mode=difference,signalstats`, YAVG). Ratio of a frame's change to the median of its
+  four neighbours on each side:
+
+  | Clip (spike S7 renders, plus two made with ffmpeg) | Highest ratio |
+  |---|---|
+  | Planted: a 240 px box jumping 400 px for one frame and back | 45× (one finding) |
+  | The same box moving smoothly | 1.3× |
+  | Six cards darting with `expo.out` every 0.5 s (fast, eased) | 2.0× |
+  | `three` coins orbiting | 1.2× |
+
+  So `jumpRatio` defaults to 6 (must-fix from 12) with a floor of 1 luma level; `stallFrames` to 8
+  (must-fix from 16), a frame under 0.03 counting as still. Fixtures: `backend/tests/fixtures/motion/`.
+- Still open (T147): the same on the real builds of 2026-11-01, and calibrating deepseek-v4-flash,
+  deepseek-v4-1-flash and a small local model to check their `auto` levels.
+- The `finished` question is worded "Do the things in `shots` read as what they are, looking finished
+  and intended?": the spec's "..., and look finished and intended?" asks two things by Sorot's own
+  question lint.
+
+### S7 level thresholds: calibration (2026-11-02, T147)
+
+Calibrate (`POST /api/generate/models/calibrate`, three sample shots per level from the fixed
+calibration plan) on the CPU test install, through the Kenari gateway. No local model was reachable
+here; `gemma-4-31b-it` (an open-weights model of the size people run on their own machines) stands
+in for "a small local model", served by the gateway, not locally.
+
+| Model | Time | First pass kit / compose / free | Proven level | `auto` |
+|---|---|---|---|---|
+| deepseek-v4-1-flash | 6.0 min | 3/3, 3/3, 3/3 | kit (older answers) | free |
+| deepseek-v4-flash | 5.7 min | 3/3, 3/3, 3/3 | free | free |
+| gemma-4-31b-it | 41 s | 3/3, 3/3, 3/3 | free | free |
+
+- Every model wrote valid scenes at every level. Calibration measures validity (the scene passes
+  `checkScene` or the kit answer validates), not looks; the CREATIVE and look findings of real
+  builds (GLM, Kimi) are the measure of looks.
+- `auto` is `free` for all three, as the owner's rule says (the director is never held back); the
+  record only reports.
+- deepseek-v4-1-flash stays "proven kit" because its record holds this morning's kit-answer
+  failures: 41 malformed for 28 kit asks. That exposed a counting bug: each malformed *attempt*
+  was counted, so the share could pass 100%. Fixed: a malformed answer counts once per ask
+  (`director.ts`, `converse`). The old rows keep their counts.
+- gemma's 41 s for nine shots is far faster than the others; its scenes were short. Looks were not
+  judged in calibration.
+
+### S2 and S5 on the CPU test install (2026-11-02, T096)
+
+- **S5, the vision look review**: done. The model that writes is the model that sees (no separate
+  vision model, R36). On the GLM story builds (`glm-5-3-flash`, 7 shots) four look calls took
+  23 to 69 s each and described the frames accurately ("an old woman seen from behind … carrying a
+  rattan basket of jars"); they caught the weak shot ("a dark dome shape with a dim sphere and a
+  stylized hand knocking on nothing … the lamp appears unlit") and gave `look_unexplained` /
+  `look_mismatch` findings for it. The CREATIVE judge with the frames (14 to 22 s a call) answered
+  `finished: partly` on the same shot with the same reason. Jev, reading text, can't see these.
+- **S2, delivery render on CPU**: the 30 s story film (7 shots, narration, 1080×1920, 30 fps)
+  renders at delivery quality in **118 s** (3.9 s of render per second of video) and at draft in
+  97 s (3.2 s/s) on a 4-core, 15 GB container. A 60 s narrated film would take about 4 minutes on
+  this machine (estimate, not run). The RTX 4060 numbers and a full unattended 60 s narrated run
+  (SC-013) are still open.
+- **Determinism (quickstart 5, SC-007)**: the same version rendered twice at draft: 900 frames each,
+  all 900 frame hashes equal.
+
+## Part 4: The director loop (2026-11-02)
+
+Evidence: three real builds on 2026-11-02 (Kimi isometric, GLM isometric, GLM story) and the
+`gen_event` log of every call. Design note: [docs/director-loop.md](../../docs/director-loop.md).
+
+## R32. One build session instead of a call per shot
+
+- **Decision**: a version's scenes, repairs and kit shots are one conversation (opening: system
+  message, whole plan, capabilities; one turn per shot, in order; each request extends the last).
+  `GEN_CONTEXT_TOKENS` (default 600000, for models with a 1M window) restarts it from the opening
+  and the latest shots. Built in `3c1ae8a`.
+- **Rationale**: with separate calls the best possible prefix reuse, replayed from the log, was 44%
+  (isometric) and 51% (story); the provider reported 34% and 40%. Calls ran in parallel (none could
+  reuse another), scene and repair started with different instructions, and the shot's own fields
+  came before the shared 8.7 KB capabilities. On the session build the estimate was 84% for scenes
+  (94 to 97% after the first) and 89% for repairs, 87% overall. Shots also see each other: the
+  story's figures stayed one style across shots.
+- **Cost**: scene writing is serial (4.4 min vs about 2.5 for seven GLM scenes); whole build time
+  was unchanged (about 15 min).
+- **Alternatives**: reordering fields only (tried first, `4c91448`: the ceiling stays near 50%);
+  staggering parallel calls (timing-dependent, cache writes aren't guaranteed in time); a bigger
+  output budget (`GEN_LLM_MAX_TOKENS` caps the answer, not the cache).
+
+## R33. Tools in the turn: use what ships, don't bundle art
+
+- **Decision**: `search_blocks` (word and tag match over the cached catalog), `use_block`
+  (`hyperframes add`, source returned up to 24 KB), `look` (R34), `check` (`checkScene` +
+  `hyperframes lint` for one shot), then `submit_*`. `tool_choice: auto` with the submit tool
+  offered every step; the last allowed step is forced to it. Limits per turn: 8 steps, 4 searches,
+  2 blocks, 2 looks, 3 checks (recipe `author.toolSteps`, `author.looks`).
+- **Rationale**: the registry already holds 448 items (238 components, 210 blocks): 38 in 3D, a
+  jointed walking character (`lottie-character-walk`), 12 maps, 9 charts; Three.js is already the
+  `three` part. The owner's requirement: no bundled assets (bloat, licences, sameness), no paid
+  generated images, the director's creativity not capped.
+- **Alternatives**: drawing lessons in the prompt (no feedback to the model; tried in spirit with
+  the worked example, which changed layout but not drawing); a bundled character/icon library
+  (rejected by the owner: size and sameness); embeddings for search (a new dependency for 448
+  short descriptions; word and tag match first, measured in S8).
+- **Not a tool**: the scene probe needs a full `hyperframes check` (minutes); it stays in the check
+  step and comes back as a repair turn.
+
+## R34. Looking: the director's eyes and a stranger's read, one model
+
+- **Decision**: `look` renders 1 to 3 frames of the draft (`snapshot --at`), sends only the frames
+  to a fresh call of the same model with the look step's questions, turns the answer into the look
+  findings with `look.ts`, and returns frames and findings to the director in the same turn. The
+  look step records "looked in the loop" when every shot was looked at. No separate vision model
+  (`LLM_VISION`, `LLM_VISION_MODEL` removed in `8ba50db`); a call with pictures goes to its role's
+  model.
+- **Rationale**: the look step's value is the stranger: a viewer that doesn't know what the shot
+  meant. The author can't be that for its own drawing, but the same model in a fresh call can.
+  Moving it into the turn means the director redraws before submitting instead of after the
+  build. GLM read a frame sheet correctly in a direct test (2026-11-02). One model to configure
+  keeps the settings small (owner's requirement).
+- **Alternatives**: the director judging its own frames only (biased: it knows its intent); keeping
+  the look step after the build (feedback arrives after the scene is written, text only); a second
+  vision model (more configuration; the director must see anyway).
+
+## R35. Compaction that keeps the cache
+
+- **Decision**: three levels, each rewriting only the tail (the current turn): end of turn
+  (always): the turn's tool exchanges become one note (`tools used: …`), the accepted answer stays;
+  mid-turn (past `GEN_TURN_TOKENS`, default 60000): older tool results become stubs, the latest of
+  each kind (frames, check, block source) stays whole; session (past `GEN_CONTEXT_TOKENS`): restart
+  from the opening and the latest shots (built).
+- **Rationale**: a provider caches the request's prefix, so editing anything before the current
+  turn would make every later request miss. Tool results are the bulky part (images, block sources,
+  check output) and are only useful while the shot is being made.
+- **Alternatives**: summarising the turn with an extra LLM call (cost and latency for a note code
+  can write); a sliding window over the whole conversation (moves the prefix on every turn, so
+  nothing is cached); never compacting (frames from earlier shots would fill the window).
+- **Sizes**: estimated in code at 3.5 characters a token and 2,700 tokens an image (measured in S8,
+  below; the placeholder was 1,500).
+
+## R36. Removing the vision settings is a contract break
+
+- **Decision**: `llm.vision` and `llm.visionModel` answer 400 (unknown field); saved values are
+  ignored; called out in the CHANGELOG (constitution V). Recipes keep `creative.vision`
+  (`on`/`auto`/`off`): whether to show the frames, not which model sees them.
+
+## Spike S8 (before phases 20 to 22)
+
+| Question | How | Decides |
+|---|---|---|
+| Does a fast model (GLM) run a multi-step tool loop, or call the same tool repeatedly? | the story brief with tools on, the `gen_event` tool rows | per-tool limits, the forced-submit step |
+| What does an image cost in tokens on the provider? | the provider's usage numbers for calls with 1, 2, 3 frames | the compaction estimate, `author.looks` |
+| Can `lottie-character-walk` and the 3D blocks be adapted to 9:16 and a film's look? | install into a 9:16 project, adapt, render | whether `use_block` returns full sources or references |
+| Word and tag search: do the right blocks come up for "a person walking", "a bar chart", "a map"? | ten queries against the catalog | whether search needs more than words and tags |
+
+### S8, first real runs (2026-11-03, T169 in part)
+
+The GLM story brief (`glm-5-3-flash`, 7 shots, same plan, images and voice) rebuilt twice on the CPU
+test install with the tool loop on (`author.toolSteps` default 8, `looks` default 2).
+
+| Run | Tools used | Scene+repair model calls | Prefix reuse (log estimate) | Author step | Final `look_unexplained` must-fix |
+|---|---|---|---|---|---|
+| A. tools offered, nothing asking for a look (`545fa70`) | none: 0 of 11 turns | 11 | not measured | 3.4 min | 2 (s02, s03) |
+| B. first submit asks for a look once (`7974c56`) | `look` 10×, `search_blocks` 0, `use_block` 0, `check` 0 | 32 | 93% | about 11 min | 4 (s02 ×2, s03 ×2) |
+
+- **A fast model skips optional tools.** With the tools only offered, GLM submitted every turn at
+  once. Run B's rule ("look at your draft first", turned back inside the turn, no retry used) got a
+  look for each of the 7 shots; three shots looked more than once. It never searched the registry
+  or ran `check`, even with the "Your tools" section in the authoring guide.
+- **Looking didn't make the drawing better by the stranger's measure.** The director read the
+  findings and sometimes redrew (one turn says "the look renders showed two problems: the brown
+  rectangle…"), but the final look step still found unnameable objects in shots 2 and 3, as many
+  as before. By eye, shot 1 now fills the frame with the generated illustration and the street scene
+  is busier and more readable; the hands and the door are still crude.
+- **Cost**: about 3× the author time (each look is a render of up to 3 frames plus a stranger call,
+  about 20 s plus 15 s here), 10 looks in all.
+- **Cache**: 93% of the scene and repair requests' text was a prefix of an earlier finished request
+  (session with tool results), against 87% without tools. The provider's own number is still to be
+  read from its dashboard.
+- **The look step still ran**: repairs after the check step changed scenes, so the hashes no longer
+  matched ("looked in the loop" applies only when no scene changed since its look).
+- **Run B failed at the creative verdict**: the gateway reset the connection (`ECONNRESET`); a retry
+  of the version would produce the verdicts. Not caused by the loop.
+- **Open**: image cost in tokens (needs the provider's usage numbers), registry blocks adapted to
+  9:16 (nothing tried them), a stronger model's use of `search_blocks` and `use_block`, the 20-brief set.
+
+### S8, part 1 finished (2026-11-05, T156)
+
+- **What a frame costs** (one 1080×1920 PNG, the provider's `usage.prompt_tokens`, calls with 0 to 3 frames):
+
+  | Model | 0 frames | 1 | 2 | 3 | Per frame |
+  |---|---|---|---|---|---|
+  | `glm-5-3-flash` | 19 | 2,712 | 5,405 | 8,098 | 2,693 |
+  | `kimi-k3-1-pro` | 93 | 2,794 | 5,495 | 8,196 | 2,701 (the repeat call read 2,782 then 5,483 from its cache) |
+  | `qwen3-8-omni-flash:free` | 270 | 2,100 | 4,145 | 6,190 | 1,830 to 2,045 |
+
+  `IMAGE_TOKENS` in `compaction.ts` is now 2,700 (was a placeholder 1,500), so compaction counted frames at
+  about half their cost. A look of 3 frames is about 8,000 tokens of input.
+- **Ten searches** on the 448-item catalog (`hyperframes catalog --json`). Found by substring at first: "of"
+  matched "proof" (a map of Java → testimonial cards) and "walking" missed "walk". Now whole words, a shared
+  stem of 4 letters or more, and English filler words dropped (`searchBlocks`): a person walking →
+  `lottie-character-walk`; a bar chart → `bar-chart-race`, `animated-bar-chart`; a map of Java → `us-map`,
+  `spain-map` (no Indonesian map in the registry); a phone notification → five notification blocks; water
+  waves → `sine-wave`, `water`, `ripple-waves`; a house → nothing; money coins → `apple-money-count`; a hand
+  pouring, a rocket launch, a clock ticking → loosely related blocks only. Words and tags are enough to find
+  what exists; what the registry lacks (people, houses, Indonesia) no search finds.
+- **`product-turntable` adapted to 9:16**: 1920×1080, loads GSAP, a font and Three.js r0.184 (with
+  `RoomEnvironment` and `GLTFLoader`) from a CDN. Five mechanical changes made it render here: GSAP and the
+  vendored Three r159 from `assets/` (a global, not an ES module), the font dropped, `RoomEnvironment`
+  replaced by a hemisphere fill, `GLTFLoader` left out (only a user's own model needs it), and the sizes
+  swapped to 1080×1920. The can turns on its plinth across the three snapshots. A strong model can do this
+  from `use_block`'s source and its remote-load warning; `lottie-character-walk` needs a Lottie player Sorot
+  doesn't ship (above).
+
+### Quickstart run on a real server (2026-11-05, T100, T095, T096 CPU half)
+
+A separate server (CPU, 4 cores, `glm-5-3-flash`) while the 20-brief bench ran on another, so every time
+here is on a shared CPU.
+
+| Scenario | Result |
+|---|---|
+| 3, UI | estimate shown before the build (about 17 min; it took 25.4 min on the shared CPU), progress through every stage, the draft plays, export refused on TECHNICAL FAIL, build refused before approval |
+| 4, Revise | `gen fix` makes a version with fresh verdicts; both versions in the UI history; `gen restore` brings the old plan back (the CLI printed the newest revision instead: fixed, T186) |
+| 6, Export | export re-renders and lands in Library → Generated (1080×1920, 30 fps, 30.0 s). Publish not run: Tebar isn't connected here |
+| 8, Own pipeline | compose, run, wrong order refused, frozen recipe kept, a custom command's findings in TECHNICAL, export to a clean install refused until its command is registered. A voice recipe made without `--narration` stayed silent (fixed, T186) |
+| 9, Unattended factual run | the wrong fact `corrected` with its evidence; cursor and resume as specified; fail-closed voice stops with nothing rendered. The numeric plan never passed until four fixes (T186, T187): CSS tracking, eases with settings, outline repair noise, and naming where an unsourced number sits |
+
+- **SC-013 (CPU half)**: the 60 s narrated run went from idea to a checked film unattended, about 30 min in
+  all here (plan 4.5 min, build 25.8 min, voice and Whisper about 5 min of that) on the shared 4-core CPU;
+  its TECHNICAL was FAIL (motion stalls), so it wasn't exported. The GPU reference (6 min of render for
+  58 s) is still to be measured on the RTX 4060. The run also showed the voice spoken out of the script's
+  order (fixed, T187).
+- **Porting test (T095)**: `docs/examples/recipes/agent-explainer.json` imported and made runnable here in
+  a few minutes with no code (a sqlite data source and the custom command registered in Settings). There
+  is no original agent pipeline on this machine, so its TECHNICAL numbers can't be compared; not run.
+
+### S8, part 2: the story brief, loop off and on (2026-11-05, T169)
+
+The jamu story, 40 s, `glm-5-3-flash`, one approved plan built four times. Shared CPU (the bench ran
+alongside). A 30 s first attempt failed closed at the voice: 32.1 s of speech after both rewrites.
+
+| Build | Setting | Build time | Scene+repair calls | Tool calls | Input served from cache | `look_unexplained` must-fix | Largest request |
+|---|---|---|---|---|---|---|---|
+| v1 | `toolSteps: 0` | 702 s | 8 + 10 | none (look step 7 calls) | 85.3% | 9 | |
+| v2 | `toolSteps: 8` | 2,543 s | 25 + 4 | look 24, check 1, search 0 | 82.1% | 1 | |
+| v3 | 8, `GEN_CONTEXT_TOKENS` 20,000 | 3,205 s | 28 + 10 | look 26, check 2 | 67.0% | 3 | 51,133 tokens |
+| v4 | 8, 20,000, after T189 | 2,287 s | 25 + 7 | look 24, use_block 1 | 72.7% | 1 | 36,806 tokens |
+| v5 | 8, default window, after T191 (360×640 frames in the session, no html resent) | 1,682 s | 24 + 6 | look 22 | **90.8%** | 1 | |
+
+- **SC-021**: 82.1% with the loop at first. The owner raised the target above 90%. Where the misses were (A-04,
+  per call): of 82,500 uncached tokens about 49,000 were look frames, new to the cache every time (2,700
+  tokens a 1080×1920 frame); the rest was each turn's new request and the model's own answer. After T191 the
+  same story built at **90.8%**, and 34% faster (fewer image tokens to read). One build so far; the bench
+  sets B and C run on this code.
+- **SC-022 not quite**: the loop took the unexplained objects from 9 to 1; the aim is none.
+- **SC-023 not met**: 3.6× the time without the loop (aim ≤ 2×). Each look is a render of up to 3 frames
+  and a stranger call; GLM looked 24 times for 9 shots. Times are on a shared CPU.
+- **SC-024 not met at first**: at a 20,000-token window requests reached 51,133. The restart kept every
+  shot written so far (more than the window by itself) and a turn's tool results were cut only at
+  `GEN_TURN_TOKENS`. Fixed (T189); the floor of a turn is its opening (about 12,600 tokens here) plus its
+  latest look (about 8,100), so 20,000 can only be met to within one look.
+- The look step sent all of a 40 s film's frames in one request and the gateway refused it (HTTP 413):
+  three shots a call now (T188).
+
+### The 20-brief bench, set A: GLM at the default level (2026-11-05, T172, SC-004, SC-022)
+
+20 explainer briefs (30 s, Indonesian, no narration, `market_data: false`; `scratchpad/bench/briefs.tsv`, the
+Quick recipe with director gates and no export), `glm-5-3-flash`, the tool loop on, one build at a time on a
+4-core CPU. The code moved during the run (fixes T185 to T196 came from it): A-01 to A-11 ran before them, the
+rest after; A-12 to A-15, A-19 and A-20 were run again after a fix.
+
+| Measure | Set A | Target |
+|---|---|---|
+| Built | 20 of 20 (after the plan fixes) | |
+| TECHNICAL, as measured | 3 PASS, 3 REVIEW, 14 FAIL | SC-004: 80% PASS within two fix rounds |
+| TECHNICAL, the jump rule of T195 replayed on the same drafts | 4 PASS, 4 REVIEW, 12 FAIL | |
+| Accepted (TECHNICAL not FAIL) | 6 | |
+| Shots with a `look_unexplained` (the look step's stranger read run on the finished drafts, 3 pictures a shot) | 32 of 144, **22.2%** | SC-022: under 10% |
+| Input served from cache (scene and repair calls, mostly before T191) | 84.6% | SC-021: above 90% |
+| Median build | 1,292 s | |
+
+- **SC-004 not met.** The must-fix findings left: `motion_stall` 9 (pauses of 0.53 to 2.33 s between moves),
+  `number_forbidden` 9 (6 of those builds were planned before T195; under today's rules 3 builds still show
+  figures: prices in A-06, a number in A-10 and in A-13, which the plan step would now send back),
+  `readability_hold` 2. The director sees its stalls in the loop (`check`, `look`) and leaves them.
+- **SC-022 not met**: what a stranger can't explain is mostly small leftovers: dots, specks, faint shapes,
+  a "pale blob", a duplicated label. The bench recipe has no look step, so nothing in the build took them out;
+  a recipe with the look step repairs must-fix unexplained objects (`rounds`), which these builds didn't run.
+- One look call of the 60 failed (GLM didn't call `submit_look`); its shots were looked at again in the
+  next call.
+
+### The 20-brief bench, set B (small model at kit) and C, and SC-021 across builds (2026-11-05, T150 in part, T192)
+
+Set B: `qwen3-8-omni-flash:free` with the recipe pinned to `kit` (`bench-kit`). 19 of the 20 briefs ran
+(B-02's rerun didn't, see below).
+
+| Set B | |
+|---|---|
+| Built | 5 of 19; all 5 TECHNICAL REVIEW or better but one (4 accepted) |
+| Failed before building | 14: the gate decision without its `reason` 10, storylines an empty list 1, no `submit_plan` 1, the old "satu" rule (T196) 1, the gateway reset (`ECONNRESET`) 1 |
+| Median build | 541 s (kit level) |
+| Input served from cache | 91.3% |
+
+- **SC-015 not met as run** (80% TECHNICAL PASS or REVIEW at kit): 4 of 19. But 10 of the 14 failures were
+  one thing Sorot can take: a decision given without a reason, asked once more and still without. The gate
+  now asks once and then keeps the decision, logged as "(the director gave no reason)" (T197). With that, the
+  builds that ran point to SC-015 being within reach for a small model at kit; to be run again.
+- **Set C** (`kimi-k3-1-pro`, the highest level) built C-01 only: the bench ran inside a tracked background task
+  (it keeps the container from being reclaimed, which had killed the bench three times) whose limit is 2 hours,
+  and it stopped there. SC-018 (strong model vs kit) is not measured.
+- **SC-021 across builds** after T191: 89.5% over the 16 builds that ran on it (per build 83 to 93%, median
+  about 90%). The story brief alone was 90.8%. Just under "above 90%" across the set; the misses left are each
+  build's first request (the opening) and the turn's own new text.
+
+### The bench's TECHNICAL failures (2026-11-05, set A so far)
+
+11 of 13 GLM builds failed TECHNICAL. Must-fix findings: `motion_jump` 18, `number_forbidden` 9,
+`motion_stall` 8 (pauses of 0.5 to 1.3 s).
+
+- **`motion_jump` mostly wasn't a jump.** Frames around each: a designed flash (opacity 0 to 0.8 in 0.12 s)
+  changes 95% of the frame (243/255); a counter ticking changes 0.2% of it every other frame against a still
+  frame (ratio huge because the neighbours are 0); a move starting from rest (2.78, 0, 2.77, 2.76...). The
+  rule now leaves out whole-frame changes (≥ 128/255), needs at least 2/255 of the frame, and skips a spike
+  the next frames keep up. Replayed on the 13 drafts: 23 jumps became 2; both left are real pops (a ball
+  stepping in size), and the dropped ones were checked frame by frame (one a solid line turning dotted in one
+  frame, small enough to let through). The planted jump of spike S7 is still caught.
+- **`number_forbidden` came too late.** With `market_data: false` the plan and script were never held to "no
+  numbers beyond the brief's": the director's plan showed "+Rp 87rb" and only the verdict at the end said so.
+  The plan and script steps now send such a number back for repair, as for sourced numbers.
+- **`motion_stall`** is left as the owner set it (8 still frames between moves; must-fix at twice that).
+
+### S8, a subject too dark to see (2026-11-05, T183)
+
+GLM build `a54d3888` (the Wi-Fi brief) drew the router, a wall and two houses in navy (about `rgb(25,37,74)`)
+on a near-black ground (`rgb(9,13,35)`). Lint, check, the probe, the motion measure and the look step all
+passed it. HyperFrames' own `contrast` check reports text only (empty for this build). The second GLM build of
+the same brief (`d8c3a94a`) reads well: a white router and cyan waves on navy. Measured offline on both, no LLM
+calls:
+
+| Measure | `a54d` (subject hard to see) | `d8c3` (reads well) | Verdict |
+|---|---|---|---|
+| Share of a drawing's pixels under 1.5:1 against the ring around its probe box | 45 to 98% | 21 to 100% | doesn't separate: glows and gradients count as faint |
+| 90th percentile contrast inside the probe box | 1.3 to 1.8 in shots 1, 5, 6; 5.2 in shot 4 | 1.2 to 1.5 for the dim walls; 2.6 to 15 elsewhere | misses shot 4: one svg holds the navy router and wall and the bright orange rings |
+| Flat regions grown across neighbour differences of ≤ 4, 540×960 | router and wall 1.33 to 1.36, houses 1.29 | walls and glow halos 1.16 to 1.26 | the dim shapes measure the same in both films |
+| Brightest region in the frame, text left out | 1.36 at 15 s, 1.29 at 20 s (the shots that look wrong) | 4.5 to 15.7 in every frame | separates these two films |
+
+- **Contrast alone can't tell a subject from scenery.** Both films draw navy shapes at about 1.2 to 1.35:1; in
+  `d8c3` they are walls behind a white router, in `a54d` they are the subject itself.
+- **The stranger's read, live** (GLM, one draft frame a shot, both builds): it called something faint in
+  3 of 5 `a54d` shots (the phone outline, the dashed Wi-Fi arcs on the phone panel, the houses) but not the
+  router and wall of shot 4, and in 6 of 6 `d8c3` shots (the dim walls, and the weak waves of "jauh =
+  lemah", which are weak on purpose). Noisy both ways.
+- **Decision (built, FR-057)**: the stranger's `faint` list goes to the director in its own turn as
+  `look_faint` should-fix, where it knows what is meant to be weak; the look step keeps it out of the
+  verdict, since as a TECHNICAL should-fix it would have marked most films REVIEW. The pixel rule below
+  stays unbuilt until more films are labelled.
+- **Candidate**: a frame where nothing drawn stands out (every sizeable non-text region under about 1.5:1
+  against what it sits on) is a should-fix. Tested on two films only, so the threshold is uncalibrated; it
+  needs the probe's text boxes to leave text out, misses thin bright strokes under the size floor, and must be
+  run on the hand-written film (`claude-v`) and both worked examples before it ships.
+- **Other option**: the stranger's read in the look step names what is hard to see against the ground (it
+  knows the plan's subject); costs nothing new to run but depends on the model's eyes.
+- The `a54d` version's snapshots don't match its `draft.mp4` (shot 1 at 6, 10 and 15 s); not investigated.
+
+### S8, registry blocks and the planner (2026-11-03, T156 in part)
+
+- **What the planner sees**: the plan call gets every block's name and tags (448 items), not their descriptions
+  (the effects pass's search does see them). GLM's plan named one block, `godrays`, for shot 4, and the
+  scene for that shot doesn't use it. Nothing for people.
+- **Two install layouts**: `hyperframes add` writes a block flat (`compositions/godrays.html` plus
+  `compositions/lib/…`) or in its own folder (`compositions/lottie-character-walk/lottie-character-walk.html`
+  plus `assets/mascot.json`). Sorot looked only at the flat paths, so `use_block` would have returned an
+  empty source for a folder block, and a planned folder block never reached its scene call either. Fixed:
+  the source comes from the files `add` reports as written (`blockFiles`).
+- **`lottie-character-walk` in a vertical film is not a drop-in**: it is a 1920×1080 composition with a card
+  on the right, loads GSAP, lottie-web and Google Fonts from the web (the authoring contract forbids remote
+  scripts and links, and Sorot ships no Lottie player; Three.js is the only vendored library), and the
+  character is a 92 KB Lottie file. Using it needs a vendored player and a re-layout to 9:16; a strong
+  model might adapt it, a flash model is unlikely to. `use_block` now flags what a block loads from the web.
+- **So option 2 (the planner picks blocks) would not fix GLM's drawing of people by itself.** Open: whether
+  a vendored `lottie-web` kit part (about 150 KB, my estimate) plus a few Lottie characters is worth the size,
+  against drawing people in Three.js (`iso`/`three`) or SVG.
+- **A failed last step loses the build.** The gateway's `ECONNRESET` is already treated as transient (3
+  attempts, 2 s then 4 s apart) but a reset longer than 6 s ended the creative step, and a version has no
+  "retry from the failed step": a new build re-authors everything (about 15 min). Candidate fix: retry a
+  failed version from its failed step (finished steps are already reused by input hash) and a longer wait.

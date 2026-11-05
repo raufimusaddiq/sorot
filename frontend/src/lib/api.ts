@@ -1,7 +1,7 @@
 // Unset → same origin (the static UI is served by the backend). `next dev`
 // sets it to http://localhost:8080 via .env.local.
 import type {
-  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenVerdict, GenVersion, GenerateStatus, KenariAccount, KenariModel, KenariVoiceModel, PipelineOptions, PublishDraft, SocialAccount, SocialPost,
+  CaptionWord, Clip, ConnectionKind, Connections, ConnectionTest, GenCreateBody, GenPlan, GenPlanRow, GenProject, GenProjectDetail, GenAsset, GenEstimate, GenEvent, GenExport, GenFact, GenIdea, GenRecipe, GenRecipeItem, GenStepSpec, GenFixBody, GenFixResult, GenKitPart, GenLevel, GenModels, GenVerdict, GenVersion, GenerateStatus, PipelineOptions, PublishDraft, SocialAccount, SocialPost, KenariAccount, KenariModel, KenariVoiceModel,
 } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -293,6 +293,10 @@ export class ApiClient {
     return this.request<{ version: GenVersion }>(`/api/generate/versions/${id}/cancel`, { method: 'POST' });
   }
 
+  async retryGenerateVersion(id: string) {
+    return this.request<{ version: GenVersion }>(`/api/generate/versions/${id}/retry`, { method: 'POST' });
+  }
+
   async acceptGenerateVersion(id: string) {
     return this.request<{ project: GenProject }>(`/api/generate/versions/${id}/accept`, { method: 'POST' });
   }
@@ -390,6 +394,38 @@ export class ApiClient {
   /** The rendered video of a version, for a <video> element. */
   generateDraftUrl(versionId: string) {
     return `${this.baseUrl}/api/generate/versions/${versionId}/draft`;
+  }
+
+  // ---- the kit and director levels ----
+
+  async kitParts() {
+    return this.request<{ parts: GenKitPart[] }>('/api/generate/kit');
+  }
+
+  async addKitPart(file: File) {
+    const form = new FormData();
+    form.set('file', file);
+    return this.request<{ part: GenKitPart }>('/api/generate/kit', { method: 'POST', body: form, headers: {} });
+  }
+
+  async removeKitPart(name: string) {
+    return this.request<{ deleted: boolean }>(`/api/generate/kit/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  }
+
+  kitPartExportUrl(name: string) {
+    return `${this.baseUrl}/api/generate/kit/${encodeURIComponent(name)}/export`;
+  }
+
+  async generateModels() {
+    return this.request<GenModels>('/api/generate/models');
+  }
+
+  async calibrateModel() {
+    return this.request<{ run: GenModels['calibration'] }>('/api/generate/models/calibrate', { method: 'POST', body: '{}' });
+  }
+
+  async pinModel(model: string, level: GenLevel | null) {
+    return this.request<{ model: GenModels['models'][number] }>(`/api/generate/models/${encodeURIComponent(model)}/level`, { method: 'PUT', body: JSON.stringify({ level }) });
   }
 
   async getGenerateEvents(id: string, limit = 100) {

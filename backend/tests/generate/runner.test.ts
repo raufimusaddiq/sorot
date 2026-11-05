@@ -112,6 +112,18 @@ describe("runner: project segment", () => {
     expect(r.ran).toEqual(["storylines", "plan"]);
   });
 
+  test("a step that changes its own input (a rewritten script) is kept under the input it leaves, so the next run doesn't redo it", async () => {
+    await approved(r);
+    r.ran.length = 0;
+    r.inputKeys.storylines = "asked";
+    r.on("storylines", async () => { r.inputKeys.storylines = "rewritten"; return done; });
+    await r.runner.runProject("p1");
+    expect(r.ran).toEqual(["storylines"]);
+    r.ran.length = 0;
+    await r.runner.approveStep("p1", "storylines");
+    expect(r.ran).toEqual(["plan"]);   // under the old key the approval would run storylines again, and wait for it again
+  });
+
   test("a director gate logs its decision and goes on; a declined one waits for the owner", async () => {
     const recipe = quickRecipe();
     recipe.steps[1]!.gate = "director";
@@ -178,10 +190,11 @@ describe("runner: project segment", () => {
 });
 
 describe("runner: build segment", () => {
-  test("nothing is built before the plan is approved", async () => {
+  test("nothing is built before the plan is approved: the version ends FAILED with the reason, not stuck BUILDING", async () => {
     addProject(r.store);
     addVersion(r.store);
-    await expect(r.runner.runBuild("v1")).rejects.toThrow("plan isn't approved");
+    expect(await r.runner.runBuild("v1")).toMatchObject({ status: "FAILED", errorMessage: expect.stringContaining("plan isn't approved") });
+    expect(r.ran).toEqual([]);
   });
 
   test("author to creative run in order (not the export) and the version and project end BUILT", async () => {

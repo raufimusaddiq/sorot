@@ -13,7 +13,7 @@ import type { Plan } from "./planSchema";
 // when there is something to put in it.
 
 export const MIRROR_FILES = [
-  "BRIEF.md", "facts.md", "audio_request.json", "audio_meta.json", "STORYLINES.md", "SPEC.md", "MOTION_PLAN.md", "CONCEPT.txt", "MOTION_REVIEW.md",
+  "BRIEF.md", "facts.md", "audio_request.json", "voice.json", "STORYLINES.md", "SPEC.md", "MOTION_PLAN.md", "CONCEPT.txt", "MOTION_REVIEW.md",
 ] as const;
 
 const dir = (config: Pick<AppConfig, "genDir">, projectId: string) => `${config.genDir}/${projectId}`;

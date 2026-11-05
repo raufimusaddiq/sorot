@@ -32,6 +32,8 @@ describe("gen ideas, idea", () => {
     expect(h.out.at(-1)).toContain("Added bunga-majemuk");
     expect(await h.run("gen", "idea", "add", "Bunga Majemuk.md", "--slug", "lain", "--json")).toBe(0);
     expect(h.requests.at(-1)!.body).toEqual({ slug: "lain", brief: "Jelaskan bunga majemuk." });
+    expect(await h.run("gen", "idea", "add", "Bunga Majemuk.md", "--length", "60", "--lang", "en", "--narration", "--no-numbers", "--json")).toBe(0);
+    expect(h.requests.at(-1)!.body).toMatchObject({ flags: { targetSec: 60, language: "en", narration: true, market_data: false } });
     expect(await h.run("gen", "idea", "add", "missing.md")).toBe(2);
     expect(h.err.at(-1)).toContain("No such file");
     expect(await h.run("gen", "idea", "dance")).toBe(2);

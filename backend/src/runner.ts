@@ -63,7 +63,8 @@ export function timeoutFor(script: string, seconds: number, perMediaMinute: numb
   return Math.max(base, Math.ceil((seconds / 60) * perMediaMinute));
 }
 
-async function drain(stream: ReadableStream<Uint8Array>, tail?: number, onLine?: (line: string) => void): Promise<string> {
+/** Read a stream to its end, keeping only the last `tail` chars (and feeding whole lines to `onLine`). Exported for tests. */
+export async function drain(stream: ReadableStream<Uint8Array>, tail?: number, onLine?: (line: string) => void): Promise<string> {
   const decoder = new TextDecoder();
   let buf = "";
   let truncated = false;

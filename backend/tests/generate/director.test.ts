@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/db";
-import { Director, DirectorError, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
+import { LOOK_FIRST, TOOL_DEFS } from "../../src/generate/directorTools";
+import { estimateTokens } from "../../src/generate/compaction";
+import { Director, DirectorError, NO_REASON, approvalChanges, changedShots, shotsNamed } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { validatePlan, type Plan, type PlanContext } from "../../src/generate/planSchema";
 import type { RecipeStep } from "../../src/generate/recipe";
@@ -9,6 +11,8 @@ import { Store } from "../../src/store";
 import type { GenProject } from "../../src/types";
 import { Llm } from "../../src/llm";
 import { AsText, Calls, fakeLlm, samplePlan } from "../helpers";
+import { checkScene } from "../../src/generate/composer";
+import { readFileSync } from "node:fs";
 
 const T = "2026-01-01T00:00:00.000Z";
 const project: GenProject = {
@@ -24,9 +28,9 @@ const story = (i: number, extra: Record<string, unknown> = {}) => ({
 const planCtx: PlanContext = { brief: project.brief, targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false };
 const json = (v: unknown) => JSON.stringify(v);
 
-function rig(replies: Parameters<typeof fakeLlm>[0]) {
+function rig(replies: Parameters<typeof fakeLlm>[0], models: Parameters<typeof fakeLlm>[1] = {}) {
   const store = new Store(openDatabase(":memory:"));
-  const { llm, requests } = fakeLlm(replies);
+  const { llm, requests } = fakeLlm(replies, models);
   const director = new Director(llm, new DirectorLog(store), "../generator");
   return { director, requests, store, events: () => store.genEventsForProject("p1").reverse() };
 }
@@ -89,12 +93,12 @@ describe("director: storylines", () => {
     expect(systemOf(replace.requests[0]!)).toContain("submit_storylines");
   });
 
-  test("calls are logged with the model, request and response; an LLM failure keeps the project state and is logged", async () => {
+  test("calls are logged with the model, request, response and the provider's tokens (input, cached); an LLM failure keeps the project state and is logged", async () => {
     const r = rig([json({ storylines: [story(1)] }), new Error("quota")]);
     await ask(r, { count: 1 });
     await expect(ask(r, { count: 1 })).rejects.toBeInstanceOf(LlmError);
     const [ok, failed] = r.events();
-    expect(ok).toMatchObject({ kind: "storylines", model: "m", ok: 1 });
+    expect(ok).toMatchObject({ kind: "storylines", model: "m", ok: 1, tokens: 30, inputTokens: 20, cachedTokens: 12 });
     expect(ok!.request).toContain("Jelaskan bunga majemuk");
     expect(failed).toMatchObject({ kind: "storylines", ok: 0 });
     expect(failed!.response).toContain("quota");
@@ -158,6 +162,14 @@ describe("director: a numeric plan in parts", () => {
     expect(plan.numeric!.totalFrames).toBe(900);
   });
 
+  test("an outline without its numeric spec is sent back for the spec alone, not for the motion plans that come later", async () => {
+    const r = rig([json({ ...outline, numeric: undefined }), json(outline), specs([1, 2, 3, 4]), specs([5, 6])]);
+    await r.director.plan({ project, step: step({ use: "plan" }), settings: {}, assets: [], storyline: null, planCtx: ctx, catalog: [] });
+    const problems = JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems as string[];
+    expect(problems.some((m) => m.startsWith("numeric.typography"))).toBe(true);
+    expect(problems.filter((m) => m.includes("motionPlan"))).toEqual([]);
+  });
+
   test("a batch that stays wrong fails the plan", async () => {
     const r = rig([json(outline), specs([1, 2, 3]), specs([1, 2, 3])]);
     await expect(r.director.plan({ project, step: step({ use: "plan" }), settings: {}, assets: [], storyline: null, planCtx: ctx, catalog: [] })).rejects.toThrow("give the detail of s04");
@@ -174,7 +186,7 @@ describe("director: effects", () => {
       new Calls([["search_catalog", { query: "light", kind: "any" }], ["set_transition", { shotId: "s01", name: "flash", reason: "x" }]]),
       new Calls([
         ["set_transition", { shotId: "s02", name: "flash", reason: "the number lands" }], ["add_block", { shotId: "s03", name: "data-chart", reason: "the growth" }],
-        ["set_look", { shotId: "s01", glowPx: 24, reason: "the coin shines" }], ["set_look", { shotId: "s02", blurPx: 99, reason: "x" }],
+        ["set_look", { shotId: "s01", glowPx: 24, reason: "the coin shines" }], ["set_look", { shotId: "s02", blurPx: "lots", reason: "x" }],
         ["add_block", { shotId: "s02", name: "nope", reason: "y" }], ["set_transition", { shotId: "s03", name: "light-leak" }],
       ]),
       new AsText("A flash where the number lands, a chart and a glow."),
@@ -285,12 +297,14 @@ describe("director: gate", () => {
     await expect(ask(r, "storylines")).rejects.toThrow("decision must be");
   });
 
-  test("plan: approve or reject; a reason is required", async () => {
+  test("plan: approve or reject; a reason is asked for once", async () => {
     expect(await ask(rig([json({ decision: "approve", reason: "siap" })]), "plan")).toEqual({ decision: "approve", reason: "siap" });
     expect((await ask(rig([json({ decision: "reject", reason: "terlalu panjang" })]), "plan")).decision).toBe("reject");
     const r = rig([json({ decision: "approve" }), json({ decision: "maybe", reason: "x" })]);
     await expect(ask(r, "plan")).rejects.toThrow('decision must be "approve" or "reject"');
     expect(JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems[0]).toContain("reason");
+    // asked once for its reason, a decision without one still stands, and the log says so
+    expect(await ask(rig([json({ decision: "approve" }), json({ decision: "approve" })]), "plan")).toEqual({ decision: "approve", reason: NO_REASON });
   });
 });
 
@@ -314,6 +328,7 @@ describe("director: tool calling", () => {
     expect(req.tools[0]).toMatchObject({ type: "function", function: { name: fn, parameters: { type: "object", required: [...required] } } });
     expect(req.tool_choice).toEqual({ type: "function", function: { name: fn } });
     expect(r.events()[0]!.response).toBe(reply());   // the log keeps the arguments the model gave
+    if (fn === "submit_plan") expect(Object.keys(req.tools[0].function.parameters.properties.shots.items.properties.look.properties)).toEqual(["description", "values", "parts"]);   // FR-041
   });
 
   test("a model that writes the JSON as text instead of calling the function is still understood", async () => {
@@ -366,22 +381,34 @@ describe("director: tool calling", () => {
   });
 });
 
+describe("director: the worked examples", () => {
+  // the examples a scene call carries must keep the contract they teach: scene rules, no kit part the level lacks
+  test.each(["example-scene.html", "example-scene-2.html"])("%s passes the scene rules for its own text", (file) => {
+    const html = readFileSync(`../generator/prompts/${file}`, "utf-8");
+    const text = (cls: string) => new RegExp(`class="${cls}">([\\s\\S]*?)</`).exec(html)![1]!.replace(/<[^>]+>/g, "").trim();
+    const shot = { id: "s02", purpose: "beat", durationSec: 4, text: [{ role: "title", value: text("title") }, { role: "body", value: text("body") }], visual: { description: "x", block: null, fallbackVisual: "x" }, motion: "x", transition: "cut", audio: "", narration: null, hold: false, level: "free" };
+    const kit = ["camera", "depth", "iso", "motion", "particles", "shade", "shadow", "shape", "text-reveal", "three"];
+    expect(checkScene(html, shot as never, Number(/shot-0(\d)/.exec(html)![1]) - 1, { assets: [], kit: { installed: kit, allowed: kit, level: "free", webgl: true } })).toEqual([]);
+  });
+});
+
 describe("director: scenes", () => {
   const plan = validatePlan(samplePlan(), planCtx).plan as Plan;
   const HTML = '<!doctype html><html><body><div data-composition-id="shot-02" data-width="1080" data-height="1920"><h1>Uang tumbuh sendiri</h1></div></body></html>';
   const input = <T extends object>(extra: T = {} as T) => ({
     project, step: step({ use: "author" }), plan, index: 1, width: 1080, height: 1920, assets: ["assets/ab-logo.png"], ...extra,
   });
+  const tool = (name: keyof typeof TOOL_DEFS, limit: number, run: (args?: any) => Promise<any> = async () => ({ result: { findings: [] } })) => ({ def: TOOL_DEFS[name], limit, run });
 
   test("scene: one call for one shot with the film around it, the authoring contract and the one function to call", async () => {
-    const r = rig([json({ html: HTML })]);
+    const r = rig([json({ html: HTML }), json({ html: HTML })]);
     expect(await r.director.scene({ ...input(), blocks: { "data-chart": "<div>chart</div>" } })).toBe(HTML);
     const req = r.requests[0]!;
     expect(req.tool_choice).toEqual({ type: "function", function: { name: "submit_scene" } });
     expect(req.tools[0].function.parameters.required).toEqual(["html"]);
     expect(userOf(req)).toMatchObject({
       compositionId: "shot-02", file: "compositions/shot-02.html", size: { width: 1080, height: 1920 },
-      shot: { id: "s02" }, film: { title: "Bunga berbunga", position: 2, of: 3 }, assets: ["assets/ab-logo.png"], fonts: ["Plus Jakarta Sans"],
+      shot: { id: "s02" }, film: { title: "Bunga berbunga", shots: 3 }, position: 2, assets: ["assets/ab-logo.png"], fonts: ["Plus Jakarta Sans"],
       blocks: { "data-chart": "<div>chart</div>" },
       // the seams on either side and the neighbours, so the hero can carry across
       effects: null, enters: "cut", leaves: "cut",
@@ -392,9 +419,211 @@ describe("director: scenes", () => {
     expect(systemOf(req)).toContain("never `from`");   // HyperFrames' own contract: fromTo only, transforms not width/height
     expect(systemOf(req)).toContain("## Motion craft");
     expect(systemOf(req)).toContain("Writing one scene");          // the authoring contract
+    expect(systemOf(req)).toContain("## Your tools");              // when each tool is worth using
+    expect(systemOf(req)).toContain('# A worked example');          // one finished shot to learn the craft from
+    expect(systemOf(req)).toContain('# A second worked example');   // and one drawn by hand, so it learns what they share
+    expect(systemOf(req)).toContain('data-composition-id="shot-02"');
     expect(systemOf(req)).toContain("submit_scene");
     expect(systemOf(req)).not.toContain("Offer N storylines");
     expect(req.max_tokens).toBe(16000);
+    // what every shot shares leads the request, so a provider's prefix cache covers it (34% hits before)
+    await r.director.scene({ ...input(), index: 2, blocks: { "data-chart": "<div>chart</div>" } });
+    const [a, b] = r.requests.map((q) => q.messages[1].content as string);
+    expect(a!.slice(0, a!.indexOf('"position"'))).toBe(b!.slice(0, b!.indexOf('"position"')));
+  });
+
+  test("a build session: the film is said once, every turn sees the shots before it, turns wait their place, and each request extends the last", async () => {
+    const r = rig([json({ html: HTML }), json({ html: HTML }), json({ html: HTML, holds: [] })], { genSession: true });
+    const session = { ...input(), session: "v1" };
+    await Promise.all([r.director.scene({ ...session, index: 0 }), r.director.scene(session), r.director.repair({ ...session, html: HTML, findings: [{ code: "x", message: "fix it" }] })]);
+    const [a, b, c] = r.requests.map((q) => q.messages);
+    expect(systemOf(r.requests[0]!)).toContain("Requests come one at a time");
+    expect(JSON.parse(a![1]!.content).film.shots).toHaveLength(plan.shots.length);   // the whole plan, once
+    expect(r.requests[0]!.tools.map((t: any) => t.function.name)).toEqual(["submit_scene", "submit_repair", "submit_shot_kit"]);
+    expect(b!.slice(0, a!.length)).toEqual(a);                                     // the next turn extends the last
+    expect(c!.slice(0, b!.length)).toEqual(b);
+    expect([a, b, c].map((m) => JSON.parse(m!.at(-1)!.content)).map((t) => [t.request, t.compositionId])).toEqual([["scene", "shot-01"], ["scene", "shot-02"], ["repair", "shot-02"]]);
+    // past its budget the session starts again from the opening and the newest shots that fit (here one of two)
+    const opening = estimateTokens(a!.slice(0, 2) as never);
+    const one = estimateTokens([{ role: "user", content: JSON.stringify({ shotsSoFar: [{ shot: 2, file: "compositions/shot-02.html", latest: HTML }], task: "x".repeat(160) }) }]);
+    const small = rig([json({ html: HTML }), json({ html: HTML }), json({ html: HTML })], { genSession: true, genContextTokens: Math.ceil(opening + one + 20) });
+    await small.director.scene({ ...session, index: 0 });
+    await small.director.scene(session);
+    await small.director.scene({ ...session, index: 2 });
+    const again = small.requests[2]!.messages;
+    expect(again).toHaveLength(4);
+    expect(JSON.parse(again[2]!.content).shotsSoFar.map((x: any) => x.shot)).toEqual([2]);
+  });
+
+  test("a turn's tool loop: tool results go back in order, limits and errors answer the model, the last step is forced to submit, and every tool call is logged", async () => {
+    const ran: string[] = [];
+    const t = (name: string, limit: number, run: (a: any) => Promise<any>) => ({ def: TOOL_DEFS[name as keyof typeof TOOL_DEFS], limit, run: async (a: any) => { ran.push(name); return run(a); } });
+    const tools = {
+      steps: 3, tools: {
+        search_blocks: t("search_blocks", 1, async () => ({ result: { matches: [{ name: "lottie-character-walk" }] } })),
+        check: t("check", 3, async () => { throw new Error("lint crashed"); }),
+      },
+    };
+    const r = rig([
+      new Calls([["search_blocks", { query: "walk" }]]),
+      new Calls([["search_blocks", { query: "again" }], ["check", { html: "x" }], ["nope", {}]]),
+      new Calls([["check", { html: "x" }]]),
+      json({ html: HTML }),
+    ], { genSession: true });
+    expect(await r.director.scene({ ...input(), session: "v1", tools })).toBe(HTML);
+    expect(r.requests[0]!.tools.map((x: any) => x.function.name)).toEqual(["search_blocks", "check", "submit_scene", "submit_repair", "submit_shot_kit"]);
+    expect(r.requests.map((q) => q.tool_choice?.function?.name ?? "auto")).toEqual(["auto", "auto", "auto", "submit_scene"]);   // 3 tool steps, then forced
+    const toolMsgs = r.requests[3]!.messages.filter((m: any) => m.role === "tool").map((m: any) => [m.name, JSON.parse(m.content)]);
+    expect(toolMsgs).toEqual([
+      ["search_blocks", { matches: [{ name: "lottie-character-walk" }] }],
+      ["search_blocks", { error: "limit reached: submit now" }],
+      ["check", { error: "lint crashed" }],
+      ["nope", { error: expect.stringContaining("no tool named nope: use search_blocks, check, submit_scene") }],
+      ["check", { error: "lint crashed" }],
+    ]);
+    expect(ran).toEqual(["search_blocks", "check", "check"]);
+    expect(r.events().map((e) => e.kind)).toEqual(["scene", "search_blocks", "scene", "check", "scene", "check", "scene"]);
+    expect(r.events().filter((e) => e.kind === "check").map((e) => e.ok)).toEqual([0, 0]);
+  });
+
+  test("a session: the tool list comes from the first turn that has tools, an answer given as plain text folds without leaving an orphan tool result, and a cancelled turn never starts", async () => {
+    const check = tool("check", 3);
+    const r = rig([json({ html: HTML }), new Calls([["check", { html: "x" }]]), new AsText(json({ html: HTML })), json({ html: HTML })], { genSession: true });
+    const s = { ...input(), session: "v-text" };
+    await r.director.scene({ ...s, index: 0 });                                                   // a turn with no tools (a kit shot, a look-step repair)
+    await r.director.scene({ ...s, index: 1, tools: { steps: 4, tools: { check } } });            // answers in plain text after a check
+    await r.director.scene({ ...s, index: 2, tools: { steps: 4, tools: { check } } });
+    expect(r.requests[1]!.tools.map((x: any) => x.function.name)).toContain("check");
+    const msgs = r.requests[3]!.messages as any[];
+    const orphan = msgs.some((m, i) => m.role === "tool" && !msgs.slice(0, i).reverse().find((x) => x.role !== "tool")?.tool_calls);
+    expect(orphan).toBe(false);                                                                    // a provider refuses a tool result with no call before it
+    await expect(r.director.scene({ ...s, index: 0, signal: AbortSignal.abort() })).rejects.toThrow();
+    expect(r.requests).toHaveLength(4);
+    // cancelled while a tool runs: the tool's own error goes up, it isn't handed to the model as an answer
+    const ctl = new AbortController();
+    const stops = tool("check", 3, async () => { ctl.abort(); throw new Error("render stopped"); });
+    const c = rig([new Calls([["check", { html: "x" }]]), json({ html: HTML })], { genSession: true });
+    await expect(c.director.scene({ ...input(), session: "v-cancel", signal: ctl.signal, tools: { steps: 4, tools: { check: stops } } })).rejects.toThrow("render stopped");
+    expect(c.requests).toHaveLength(1);
+  });
+
+  test("the forced step ends the loop even when the provider ignores the forced choice, and a turn's tool limits hold across its retry", async () => {
+    let checks = 0;
+    const check = tool("check", 1, async () => { checks++; return { result: { findings: [] } }; });
+    const r = rig([new Calls([["check", { html: "x" }]]), new Calls([["check", { html: "x" }]]), new Calls([["check", { html: "x" }]]), json({ html: HTML })], { genSession: true });
+    expect(await r.director.scene({ ...input(), session: "v-forced-ignored", tools: { steps: 1, tools: { check } } })).toBe(HTML);
+    expect(JSON.stringify(r.requests[2]!.messages.at(-1))).toContain("didn't call submit_scene");   // the ignored forced step ended the first try
+    expect(checks).toBe(1);                                                                          // the retry got "limit reached", not a fresh limit
+    expect(JSON.parse((r.requests[3]!.messages as any[]).filter((m) => m.role === "tool").at(-1).content)).toEqual({ error: "limit reached: submit now" });
+  });
+
+  test("when the turn can look, the first submit is turned back once inside the turn (no retry used); a look without html sees that draft; after a look, or at the last step, it is accepted", async () => {
+    const looked: unknown[] = [];
+    const look = tool("look", 2, async (a?: any) => { looked.push(a?.html); return { result: { findings: [] } }; });
+    const r = rig([json({ html: HTML }), new Calls([["look", { times: [1] }]]), json({ html: HTML })], { genSession: true });
+    expect(await r.director.scene({ ...input(), session: "v-lookfirst", tools: { steps: 4, tools: { look } } })).toBe(HTML);
+    const turned = r.requests[1]!.messages.at(-1) as any;
+    expect([turned.role, JSON.parse(turned.content)]).toEqual(["tool", { accepted: false, problems: [LOOK_FIRST] }]);
+    expect(r.events().map((e) => e.kind)).toEqual(["scene", "scene", "look", "scene"]);
+    expect(looked).toEqual([HTML]);   // the submitted draft, not sent a second time
+    // no steps left: the submit stands (the forced step), and without a look tool nothing is asked
+    const last = rig([json({ html: HTML })], { genSession: true });
+    expect(await last.director.scene({ ...input(), session: "v-forced", tools: { steps: 0, tools: { look } } })).toBe(HTML);
+    expect(last.requests).toHaveLength(1);
+    // a model that won't look is turned back once, not on every submit
+    const stubborn = rig([json({ html: HTML }), json({ html: HTML })], { genSession: true });
+    expect(await stubborn.director.scene({ ...input(), session: "v-stubborn", tools: { steps: 4, tools: { look } } })).toBe(HTML);
+    expect(stubborn.requests).toHaveLength(2);
+    // a repair turn may look but is not made to: its first submit stands
+    const fix = rig([json({ html: HTML, holds: [] })], { genSession: true });
+    await fix.director.repair({ ...input(), session: "v-repair", tools: { steps: 4, tools: { look } }, html: "x", findings: [] });
+    expect(fix.requests).toHaveLength(1);
+  });
+
+  test("a look's frames come back as a picture message right after its results, and the log row counts them", async () => {
+    const tools = { steps: 2, tools: { look: tool("look", 2, async () => ({ result: { seen: { description: "a dome" } }, images: ["data:image/png;base64,AAA", "data:image/png;base64,BBB"] })) } };
+    const r = rig([new Calls([["look", { html: "x", times: [1] }]]), json({ html: HTML })], { genSession: true });
+    await r.director.scene({ ...input(), session: "v-look", tools });
+    const after = r.requests[1]!.messages.slice(-2);
+    expect(after[0]).toMatchObject({ role: "tool", name: "look" });
+    expect((after[1].content as unknown as Array<{ type: string }>).filter((p) => p.type === "image_url")).toHaveLength(2);
+    expect(r.events().find((e) => e.kind === "look")!.response).toContain("+2 image(s)");
+  });
+
+  test("a turn also stays inside the window: with a big turn budget, a small GEN_CONTEXT_TOKENS still cuts its older frames", async () => {
+    const look = tool("look", 5, async () => ({ result: { n: 1 }, images: ["data:image/png;base64,AAA"] }));
+    const turn = [new Calls([["look", { html: "x", times: [1] }]]), new Calls([["look", { html: "y", times: [2] }]]), json({ html: HTML })];
+    const probe = rig([json({ html: HTML })], { genSession: true });
+    await probe.director.scene({ ...input(), session: "v-probe" });
+    const opening = estimateTokens(probe.requests[0]!.messages.slice(0, 3) as never);
+    const r = rig(turn, { genSession: true, genTurnTokens: 500_000, genContextTokens: Math.ceil(opening + 1000) });
+    await r.director.scene({ ...input(), session: "v-window", tools: { steps: 4, tools: { look } } });
+    expect(JSON.stringify(r.requests[2]!.messages)).toContain("look #1 removed: see #2");
+  });
+
+  test("compaction: an accepted turn leaves a note and its answer, a failed turn leaves nothing, and a turn past its budget cuts its older tool results; earlier requests stay an exact prefix", async () => {
+    const tools = { steps: 4, tools: { check: tool("check", 3), look: tool("look", 5, async () => ({ result: { n: 1 }, images: ["data:image/png;base64,AAA"] })) } };
+    const r = rig([
+      new Calls([["check", { html: "x" }]]), json({ html: HTML }),                       // turn 1: one tool, accepted
+      json({ html: "no" }), json({ html: "still no" }),                                  // turn 2: never valid
+      new Calls([["look", { html: "x", times: [1] }]]), new Calls([["look", { html: "y", times: [2] }]]), json({ html: HTML }),   // turn 3: two looks
+      new Calls([["look", { html: "x", times: [1] }]]), json({ html: HTML }),            // turn 4 (it has a look, so its first submit is turned back to look first)
+    ], { genSession: true, genTurnTokens: 1000 });
+    const s = { ...input(), session: "v-compact", tools };
+    const checkOnly = { steps: 4, tools: { check: tools.tools.check } };   // no look to ask for first
+    await r.director.scene({ ...s, index: 0, tools: checkOnly });
+    await expect(r.director.scene({ ...s, index: 1, tools: checkOnly })).rejects.toThrow("didn't pass the checks");
+    await r.director.scene({ ...s, index: 2 });
+    await r.director.scene({ ...s, index: 0 });
+    const roles = (q: any) => q.messages.map((m: any) => m.role + (m.name ? `:${m.name}` : ""));
+    // turn 2 starts where turn 1's compacted answer ended: request, note, the accepted call and its result
+    expect(roles(r.requests[2]!)).toEqual(["system", "user", "user", "user", "assistant", "tool:submit_scene", "user"]);
+    expect(r.requests[2]!.messages[3].content).toBe("tools used: check ×1");
+    // turn 3 starts right after turn 1: the failed turn 2 left nothing
+    const turn3 = r.requests[4]!.messages;
+    expect(turn3.slice(0, 6)).toEqual(r.requests[2]!.messages.slice(0, 6));
+    // the second look of turn 3 comes after the first's frames were cut (a budget of 1000 is exceeded by one picture)
+    const lastOfTurn3 = r.requests[6]!.messages.slice(6);
+    expect(lastOfTurn3.map((m: any) => (typeof m.content === "string" ? m.content : "pictures")).filter((c: string) => c.includes("removed"))).toEqual([
+      JSON.stringify({ stub: "look #1 removed: see #2" }), "Frames from look #1 removed: see look #2.",
+    ]);
+    // turn 4: turn 3 is a note too, so the earlier requests are still its prefix
+    expect(r.requests[7]!.messages.slice(0, 6)).toEqual(turn3.slice(0, 6));
+    expect(r.requests[7]!.messages.some((m: any) => m.role === "tool" && m.name === "look")).toBeFalse();
+  });
+
+  test("each Generate role asks its own model when one is set, else the LLM model", async () => {
+    const r = rig([json({ html: HTML }), json({ html: HTML })], { genSceneModel: "cheap", genJudgeModel: "strict" });
+    await r.director.scene(input());
+    expect([r.requests[0]!.model, r.director.model, r.director.judgeModel, r.events()[0]!.model]).toEqual(["cheap", "cheap", "strict", "cheap"]);
+    expect(rig([]).director.model).toBe("m");
+  });
+
+  test("with a capability description, a scene call gets its level and the full settings of every part it may use; storylines get the summary, plans every part's settings", async () => {
+    const r = rig([json({ html: HTML }), json({ html: HTML }), json({ storylines: [story(1, { recommended: true })] }), json(samplePlan())]);
+    const asked: Array<{ level?: string; parts?: string[] }> = [];
+    r.director.capabilities = (q) => { asked.push(q); return { level: q.level ?? "compose", kit: [{ name: "shade" }, { name: "camera" }], parts: q.parts } as never; };
+    const looked = { ...plan, shots: plan.shots.map((s, i) => (i === 1 ? { ...s, look: { description: "lit", values: {}, parts: [{ part: "shade", settings: {} }] } } : s)) };
+    await r.director.scene({ ...input(), plan: looked, level: "free" });
+    expect(userOf(r.requests[0]!).capabilities).toEqual({ level: "free", kit: [{ name: "shade" }, { name: "camera" }], parts: ["shade", "camera"] });   // every part, not only the look's
+    await r.director.scene(input());
+    expect(userOf(r.requests[1]!).capabilities.parts).toEqual(["shade", "camera"]);
+    await r.director.storylines({ project, step: step(), settings: { count: 1 }, assets: [] });
+    expect(userOf(r.requests[2]!).capabilities).toEqual({ level: "compose", kit: [{ name: "shade" }, { name: "camera" }] });
+    // a plan may name parts with settings in its shot looks, so it gets every part's settings
+    await r.director.plan({ project, step: step({ use: "plan" }), settings: {}, assets: [], storyline: null, planCtx, catalog: [] });
+    expect(userOf(r.requests[3]!).capabilities.parts).toEqual(["shade", "camera"]);
+  });
+
+  test("kitShot: one forced submit_shot_kit call at the kit level, checked against the capabilities, with findings when there are some", async () => {
+    const r = rig([json({ shotId: "s02", layers: [{ part: "shade", settings: { strength: 2 }, fromSec: 0, toSec: 3 }] }), json({ shotId: "s02", layers: [{ part: "shade", settings: {}, fromSec: 0, toSec: 3 }] })]);
+    const shade = { name: "shade", version: "1.0.0", does: "lights", runtime: "dom" as const, needs: { gpu: "no" as const }, settings: { strength: { t: "num" as const, min: 0, max: 1 } }, defaults: {}, example: "x" };
+    r.director.capabilities = (q) => ({ level: q.level ?? "compose", kit: [{ name: "shade", does: "lights", runtime: "dom" }] } as never);
+    const answer = await r.director.kitShot({ ...input(), kit: [shade], findings: [{ code: "fix_request", message: "Bigger." }] });
+    expect(answer).toEqual({ shotId: "s02", layers: [{ part: "shade", settings: {}, fromSec: 0, toSec: 3 }], text: [] });
+    expect(r.requests[0]!.tool_choice).toEqual({ type: "function", function: { name: "submit_shot_kit" } });
+    expect(userOf(r.requests[0]!)).toMatchObject({ capabilities: { level: "kit" }, findings: [{ code: "fix_request" }] });
+    expect(JSON.parse(r.requests[1]!.messages.at(-1)!.content).problems).toEqual(["layers[0].settings.strength: must be between 0 and 1"]);
   });
 
   test("a markdown fence around the file is removed; a step prompt is appended; blocks default to none", async () => {
@@ -429,8 +658,11 @@ describe("director: scenes", () => {
   test("repair without holds, and an unusable file", async () => {
     const r = rig([json({ html: HTML })]);
     expect((await r.director.repair(input({ html: "x", findings: [] }))).holds).toEqual([]);
-    const bad = rig([json({ html: "no" }), json({ holds: [] })]);
+    const bad = rig([json({ html: "no" }), json({ holds: [] })], { genSceneModel: "scene-m", genPlanModel: "plan-m" });
+    const told: string[] = [];
+    bad.director.onAnswer = (e) => told.push(`${e.outcome} by ${e.model}`);
     await expect(bad.director.repair(input({ html: "x", findings: [] }))).rejects.toThrow("didn't pass the checks");
+    expect(told).toEqual(["malformed by scene-m", "failed by scene-m"]);   // malformed once per ask; the model that answered, per role
   });
 });
 

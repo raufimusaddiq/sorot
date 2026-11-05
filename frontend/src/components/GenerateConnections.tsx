@@ -6,7 +6,8 @@
 
 import { useEffect, useState } from 'react';
 import type { ApiClient } from '@/lib/api';
-import type { ConnectionKind, ConnectionTest, Connections, GenCommand, KenariModel, KenariVoiceModel } from '@/types';
+import type { ConnectionKind, ConnectionTest, Connections, GenCommand, GenLevel, GenModels, KenariModel, KenariVoiceModel } from '@/types';
+import { KitPanel } from './generate/KitPanel';
 import { Toggle } from './ImportOptions';
 import { Window } from './Window';
 
@@ -328,6 +329,78 @@ function CommandsCard({ api, view, onSaved }: { api: ApiClient; view: NonNullabl
   );
 }
 
+const LEVEL_NAMES: Record<string, string> = { kit: 'kit', compose: 'compose', free: 'free' };
+const pct = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : '–');
+
+/**
+ * How each model fares per level on this install, the level `auto` gives it, a pin, and Calibrate
+ * (three sample shots at each level, a few minutes, with the connected model).
+ */
+export function ModelsCard({ api }: { api: ApiClient }) {
+  const [data, setData] = useState<GenModels | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api.generateModels().then(setData, (e: Error) => setError(e.message));
+  useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  // while a calibration runs, look again every few seconds
+  const running = !!data?.calibration && !data.calibration.done;
+  useEffect(() => {
+    if (!running) return undefined;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [running]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = async (work: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setBusy(false);
+  };
+  const cal = data?.calibration;
+  return (
+    <Window title="Models" bar="bg-mint" right={data?.current || undefined}>
+      <p className="text-sm text-fg/80 mb-2">Every shot starts with the director free to draw anything; a shot that fails falls back to kit parts. The record and Calibrate show how a model fares, so you can pin a weak one lower.</p>
+      {data?.models.map((m) => (
+        <div key={m.model} aria-label={`Model ${m.model}`} className="border-2 border-line p-2 mb-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <b>{m.model}</b>
+            <label className="ml-auto text-xs flex items-center gap-1">
+              level
+              <select aria-label={`${m.model} level`} disabled={busy} value={m.pin ?? 'auto'} onChange={(e) => act(() => api.pinModel(m.model, e.target.value === 'auto' ? null : (e.target.value as GenLevel)))} className="field px-1 py-0.5">
+                <option value="auto">auto (starts at {m.auto}{m.proven ? `, proven ${m.proven}` : ''})</option>
+                {Object.keys(LEVEL_NAMES).map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </label>
+          </div>
+          {m.records.length > 0 && (
+            <table className="text-xs mt-1 w-full">
+              <thead><tr><th className="text-left">at</th><th>asked</th><th>first time</th><th>repaired</th><th>dropped</th><th>malformed</th></tr></thead>
+              <tbody>
+                {m.records.map((r) => (
+                  <tr key={r.level}><td>{r.level}</td><td className="text-center">{r.asked}</td><td className="text-center">{pct(r.firstPass, r.asked)}</td><td className="text-center">{pct(r.repaired, r.asked)}</td><td className="text-center">{r.dropped}</td><td className="text-center">{r.malformed}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
+      <button className="btn" disabled={busy || running || !data?.current} onClick={() => act(() => api.calibrateModel())}>{running ? 'Calibrating…' : `Calibrate ${data?.current ?? ''}`.trim()}</button>
+      {cal?.done && cal.result && (
+        <p role="status" className="text-xs mt-2">
+          Calibrated {cal.model}: {Object.entries(cal.result).map(([l, t]) => `${l} ${t!.firstPass + t!.repaired}/${t!.asked}`).join(' · ')}
+        </p>
+      )}
+      {cal?.done && cal.error && <p role="alert" className="text-error text-sm mt-2">Calibration failed: {cal.error}</p>}
+      {error && <p role="alert" className="text-error text-sm mt-2">{error}</p>}
+    </Window>
+  );
+}
+
 /** The Generate-only cards, shown when the server offers them. */
 export function GenerateConnections({ api, conns, onSaved }: { api: ApiClient; conns: Connections; onSaved: (c: Connections) => void }) {
   if (!conns.voice && !conns.image && !conns.commands) return null;
@@ -338,6 +411,8 @@ export function GenerateConnections({ api, conns, onSaved }: { api: ApiClient; c
         {conns.voice && <VoiceCard api={api} view={conns.voice} onSaved={onSaved} />}
         {conns.image && <ImageCard api={api} view={conns.image} onSaved={onSaved} />}
         {conns.commands && <CommandsCard api={api} view={conns.commands} onSaved={onSaved} />}
+        <KitPanel api={api} />
+        <ModelsCard api={api} />
       </div>
     </section>
   );

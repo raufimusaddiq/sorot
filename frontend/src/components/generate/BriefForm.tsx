@@ -29,8 +29,8 @@ export function BriefForm({ busy, recipes, voiceEngines, presets, onCreate }: {
   presets?: GenPreset[];
   /** Voice engines that are set up; narration is offered only when there is one. */
   voiceEngines?: string[];
-  /** Offered when there is more than one; the first is the default. */
-  recipes?: Array<{ id: string; name: string }>;
+  /** Offered when there is more than one; the first is the default. `speaks`: the recipe has a voice step, so narration starts on. */
+  recipes?: Array<{ id: string; name: string; speaks?: boolean }>;
   onCreate: (body: GenCreateBody, files: PendingFile[]) => void;
 }) {
   const [brief, setBrief] = useState('');
@@ -38,13 +38,15 @@ export function BriefForm({ busy, recipes, voiceEngines, presets, onCreate }: {
   const [length, setLength] = useState('30');
   const [language, setLanguage] = useState('id');
   const [style, setStyle] = useState('');
-  const [narration, setNarration] = useState(false);
+  // null until the owner touches the box: then the recipe decides (a recipe with a voice step speaks)
+  const [narration, setNarration] = useState<boolean | null>(null);
   const [presetId, setPresetId] = useState('');
   const preset = presets?.find((p) => p.id === presetId);
   const [factsText, setFactsText] = useState('');
   const [noNumbers, setNoNumbers] = useState(false);
   const canNarrate = (voiceEngines?.length ?? 0) > 0;
   const [recipeId, setRecipeId] = useState(recipes?.[0]?.id ?? '');
+  const narrate = canNarrate && (narration ?? !!(recipes?.find((r) => r.id === recipeId) ?? recipes?.[0])?.speaks);
   const [logo, setLogo] = useState<File | null>(null);
   const [others, setOthers] = useState<File[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
@@ -70,7 +72,7 @@ export function BriefForm({ busy, recipes, voiceEngines, presets, onCreate }: {
     setProblem(null);
     onCreate({
       brief: brief.trim(), format, targetSec: seconds, language, ...(style.trim() ? { styleNotes: style.trim() } : {}),
-      ...(recipes && recipes.length > 1 ? { recipeId } : {}), ...(narration && canNarrate ? { narration: true } : {}), ...(presetId ? { preset: presetId } : {}),
+      ...(recipes && recipes.length > 1 ? { recipeId } : {}), narration: narrate, ...(presetId ? { preset: presetId } : {}),
       ...(facts.length ? { facts } : {}), ...(noNumbers ? { forbiddenNumbers: true as const } : {}),
     }, files);
   };
@@ -138,7 +140,7 @@ export function BriefForm({ busy, recipes, voiceEngines, presets, onCreate }: {
       </details>
       {voiceEngines !== undefined && (
         <label className="text-sm block">
-          <input type="checkbox" aria-label="Narrate it" checked={narration && canNarrate} disabled={!canNarrate} onChange={(e) => setNarration(e.target.checked)} /> Narrate it with a voice
+          <input type="checkbox" aria-label="Narrate it" checked={narrate} disabled={!canNarrate} onChange={(e) => setNarration(e.target.checked)} /> Narrate it with a voice
           {!canNarrate && <span className="block text-xs text-subtle">Needs a voice engine: add one in Settings → Narration voice.</span>}
         </label>
       )}

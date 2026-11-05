@@ -25,6 +25,15 @@ export const MAIN_MESSAGE: Criterion = {
   question: "Does `shots`, watched once with the sound off, get across the message stated in `message`?",
 };
 
+/**
+ * Asked of every film (FR-046): whether what is drawn reads as what it is and looks finished. The
+ * spec's wording ("..., and look finished and intended?") asks two things by Sorot's own lint, so the
+ * second half is a manner of the first.
+ */
+export const FINISHED: Criterion = { id: "finished", question: "Do the things in `shots` read as what they are, looking finished and intended?" };
+/** Asked of every film (FR-046): the judge's side of the `motion` measure. */
+export const MOVES_WELL: Criterion = { id: "motion", question: "Does the motion in `shots` move smoothly and with weight?" };
+
 /** A risk Sorot always checks for. */
 export const MISLEADING_CLAIM: Criterion = { id: "misleading_claim", question: "Does `shots` state a fact or a number that `brief` does not support?" };
 
@@ -33,12 +42,13 @@ export const FLAT_FILM: Criterion = { id: "flat_film", question: "Does `shots` f
 
 /**
  * What Sorot asks, from the recipe: the user's criteria (plus the main-message question unless one
- * of theirs is the main one), and the risks: the always-on claim and flat-film checks, each leftover default the
+ * of theirs is the main one, and always `finished` and `motion`), and the risks: the always-on claim and flat-film checks, each leftover default the
  * recipe wants audited and each non-blocking content rule.
  */
 export function questionsFor(settings: Record<string, unknown>, rules: Record<string, unknown> | undefined): { criteria: Criterion[]; risks: Criterion[] } {
   const own = (Array.isArray(settings.criteria) ? settings.criteria : []) as Criterion[];
-  const criteria = own.some((c) => c.fail === "main") ? own : [...own, MAIN_MESSAGE];
+  const mine = own.some((c) => c.fail === "main") ? own : [...own, MAIN_MESSAGE];
+  const criteria = [...mine, ...[FINISHED, MOVES_WELL].filter((c) => !mine.some((m) => m.id === c.id))];
   const audit = (Array.isArray(rules?.defaultsAudit) ? (rules?.defaultsAudit as string[]) : []).map((item, i): Criterion => ({
     id: `default_${i + 1}`, question: `Does \`shots\` show this common default: ${item}?`,
   }));

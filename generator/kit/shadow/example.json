@@ -1,0 +1,2 @@
+{ "durationSec": 2, "settings": { "target": ".card", "kind": "contact" },
+  "markup": "<div class=\"card\" style=\"position:absolute;left:290px;top:700px;width:500px;height:320px;border-radius:28px;background:#f4f1ea\"></div>" }

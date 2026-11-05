@@ -1,0 +1,16 @@
+{
+  "name": "camera",
+  "version": "1.0.0",
+  "does": "Moves a camera over the shot (pan, zoom, dolly). The projection (flat, perspective, isometric) tilts flat 2D layers; over an iso or three part, already 3D, only the move applies.",
+  "runtime": "dom",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "move": { "t": "enum", "values": ["none", "pan-left", "pan-right", "pan-up", "pan-down", "zoom-in", "zoom-out", "dolly-in", "dolly-out"] },
+    "amount": { "t": "num", "min": 0, "max": 1 },
+    "projection": { "t": "enum", "values": ["flat", "perspective", "isometric"] },
+    "ease": { "t": "enum", "values": ["travel", "arrive", "linear"] },
+    "target": { "t": "str", "max": 120 }
+  },
+  "defaults": { "move": "dolly-in", "amount": 0.3, "projection": "flat", "ease": "travel", "target": "" },
+  "example": "Flat blocks as an isometric city the camera dollies into: {\"projection\": \"isometric\", \"move\": \"dolly-in\"}; over an iso diorama keep \"projection\": \"flat\"."
+}

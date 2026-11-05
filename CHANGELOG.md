@@ -24,6 +24,24 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 - Thanks to Kenari for supporting Sorot's development through the Kenari Grant.
 
 ### Generate: briefs to finished 2D videos
+- The director's `check` and `look` now also measure the draft's motion (a frame that jumps, a shot that freezes
+  and moves again) from a draft render of just that shot, with the same measure the TECHNICAL verdict uses: on
+  built films it found the same jumps at the same moments, so the director can fix them before the build.
+- Cancelling a build while the director is writing now stops it: the shots not yet asked for are never written,
+  and the version ends CANCELLED before the next step. (It used to run on to the end of the author step, because
+  only HyperFrames calls saw the cancel. The model call already in flight still finishes.)
+- The look step judges a shot from three pictures of it (early, mid-move, settled) instead of one frame 0.3 s in,
+  and the model answers once per shot: things still arriving no longer count as "a stranger can't tell what this
+  is", and a hero move that happens later is no longer "hidden". The `beatOffsetSec` setting is gone.
+- Scene calls carry a second worked example, drawn by hand from SVG and plain boxes, next to the kit-built one
+  (a model shown one style copies it): on the same brief GLM put its words in a zone on top and its drawings
+  below, and none of its text sat on a drawing (14 to 16% of its text moments did before).
+- The scene probe counts shapes drawn from CSS boxes as drawings, and the director's `check` and `look` tools
+  now return its findings (words on top of a drawing, a missing first-frame title) while the shot is written.
+- The narration's length is a target, not a rule that fails the run: the voice is measured after it is spoken,
+  and one that runs past the video gets the script written again, told how many seconds it took.
+- A build that failed (a gateway error, an interruption) can go on from its failed step: **Continue from the
+  failed step** keeps the finished steps and shots instead of starting a new version.
 - A new mode that makes a short video from a brief, with no source footage: storylines, an approved
   plan, a HyperFrames build, a TECHNICAL (code) and a CREATIVE (fresh judge) verdict, fix rounds, then
   export to a Generated library and publish through Tebar like a clip. Needs an LLM connection;
@@ -49,6 +67,19 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
   in parts, and transitions that wouldn't show on the film's colours are refused.
 - Fixes: passing a plan's gate as a step approves the plan; the speech check reads spelled-out and
   digit numbers alike; old effect notes no longer contradict the director's final choice.
+- Any look, any director: a kit of drawing and motion parts (lighting, shadows, depth, camera,
+  motion, text reveal, particles, image placement, and real 3D with Three.js), offline. Add your own
+  parts from a `.zip` (Settings → Generate → Kit, or `sorot gen kit add`); a part is only offered after
+  its example renders twice the same.
+- Director levels: every shot starts with the director free to draw anything (its own canvas, WebGL
+  or Three.js); a shot that fails is rebuilt one level down (scene with kit parts, then kit parts
+  only) instead of failing the build. Calibrate (`sorot gen calibrate`) shows how a model fares at
+  each level; pin a weak model lower if you want. The plan shows each shot's level and look.
+- Isometric 3D: the `iso` kit part draws a real isometric diorama (blocks, coin stacks, bars, houses,
+  trees) with soft shadows, offline, on CPU too.
+- Smooth motion: a new always-on check finds jumps and stalls inside shots; fast shots can get motion
+  blur (`render.motionBlur`, auto by default; it costs about 3.4× the render time on a CPU), and the
+  judge always asks whether the film looks finished and moves with weight.
 
 ## [1.0.0] - 2026-10-29
 
@@ -66,6 +97,36 @@ now point here.
 | ![Studio import window](https://raw.githubusercontent.com/raufimusaddiq/sorot/v1.0.0/docs/screenshots/studio.png) | ![Settings windows](https://raw.githubusercontent.com/raufimusaddiq/sorot/v1.0.0/docs/screenshots/settings.png) |
 
 Timings below were each measured once, on the machine named in `docs/journal/`; yours will differ.
+
+### LLM calls
+- A streamed model call that only sends keep-alive pings now times out after `LLM_TIMEOUT` of silence, and
+  every call stops after `LLM_MAX_CALL_SEC` (default 1800 s) in total; before, one such call held a
+  Generate build in check for over half an hour.
+- Generate director requests put what every call shares (the capabilities, the film) first, so a provider's
+  prompt cache can reuse it from shot to shot; the shot's own fields come after.
+- Generate: each role can use its own model (Settings → LLM: plan, scene and judge models; `GEN_PLAN_MODEL`,
+  `GEN_SCENE_MODEL`, `GEN_JUDGE_MODEL`), e.g. a strong planner and judge with a cheap scene writer.
+- Generate fixes from a real isometric film: the camera part no longer tilts an already isometric `iso`/`three`
+  diorama a second time; the wipe band takes the palette's accent, not the ink; `text-reveal` by line keeps the
+  space before a styled word; a plan can't promise music when no track is uploaded; with pictures on the
+  CREATIVE judge looks at the frames for "finished" and "motion" (Jev, reading text, passed a broken film);
+  scene calls carry a worked example shot.
+- Generate checks each scene in the browser before rendering and sends the director back what it finds: a
+  whole-scene swap in under 0.3 s, a part and the scene moving the same thing at once, text sitting on a
+  drawn object, and text cut off on a shot's first frame. Kit parts draw inside the box they are mounted in.
+- Generate narration: each voice line's slot is its decoded length (an MP3's header counted ~0.06 s of
+  padding), and a line that would run past the film's end moves earlier instead of being cut. The check
+  step also flags a film whose first frame shows none of the opening shot's words.
+- Removed `LLM_VISION` and `LLM_VISION_MODEL` (Settings → LLM vision fields): the director's model reasons
+  and sees, and every call with pictures goes to the model of its role.
+- Generate writes a build's scenes and repairs in one director session: the film and the parts are sent
+  once, each shot sees the ones before it (one film, not seven), and every request extends the last so the
+  provider's prompt cache covers almost all of it. `GEN_CONTEXT_TOKENS` (Settings → LLM, default 600000)
+  caps how large the session may grow; `GEN_SESSION=off` goes back to separate calls.
+- Generate: the director works with tools inside each shot's turn: it can search and install HyperFrames
+  registry blocks (charts, maps, 3D, characters), look at frames of its own draft with a stranger's read of
+  them, and check its draft before it submits (recipe `author.toolSteps` and `author.looks`; 0 = as before).
+  A turn's tool results are compacted so the session stays small and cached (`GEN_TURN_TOKENS`).
 
 ### Import and transcription
 - YouTube URL or local file, whole or a time range (`--from 13:25 --to 25:00`). A short range is copied

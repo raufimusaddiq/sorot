@@ -9,7 +9,7 @@ The kit raises the floor of quality; it never limits what a director may draw.
 <name>/
   part.json      the manifest (below)
   part.js        one browser script, no build step, no imports from the network
-  example.json   the settings and shot length the example render uses
+  example.json   the settings, shot length (durationSec) and optional markup (placed in the example's stage) the check renders
   (any local files the script needs: textures, fonts, a pinned library)
 ```
 
@@ -55,6 +55,10 @@ window.SorotKit["shade"] = {
 };
 ```
 
+Scenes mount parts through the runtime the root loads (`generator/kit/_runtime.js`):
+`SorotKitRuntime.mount(name, host, settings, { tl, start, duration, seed })` merges the part's
+defaults, builds `ctx` and, when `mount` returns `{ render(t) }`, drives it from a timeline tween.
+
 Rules (the scene determinism rules, R3): no clock, no network, no unseeded randomness, no timers;
 motion lives on `ctx.tl` or in a pure `render(t)`. Heavy setup returns a promise registered on
 `window.__hf.buildReady`.
@@ -76,13 +80,18 @@ A recipe only names parts (`author.require`, a shot's `look.parts`); it never ca
 | `compose` | `submit_scene` HTML that mounts kit parts (`SorotKit["x"].mount`) and adds its own GSAP | plan-lock, kit calls (known parts, valid settings), lint/check |
 | `free` | `submit_scene` HTML with any drawing code the contract allows (its own canvas, WebGL, Three.js via the `three` part) | the same, plus the frame-time budget |
 
+Implementation note (owner's decision, 2026-11-02): a WebGL **part** (`three`, `iso`) is offered at
+every level on a machine that can draw WebGL, since it is Sorot's own tested code; what stays
+`free`-only is the model writing its own canvas/WebGL.
+
 Fallback: after the step's repair rounds, or over the frame-time budget, the shot is rebuilt one
 level down from the same shot spec, with a `level_drop` finding. A failure at `kit` fails the
 build.
 
-Choosing (`author.level: auto`): the highest level ≤ `maxLevel` where the model's record
-(`gen_model_record`) shows ≥ 60% first-pass over ≥ 8 shots and ≤ 10% malformed answers; no record
-→ `kit` until calibrated. A pin per recipe (`author.level`) or per model (Settings) wins.
+Choosing (`author.level: auto`), revised by the owner on 2026-11-02 ("we don't stop our director's
+creativity"): every shot starts at the highest level ≤ `maxLevel` and the machine's cap; the record
+(`gen_model_record`, Calibrate) is reported as the model's proven level and never lowers where a
+shot starts. A pin per recipe (`author.level`) or per model (Settings) wins.
 
 ## The capability description (every director call)
 

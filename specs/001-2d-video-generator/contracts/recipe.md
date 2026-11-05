@@ -75,7 +75,7 @@ and the closing `task` field stay Sorot's, so a custom prompt can't break parsin
 |---|---|---|---|
 | `idea` | takes the next idea from the idea bank, or a named one | `cursor: true` | |
 | `facts` | builds or checks the fact list | `mode: verify \| research \| brief-only`, `sources: [<data source names>]`, `headlinesAsEvidence: false`, `maxSteps` | optional |
-| `script` | writes the narration lines | `spellNumbers`, `maxWords`, `tone` | optional |
+| `script` | writes the narration lines; the film's length is only a word target in the prompt, `maxWords` (default 160) the hard ceiling; the `voice` step measures the speech and, when it runs more than 0.5 s past the film, has the script written again up to twice, told each line's measured seconds (still too long is an error with the numbers); the rewritten script is the step's input from then on, so a later run doesn't redo it | `spellNumbers`, `maxWords`, `tone` | optional |
 | `voice` | voices the script (engine and voice from Settings, per language) | `engine?: elevenlabs \| fish \| openai \| local` and `voice?` (overrides; examples never set them), `failClosed: true`, `speed` | |
 | `align` | word timings: the engine's timestamps if it returns them, else local Whisper on the voiceover | `source: auto \| engine \| whisper`, `model?` | |
 | `storylines` | N different films in words | `count: 1..5`, `skipUnderSec` (go straight to a plan at or under this length), `requireBold`, `pickRule` | **owner / director** |
@@ -83,9 +83,9 @@ and the closing `task` field stay Sorot's, so a custom prompt can't break parsin
 | `concept` | names the visual mechanism, checks novelty | `novelty: {lastN}`, `mechanismTest` | |
 | `images` | generated images for marked shots | `style`, `size` | |
 | `music` | picks or uses a music bed | `track?`, `duckUnderVoiceDb` | |
-| `author` | writes one scene per shot | `require: [...]`, `repairRounds: 0..5` | |
+| `author` | writes one scene per shot | `require: [...]`, `repairRounds: 0..5` (default 3), `concurrency: 1..4` (default 1, shots written at once), `toolSteps`, `looks`, `level`, `maxLevel` (see below) | |
 | `check` | HyperFrames `lint` + `check` loop | `warnings: fix \| fix-or-hold \| report`, `rounds` | |
-| `look` | vision self-review of beat frames + defaults audit | `rounds: 0..5`, `beatOffsetSec`, `audit: true` | |
+| `look` | vision self-review: three pictures of each shot (at 20%, 55% and 90% of it), one stranger's answer per shot, + defaults audit; nothing to do (`looked in the loop`) when the director looked at every shot in its own turn and the files are the ones it looked at | `rounds: 0..5` (default 3), `audit: true` | |
 | `render` | renders the video | `quality: draft \| standard \| delivery`, `fps?`, `workers` | |
 | `command` | runs a **local command registered in Settings**; its findings join a verdict | `name`, `counts: technical \| creative` | |
 | `technical` | TECHNICAL verdict (code) | `measures` (below), `autoFixRounds: 0..3` | |
@@ -95,7 +95,7 @@ and the closing `task` field stay Sorot's, so a custom prompt can't break parsin
 **TECHNICAL measures**, each with its own numbers.
 
 - **Always on** (FR-012: a recipe sets their limits within the ranges but can't turn them off):
-  `output` (size, fps, length window), `planText` (every planned line appears), `layout` (from
+  `output` (size, fps, length window: `fpsTolerance` 0..10, `lengthToleranceSec` 0..5), `motion` (jumps and stalls inside shots: `jumpRatio` 2..50, `stallFrames` 2..120), `planText` (every planned line appears), `layout` (from
   `rules.layout`), `readability` (from `rules.readability`), `firstFrame`, `audio` when the plan
   has sound (present, `minMeanVolumeDb`, `maxTruePeakDb`), and `forbiddenNumbers` whenever the
   brief has such a flag (FR-027).
@@ -134,7 +134,7 @@ Checked when a recipe is saved or imported:
   GPU install"), and it is never swapped for another engine silently.
 - `measures.sourcedNumbers` needs `facts`; `facts.mode: research` with `sources` needs those data
   sources to exist in Settings (else the recipe is unavailable, with the reason).
-- `look`, and `creative.vision: on`, need a vision-capable model (or `when: "connection:vision"`).
+- `look`, and `creative.vision: on`, need the LLM, whose model sees (or `when: "connection:vision"`; FR-052).
 - `images` needs the `image` connection (or `when`).
 - `export.mode: copy` needs `render.quality: delivery`.
 - Limits: ≤ 30 steps; `output` within 360..4096 px, 12..60 fps, 5..90 s; ≤ 20 audit items,
@@ -177,7 +177,7 @@ placeholders that the user sets in their own Settings. The example ships as
 ## Files written per project
 
 From the database, for people and outside agents to read (read-only mirrors), into
-`data/generate/{projectId}/`: `BRIEF.md`, `facts.md`, `audio_request.json`, `audio_meta.json`,
+`data/generate/{projectId}/`: `BRIEF.md`, `facts.md`, `audio_request.json`, `voice.json`,
 `STORYLINES.md`, `SPEC.md`, `MOTION_PLAN.md`, `CONCEPT.txt`, `v{n}/` (the HyperFrames project) and
 `MOTION_REVIEW.md` (both verdicts, findings, kept warnings and their reasons). A file is written
 only when the step that produces it is in the recipe.
@@ -191,6 +191,18 @@ only when the step that produces it is in the recipe.
 | `technical` | the always-on measure `motion` (jumps and stalls inside shots), tunable thresholds | on |
 | `creative` | Sorot always adds the criteria `finished` and `motion` | |
 
+`require` names a kit part as `kit:<name>` (implementation note, 2026-11-02): other entries in the list
+stay free-form hints, so an older recipe that lists words like `typography` is not made unavailable.
+
 New settings have no schema defaults that join a step's input hash; their defaults live in code,
 so existing projects don't re-run. A recipe naming a kit part the install lacks is unavailable
 with the reason "kit part <name> isn't installed".
+
+### Additions for the director loop (2026-11-02)
+
+- `author.toolSteps`: 0 to 16 (default 8): tool steps per shot turn; 0 = one forced call, as before.
+- `author.looks`: 0 to 4 (default 2): `look` calls per turn.
+- `look` still runs in recipes that name it; when the director looked at every shot in its turn it
+  records "looked in the loop" and does nothing else.
+- `look` and `creative.vision: on` need the LLM (its model sees); `vision-capable model` no longer
+  applies (FR-052).

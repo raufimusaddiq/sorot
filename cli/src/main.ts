@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { Api, ApiError } from "./api";
 import { parseArgs, UsageError } from "./args";
 import { COMMANDS, type Deps } from "./commands";
@@ -69,9 +69,9 @@ Generate (2D videos from a brief)
   gen status                    can Generate run here? (exit 1 and the reasons when not)
   gen new "<brief>" | list | show <p> | retry <p> | storylines <p> | pick <p> <1-3> | plan <p> [--edit]
   gen revise <p> "<change>" | approve <p> | asset <p> <file>   a brief becomes storylines, then an approved plan
-  gen build <p> [--no-watch] | verdicts <p|v> | cancel <p|v> | accept <p|v>   build a draft, see both verdicts
+  gen build <p> [--no-watch] | verdicts <p|v> | cancel|resume <p|v> | accept <p|v>   build a draft, see both verdicts
   gen facts <p> | facts add <p> "claim" --source URL | facts rm <p> <f> | facts verify <p>   facts with sources; gen new --facts facts.md --no-numbers
-  gen ideas | idea add BRIEF.md [--id --slug --facts] | idea show <id>   the idea bank
+  gen ideas | idea add BRIEF.md [--id --slug --facts --length --lang --narration --no-numbers] | idea show <id>   the idea bank
   gen run --recipe <id> [--idea ID] [--json]   an unattended run: the next idea, or the named one
   gen files <p> [name] | import-history <file.json>   the files of a video; bring in past concepts and ideas
   gen fix <p|v> [--finding id]... [--note ".."] [--shot s02] [--no-watch] | restore <p|v>   fix findings into a new version, restore a plan
@@ -152,6 +152,10 @@ export function realDeps(): Omit<Deps, "api"> {
       // Windows editors (Notepad, PowerShell 5.1) may start a UTF-8 file with a byte-order mark: JSON.parse refuses it.
       readText: (p) => readFileSync(p, "utf8").replace(/^﻿/, ""),
       writeText: (p, text) => writeFileSync(p, text),
+      list: (p) => {
+        if (!existsSync(p) || !statSync(p).isDirectory()) return null;
+        return (readdirSync(p, { recursive: true }) as string[]).map((f) => f.split(sep).join("/")).filter((f) => statSync(join(p, f)).isFile()).sort();
+      },
       tempPath: (name) => join(tmpdir(), `sorot-${process.pid}-${name}`),
       // Streamed by hand: Bun 1.3.12's Bun.write(path, response) never
       // finishes on the backend's file responses (spins at 100% CPU).

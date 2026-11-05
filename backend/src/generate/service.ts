@@ -23,6 +23,9 @@ import { ImageClient } from "./images";
 import { Narrator } from "./narration";
 import { findPreset, loadPresets } from "./presets";
 import { IdeaBank, type IdeaFlags } from "./ideas";
+import { Kit, requiredParts } from "./kit";
+import { calibrate, chooseLevel, modelPin, provenLevel, recordAnswer, recordOf, setModelPin, type CalibrationResult } from "./levels";
+import { capabilitiesFor, CPU_MAX_LEVEL, recipeMaxLevel, type Capabilities, type Level } from "./capabilities";
 import { RecipeBook } from "./recipes";
 import { Runner, parseStates, stepId, type GateDecision } from "./runner";
 import { settingsOf } from "./steps";
@@ -77,6 +80,12 @@ export interface CreateProjectInput {
 }
 
 const DOCTOR_TTL_MS = 30_000;
+
+/** A changed plan keeps each shot's planned level where it says none: the level is Sorot's to set (FR-042), not the director's. */
+export function keepLevels(before: Plan, after: Plan): Plan {
+  const was = new Map(before.shots.map((s) => [s.id, s.level]));
+  return { ...after, shots: after.shots.map((s) => (s.level || !was.get(s.id) ? s : { ...s, level: was.get(s.id) })) };
+}
 const FORMATS = ["9:16", "16:9", "1:1"];
 const MAX_BRIEF = 2000;
 
@@ -88,6 +97,7 @@ export class GenerateService {
   readonly queue: BuildQueue;
   readonly recipes: RecipeBook;
   readonly ideas: IdeaBank;
+  readonly kit: Kit;
   private doctorCache: { at: number; result: { ok: boolean; reason?: string } } | null = null;
   private catalogCache: Array<{ name: string; tags: string[]; type?: string; description?: string }> | null = null;
   /** Work running in the background, by project. */
@@ -110,6 +120,15 @@ export class GenerateService {
     this.assets = new Assets(config, store);
     this.recipes = new RecipeBook(store);
     this.ideas = new IdeaBank(store);
+    this.kit = new Kit(config, store, hyperframes, exec);
+    this.director.capabilities = (q) => this.capabilities(q.level, q.parts);
+    // every answer feeds the model's record (R25): plan calls count here; a scene's pass is the author step's to count
+    this.director.onAnswer = (e) => {
+      const model = e.model ?? this.director.model;   // the model that answered (the plan role may use another)
+      if (e.level === "plan") recordAnswer(store, model, "plan", e.outcome, e.ms);
+      else if (e.outcome === "malformed") recordAnswer(store, model, e.level, "malformed");
+      else store.addGenModelRecord(model, e.level, { ms: e.ms });
+    };
     this.runner = new Runner(store, this.log, {
       connected: (c) => this.connected(c),
       directorGate: (ctx, result) => this.decide(ctx.project, ctx.step, result.outputRef),
@@ -123,6 +142,8 @@ export class GenerateService {
       web,
       config,
       catalog: () => this.catalog(),
+      kit: this.kit,
+      capabilities: (level, parts) => this.capabilities(level, parts),
     });
     this.queue = new BuildQueue({
       concurrency: config.genConcurrency, pollMs: 5000, blocked: () => clipJobBusy(store),
@@ -141,6 +162,7 @@ export class GenerateService {
   /** Startup: example recipes into the database; what was running when the server stopped is marked interrupted. */
   start() {
     seedRecipes(this.store, `${this.config.generatorDir}/recipes`);
+    this.kit.syncBuiltIns();
     this.runner.recoverInterrupted();
     for (const v of this.store.genVersionsByStatus("QUEUED")) this.queue.enqueue(v.id);
   }
@@ -153,10 +175,65 @@ export class GenerateService {
   connections(): ConnectionState {
     const c = this.config;
     return {
-      llm: this.llm.enabled, jev: this.jev.enabled, vision: this.llm.visionModel !== null,
+      llm: this.llm.enabled, jev: this.jev.enabled, vision: this.llm.enabled,
       image: c.imageEnabled && !!c.imageBaseUrl && !!c.imageModel && !!c.imageApiKey,
       voiceEngines: this.narrator.engines, dataSources: c.dataSources.map((x) => x.name), commands: c.commandsEnabled ? c.commands.map((x) => x.name) : [],
     };
+  }
+
+  /** The highest level this machine offers (a recipe may lower it further). */
+  get machineMaxLevel(): Level { return this.compute === "cpu" ? CPU_MAX_LEVEL : "free"; }
+
+  /** What a director call is told right now (FR-047): the kit, the level, the renderer, the connections. */
+  capabilities(level: Level = "compose", parts?: string[]): Capabilities {
+    return capabilitiesFor({
+      level, parts, kit: this.kit.manifests(), config: this.config, connected: (c) => this.connected(c), maxLevel: this.machineMaxLevel,
+    });
+  }
+
+  // ---- models and levels (R25) ---------------------------------------------------------
+
+  private calibrating: { model: string; startedAt: string; result?: CalibrationResult; error?: string; done: boolean } | null = null;
+
+  /** Each model's record per level, its pin, and the level `auto` would give it now; the calibration that ran last. */
+  models() {
+    const records = this.store.genModelRecords();
+    const names = [...new Set([this.director.model, ...records.map((r) => r.model)].filter(Boolean))];
+    return {
+      current: this.director.model,
+      models: names.map((model) => ({
+        model, pin: modelPin(this.store, model), records: records.filter((r) => r.model === model),
+        auto: chooseLevel({ pin: modelPin(this.store, model), record: recordOf(this.store, model), cpuCap: this.machineMaxLevel }),
+        proven: provenLevel(recordOf(this.store, model)),
+      })),
+      calibration: this.calibrating,
+    };
+  }
+
+  /** Measures the connected model at each level in the background (three sample shots each). */
+  calibrateModel(model?: string) {
+    const current = this.director.model;
+    if (!this.llm.enabled) throw new HttpError(409, "Connect an LLM in Settings first");
+    if (model && model !== current) throw new HttpError(400, `Only the connected model (${current}) can be calibrated: connect ${model} in Settings first`);
+    if (this.calibrating && !this.calibrating.done) throw new HttpError(409, `A calibration of ${this.calibrating.model} is running`);
+    const run = { model: current, startedAt: new Date().toISOString(), done: false } as NonNullable<GenerateService["calibrating"]>;
+    this.calibrating = run;
+    const job = calibrate({ store: this.store, director: this.director, kit: this.kit.manifests(), capabilities: (l) => this.capabilities(l), maxLevel: this.machineMaxLevel })
+      .then((r) => { run.result = r; }, (e: Error) => { run.error = e.message; })
+      .finally(() => { run.done = true; this.running.delete("calibration"); });
+    this.running.set("calibration", job);
+    return run;
+  }
+
+  /** Pins a model to a level, or back to auto with null. */
+  pinModel(model: string, level: Level | null) {
+    setModelPin(this.store, model, level);
+    return this.models().models.find((m) => m.model === model) ?? { model, pin: level, records: [], auto: level ?? this.machineMaxLevel, proven: "kit" as Level };
+  }
+
+  /** What a plan's shot looks are checked against: the kit at the highest level the recipe allows. */
+  private kitFor(recipe: Recipe) {
+    return { capabilities: this.capabilities(recipeMaxLevel(recipe)), kit: this.kit.manifests() };
   }
 
   connected(name: string): boolean {
@@ -292,8 +369,13 @@ export class GenerateService {
         else needs(step, engine ? c.voiceEngines.includes(engine) : c.voiceEngines.length > 0, "no voice engine is set up in Settings");
       }
       if (step.use === "images") needs(step, c.image, "needs the image connection in Settings");
-      if (step.use === "look" || (step.use === "creative" && w.vision === "on")) needs(step, c.vision, "needs a vision-capable model in Settings");
+      if (step.use === "look" || (step.use === "creative" && w.vision === "on")) needs(step, c.vision, "needs the LLM in Settings (its model looks at the frames)");
       if (step.use === "command") needs(step, c.commands.includes(w.name as string), `the command "${String(w.name)}" isn't registered in Settings`);
+      if (step.use === "author") {
+        // `kit:<name>` names a kit part; a part this install lacks means the recipe can't run here (FR-039)
+        const installed = new Set(this.kit.list().map((p) => p.name));
+        for (const name of requiredParts(w.require)) if (!installed.has(name)) reasons.push(`${step.id ?? step.use}: kit part ${name} isn't installed`);
+      }
       if (step.use === "facts" && Array.isArray(w.sources)) {
         for (const s of w.sources as string[]) needs(step, c.dataSources.includes(s), `the data source "${s}" isn't set up in Settings`);
       }
@@ -358,9 +440,14 @@ export class GenerateService {
    */
   private unattendedNext(projectId: string): void {
     const p = this.store.getGenProject(projectId);
-    if (!p || !this.flagsOf(p).buildWithoutStopping || p.status !== "WAITING" || this.store.genVersionsForProject(projectId).length) return;
+    if (!p || !this.flagsOf(p).buildWithoutStopping || p.status !== "WAITING") return;
+    const newest = this.store.genVersionsForProject(projectId)[0];
+    if (newest && newest.status !== "FAILED" && newest.status !== "CANCELLED") return;   // built, or a fix round: not this hook's
     try {
-      this.queueVersion(p, this.assertCanBuild(projectId));
+      const plan = this.assertCanBuild(projectId);
+      // a build that failed or was cut off by a restart goes on from its failed step, on the plan it was started from
+      if (newest?.status === "FAILED" && newest.planId === plan.id) this.requeue(newest);
+      else this.queueVersion(p, plan);
     } catch (e) {
       if (!(e instanceof HttpError)) throw e;   // not approved yet: it waits for the owner
     }
@@ -619,7 +706,7 @@ export class GenerateService {
 
   private async checkPlan(p: GenProject, raw: unknown) {
     const catalog = (await this.catalog()).map((b) => b.name);
-    const check = validatePlan(raw, planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog }));
+    const check = validatePlan(raw, planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog, ...this.kitFor(parseRecipe(p)) }));
     if (!check.ok) throw new HttpError(400, `The plan doesn't pass: ${check.errors.join("; ")}`);
     return check.plan as Plan;
   }
@@ -654,9 +741,9 @@ export class GenerateService {
     const recipe = parseRecipe(p);
     const planStep = recipe.steps.find((s) => s.use === "plan") as RecipeStep;
     const catalog = (await this.catalog()).map((b) => b.name);
-    const planCtx = planContext({ project: p, recipe, assets: this.store.genAssetsForProject(id), connected: (c) => this.connected(c), catalog });
+    const planCtx = planContext({ project: p, recipe, assets: this.store.genAssetsForProject(id), connected: (c) => this.connected(c), catalog, ...this.kitFor(recipe) });
     const out = await this.director.revise({ project: p, step: planStep, current: JSON.parse(current.plan) as Plan, request: text, planCtx });
-    return { plan: this.savePlan(p, out.plan, { request: text, summary: out.changeSummary }), changeSummary: out.changeSummary };
+    return { plan: this.savePlan(p, keepLevels(JSON.parse(current.plan) as Plan, out.plan), { request: text, summary: out.changeSummary }), changeSummary: out.changeSummary };
   }
 
   /** The owner approves the current revision (FR-006); the rest of the project's steps then run. */
@@ -700,6 +787,27 @@ export class GenerateService {
   startBuild(projectId: string): GenVersion {
     const p = this.idle(projectId);
     return this.queueVersion(p, this.assertCanBuild(projectId));
+  }
+
+  /**
+   * A build that failed (a gateway error, an interruption) goes on from its failed step: it is the same
+   * version, and the runner skips every step whose input hash still matches, so finished work is kept.
+   */
+  retryVersion(versionId: string): GenVersion {
+    const v = this.mustVersion(versionId);
+    const p = this.idle(v.projectId);
+    if (v.status !== "FAILED") throw new HttpError(409, "Only a build that failed can be retried");
+    // the build goes on with the plan it was started from: an edited or unapproved plan needs a new build
+    if (this.assertCanBuild(v.projectId).id !== v.planId) throw new HttpError(409, "The plan has changed since this build: start a new build");
+    this.requeue(v);
+    return this.mustVersion(versionId);
+  }
+
+  /** A failed version back in the queue: it goes on from its failed step (finished steps are reused). */
+  private requeue(v: GenVersion): void {
+    this.store.updateGenVersion(v.id, { status: "QUEUED", errorMessage: null });
+    this.store.updateGenProject(v.projectId, { status: "BUILDING", errorMessage: null });
+    this.queue.enqueue(v.id);
   }
 
   /**
@@ -801,7 +909,7 @@ export class GenerateService {
 
   private async planContextOf(p: GenProject) {
     const catalog = (await this.catalog()).map((b) => b.name);
-    return planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog });
+    return planContext({ project: p, recipe: parseRecipe(p), assets: this.store.genAssetsForProject(p.id), connected: (c) => this.connected(c), catalog, ...this.kitFor(parseRecipe(p)) });
   }
 
   /**
@@ -837,6 +945,7 @@ export class GenerateService {
 
     let row = oldRow;
     if (answer.plan) {
+      answer.plan = keepLevels(plan, answer.plan);
       row = this.savePlan(p, answer.plan, { request: note ?? `Fix: ${chosen.map((f) => f.code).join(", ")}`, summary: answer.summary }, !answer.needsApproval);
       if (answer.needsApproval) return { version: null, plan: row, needsApproval: true, summary: answer.summary };
     }

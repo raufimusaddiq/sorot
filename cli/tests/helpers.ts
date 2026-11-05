@@ -31,6 +31,8 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
   };
   const texts = new Map<string, string>();
   const bytesOf = new Map<string, Uint8Array>();
+  /** Folders: their files, as `fs.list` gives them. */
+  const dirs = new Map<string, string[]>();
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -79,6 +81,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
       readText: (p: string) => texts.get(p.replaceAll("\\", "/")) ?? "",
       writeText: (p: string, text: string) => { texts.set(p.replaceAll("\\", "/"), text); },
       tempPath: (name: string) => `/tmp/sorot-${name}`,
+      list: (p: string) => dirs.get(p.replaceAll("\\", "/")) ?? null,
       write: async (p: string, res: Response) => {
         const n = (await res.arrayBuffer()).byteLength;
         files.set(p.replaceAll("\\", "/"), n);
@@ -93,7 +96,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
   };
 
   return {
-    out, err, runs, requests, files, copies, existing, state, texts, bytesOf,
+    out, err, runs, requests, files, copies, existing, state, texts, bytesOf, dirs,
     run: (...argv: string[]) => main(argv, deps),
     text: () => out.join("\n"),
   };

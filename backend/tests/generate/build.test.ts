@@ -7,7 +7,11 @@ import { openDatabase } from "../../src/db";
 import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
 import { readFindings } from "../../src/generate/findings";
+import { PROBE_FILE, PROBE_PREFIX } from "../../src/generate/sceneProbe";
 import { Hyperframes } from "../../src/generate/hyperframes";
+import { Kit } from "../../src/generate/kit";
+import { capabilitiesFor } from "../../src/generate/capabilities";
+import { recordOf, setModelPin } from "../../src/generate/levels";
 import { Llm } from "../../src/llm";
 import type { ExecFn } from "../../src/runner";
 import { validatePlan, type Plan } from "../../src/generate/planSchema";
@@ -70,6 +74,81 @@ const scenes = (dir: string) => [0, 1, 2].map((i) => readFileSync(join(dir, `com
 const upload = (id: string, kind: GenAsset["kind"], path: string, meta: string | null = null): GenAsset =>
   ({ id, projectId: "p1", kind, origin: "upload", path, shotId: null, promptHash: null, meta, createdAt: T });
 
+/** A context with the built-in kit and its capability description, at `level` unless a record says otherwise. */
+function withKit(r: ReturnType<typeof rig>) {
+  const kit = new Kit(r.config, r.store, new Hyperframes(r.config, r.fake.exec), r.fake.exec);
+  kit.syncBuiltIns();
+  const capabilities = (level = "compose" as const, parts?: string[]) => capabilitiesFor({ level, parts, kit: kit.manifests(), config: r.config, connected: () => false });
+  return { kit, capabilities };
+}
+const kitAnswer = (id: string) => json({ shotId: id, layers: [{ part: "particles", settings: { kind: "snow" }, fromSec: 0, toSec: 5 }] });
+
+describe("director levels", () => {
+  test("a model pinned to kit writes kit-level answers: Sorot writes the scenes from them and the version records each shot's level", async () => {
+    const r = rig([kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03")]);
+    setModelPin(r.store, "m", "kit");
+    await STEPS.author.run(r.ctxFor("author", {}, withKit(r)));
+    expect(r.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_shot_kit", "submit_shot_kit", "submit_shot_kit"]);
+    expect(scenes(r.dir)[1]).toContain('SorotKitRuntime.mount("particles", layers[0]');
+    expect(JSON.parse(r.store.getGenVersion("v1")!.shotLevels!)).toEqual({ s01: { planned: "kit", built: "kit" }, s02: { planned: "kit", built: "kit" }, s03: { planned: "kit", built: "kit" } });
+    expect(recordOf(r.store, "m")).toMatchObject({ kit: { asked: 3, firstPass: 3 } });
+    expect(readFindings(r.dir)).toEqual([]);
+    // unpinned, the same model starts at the top: the director is never held back
+    const top = rig([html(0), html(1), html(2)]);
+    await STEPS.author.run(top.ctxFor("author", {}, withKit(top)));
+    expect(top.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_scene", "submit_scene", "submit_scene"]);
+    expect(JSON.parse(top.store.getGenVersion("v1")!.shotLevels!).s01).toEqual({ planned: "free", built: "free" });
+  });
+
+  test("a shot that still fails at its level after the repairs is rebuilt one level down, with a level_drop finding; the record counts it", async () => {
+    const lost = html(1, "Judul lain");
+    const r = rig([html(0), lost, lost, kitAnswer("s02"), html(2)], {}, { shots: samplePlan().shots.map((s: any) => ({ ...s, level: "compose" })) });
+    setModelPin(r.store, "m", "compose");
+    await STEPS.author.run(r.ctxFor("author", { repairRounds: 1 }, withKit(r)));
+    expect(JSON.parse(r.store.getGenVersion("v1")!.shotLevels!).s02).toEqual({ planned: "compose", built: "kit", reason: "compose didn't pass: scene_missing_text" });
+    expect(readFindings(r.dir)).toMatchObject([{ code: "level_drop", severity: "should-fix", shotId: "s02", rule: "levels" }]);
+    expect(recordOf(r.store, "m")).toMatchObject({ compose: { asked: 3, firstPass: 2, dropped: 1 }, kit: { asked: 1, firstPass: 1 } });
+  });
+
+  test("a kit-level answer that fails its checks is asked again with what was wrong, up to the repair rounds; only then does the build fail", async () => {
+    const r = rig(["not json", "still not json", kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03")]);
+    setModelPin(r.store, "m", "kit");
+    await STEPS.author.run(r.ctxFor("author", { repairRounds: 1 }, withKit(r)));
+    expect(JSON.parse(r.requests[2]!.messages.at(-1)!.content).findings[0]).toMatchObject({ code: "kit_answer_refused" });
+    const stubborn = rig(["not json", "still not json", "no", "nope"]);
+    setModelPin(stubborn.store, "m", "kit");
+    await expect(STEPS.author.run(stubborn.ctxFor("author", { repairRounds: 1 }, withKit(stubborn)))).rejects.toThrow("Shot s01 couldn't be built at any level, not even from kit parts");
+  });
+
+  test("the check step fixes a kit-level shot as kit parts, never as the model's own HTML", async () => {
+    const r = rig([kitAnswer("s01"), kitAnswer("s02"), kitAnswer("s03"), kitAnswer("s02")], {
+      lint: (() => { let n = 0; return () => (n++ === 0 ? lint(finding("bad_markup", "error", { file: "compositions/shot-02.html" })) : lint()); })(),
+      check: () => check(),
+    });
+    setModelPin(r.store, "m", "kit");
+    const k = withKit(r);
+    await STEPS.author.run(r.ctxFor("author", {}, k));
+    await STEPS.check.run(r.ctxFor("check", { rounds: 1 }, k));
+    expect(r.requests.map((q) => q.tool_choice.function.name)).toEqual(["submit_shot_kit", "submit_shot_kit", "submit_shot_kit", "submit_shot_kit"]);
+    expect(JSON.parse(r.requests[3]!.messages.at(-1)!.content).findings).toMatchObject([{ code: "bad_markup" }]);
+    expect(scenes(r.dir)[1]).toContain('SorotKitRuntime.mount("particles", layers[0]');
+  });
+
+  test("a heavy shot over the frame budget is rebuilt one level down by the check step", async () => {
+    const heavy = html(1, SAMPLE_TITLES[1], "<script>document.createElement('canvas').getContext('webgl');</script>");
+    const r = rig([html(0), heavy, html(2), html(1)], { check: () => check() }, { shots: samplePlan().shots.map((s: any) => ({ ...s, level: "free" })) });
+    const k = withKit(r);
+    setModelPin(r.store, "m", "free");
+    await STEPS.author.run(r.ctxFor("author", {}, k));
+    let t = 0;
+    const ticks = [0, 1000, 1000, 5000];   // one snapshot 1 s; three snapshots 4 s: 1.5 s a frame, over the 1 s budget
+    await STEPS.check.run(r.ctxFor("check", {}, { ...k, clock: () => ticks[Math.min(t++, ticks.length - 1)]! }));
+    expect(r.fake.calls.filter((c) => c[0] === "snapshot").map((c) => c[2])).toEqual(["--at", "--at"]);
+    expect(JSON.parse(r.store.getGenVersion("v1")!.shotLevels!).s02).toMatchObject({ planned: "free", built: "compose" });
+    expect(readFindings(r.dir).find((f) => f.code === "frame_budget")).toMatchObject({ shotId: "s02", description: "s02 was rebuilt at the compose level after free didn't pass (one frame took 1500 ms to draw; the budget here is 1000 ms)." });
+  });
+});
+
 describe("author step", () => {
   test("the recorded voice is laid on its own track where its shot starts; the music bed ducks under it; a failed image is a polish finding", async () => {
     const r = rig([html(0), html(1), html(2)], {}, {}, [upload("m1", "music", "assets/bed.mp3")]);
@@ -90,6 +169,24 @@ describe("author step", () => {
     expect(readFileSync(join(r.dir, "assets/voice-l2.mp3"), "utf-8")).toBe("voice-l2");
     expect(root).toContain('id="music" class="clip" src="assets/bed.mp3" data-start="0" data-duration="30" data-track-index="1" data-volume="0.03"');
     expect(readFindings(r.dir)).toMatchObject([{ severity: "polish", code: "image_fallback", shotId: "s01", source: "author" }]);
+  });
+
+  test("the root loads the kit parts the recipe requires, the plan's looks name and the scenes mount; the version records them", async () => {
+    const mount = `<script>SorotKitRuntime.mount("particles", document.body, {}, { tl: gsap.timeline(), duration: 2 }); SorotKit["neon"];</script>`;
+    let whileWriting: string[] = [];
+    const r = rig([html(0), () => { whileWriting = [...readFileSync(join(r.dir, "index.html"), "utf-8").matchAll(/assets\/kit\/([\w-]+)\/part\.js/g)].map((m) => m[1]!); return html(1, SAMPLE_TITLES[1], mount); }, html(2)]);
+    const looked = { ...r.plan, shots: r.plan.shots.map((s, i) => (i === 0 ? { ...s, look: { description: "lit coin", values: { lightAngleDeg: 290 }, parts: [{ part: "shade", settings: {} }] } } : s)) };
+    r.store.saveGenPlan({ ...r.store.getGenPlan("pl1")!, plan: JSON.stringify(looked) });
+    const { kit } = withKit(r);
+    await STEPS.author.run(r.ctxFor("author", { require: ["kit:camera", "typography"] }, { kit }));
+    const root = readFileSync(join(r.dir, "index.html"), "utf-8");
+    expect([...root.matchAll(/assets\/kit\/([\w-]+)\/part\.js/g)].map((m) => m[1])).toEqual(["camera", "particles", "shade"]);
+    // while the shots were written every installed part was loaded, so a draft mounting one the plan didn't name still draws
+    expect(whileWriting).toEqual(kit.manifests().map((m) => m.name).sort());
+    expect(root).toContain('"keyLightDeg":290');
+    expect(existsSync(join(r.dir, "assets/kit/_runtime.js")) && existsSync(join(r.dir, "assets/kit/particles/part.js"))).toBe(true);
+    // "neon" isn't installed: nothing to load (the scene check reports it)
+    expect(JSON.parse(r.store.getGenVersion("v1")!.kit!)).toMatchObject({ parts: ["camera", "particles", "shade"], partVersions: { shade: "1.0.0" } });
   });
 
   test("lays out the project, then writes one scene per shot", async () => {
@@ -174,7 +271,7 @@ describe("author step", () => {
       return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] } }] });
     }) as unknown as typeof fetch;
     const concurrent = rig([]);
-    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5 }, fetchFn, 0);
+    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "m", llmApiKey: "", llmTimeoutSec: 5, genSession: false }, fetchFn, 0);
     const ctx = concurrent.ctxFor("author", { repairRounds: 0, concurrency: 3 });
     ctx.director = new Director(llm, new DirectorLog(concurrent.store), "../generator");
     await STEPS.author.run(ctx);
@@ -358,13 +455,33 @@ describe("check step", () => {
     expect(readFindings(withSound.dir)[0]).toMatchObject({ code: "film_silent", state: "open", severity: "should-fix" });
   });
 
-  test("Studio-only warnings and info are dropped", async () => {
+  test("Studio-only warnings, Chrome's WebGL capture notes and info are dropped", async () => {
     const r = await built({
-      lint: answers(lint(finding("studio_missing_editable_id", "warning", { selector: '[data-composition-id="shot-01"]' }), finding("note", "info"))),
+      lint: answers(lint(
+        finding("studio_missing_editable_id", "warning", { selector: '[data-composition-id="shot-01"]' }), finding("note", "info"),
+        { ...finding("console_warning", "warning"), message: "[.WebGL-0x1]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels" },
+      )),
     });
     await STEPS.check.run(r.ctxFor("check"));
     expect(readFindings(r.dir)).toEqual([]);
     expect(r.requests).toHaveLength(0);
+  });
+
+  test("Sorot's scene probe runs in the check's page; its line becomes findings in their shots, repaired like the rest", async () => {
+    const rig = { l: "div.camera-rig", c: "shot-02" };
+    const fight = { el: "e1", p: ["scaleX", "y"], s: 11, e: 14 };
+    const line = `${PROBE_PREFIX}${json({ size: [1080, 1920], labels: { e1: rig }, tweens: [{ ...fight, kit: "camera#0", auto: false }, { ...fight, kit: null, auto: false }], fades: [], frames: [] })}`;
+    const roots: string[] = [];
+    // the first check finds the fight, the one after the repair finds nothing
+    const r = await built({ check: (args) => {
+      roots.push(readFileSync(join(args[1]!, "index.html"), "utf-8"));
+      return procOk(json({ ok: true, lint: { findings: [] }, runtime: { findings: roots.length === 1 ? [{ ...finding("console_warning", "warning"), message: line }] : [] }, layout: { findings: [] } }));
+    } }, [json({ html: sceneHtml(1) })]);
+    await STEPS.check.run(r.ctxFor("check"));
+    expect(roots[0]).toContain(`<script src="${PROBE_FILE}"></script>`);
+    expect(JSON.parse(r.requests[0]!.messages[1]!.content)).toMatchObject({ compositionId: "shot-02", findings: [{ code: "fighting_tweens" }] });
+    expect(readFindings(r.dir)).toEqual([]);
+    expect(readFileSync(join(r.dir, "index.html"), "utf-8")).not.toContain(PROBE_FILE);
   });
 
   test("a checker that can't run is a must-fix finding, so nothing is judged on a check that didn't happen", async () => {

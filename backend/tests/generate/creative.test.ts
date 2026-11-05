@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { loadConfig } from "../../src/config";
 import { openDatabase } from "../../src/db";
 import {
-  builtFacts, creativeState, creativeVerdict, fromJev, fromLlm, jevQuestions, lintQuestion, MAIN_MESSAGE, FLAT_FILM, questionsFor, type Criterion, type Judgement,
+  builtFacts, creativeState, creativeVerdict, fromJev, fromLlm, jevQuestions, lintQuestion, MAIN_MESSAGE, FLAT_FILM, FINISHED, MOVES_WELL, questionsFor, type Criterion, type Judgement,
 } from "../../src/generate/creative";
 import { Director } from "../../src/generate/director";
 import { DirectorLog } from "../../src/generate/events";
@@ -16,7 +16,7 @@ import { STEPS, settingsOf } from "../../src/generate/steps";
 import { Jev } from "../../src/jev";
 import { Llm } from "../../src/llm";
 import { Store } from "../../src/store";
-import { fakeHyperframes, fakeJev, fakeLlm, noulA, procOk, quickRecipe, samplePlan, sceneHtml, type HfHandler } from "../helpers";
+import { fakeHyperframes, fakeJev, fakeLlm, noulA, procOk, quickRecipe, samplePlan, sceneHtml, type HfHandler, judgeYes, ALWAYS_ASKED } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const json = JSON.stringify;
@@ -29,12 +29,12 @@ describe("what is asked", () => {
   test("the recipe's questions, plus the main-message question unless one of them is the main one", () => {
     const own = [crit("opening"), crit("pace")];
     const asked = questionsFor({ criteria: own }, undefined);
-    expect(asked.criteria.map((c) => c.id)).toEqual(["opening", "pace", "main_message"]);
-    expect(asked.criteria.at(-1)).toEqual(MAIN_MESSAGE);
+    expect(asked.criteria.map((c) => c.id)).toEqual(["opening", "pace", "main_message", "finished", "motion"]);
+    expect(asked.criteria.slice(-3)).toEqual([MAIN_MESSAGE, FINISHED, MOVES_WELL]);
     expect(MAIN_MESSAGE.fail).toBe("main");
     const main = questionsFor({ criteria: [crit("mechanism", "Would a muted stranger understand the mechanism in `shots`?", "main")] }, undefined);
-    expect(main.criteria.map((c) => c.id)).toEqual(["mechanism"]);
-    expect(questionsFor({}, undefined).criteria).toEqual([MAIN_MESSAGE]);
+    expect(main.criteria.map((c) => c.id)).toEqual(["mechanism", "finished", "motion"]);
+    expect(questionsFor({}, undefined).criteria).toEqual([MAIN_MESSAGE, FINISHED, MOVES_WELL]);
   });
 
   test("risks: the claim check always, each leftover default, each non-blocking content rule (blocking ones belong to TECHNICAL)", () => {
@@ -49,7 +49,7 @@ describe("what is asked", () => {
 
   test("question lint: one judgment, naming what it reads, leaving counting and timing to code", () => {
     expect(lintQuestion("Does `opening` hold the eye in the first moments?")).toEqual([]);
-    expect([MAIN_MESSAGE, FLAT_FILM].flatMap((c) => lintQuestion(c.question))).toEqual([]);
+    expect([MAIN_MESSAGE, FLAT_FILM, FINISHED, MOVES_WELL].flatMap((c) => lintQuestion(c.question))).toEqual([]);
     expect(lintQuestion("Is it good?")).toEqual(["name the thing it reads in backticks, for example `shots`, `opening` or `message`"]);
     expect(lintQuestion("Does `opening` hold the eye.")).toEqual(["end it with a question mark"]);
     expect(lintQuestion(`Does \`opening\` ${"hold the eye ".repeat(12)}?`).join()).toContain("under 140 characters");
@@ -172,7 +172,7 @@ describe("creative step", () => {
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   function rig(opts: {
-    jev?: ReturnType<typeof fakeJev>["jev"]; replies?: Parameters<typeof fakeLlm>[0]; vision?: string; mode?: string; criteria?: Criterion[]; handlers?: Record<string, HfHandler>;
+    jev?: ReturnType<typeof fakeJev>["jev"]; replies?: Parameters<typeof fakeLlm>[0]; vision?: string; llmOff?: boolean; mode?: string; criteria?: Criterion[]; handlers?: Record<string, HfHandler>;
   } = {}) {
     tmp = mkdtempSync(join(tmpdir(), "vc-creative-"));
     const store = new Store(openDatabase(":memory:"));
@@ -201,9 +201,9 @@ describe("creative step", () => {
       const call = { id: "c1", type: "function", function: { name: body.tool_choice.function.name, arguments: reply } };
       return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [call] } }] });
     }) as unknown as typeof fetch;
-    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "text-model", llmApiKey: "", llmTimeoutSec: 5, llmVisionModel: opts.vision ?? "" }, fetchFn, 0);
+    const llm = new Llm({ llmBaseUrl: "http://llm/v1", llmModel: "text-model", llmApiKey: "", llmTimeoutSec: 5, llmEnabled: !opts.llmOff }, fetchFn, 0);
     const fake = fakeHyperframes(opts.handlers ?? {});
-    const step = { ...recipe.steps.find((s) => s.use === "creative")!, with: { ...(opts.criteria ? { criteria: opts.criteria } : {}), ...(opts.mode ? { vision: opts.mode } : {}) } };
+    const step = { ...recipe.steps.find((s) => s.use === "creative")!, with: { ...(opts.criteria ? { criteria: opts.criteria } : {}), vision: opts.mode ?? (opts.vision ? "auto" : "off") } };   // the LLM's own model sees; `vision` only says whether to show it the frames
     const ctx = {
       project: store.getGenProject("p1")!, version: store.getGenVersion("v1")!, recipe, step, settings: settingsOf("creative", step.with), store,
       log: new DirectorLog(store), director: new Director(llm, new DirectorLog(store), "../generator"), hyperframes: new Hyperframes(loadConfig({}), fake.exec),
@@ -213,10 +213,7 @@ describe("creative step", () => {
     return { store, dir, ctx, requests, verdict: () => store.genVerdictsForVersion("v1")[0]!, events: () => store.genEventsForProject("p1").reverse() };
   }
 
-  const LLM_PASS = json({
-    criteria: ["opening", "pace", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })),
-    risks: ["misleading_claim", "flat_film", "default_1"].map((id) => ({ id, flagged: false, reason: "" })),
-  });
+  const LLM_PASS = judgeYes(["opening", "pace"], ["misleading_claim", "flat_film", "default_1"]);
 
   test("Jev answers the recipe's questions and the verdict follows its answers; the state carries the facts and context", async () => {
     const asked: any[] = [];
@@ -225,13 +222,13 @@ describe("creative step", () => {
     expect(await STEPS.creative.run(r.ctx)).toEqual({ status: "done", outputRef: "REVIEW" });
     expect(r.verdict()).toMatchObject({ kind: "CREATIVE", status: "REVIEW", judgedBy: "jev:jev-1.14.0" });
     const body = requests[0]!;
-    expect(Object.keys(body.questions)).toEqual(["opening", "pace", "main_message", "misleading_claim", "flat_film", "default_1"]);
+    expect(Object.keys(body.questions)).toEqual(["opening", "pace", "main_message", "finished", "motion", "misleading_claim", "flat_film", "default_1"]);
     expect(body.state.brief).toBe("Jelaskan bunga majemuk");
     expect(body.state.shots).toHaveLength(3);
     expect(body.state.context.fields.shots).toContain("every shot in order");
     expect(JSON.parse(r.verdict().findings)).toEqual([expect.objectContaining({ code: "creative.pace", severity: "polish", source: "creative", state: "open" })]);
     expect(readFindings(r.dir).map((f) => f.source)).toEqual(["creative"]);
-    expect(JSON.parse(r.verdict().inputs!)).toEqual({ criteria: ["opening", "pace", "main_message"], risks: ["misleading_claim", "flat_film", "default_1"], pictures: 0, shots: 3 });
+    expect(JSON.parse(r.verdict().inputs!)).toEqual({ criteria: ["opening", "pace", "main_message", "finished", "motion"], risks: ["misleading_claim", "flat_film", "default_1"], pictures: 0, shots: 3 });
     expect(r.events()[0]).toMatchObject({ kind: "judge", model: "jev-1.14.0", ok: 1 });
     expect(JSON.parse(r.events()[0]!.response!)).toMatchObject({ opening: 0.9, pace: 0.5 });
   });
@@ -254,7 +251,7 @@ describe("creative step", () => {
     expect(req.tool_choice.function.name).toBe("submit_judgement");
     expect(req.messages.map((m: any) => m.role)).toEqual(["system", "user"]);
     const sent = JSON.parse(req.messages[1].content);
-    expect(sent.criteria.map((c: any) => c.id)).toEqual(["opening", "pace", "main_message"]);
+    expect(sent.criteria.map((c: any) => c.id)).toEqual(["opening", "pace", "main_message", "finished", "motion"]);
     expect(sent.criteria[0].question).not.toContain("`");
     expect(sent.risks.map((c: any) => c.id)).toEqual(["misleading_claim", "flat_film", "default_1"]);
     expect(sent.facts.shots[0].onScreen).toBe("Bunga berbunga?");
@@ -265,7 +262,7 @@ describe("creative step", () => {
     const r = rig({ criteria: [crit("opening"), crit("pace")], replies: [json({
       criteria: [
         { id: "opening", answer: "no", reason: "the first shot is a plain title", shotId: "s01", fromSec: 0, toSec: 3, suggestedFix: "start with the coin" },
-        { id: "pace", answer: "partly", reason: "shot 2 drags" }, { id: "main_message", answer: "yes", reason: "" },
+        { id: "pace", answer: "partly", reason: "shot 2 drags" }, ...ALWAYS_ASKED.map((id) => ({ id, answer: "yes", reason: "" })),
       ],
       risks: [{ id: "misleading_claim", flagged: true, reason: "the rate is not in the brief", shotId: "s02" }, { id: "flat_film", flagged: false, reason: "" }, { id: "default_1", flagged: false, reason: "" }],
     })] });
@@ -277,9 +274,7 @@ describe("creative step", () => {
   });
 
   test("a judge that skips a question is told which, and asked again once", async () => {
-    const r = rig({ replies: [json({ criteria: [{ id: "main_message", answer: "yes", reason: "" }], risks: [] }), json({
-      criteria: [{ id: "main_message", answer: "yes", reason: "" }], risks: ["misleading_claim", "flat_film", "default_1"].map((id) => ({ id, flagged: false, reason: "" })),
-    })] });
+    const r = rig({ replies: [judgeYes([], []), judgeYes([], ["misleading_claim", "flat_film", "default_1"])] });
     await STEPS.creative.run(r.ctx);
     expect(r.verdict().status).toBe("PASS");
     expect(JSON.parse(r.requests[1].messages.at(-1).content).problems[0]).toContain("you didn't answer: misleading_claim, flat_film, default_1");
@@ -287,25 +282,33 @@ describe("creative step", () => {
     await expect(STEPS.creative.run(stubborn.ctx)).rejects.toThrow("didn't pass the checks");
   });
 
-  test("vision: with a vision model the judge gets HyperFrames' review sheets as pictures and the verdict says so; the sheets are kept with the version", async () => {
-    const r = rig({
-      vision: "vl-model", replies: [LLM_PASS], criteria: [crit("opening"), crit("pace")],
-      handlers: {
-        snapshot: () => {
-          const out = join(tmp, "snaps");
-          mkdirSync(out, { recursive: true });
-          writeFileSync(join(out, "review-beats-1.jpg"), "BEATS");
-          writeFileSync(join(out, "review-beats-2.jpg"), "BEATS2");   // only the first page of each goes to the judge
-          writeFileSync(join(out, "review-phone-1.jpg"), "PHONE");
-          return procOk(JSON.stringify({ ok: true, outputDir: out, frames: [{ path: join(out, "f1.png"), time: 1 }] }));
-        },
-      },
-    });
+  const sheets = {
+    snapshot: () => {
+      const out = join(tmp, "snaps");
+      mkdirSync(out, { recursive: true });
+      writeFileSync(join(out, "review-beats-1.jpg"), "BEATS");
+      writeFileSync(join(out, "review-beats-2.jpg"), "BEATS2");   // only the first page of each goes to the judge
+      writeFileSync(join(out, "review-phone-1.jpg"), "PHONE");
+      return procOk(JSON.stringify({ ok: true, outputDir: out, frames: [{ path: join(out, "f1.png"), time: 1 }] }));
+    },
+  };
+
+  test("with Jev and a model that sees, what only the frames show (finished, motion) goes to the vision judge and the rest to Jev", async () => {
+    const { jev, requests } = fakeJev(() => noulA(0.95));
+    const r = rig({ jev, vision: "vl-model", replies: [judgeYes(["finished", "motion"], [])], criteria: [crit("opening")], handlers: sheets });
     await STEPS.creative.run(r.ctx);
-    expect(r.verdict()).toMatchObject({ judgedBy: "llm-vision:vl-model" });
+    expect(Object.keys(requests[0]!.questions)).not.toContain("finished");
+    expect(JSON.parse(r.requests[0]!.messages[1].content[0].text).criteria.map((c: any) => c.id)).toEqual(["finished", "motion"]);
+    expect(r.verdict().judgedBy).toBe("jev:jev-1.14.0 + llm-vision:text-model");
+  });
+
+  test("vision: the judge (the LLM's own model) gets HyperFrames' review sheets as pictures and the verdict says so; the sheets are kept with the version", async () => {
+    const r = rig({ vision: "vl-model", replies: [LLM_PASS], criteria: [crit("opening"), crit("pace")], handlers: sheets });
+    await STEPS.creative.run(r.ctx);
+    expect(r.verdict()).toMatchObject({ judgedBy: "llm-vision:text-model" });
     expect(JSON.parse(r.verdict().inputs!).pictures).toBe(2);
     const req = r.requests[0]!;
-    expect(req.model).toBe("vl-model");
+    expect(req.model).toBe("text-model");
     const urls = req.messages[1].content.filter((p: any) => p.type === "image_url").map((p: any) => p.image_url.url);
     expect(urls).toEqual([`data:image/jpeg;base64,${Buffer.from("BEATS").toString("base64")}`, `data:image/jpeg;base64,${Buffer.from("PHONE").toString("base64")}`]);
     expect(JSON.parse(req.messages[1].content[0].text).pictures).toBe(2);
@@ -338,9 +341,9 @@ describe("creative step", () => {
     expect(off.ctx.hyperframes).toBeDefined();
   });
 
-  test("vision: on without a vision model is an error, not a silent downgrade; a cancelled snapshot is not swallowed", async () => {
-    const r = rig({ mode: "on", replies: [LLM_PASS] });
-    await expect(STEPS.creative.run(r.ctx)).rejects.toThrow("needs a vision model");
+  test("vision: on without the LLM is an error, not a silent downgrade; a cancelled snapshot is not swallowed", async () => {
+    const r = rig({ mode: "on", llmOff: true, replies: [LLM_PASS] });
+    await expect(STEPS.creative.run(r.ctx)).rejects.toThrow("needs the LLM to look at the frames");
     expect(r.requests).toHaveLength(0);
     const cancelled = rig({ vision: "vl-model", replies: [LLM_PASS], handlers: { snapshot: () => ({ exitCode: 137, stdout: "", stderr: "", timedOut: false, aborted: true }) } });
     await expect(STEPS.creative.run(cancelled.ctx)).rejects.toThrow("cancelled");

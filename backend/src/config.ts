@@ -49,10 +49,22 @@ export interface AppConfig {
   llmModel: string;
   llmApiKey: string;
   llmTimeoutSec: number;
+  /** The longest one LLM call may take in all, streamed or not (LLM_MAX_CALL_SEC). */
+  llmMaxCallSec: number;
   /** Output budget per LLM call. Reasoning models (e.g. Kimi, DeepSeek-R1) spend it thinking before they answer. */
   llmMaxTokens: number;
   /** Output budget per Generate director call: a scene file is long, so it has its own (Settings → LLM). */
   genLlmMaxTokens: number;
+  /** Generate's model per role (Settings → LLM; "" = LLM_MODEL): plan = storylines, plan, effects and facts; scene = scenes, repairs and kit shots; judge = the CREATIVE judge without pictures. */
+  /** Generate writes a build's scenes, repairs and kit shots in one conversation (GEN_SESSION, default on). */
+  genSession: boolean;
+  /** How large that conversation may grow before it starts again from its opening and the latest shots (GEN_CONTEXT_TOKENS). */
+  genContextTokens: number;
+  /** How large one shot's turn (its tool results) may grow before older results are cut to stubs (GEN_TURN_TOKENS). */
+  genTurnTokens: number;
+  genPlanModel: string;
+  genSceneModel: string;
+  genJudgeModel: string;
   /** Ask for streamed answers (default on): a gateway cut non-streamed requests at 180 s. LLM_STREAM=0 turns it off. */
   llmStream: boolean;
   /** Web search for the discovery agent: "bing" (key-free HTML), a SearXNG URL, or "off". */
@@ -63,9 +75,6 @@ export interface AppConfig {
   tebarEnabled: boolean;
   /** With an LLM: it also writes a video brief and picks its own clip moments (director.ts); false = review only. */
   llmDirector: boolean;
-  /** Vision: a model that can look at images (review frames), used through the same endpoint and key. */
-  llmVision: boolean;
-  llmVisionModel: string;
   /** Jev decision model (TypeSafe System One) as the clip quality gate; off without JEV_API_KEY. */
   jevUrl: string;
   jevModel: string;
@@ -179,16 +188,21 @@ export function loadConfig(env: Env = process.env): AppConfig {
     llmModel: (env.LLM_MODEL ?? "").trim(),
     llmApiKey: (env.LLM_API_KEY ?? "").trim(),
     llmTimeoutSec: int(env.LLM_TIMEOUT, 120),
+    llmMaxCallSec: Math.max(60, int(env.LLM_MAX_CALL_SEC, 1800)),
     llmMaxTokens: Math.max(256, int(env.LLM_MAX_TOKENS, 4000)),
     genLlmMaxTokens: Math.max(256, int(env.GEN_LLM_MAX_TOKENS, 32000)),
+    genSession: !/^(0|false|no|off)$/i.test((env.GEN_SESSION ?? "").trim()),
+    genContextTokens: Math.max(20000, int(env.GEN_CONTEXT_TOKENS, 600000)),
+    genTurnTokens: Math.max(5000, int(env.GEN_TURN_TOKENS, 60000)),
+    genPlanModel: (env.GEN_PLAN_MODEL ?? "").trim(),
+    genSceneModel: (env.GEN_SCENE_MODEL ?? "").trim(),
+    genJudgeModel: (env.GEN_JUDGE_MODEL ?? "").trim(),
     llmStream: !/^(0|false|no|off)$/i.test((env.LLM_STREAM ?? "").trim()),
     webSearch: (env.WEB_SEARCH ?? "").trim() || "bing",
     llmEnabled: true,
     jevEnabled: true,
     tebarEnabled: true,
     llmDirector: !/^(0|false|no|off)$/i.test((env.LLM_DIRECTOR ?? "").trim()),
-    llmVision: !/^(0|false|no|off)$/i.test((env.LLM_VISION ?? "").trim()),
-    llmVisionModel: (env.LLM_VISION_MODEL ?? "").trim(),
     jevUrl: (env.JEV_URL ?? "").trim() || "https://api.typesafe.ai/v1/systemone",
     // A pinned version, not the jev-latest alias: the gate's thresholds were set against it.
     jevModel: (env.JEV_MODEL ?? "").trim() || "jev-1.14.0",

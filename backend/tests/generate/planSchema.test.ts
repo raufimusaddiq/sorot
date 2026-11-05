@@ -29,7 +29,7 @@ describe("validatePlan", () => {
     ["shot too short", first((s) => ({ ...s, durationSec: 0.5 })), {}, "durationSec must be between 1 and 15"],
     ["shot too long", first((s) => ({ ...s, durationSec: 16 })), {}, "durationSec must be between 1 and 15"],
     ["duration missing", first((s) => ({ ...s, durationSec: undefined })), {}, "durationSec must be between"],
-    ["total 15% over", first((s) => ({ ...s, durationSec: 14.5 })), {}, "add up to 34.5 s; the target is 30 s (allowed 27 to 33 s)"],
+    ["total 40% over (too far to scale)", first((s) => ({ ...s, durationSec: 22 })), {}, "add up to 42 s; the target is 30 s (allowed 27 to 33 s)"],
     ["total too short", (p) => shots(p, (s) => s.slice(0, 2)), {}, "add up to 20 s"],
     ["title of 7 words", first((s) => ({ ...s, text: [{ role: "title", value: "satu dua tiga empat lima enam tujuh" }] })), {}, "has 7 words; the limit is 6"],
     ["title of 7 words around a symbol", first((s) => ({ ...s, text: [{ role: "title", value: "satu dua tiga = empat lima enam tujuh" }] })), {}, "has 7 words; the limit is 6"],
@@ -40,10 +40,9 @@ describe("validatePlan", () => {
     ["blocks when the recipe forbids them", (p) => ({ ...p, blocks: ["data-chart"] }), { blocksAllowed: false }, "allow registry blocks"],
     ["an unknown block", (p) => ({ ...p, blocks: ["nope"] }), { blocks: ["data-chart"] }, "unknown blocks: nope"],
     ["a transition Sorot can't build", second((s) => ({ ...s, transition: "page curl" })), {}, "transition \"page curl\" isn't one Sorot can build; use one of cut, fade"],
-    ["an effect out of range", second((s) => ({ ...s, effects: { blurPx: 90 } })), {}, "effects.blurPx is a number from 0 to 40"],
+    ["an effect that is not a number", second((s) => ({ ...s, effects: { blurPx: "lots" } })), {}, "effects.blurPx is a number from 0 to 40"],
     ["a light without its angle", second((s) => ({ ...s, effects: { light: { intensity: 0.5, color: "warm" } } })), {}, "effects.light.color is a hex colour"],
     ["effects that are not an object", second((s) => ({ ...s, effects: "lots" })), {}, "effects must be an object"],
-    ["depth in halves", second((s) => ({ ...s, effects: { depthLayers: 2.5 } })), {}, "effects.depthLayers is a whole number"],
   ])("refuses: %s", (_name, mutate, over, message) => {
     const check = validatePlan(mutate(samplePlan()), ctx(over));
     expect(check.ok).toBe(false);
@@ -59,6 +58,16 @@ describe("validatePlan", () => {
     expect(plan.shots[2]!.effects).toBeUndefined();
     expect(plan.effectNotes).toEqual(["s02 flash: the number lands"]);
     expect(validatePlan(second((s) => ({ ...s, effects: { reason: "none really" } }))(samplePlan()), ctx()).plan!.shots[1]!.effects).toBeUndefined();   // a reason alone is no effect
+  });
+
+  test("a shot's look keeps the director's own terms; its kit parts are checked when a kit is given", () => {
+    const look: any = { description: "a coin lit from the upper left", values: { lightAngleDeg: 300, camera: "isometric" }, parts: [{ part: "shade", settings: { material: "metal" } }, { part: "neon" }] };
+    const kit = (refs: Array<{ part: string }>, path: string) => refs.filter((r) => r.part !== "shade").map((r, i) => `kit_unknown_part: ${path}[${i}]: "${r.part}"`);
+    expect(validatePlan(second((s) => ({ ...s, look }))(samplePlan()), ctx()).plan!.shots[1]!.look).toEqual({ ...look, parts: [look.parts[0], { part: "neon", settings: {} }] });
+    expect(validatePlan(second((s) => ({ ...s, look }))(samplePlan()), ctx({ kit })).errors).toEqual(['kit_unknown_part: shot 2 (s02): look.parts[0]: "neon"']);
+    expect(validatePlan(second((s) => ({ ...s, look: { values: [] } }))(samplePlan()), ctx()).errors).toEqual([
+      "shot 2 (s02): look.description: say what the shot looks like", "shot 2 (s02): look.values: an object of exact values",
+    ]);
   });
 
   test("a symbol between words is not a word: a 6-word title with \"=\" passes", () => {
@@ -96,6 +105,15 @@ describe("validatePlan", () => {
     expect(off.notes.join()).toContain("narration was removed");
   });
 
+  test.each([
+    ["no upload: the promise is dropped", [], "none", ["music was removed: no music track is uploaded"]],
+    ["an upload: kept", ["bed.mp3"], "bed.mp3", []],
+    ["not known: kept", undefined, "bed.mp3", []],
+  ])("music is only an uploaded track (%s)", (_n, music, want, notes) => {
+    const check = validatePlan(samplePlan({ sound: { music: "bed.mp3", narration: false } }), ctx({ music }));
+    expect([check.plan!.sound.music, check.notes.filter((n) => n.startsWith("music"))]).toEqual([want, notes]);
+  });
+
   test("numbers that are not in the brief become assumptions; the brief's own stay as they are", () => {
     const brief = "Bunga 1,5% per bulan selama 12 bulan";
     const plan = first((s) => ({ ...s, text: [{ role: "title", value: "1,5% selama 12 bulan" }, { role: "body", value: "jadi 18,5% dan 40%" }] }))(samplePlan());
@@ -114,7 +132,21 @@ describe("validatePlan", () => {
   test("limits can be tightened by the recipe", () => {
     expect(validatePlan(samplePlan(), ctx({ limits: { maxShots: 2 } })).errors.join()).toContain("needs 1 to 2 shots");
     expect(validatePlan(samplePlan(), ctx({ limits: { maxShotSec: 8 } })).errors.join()).toContain("between 1 and 8");
-    expect(validatePlan(samplePlan(), ctx({ limits: { sumTolerance: 0 }, targetSec: 31 })).errors.join()).toContain("add up to 30 s");
+    expect(validatePlan(samplePlan(), ctx({ limits: { sumTolerance: 0 }, targetSec: 50 })).errors.join()).toContain("add up to 30 s");
+  });
+
+  test("set right in code: a total a little off is scaled to the target; kit parts and registry blocks swapped between the two lists move back", () => {
+    const over = validatePlan(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, durationSec: 14.5 } : s)) }), ctx());
+    expect(over.errors).toEqual([]);
+    expect(over.plan!.shots.reduce((n, s) => n + s.durationSec, 0)).toBeCloseTo(30, 5);
+    expect(over.notes.join()).toContain("added up to 34.5 s");
+    const mixed = samplePlan({ blocks: ["shape"], shots: samplePlan().shots.map((s: any, i: number) => (i === 0 ? { ...s, look: { description: "a card", parts: [{ part: "data-chart" }, { part: "shade" }] } } : s)) });
+    const fixed = validatePlan(mixed, ctx({ blocks: ["data-chart"], kitParts: ["shape", "shade"] }));
+    expect(fixed.errors).toEqual([]);
+    expect([fixed.plan!.blocks, fixed.plan!.shots[0]!.look!.parts!.map((p) => p.part)]).toEqual([["data-chart"], ["shade"]]);
+    // an effect value out of its range is brought into it (a plan failed on depthLayers 6), a half layer rounded
+    const effects = validatePlan(samplePlan({ shots: samplePlan().shots.map((s: any, i: number) => (i < 2 ? { ...s, effects: i ? { depthLayers: 2.5, blurPx: 90 } : { depthLayers: 6 } } : s)) }), ctx());
+    expect(effects.plan!.shots.slice(0, 2).map((s) => s.effects)).toEqual([{ depthLayers: 5 }, { depthLayers: 3, blurPx: 40 }]);
   });
 
   test("number extraction unifies the decimal comma", () => {
@@ -146,7 +178,7 @@ describe("validatePlan: a numeric plan", () => {
   const errorsOf = (plan: unknown, c = numericCtx()) => validatePlan(plan, c).errors;
   const shotsOf = (f: (s: any, i: number) => any) => numericPlan({ shots: numericPlan().shots.map(f) });
 
-  test("a complete spec passes, and keeps its numbers on the plan and its shots", () => {
+  test("a complete spec passes, and keeps its numbers on the plan and its shots; tracking written as CSS and a GSAP ease with settings are read", () => {
     const check = validatePlan(numericPlan(), numericCtx());
     expect(check.errors).toEqual([]);
     expect(check.plan!.numeric).toEqual({
@@ -159,6 +191,10 @@ describe("validatePlan: a numeric plan", () => {
     const local = numericPlan();
     local.shots[1].motionPlan = [{ token: "enter", fromFrame: 0, toFrame: 18, target: "title" }];
     expect(validatePlan(local, numericCtx()).plan!.shots[1]!.motionPlan).toEqual([{ token: "enter", fromFrame: 300, toFrame: 318, target: "title" }]);
+    const css = numericPlan() as any;   // tracking as a CSS string, as models write it
+    css.numeric.typography.title.tracking = "-0.02em";
+    css.numeric.easing.enter = "back.out(1.7)";
+    expect(validatePlan(css, numericCtx()).plan!.numeric).toMatchObject({ typography: { title: { tracking: -0.02 } }, easing: { enter: "back.out(1.7)" } });
   });
 
   test("a plan that is not numeric is untouched by all this", () => {
@@ -174,7 +210,7 @@ describe("validatePlan: a numeric plan", () => {
     ["a font that isn't there", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Comic", weight: 700, px: 96, tracking: 0 } } } }), 'the font "Comic" isn\'t available'],
     ["a weight of 450", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 450, px: 96, tracking: 0 } } } }), "weight is 100"],
     ["a 2 px font", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 2, tracking: 0 } } } }), "px is a number from 8 to 400"],
-    ["wild tracking", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 40, tracking: 3 } } } }), "tracking is in em"],
+    ["wild tracking", (p) => ({ ...p, numeric: { ...p.numeric, typography: { title: { font: "Inter", weight: 400, px: 40, tracking: 3 } } } }), "tracking is a number in em"],
     ["no shadow", (p) => ({ ...p, numeric: { ...p.numeric, shadow: "" } }), "numeric.shadow"],
     ["a made-up ease", (p) => ({ ...p, numeric: { ...p.numeric, easing: { enter: "smooth" } } }), "numeric.easing.enter"],
     ["no easing", (p) => ({ ...p, numeric: { ...p.numeric, easing: {} } }), "numeric.easing: give an easing curve"],

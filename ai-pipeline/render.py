@@ -21,7 +21,7 @@ import tempfile
 
 from captions import (
     DEFAULT_PRESET, PRESETS, build_ass, clip_words, concat_graph, ffmpeg_filter_path, is_monotonic, music_graph,
-    plan_timeline, seg_hook, select_expr, timeline_duration, words_for_clip, x264_preset,
+    plan_timeline, seg_hook, timeline_duration, words_for_clip, x264_preset,
 )
 import reframe as reframe_mod
 
@@ -100,8 +100,9 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
     ]
     if burn is not None:
         return _encoder_args(cmd + _burn_args(timeline, kind, frame_filter, *burn), output_path, use_nvenc)
-    if timeline and not is_monotonic(timeline):
-        # Hook-first: ranges jump back, so cut each range and concatenate.
+    if timeline:
+        # Silence trim or hook-first: cut each kept range and concatenate (select/aselect with
+        # setpts=N/FRAME_RATE/TB kept the whole length under ffmpeg 8).
         graph = concat_graph(timeline, "[cv]", "[ca]")
         if kind == "complex":
             graph += ";[cv]null[in];" + frame_filter
@@ -110,31 +111,19 @@ def _build_render_cmd(ffmpeg_path, video_path, start, end, output_path, use_nven
         cmd.extend(["-filter_complex", graph, "-map", "[v]", "-map", "[ca]"])
         return _encoder_args(cmd, output_path, use_nvenc)
 
-    select = ""
-    if timeline:
-        # Silence trim: keep only the speech spans (clip-relative; input-side
-        # -ss resets timestamps to 0) and re-time both streams gaplessly.
-        expr = select_expr(timeline)
-        select = f"select='{expr}',setpts=N/FRAME_RATE/TB"
-        cmd.extend(["-af", f"aselect='{expr}',asetpts=N/SR/TB"])
     if kind == "complex":
-        head = f"[0:v]{select or 'null'}[in];"
-        cmd.extend(["-filter_complex", head + frame_filter, "-map", "[v]", "-map", "0:a?"])
+        cmd.extend(["-filter_complex", "[0:v]null[in];" + frame_filter, "-map", "[v]", "-map", "0:a?"])
     else:
-        cmd.extend(["-vf", f"{select},{frame_filter}" if select else frame_filter])
+        cmd.extend(["-vf", frame_filter])
     return _encoder_args(cmd, output_path, use_nvenc)
 
 
 def _burn_args(timeline, kind, frame_filter, ass_path, bgm, bgm_volume):
     """One filter graph: timeline cut, 9:16 framing, captions, music."""
     parts = []
-    if timeline and not is_monotonic(timeline):
-        parts.append(concat_graph(timeline, "[cv]", "[ca]"))      # hook first: cut + concatenate
+    if timeline:
+        parts.append(concat_graph(timeline, "[cv]", "[ca]"))      # silence trim or hook first: cut + concatenate
         video, audio = "[cv]", "[ca]"
-    elif timeline:
-        expr = select_expr(timeline)                              # silence trim
-        parts += [f"[0:v]select='{expr}',setpts=N/FRAME_RATE/TB[sv]", f"[0:a]aselect='{expr}',asetpts=N/SR/TB[sa]"]
-        video, audio = "[sv]", "[sa]"
     else:
         video, audio = "[0:v]", "0:a?"
     parts.append(f"{video}null[in];{frame_filter}" if kind == "complex" else f"{video}{frame_filter}[v]")

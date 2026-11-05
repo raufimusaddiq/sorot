@@ -281,8 +281,12 @@ describe("project housekeeping", () => {
   test("a recipe built around a voice speaks unless the owner says otherwise; one without stays silent", async () => {
     env = makeEnv({ ...LLM, voiceEngine: "openai", voiceApiKey: "k", voiceEnabled: true });
     env.app.start();   // seeds the example recipes
-    const mk = async (input: Record<string, unknown>) => (await gen().createProject({ brief: "Jelaskan bunga majemuk", ...input })).narration;
+    // over HTTP, where a missing flag once arrived as false
+    const mk = async (input: Record<string, unknown>) => (await env.json("POST", "/api/generate/projects", { brief: "Jelaskan bunga majemuk", ...input })).body.data.project.narration;
     expect([await mk({ recipeId: "story" }), await mk({ recipeId: "story", narration: false }), await mk({})]).toEqual([1, 0, 0]);
+    // the other choices sent with it arrive too
+    const sent = (await env.json("POST", "/api/generate/projects", { brief: "x", buildWithoutStopping: true })).body.data.project;
+    expect(sent.briefFlags).toEqual({ buildWithoutStopping: true });
     await gen().whenIdle();   // their first steps run in the background: let them end before the database closes
   });
 

@@ -1,0 +1,15 @@
+{
+  "name": "shadow",
+  "version": "1.0.0",
+  "does": "Casts a shadow for a shape away from the key light: soft, contact (under it) or long; drawn with gradients.",
+  "runtime": "dom",
+  "needs": { "gpu": "no" },
+  "settings": {
+    "target": { "t": "str", "max": 120 },
+    "kind": { "t": "enum", "values": ["soft", "contact", "long"] },
+    "strength": { "t": "num", "min": 0, "max": 1 },
+    "distance": { "t": "num", "min": 0, "max": 300 }
+  },
+  "defaults": { "target": "", "kind": "soft", "strength": 0.5, "distance": 40 },
+  "example": "A contact shadow under a card standing on the floor: {\"target\": \".card\", \"kind\": \"contact\"}."
+}

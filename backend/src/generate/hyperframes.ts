@@ -59,6 +59,9 @@ const DEFAULT_TIMEOUT_MS: Record<string, number> = {
 /** Planning figure from the reference runs (R11): ~10 s of render per second of video at 30 fps. */
 const RENDER_SEC_PER_VIDEO_SEC = 15;
 
+/** The planning figure itself: seconds of render allowed per second of video at 30 fps. */
+export const renderTimeoutBudget = () => RENDER_SEC_PER_VIDEO_SEC;
+
 /** Time limit for a render of `durationSec` seconds at `fps`: scales with length and frame rate, never below 10 min. */
 export function renderTimeoutMs(durationSec: number, fps: number): number {
   return Math.max(10 * MINUTE, Math.ceil(durationSec * RENDER_SEC_PER_VIDEO_SEC * (fps / 30)) * 1000);
@@ -130,8 +133,11 @@ export class Hyperframes {
   /** Renders `dir` to `output`; the time limit follows `durationSec` × `fps`. */
   async render(dir: string, o: {
     output: string; quality: string; fps: number; durationSec: number; workers?: number; gpu?: boolean;
+    /** Render only this span of the film (seconds); the clip starts at 0. `durationSec` is then the span's length. */
+    span?: { start: number; end: number };
   }, opts: HfCallOptions = {}) {
     const args = [dir, "-o", o.output, "-q", RENDER_QUALITY[o.quality] ?? o.quality, "-f", String(o.fps), "--quiet"];
+    if (o.span) args.push("--start", String(o.span.start), "--end", String(o.span.end));
     if (o.workers) args.push("-w", String(o.workers));
     if (o.gpu) args.push("--gpu");
     const res = await this.run("render", args, { ...opts, timeoutMs: opts.timeoutMs ?? renderTimeoutMs(o.durationSec, o.fps) });

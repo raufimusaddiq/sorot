@@ -6,6 +6,7 @@ import type { Json } from "./api";
 import { has, num, str, UsageError, type Args } from "./args";
 import { json, need, type Deps } from "./commands";
 import { short, table, truncate, when } from "./format";
+import { zipStored } from "./zip";
 
 const BASE = "/api/generate/projects";
 const WORKING = ["RUNNING", "BUILDING"];
@@ -58,8 +59,11 @@ const shotTable = (plan: Json) => table(
   ]),
 );
 
+/** The project's current plan (a restore makes an older revision current), else the newest. */
+const currentPlan = (detail: Json): Json | undefined => (detail.plans as Json[]).find((p) => p.id === detail.project.currentPlanId) ?? (detail.plans as Json[])[0];
+
 function printPlan(d: Deps, detail: Json): void {
-  const current = (detail.plans as Json[])[0] as Json;
+  const current = currentPlan(detail) as Json;
   const plan = current.plan as Json;
   d.out(`${plan.title} — revision ${current.revision}, ${current.approvedAt ? "approved" : "not approved yet"}`);
   d.out(`${plan.message}`);
@@ -106,6 +110,7 @@ async function newCmd(d: Deps, a: Args): Promise<number> {
   if (str(a, "style")) body.styleNotes = str(a, "style");
   if (str(a, "preset")) body.preset = str(a, "preset");
   if (has(a, "narration")) body.narration = true;
+  if (has(a, "no-narration")) body.narration = false;   // neither: a recipe with a voice step speaks
   if (has(a, "no-stop")) body.buildWithoutStopping = true;
   if (has(a, "no-numbers")) body.forbiddenNumbers = true;
   if (str(a, "facts")) body.facts = readFactsFile(d, str(a, "facts") as string);
@@ -130,8 +135,10 @@ async function showCmd(d: Deps, a: Args): Promise<number> {
   const detail = await d.api.get(`${BASE}/${await projectId(d, need(a, 2, "project"))}`);
   if (json(d, a, detail)) return 0;
   const p = detail.project as Json;
-  d.out(`${p.title ?? truncate(p.brief, 60)}  [${p.status}]  ${p.format} · ${p.targetSec} s · ${p.language} · recipe ${p.recipeId}`);
-  const states = (p.stepState ?? {}) as Record<string, Json>;
+  // an idea's brief is markdown: its "# heading" reads as the title
+  d.out(`${p.title ?? truncate(String(p.brief).replace(/^#+\s*/, ""), 60)}  [${p.status}]  ${p.format} · ${p.targetSec} s · ${p.language} · recipe ${p.recipeId}`);
+  // the steps up to the build live on the project, the build's own on its newest version
+  const states = { ...(p.stepState ?? {}), ...((detail.versions as Json[])[0]?.stepState ?? {}) } as Record<string, Json>;
   for (const step of (p.recipe?.steps ?? []) as Json[]) {
     const s = states[step.id ?? step.use];
     d.out(`  ${s ? s.status.padEnd(8) : "pending "} ${step.id ?? step.use}${s?.reason ? ` — ${s.reason}` : ""}`);
@@ -166,7 +173,7 @@ async function pickCmd(d: Deps, a: Args): Promise<number> {
 async function planCmd(d: Deps, a: Args): Promise<number> {
   const id = await projectId(d, need(a, 2, "project"));
   const detail = await d.api.get(`${BASE}/${id}`);
-  const current = (detail.plans as Json[])[0];
+  const current = currentPlan(detail);
   if (!current) throw new UsageError("This project has no plan yet");
   if (!has(a, "edit")) {
     if (!json(d, a, current)) printPlan(d, detail);
@@ -209,7 +216,7 @@ async function reviseCmd(d: Deps, a: Args): Promise<number> {
 async function approveCmd(d: Deps, a: Args): Promise<number> {
   const id = await projectId(d, need(a, 2, "project"));
   const detail = await d.api.get(`${BASE}/${id}`);
-  const current = (detail.plans as Json[])[0];
+  const current = currentPlan(detail);
   if (!current) throw new UsageError("This project has no plan yet");
   await d.api.post(`${BASE}/${id}/plan/approve`, { planId: current.id });
   const after = await settle(d, id);
@@ -301,7 +308,7 @@ async function watchBuild(d: Deps, a: Args, id: string, version: Json): Promise<
   if (json(d, a, done)) return done.version.status === "BUILT" ? 0 : 1;
   const v = done.version as Json;
   if (v.status === "FAILED") {
-    d.err(`The build failed: ${v.errorMessage}. The scenes already written are kept; build again to try once more.`);
+    d.err(`The build failed: ${v.errorMessage}. The scenes already written are kept; go on from the failed step with: sorot gen resume <project>`);
     return 1;
   }
   if (v.status === "CANCELLED") {
@@ -379,6 +386,13 @@ async function cancelCmd(d: Deps, a: Args): Promise<number> {
   const r = await d.api.post(`${VERSIONS}/${await versionId(d, need(a, 2, "version or project"))}/cancel`);
   if (!json(d, a, r)) d.out(`Version ${r.version.number}: ${r.version.status}`);
   return 0;
+}
+
+/** A failed build goes on from its failed step (same version; finished steps and shots are kept). */
+async function resumeCmd(d: Deps, a: Args): Promise<number> {
+  const vid = await versionId(d, need(a, 2, "version or project"));
+  const { version } = await d.api.post(`${VERSIONS}/${vid}/retry`);
+  return watchBuild(d, a, String(version.projectId), version);
 }
 
 async function acceptCmd(d: Deps, a: Args): Promise<number> {
@@ -463,7 +477,7 @@ async function ideasCmd(d: Deps, a: Args): Promise<number> {
   return 0;
 }
 
-/** sorot gen idea add BRIEF.md [--id IDEA-042] [--slug s] [--facts facts.md] | show <id> */
+/** sorot gen idea add BRIEF.md [--id IDEA-042] [--slug s] [--facts facts.md] [--length S --lang L --format F --preset P --narration|--no-narration --no-numbers] | show <id> */
 async function ideaCmd(d: Deps, a: Args): Promise<number> {
   const sub = a.positionals[2];
   if (sub === "show") {
@@ -484,6 +498,16 @@ async function ideaCmd(d: Deps, a: Args): Promise<number> {
   const body: Json = { slug, brief: d.fs.readText(path).trim() };
   if (str(a, "id")) body.id = str(a, "id");
   if (str(a, "facts")) body.facts = readFactsFile(d, str(a, "facts") as string);
+  // the same choices as gen new, kept on the idea for the run that takes it
+  const flags: Json = {};
+  if (num(a, "length") !== undefined) flags.targetSec = num(a, "length");
+  if (str(a, "lang")) flags.language = str(a, "lang");
+  if (str(a, "format")) flags.format = str(a, "format");
+  if (str(a, "preset")) flags.preset = str(a, "preset");
+  if (has(a, "narration")) flags.narration = true;
+  if (has(a, "no-narration")) flags.narration = false;
+  if (has(a, "no-numbers")) flags.market_data = false;
+  if (Object.keys(flags).length) body.flags = flags;
   const { idea } = await d.api.post(IDEAS, body);
   if (!json(d, a, idea)) d.out(`Added ${idea.slug} (${idea.id}). Run it with: sorot gen run --recipe <id> --idea ${idea.id}`);
   return 0;
@@ -667,6 +691,142 @@ async function recipeCmd(d: Deps, a: Args): Promise<number> {
   }
 }
 
+// ---- the kit -----------------------------------------------------------------------
+
+const KIT = "/api/generate/kit";
+
+/** A part folder as a .zip (the folder at the top), or the bytes of a .zip as given. */
+function partZip(d: Deps, ref: string): { name: string; bytes: Uint8Array } {
+  const path = resolve(d.cwd, ref);
+  const files = d.fs.list(path);
+  if (files) {
+    if (!files.includes("part.json")) throw new UsageError(`${ref} has no part.json: is it a kit part folder?`);
+    const top = basename(path);
+    return { name: `${top}.zip`, bytes: zipStored(files.map((f) => ({ path: `${top}/${f}`, data: d.fs.read(join(path, f)) }))) };
+  }
+  if (!d.fs.exists(path)) throw new UsageError(`Not found: ${ref}`);
+  if (!/\.zip$/i.test(ref)) throw new UsageError("Give a part folder or a .zip of one");
+  return { name: basename(ref), bytes: d.fs.read(path) };
+}
+
+const printPart = (d: Deps, p: Json) => {
+  d.out(`${p.name} ${p.version} (${p.source === "builtIn" ? "built in" : "yours"}, ${p.manifest.runtime}${p.manifest.needs.gpu === "no" ? "" : `, GPU ${p.manifest.needs.gpu}`})`);
+  d.out(`  ${p.manifest.does}`);
+  d.out(`  Example: ${p.manifest.example}`);
+  const settings = Object.entries(p.manifest.settings as Record<string, Json>);
+  if (!settings.length) return;
+  d.out("  Settings:");
+  for (const [k, f] of settings) {
+    const range = f.t === "enum" ? (f.values as string[]).join(" | ") : f.t === "int" || f.t === "num" ? `${f.min} to ${f.max}` : f.t;
+    const def = p.manifest.defaults[k];
+    d.out(`    ${k}: ${range}${def === undefined ? "" : ` (default ${JSON.stringify(def)})`}`);
+  }
+};
+
+/** The kit parts: list, show, add (validated and rendered twice by the server), export, remove. */
+async function kitCmd(d: Deps, a: Args): Promise<number> {
+  const action = a.positionals[2] ?? "list";
+  const arg = (i: number, what: string) => need(a, i, what);
+  switch (action) {
+    case "list": {
+      const { parts } = await d.api.get(KIT);
+      if (json(d, a, parts)) return 0;
+      d.out(table(["PART", "VER", "RUNTIME", "KIND", "DOES"], (parts as Json[]).map((p) => [
+        p.name, p.version, p.manifest.runtime, p.source === "builtIn" ? "built in" : "yours", truncate(p.manifest.does, 60),
+      ])));
+      return 0;
+    }
+    case "show": {
+      const { part } = await d.api.get(`${KIT}/${arg(3, "part name")}`);
+      if (!json(d, a, part)) printPart(d, part);
+      return 0;
+    }
+    case "add": {
+      const zip = partZip(d, arg(3, "part folder or .zip"));
+      const form = new FormData();
+      form.set("file", new File([zip.bytes], zip.name, { type: "application/zip" }));
+      if (!a.flags.json) d.out("Checking the part: its example renders twice and must come out the same...");
+      const { part } = await d.api.upload(KIT, form);
+      if (!json(d, a, part)) d.out(`Added ${part.name} ${part.version}. Directors are offered it from their next call.`);
+      return 0;
+    }
+    case "export": {
+      const name = arg(3, "part name");
+      const out = resolve(d.cwd, str(a, "out") ?? `${name}.zip`);
+      const bytes = await d.fs.write(out, await d.api.raw(`${KIT}/${name}/export`));
+      if (!json(d, a, { path: out, bytes })) d.out(`Saved ${out}`);
+      return 0;
+    }
+    case "remove": {
+      const name = arg(3, "part name");
+      await d.api.delete(`${KIT}/${name}`);
+      if (!json(d, a, { deleted: true })) d.out(`Removed ${name}. A recipe that names it shows as unavailable until it is added again.`);
+      return 0;
+    }
+    default:
+      throw new UsageError("Use: sorot gen kit [list] | show <name> | add <folder|.zip> | export <name> [-o file.zip] | remove <name>");
+  }
+}
+
+/** What a director call is told on this install (the kit, the level, the renderer, the connections). */
+async function capabilitiesCmd(d: Deps, a: Args): Promise<number> {
+  const level = str(a, "level") ?? "compose";
+  const { capabilities: c } = await d.api.get(`/api/generate/capabilities?level=${encodeURIComponent(level)}`);
+  if (json(d, a, c)) return 0;
+  d.out(`Level ${c.level}: ${c.levelMeans}`);
+  d.out(`Renderer: HyperFrames ${c.renderer.hyperframes} · draws ${(c.renderer.runtimes as string[]).join(", ")} · ${c.renderer.gpu ? "GPU" : "CPU"} · frame budget ${c.renderer.frameBudgetMs} ms`);
+  d.out(`Connections: image ${onOff(c.connections.image)} · voice ${onOff(c.connections.voice)} · vision ${onOff(c.connections.vision)}`);
+  d.out(`Seams: ${(c.seams as string[]).join(", ")}`);
+  d.out(`Kit (${(c.kit as Json[]).length} parts at this level):`);
+  for (const p of c.kit as Json[]) d.out(`  ${p.name} (${p.runtime}): ${p.does}`);
+  return 0;
+}
+
+// ---- models and levels -------------------------------------------------------------
+
+const MODELS = "/api/generate/models";
+const pct = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : "-");
+
+/** Each model's record per level and the level `auto` gives it; `pin <model> <level|auto>` pins one. */
+async function modelsCmd(d: Deps, a: Args): Promise<number> {
+  if (a.positionals[2] === "pin") {
+    const model = need(a, 3, "model");
+    const level = need(a, 4, "level (kit, compose, free or auto)");
+    if (!["kit", "compose", "free", "auto"].includes(level)) throw new UsageError("The level is kit, compose, free or auto");
+    const r = await d.api.put(`${MODELS}/${encodeURIComponent(model)}/level`, { level: level === "auto" ? null : level });
+    if (!json(d, a, r)) d.out(level === "auto" ? `${model} is back on auto (${r.model.auto} now).` : `${model} is pinned to ${level}.`);
+    return 0;
+  }
+  const r = await d.api.get(MODELS);
+  if (json(d, a, r)) return 0;
+  const rows = (r.models as Json[]).flatMap((m) => (m.records.length ? m.records : [{ level: "-", asked: 0, firstPass: 0, repaired: 0, dropped: 0, malformed: 0 }]).map((x: Json) => [
+    `${m.model}${m.model === r.current ? " *" : ""}`, m.pin ?? `auto: ${m.auto}`, x.level, x.asked, pct(x.firstPass, x.asked), pct(x.repaired, x.asked), x.dropped, x.malformed, x.calibratedAt ? when(x.calibratedAt) : "",
+  ]));
+  d.out(table(["MODEL", "LEVEL", "AT", "ASKED", "FIRST PASS", "REPAIRED", "DROPPED", "MALFORMED", "CALIBRATED"], rows));
+  d.out("* the connected model. Shots start at the auto level (the director is never held back); a failing shot falls back a level. Pin a weak model lower if you want.");
+  return 0;
+}
+
+/** Measures the connected model at each level (three sample shots each) and waits for the result. */
+async function calibrateCmd(d: Deps, a: Args): Promise<number> {
+  const { run } = await d.api.post(`${MODELS}/calibrate`, str(a, "model") ? { model: str(a, "model") } : {});
+  if (!a.flags.json) d.out(`Calibrating ${run.model}: three sample shots at each level (a few minutes)...`);
+  const deadline = Date.now() + WAIT_MS;
+  for (;;) {
+    const { calibration: c } = await d.api.get(MODELS);
+    if (c?.done || Date.now() > deadline) {
+      if (json(d, a, c)) return c?.error ? 1 : 0;
+      if (c?.error) {
+        d.err(`Calibration failed: ${c.error}`);
+        return 1;
+      }
+      for (const [level, t] of Object.entries((c?.result ?? {}) as Record<string, Json>)) d.out(`  ${level}: ${t.firstPass} first time, ${t.repaired} after a repair, ${t.failed} failed (of ${t.asked})`);
+      return 0;
+    }
+    await d.sleep(d.pollMs);
+  }
+}
+
 /** Passes a step that waits for you (a gate set to "owner"). */
 async function approveStepCmd(d: Deps, a: Args): Promise<number> {
   const id = await projectId(d, need(a, 2, "project"));
@@ -691,6 +851,7 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   build: buildCmd,
   verdicts: verdictsCmd,
   cancel: cancelCmd,
+  resume: resumeCmd,
   accept: acceptCmd,
   fix: fixCmd,
   restore: restoreCmd,
@@ -705,6 +866,10 @@ const SUBCOMMANDS: Record<string, (d: Deps, a: Args) => Promise<number>> = {
   recipes: recipesCmd,
   recipe: recipeCmd,
   "approve-step": approveStepCmd,
+  kit: kitCmd,
+  capabilities: capabilitiesCmd,
+  models: modelsCmd,
+  calibrate: calibrateCmd,
 };
 
 export async function genCmd(d: Deps, a: Args): Promise<number> {

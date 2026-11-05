@@ -149,11 +149,14 @@ describe("Narrator", () => {
     await expect(broke.narrator.speak({ text: "Halo", language: "id", dir: tmp })).rejects.toBeInstanceOf(VoiceUnavailable);
   });
 
-  test("OpenAI-compatible: /audio/speech under any base URL, with speed", async () => {
+  test("OpenAI-compatible: /audio/speech under any base URL, with speed; no voice id leaves the service's default voice", async () => {
     const r = rig({ voiceEngine: "openai", voiceBaseUrl: "http://tts.local/v1/", voiceModel: "" });
     await r.narrator.speak({ text: "Halo", language: "id", dir: tmp, speed: 0.9 });
     expect(r.calls[0]!.url).toBe("http://tts.local/v1/audio/speech");
     expect(body(r.calls[0]!)).toEqual({ model: "tts-1", input: "Halo", voice: "v-id", response_format: "mp3", speed: 0.9 });
+    const plain = rig({ voiceEngine: "openai", voiceVoices: {} });
+    await plain.narrator.speak({ text: "Halo", language: "id", dir: tmp });
+    expect(body(plain.calls[0]!)).toEqual({ model: "tts-1", input: "Halo", response_format: "mp3" });
   });
 
   test("local: runs tts.py on a GPU install and reports its progress; a failed run is an error", async () => {

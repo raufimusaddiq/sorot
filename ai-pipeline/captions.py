@@ -249,11 +249,6 @@ def keep_intervals(words, duration, min_gap=0.6, pad=0.15):
     return [(round(a, 3), round(b, 3)) for a, b in merged]
 
 
-def select_expr(intervals):
-    """ffmpeg select/aselect expression keeping only ``intervals``."""
-    return "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in intervals)
-
-
 # --- timelines (silence trim + hook-first) ---------------------------------------
 # A timeline is the ordered list of clip-relative source ranges that make up
 # the output. Silence trim yields monotonic ranges; hook-first prepends the

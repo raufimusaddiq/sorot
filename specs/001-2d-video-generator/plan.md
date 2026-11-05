@@ -352,6 +352,99 @@ plan (look + parts per shot, checked against capabilities) ─► approve
 18. **UI, docs and validation**: plan shows look and level; Settings kit and models; docs; quickstart
     scenario 11; SC-015 to SC-020 measured on the 20-brief set with a small local model and a
     strong one.
+## Part 4: The director loop (2026-11-02)
+
+**Spec**: User Story 10, FR-048 to FR-053, SC-021 to SC-024. **Research**:
+[R32 to R36, spike S8](research.md#part-4-the-director-loop-2026-11-02). **Contracts**: the
+additions at the end of director.md, api.md and recipe.md. **Data**:
+[data-model.md](data-model.md#additions-for-the-director-loop-2026-11-02). **Design note**:
+[docs/director-loop.md](../../docs/director-loop.md).
+
+### Summary
+
+The director stops writing each shot blind and alone. A build's scene work becomes **one session**
+(built: one conversation per version, film said once, turns in order, each request extending the
+last), and each shot becomes a **short tool loop** inside it: search and install HyperFrames
+registry blocks, look at its own rendered draft with a stranger's read of it, check the draft, then
+submit. **Compaction** keeps the session small without breaking the cache. Vision is the
+director's own model (built: `LLM_VISION*` removed), and each role may have its own model (built).
+Sorot's gates, checks, levels and the two verdicts are unchanged.
+
+### Status at planning time
+
+| Piece | State |
+|---|---|
+| Build session, `GEN_CONTEXT_TOKENS`, `GEN_SESSION` (FR-048) | built (`3c1ae8a`); measured 87% prefix reuse on a real build |
+| Model per role (FR-053) | built (`053d706`) |
+| No separate vision model (FR-052) | built (`8ba50db`) |
+| Tool loop (FR-049), stranger look (FR-050), compaction (FR-051) | built (phases 20 to 22); probe and motion in the tools, look-first rule (phase 24) |
+
+### Technical context (changes only)
+
+- **Dependencies**: none new. The registry is HyperFrames' own (`hyperframes catalog`, `add`);
+  frames come from `hyperframes snapshot --at`; Three.js is already the `three` part.
+- **Storage**: none new. Sessions live in memory (`Director.sessions`, newest 4); tool calls are
+  logged as `gen_event` rows (`kind` = the tool's name) like every director call.
+- **Performance**: `look` renders on the build machine (about a minute per batch of 3 frames on
+  this CPU), so it is limited per turn (`author.looks`, default 2); `search_blocks` and `check` are
+  local and fast; a session's requests are served mostly from the provider's cache.
+- **Testing**: the loop runs on `fakeLlm` `Calls` replies and `fakeHyperframes`; compaction is a
+  pure function on a message list (table tests: end of turn, mid-turn, session budget); tool
+  handlers are tested through the injected `exec`.
+- **Unknowns**: how well a fast model runs a multi-step tool loop, what an image costs in tokens,
+  and whether registry blocks adapt to 9:16 → spike S8 (research.md).
+
+### Constitution check (Part 4)
+
+| Principle | Check | Status |
+|---|---|---|
+| I. Local-first, host-ready | Registry blocks are installed into the version's project by the HyperFrames CLI already shipped; renders stay local | PASS |
+| II. Language boundaries | The loop, tools, compaction and look findings are Bun; HyperFrames and Three.js stay browser media code | PASS |
+| III. Test gate | Every tool goes through injected `exec`/`fetch`; compaction is pure; shared fakes extended, no new fakes | PASS |
+| IV. Optional AI | Generate stays AI-only (unchanged); a tool error returns to the model, never fails a build; `GEN_SESSION=off` and `author.toolSteps: 0` restore single calls | PASS |
+| V. Stable contracts | Removing `llm.vision`/`llm.visionModel` is a contract break: called out in the CHANGELOG, the fields answer 400, saved values are ignored (migrated in the same change, `8ba50db`). Recipes naming `look` still run (the step records that the director looked) | PASS (break called out) |
+| VI. Safe publishing | Unchanged | PASS |
+
+**Post-design re-check**: still PASS. The director gains read and render tools only; it can't
+publish, delete or touch another version.
+
+### Source changes
+
+```text
+backend/src/generate/director.ts        session turns become tool loops (auto tool_choice, forced submit on the last step)
+backend/src/generate/directorTools.ts   new: search_blocks, use_block, look, check handlers on a version's project
+backend/src/generate/compaction.ts      new: end-of-turn note, mid-turn stubs, session restart (pure)
+backend/src/generate/look.ts            stranger read reused by the look tool; the look step records "looked in the loop"
+backend/src/generate/steps/{author,check,look}.ts   pass the tools and limits; look step no-ops after the loop
+backend/src/config.ts, settings.ts      GEN_TURN_TOKENS (Settings → LLM)
+backend/src/generate/steps/schema.ts    author.toolSteps, author.looks
+frontend/src/components/ConnectionsPanel.tsx   turn budget field
+docs/director-loop.md, docs/generate.md, AGENTS.md, CHANGELOG.md
+```
+
+### Flow (a shot's turn)
+
+```text
+user {request, level, shot, task}
+  └► assistant: search_blocks / use_block / look / check   (auto; ≤ toolSteps, per-tool limits)
+       look = snapshot --at ─► frames ─► fresh call (frames only) ─► look findings ─► back with the images
+  └► assistant: submit_* (forced on the last step) ─► validated (one retry, as today)
+  └► compaction: the turn's tool exchanges ─► one note; the answer stays
+```
+
+### Phases (for /speckit-tasks)
+
+19. **Session, roles, one seeing model** (FR-048, FR-052, FR-053): done; listed so tasks can mark
+    them complete.
+20. **Tool loop** (FR-049, R33): tool definitions in the session, `search_blocks`, `use_block`,
+    `check`, forced submit, per-tool limits, `gen_event` per tool call.
+21. **Look with a stranger's read** (FR-050, R34): `look` tool (snapshot + fresh call + findings),
+    look step records "looked in the loop".
+22. **Compaction** (FR-051, R35): end-of-turn note, mid-turn stubs, `GEN_TURN_TOKENS`; spike S8 for
+    image cost and a fast model's loop behaviour.
+23. **Measure** (SC-021 to SC-024): the story brief and the 20-brief set, loop off vs on, provider
+    cache numbers, look findings, build time; docs.
+
 ## Complexity Tracking
 
 | Item | Why needed | Simpler alternative rejected because |
@@ -364,3 +457,4 @@ plan (look + parts per shot, checked against capabilities) ─► approve
 | User-registered local commands | FR-036: people need checks Sorot doesn't have | Code inside recipes would make shared recipes unsafe to import |
 | Kit of browser parts, built-in and user-added (FR-038, FR-039) | HyperFrames draws nothing by itself; parts give every director a tested floor and users their own looks | HyperFrames registry blocks are demo compositions, not composable parts; a Sorot DSL is a new language for no gain at the free level |
 | Director levels with a per-install model record (FR-042 to FR-044) | Sorot runs models from small local ones to strong hosted ones; one way of writing scenes can't serve both | A single level either caps strong models or fails weak ones; a hand-kept model list goes stale and ignores the gateway |
+| Director tool loop inside one build session (FR-048 to FR-051) | Shots written blind and alone drew unnameable shapes in different styles and reused at most half of each request from the cache | More prompt text (drawing lessons) gives the model no feedback; bundled character and icon libraries bloat the install and make every film look alike |

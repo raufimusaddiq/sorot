@@ -31,6 +31,8 @@ export interface Deps {
     read: (path: string) => Uint8Array;
     readText: (path: string) => string;
     writeText: (path: string, text: string) => void;
+    /** The files under a folder (relative paths, `/`-separated); null when `path` isn't a folder. */
+    list: (path: string) => string[] | null;
     /** A path in the temp folder for a scratch file. */
     tempPath: (name: string) => string;
   };

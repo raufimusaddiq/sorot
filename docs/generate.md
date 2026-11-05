@@ -53,19 +53,44 @@ the answer is still invalid after the repair, the step fails with the reason; it
 with a guess. Research steps (`facts`) use read-only tools (`fetch_url`, `search_web`, `query_data`
 with `SELECT` only, at most 50 rows).
 
+**The build session.** A build's scenes, repairs (author, check and look steps) and kit shots are one
+conversation, keyed by the version id: the system message and the whole film (plan, look, parts) are
+sent once, then each turn asks for one shot (`request: scene | repair | kitshot`, its level and its own
+fields) and the answer stays in the conversation. Turns run one at a time, in the order they are asked.
+Each request extends the last, so the provider's prompt cache covers almost all of it (separate calls
+reached at most 44 to 51% on real builds, 2026-11-02), and every shot sees the shots before it.
+`GEN_CONTEXT_TOKENS` (default 600000) caps the conversation; past it the session restarts from its
+opening and the latest version of each shot. `GEN_SESSION=off` goes back to one fresh call per shot.
+
+**Tools in a turn** (`docs/director-loop.md`). Before it submits, the director may `search_blocks`
+(the HyperFrames registry: words and tags), `use_block` (installs a block and returns its source to
+adapt), `look` (renders frames of its draft and returns them with a stranger's read: a fresh call
+that sees only the frames; the look findings come back in the same turn) and `check` (Sorot's scene
+rules and HyperFrames lint on the draft). `check` and `look` also run the scene probe and the motion
+measure on the draft (a draft render of just that shot) in a scratch copy of the project, about 20 s,
+and return this shot's findings; the draft sits in the shot's file only while the tools read it, so
+only an accepted submit changes the version. The first submit of a scene turn that has `look` is
+turned back once, asking for a look first (repairs and kit shots are not made to look). Every scene
+call carries two worked examples: one built from kit parts, one drawn by hand from SVG and boxes. The recipe's `author.toolSteps` (default 8; 0 = one forced
+call) and `author.looks` (default 2) limit it; past a tool's limit its call answers "limit reached:
+submit now", and the step after the last is forced to the submit tool. A turn's tool exchanges are
+replaced by a one-line note once its answer is accepted; a turn past `GEN_TURN_TOKENS` (default
+60000) cuts its older tool results to stubs. When the director looked at every shot, the look step
+records "looked in the loop" and makes no vision call of its own.
+
 ### Step library
 
 | Step | Does |
 |---|---|
 | `idea` | takes the recipe's next idea from the idea bank (or a named one) |
 | `facts` | builds or checks the fact list against its sources |
-| `script`, `voice`, `align` | narration lines, voice, word timings (engine timestamps or Whisper) |
+| `script`, `voice`, `align` | narration lines (the film's length is a word target, not a rule), voice, word timings (engine timestamps or Whisper); a voice that runs more than 0.5 s past the film has the script written again, up to twice, told each line's measured seconds |
 | `storylines` | N different films in words (gate: owner / director) |
 | `concept` | names the visual mechanism and checks it against past work |
 | `plan` | the shot-by-shot plan, numeric (hex palette, type, easing, frames) (**required gate**) |
 | `images`, `music` | generated images for marked shots; a music bed with ducking under the voice |
 | `author`, `check` | one scene per shot, then HyperFrames `lint` + `check` with repair rounds |
-| `look` | the model looks at beat frames (vision) and audits for defaults |
+| `look` | the model looks at three pictures of each shot (early, mid-move, settled; vision), answers once per shot, and audits for defaults |
 | `render` | `draft`, `standard` or `delivery` |
 | `command` | a local command registered in Settings; its findings join a verdict |
 | `technical`, `creative` | the two verdicts |
@@ -86,8 +111,19 @@ rate), `voiceRoute` (engine and voice are the ones configured), `sourcedNumbers`
 blocking content rules (judged by Jev, then the LLM, else a should-fix "unjudged"), and `command`
 findings. A finding is `must-fix` or `should-fix`; any must-fix is a FAIL.
 
-**CREATIVE** is a fresh judge (Jev first, then the LLM) answering the recipe's criteria on the
-rendered frames. Sorot always adds a main-message question and a "does it feel flat" risk; a recipe's `fail: "main"` marks which
+Before rendering, the check step also probes each scene in the browser (`sceneProbe.ts`, loaded into
+the root only while `hyperframes check` runs) and sends what it finds back as repairs: `hard_swap`
+(two large elements swapping visibility in ≤ 0.3 s), `fighting_tweens` (a kit part and another tween
+on the same property at once), `text_over_object` (≥ 30% of a text on a drawn object in most samples),
+`first_frame_partial_text` (text 5 to 95% clipped on a shot's first frame after a cut) and
+`first_frame_no_text` (the film's first frame shows none of the opening shot's planned words). The faults
+come from real Kimi and GLM films on 2026-11-02; HyperFrames' own lint and layout checks missed them.
+
+**CREATIVE** is a fresh judge answering the recipe's criteria. The LLM's own model sees (there is no
+separate vision model). With pictures on (`vision`, default auto), what only the
+frames can show (`finished`, `motion`) goes to the LLM judge with the review sheets; Jev answers the
+rest first (it reads text: on 2026-11-02 it passed a film whose world was tilted on its side); what
+Jev doesn't answer goes to the LLM judge too. Sorot always adds a main-message question and a "does it feel flat" risk; a recipe's `fail: "main"` marks which
 failure fails the verdict. `command-creative:*` findings count here.
 
 **Fix rounds**: fix the must-fix items (or ones you pick, with a note and a shot), up to the
@@ -108,11 +144,76 @@ A shot's `transition` is how it enters from the one before: `cut`, `fade`, `blur
 each shot, so the plan's timing never moves); HyperFrames' shader transition blocks are whole demo
 compositions and cannot sit between shots.
 
+## Kit, levels and capabilities
+
+**The kit** is an open library of drawing and motion parts: browser scripts with a manifest, loaded
+by the root composition like GSAP (offline, the same every render). Built-in parts ship in
+`generator/kit/` (`shade`, `shadow`, `depth`, `camera`, `motion`, `text-reveal`, `particles`,
+`image-place`, and `three` for real 3D); you add your own from a `.zip` and they are checked before
+any director may use them. How to write and share one: [generate-kit.md](generate-kit.md).
+
+**Levels.** Each shot is written at one of three levels:
+
+| Level | The model writes | Sorot does |
+|---|---|---|
+| `kit` | `submit_shot_kit`: which parts, their settings and when each runs | checks the answer, then writes the scene in code (`kitScene.ts`) |
+| `compose` | the scene HTML; mounts parts with `SorotKitRuntime.mount`, adds its own GSAP and 2D canvas | plan-lock, the parts it mounts, no WebGL of its own |
+| `free` | any drawing the contract allows, its own WebGL or Three.js included | the same checks, plus a frame-time budget |
+
+**The director is never held back.** With `author.level: auto` (the default) every shot starts at the
+highest level the recipe (`author.maxLevel`) and the machine allow, `free` on every install today, so
+the director may draw anything; the kit is the floor a failing shot falls back to, never a ceiling.
+Only an explicit pin starts lower: the recipe's `author.level`, else the owner's pin for the model in
+Settings. The model's record on this install (`gen_model_record`) and **Calibrate** (Settings →
+Generate → Models, or `sorot gen calibrate`, three sample shots per level) report how the model fares,
+including the level it is proven at (≥ 60% first-pass over ≥ 8 shots, or the 3 calibration shots,
+with ≤ 10% malformed answers), so you can decide whether to pin a weak model lower. A shot that still fails after its repair rounds, or whose frames take
+longer to draw than the budget, is rebuilt one level down with a `level_drop` (or `frame_budget`)
+should-fix; only a failure at `kit` fails the build. The plan shows each shot's level and you may
+lower it before approving; the version records what each shot was built at.
+
+**The capability description** goes with every planning and scene call: the level and what it
+means, the parts the level may use (one line each for plans; full settings for scenes), the seams,
+what the machine can draw and the frame budget, and which connections are on. It is generated from
+what is installed, never written by hand, and answers are checked against it (an unknown part or
+setting goes back to the director). `GET /api/generate/capabilities?level=` and
+`sorot gen capabilities` show it.
+
+Each shot's **look** is in the plan, in the director's own terms (`description`, exact `values`, and
+the kit `parts` it will use). `values.speed: "fast"` turns on HyperFrames' motion blur for that shot
+when `render.motionBlur` is `auto` (the default; `on` blurs every shot, `off` none).
+
+## Motion
+
+TECHNICAL always measures motion inside each shot from the rendered video: ffmpeg's per-frame luma
+difference (`tblend` + `signalstats`). A frame that changes far more than its neighbours is a
+`motion_jump`; a moving shot that stops for a while and moves again is a `motion_stall`; both carry
+the shot and the moment. The frames next to a seam and hold shots are left out. Defaults
+(`measures.motion.jumpRatio` 6, `stallFrames` 8; must-fix at twice that) come from spike S7. CREATIVE
+always asks two more questions: whether the things in the film read as what they are and look
+finished, and whether the motion moves smoothly and with weight.
+
 ## Retries and failures
 
 A step before the build that failed (a voice that could not be made, say) is never skipped: the
 build is refused until the video is retried. A retry reuses the approved plan unless something the
 plan was made from changed. Fish speaks with its default voice when no voice id is set.
+
+A build that failed (a gateway error, an interruption) can go on from its failed step: `POST
+/versions/{id}/retry`, `sorot gen resume`, or "Continue from the failed step" in the window. It is the
+same version, and every step and shot already finished is kept. It is refused (409) once the plan is
+no longer the approved one the build started from; build again then.
+
+Cancelling a build stops it between steps and before each shot is asked for. A model call already sent
+finishes first; nothing after it runs, and the version ends CANCELLED.
+
+## Install settings
+
+`GEN_CONCURRENCY` (default 1) is how many builds run at once. `GEN_KEEP_VERSIONS` (default 10) is
+how many versions of a project keep their files; older drafts are removed (the accepted version and a
+running build stay; the rows, plans and exports stay). `GEN_COMMANDS=1` lets a hosted install
+(`SOROT_HOSTED`) run the local check commands recipes may name; they are always allowed on a local
+install.
 
 ## The voice compute rule
 
@@ -154,6 +255,7 @@ Recorded in `specs/001-2d-video-generator/research.md`; they are one machine, on
 |---|---|---|
 | S2 | Render speed, 1080×1920, 30 s light scene, RTX 4060 + Ryzen 5 7500F | 25 s draft, 25 s delivery, 24 s with `--gpu` (about 0.8 s per second of video); CPU Docker 19 s / 17 s. A real 60 s narrated film is still to be measured; plan on 6 to 10 s per second until then. |
 | S3 | Local Indonesian voice; ElevenLabs and Fish fixtures | Not done: needs a listening test and keys. Engine is KittenTTS 2; online engines are the Indonesian route. |
+| S7 (CPU) | Motion blur and Three.js cost, 10 s at 1080×1920, 4-core Xeon, no GPU, draft, 2 workers | 2D movers 1.0 s per second of video, with motion blur 3.5 s; six lit Three.js coins (software WebGL) 2.3 s, with blur 3.6 s. CPU installs keep `maxLevel: free`. The RTX 4060 half is still to be measured. |
 | S4 | Does the model write one valid scene? | 10 of 10 scenes passed plan-lock, `lint` and `check` (8 first call, 2 after a repair). Writing them took 1,170 s (about 2 min per shot): authoring is the slow step of a build. |
 
 ---

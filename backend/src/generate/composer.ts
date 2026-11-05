@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plan, Shot } from "./planSchema";
-import { seams } from "./transitions";
+import { accentOf, seams } from "./transitions";
 
 // The composer writes what must not be left to a model: the root index.html, with every shot's
 // start and length taken from the approved plan (FR-008/FR-009), the bundled fonts and a local
@@ -69,22 +69,60 @@ export interface ComposeInput {
   music?: { path: string; volume: number } | null;
   /** The recorded voice: one clip per spoken line, on its own track above the music. */
   voice?: Array<{ id: string; path: string; start: number; duration: number }> | null;
+  /** The kit's <script> lines (`kitScripts`), loaded after GSAP. */
+  kit?: string[];
+  /** HyperFrames' render-time motion blur (`render.motionBlur`, research R28). */
+  motionBlur?: MotionBlur;
 }
 
+export interface MotionBlur {
+  /** Blur on for the film. */
+  on: boolean;
+  /** Shots (0-based) opted out while it is on. */
+  off: number[];
+  /** Motion set from a timeline callback (a kit part's render(t)) is blurred too. */
+  events: boolean;
+}
+
+/** A shot the plan marks as fast: its look says speed fast or asks for motion blur. */
+export const isFast = (s: Shot) => s.look?.values?.speed === "fast" || s.look?.values?.motionBlur === true;
+
+/**
+ * `render.motionBlur`: `on` blurs every shot, `off` none, `auto` (the default) only the shots the plan
+ * marks fast (it costs about 3.4× the render time on a CPU, spike S7). `events` when kit parts drive
+ * motion from render(t).
+ */
+export function motionBlurOf(plan: Plan, setting: unknown, kitLoaded: boolean): MotionBlur {
+  if (setting === "off") return { on: false, off: [], events: false };
+  if (setting === "on") return { on: true, off: [], events: kitLoaded };
+  const fast = plan.shots.map(isFast);
+  return { on: fast.some(Boolean), off: fast.flatMap((f, i) => (f ? [] : [i])), events: kitLoaded && fast.some(Boolean) };
+}
+
+/** The key light every kit part shares: the first shot that names one, else from the upper left. */
+export function keyLightOf(plan: Plan): number {
+  const named = plan.shots.map((s) => s.look?.values?.lightAngleDeg ?? s.effects?.light?.angleDeg).find((a) => typeof a === "number" && Number.isFinite(a));
+  return typeof named === "number" ? ((named % 360) + 360) % 360 : 315;
+}
+
+/** The film's look as the kit parts get it: the plan's hex colours and its key light. */
+export const kitLookOf = (plan: Plan) => ({ palette: plan.look.palette.filter((c) => HEX.test(c)), keyLightDeg: keyLightOf(plan) });
+
 /** The root index.html: one host per shot, in the plan's order and with the plan's timing, and the seams the plan names between them. */
-export function buildRoot({ plan, width, height, fonts, music, voice }: ComposeInput): string {
+export function buildRoot({ plan, width, height, fonts, music, voice, kit, motionBlur }: ComposeInput): string {
   const starts = shotStarts(plan);
   const total = round3(plan.shots.reduce((n, s) => n + s.durationSec, 0));
   const hexes = plan.look.palette.filter((c) => HEX.test(c));
   const ground = hexes[0] ?? "#000000";
   const seam = seams({
     transitions: plan.shots.map((s) => s.transition), starts, durations: plan.shots.map((s) => s.durationSec),
-    ground, accent: hexes[1] ?? "#ffffff", host: (i) => `host-${shotNumber(i)}`,
+    ground, accent: accentOf(plan.look.palette), host: (i) => `host-${shotNumber(i)}`,
   });
   const faces = fonts.map((f) =>
     `      @font-face { font-family: "${esc(f.family)}"; font-weight: ${f.weight}; src: url("${esc(f.path)}") format("woff2"); }`).join("\n");
+  const blur = motionBlur?.on ? motionBlur : null;
   const hosts = plan.shots.map((s, i) =>
-    `      <div id="host-${shotNumber(i)}" data-composition-id="${shotId(i)}" data-composition-src="${shotFile(i)}" data-start="${starts[i]}" data-duration="${s.durationSec}" data-width="${width}" data-height="${height}" data-track-index="0"></div>`).join("\n");
+    `      <div id="host-${shotNumber(i)}" data-composition-id="${shotId(i)}" data-composition-src="${shotFile(i)}" data-start="${starts[i]}" data-duration="${s.durationSec}" data-width="${width}" data-height="${height}" data-track-index="0"${blur?.off.includes(i) ? ' data-motion-blur="off"' : ""}></div>`).join("\n");
   const audio = (music
     ? `\n      <audio id="music" class="clip" src="${esc(music.path)}" data-start="0" data-duration="${total}" data-track-index="1" data-volume="${music.volume}"></audio>`
     : "") + (voice ?? []).map((v) =>
@@ -94,7 +132,7 @@ export function buildRoot({ plan, width, height, fonts, music, voice }: ComposeI
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=${width}, height=${height}" />
-    <script src="${GSAP_FILE}"></script>
+    <script src="${GSAP_FILE}"></script>${(kit ?? []).map((l) => `\n    ${l}`).join("")}
     <style>
 ${faces}
       * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -102,7 +140,7 @@ ${faces}
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}">${audio}
+    <div id="root" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}"${blur ? ` data-motion-blur="on"${blur.events ? ' data-motion-blur-events="on"' : ""}` : ""}>${audio}
 ${hosts}${seam.overlays.length ? `\n${seam.overlays.join("\n")}` : ""}
     </div>
     <script>
@@ -138,15 +176,32 @@ export function visibleText(html: string): string {
     .replace(/\s+/g, " ").trim();
 }
 
-const NONDETERMINISTIC: Array<[RegExp, string]> = [
+export const NONDETERMINISTIC: Array<[RegExp, string]> = [
   [/\bDate\.now\s*\(/, "Date.now()"], [/\bnew\s+Date\s*\(/, "new Date()"], [/\bperformance\.now\s*\(/, "performance.now()"],
   [/\bMath\.random\s*\(/, "Math.random()"], [/\bsetTimeout\s*\(/, "setTimeout()"], [/\bsetInterval\s*\(/, "setInterval()"],
   [/\brequestAnimationFrame\s*\(/, "requestAnimationFrame()"], [/\brepeat\s*:\s*(-1|Infinity)\b/, "an endless repeat"],
   [/\bfetch\s*\(/, "fetch()"], [/\bXMLHttpRequest\b/, "XMLHttpRequest"],
 ];
 
+/** What in `js` would make a render differ between runs (labels of the rules it breaks). */
+export const nondeterministicIn = (js: string): string[] => NONDETERMINISTIC.filter(([re]) => re.test(js)).map(([, label]) => label);
+
+/** What a scene may mount and draw at its level (from the capability description). */
+export interface SceneKit {
+  /** Every installed part. */
+  installed: string[];
+  /** The parts this level and machine allow. */
+  allowed: string[];
+  level: "kit" | "compose" | "free";
+  /** Can this machine draw WebGL (a GPU, or software when allowed)? */
+  webgl: boolean;
+}
+
+const KIT_REF = /SorotKit(?:Runtime\s*\.\s*mount\s*\(\s*|\s*\[\s*)["']([^"']{1,60})["']/g;
+const WEBGL = /getContext\s*\(\s*["'](?:webgl2?|experimental-webgl)["']|\bTHREE\s*\.|\bnew\s+THREE\b/;
+
 /** Holds one scene to the approved plan and to HyperFrames' determinism rules, before anything renders. */
-export function checkScene(html: string, shot: Shot, index: number, project: { assets: string[] }): SceneIssue[] {
+export function checkScene(html: string, shot: Shot, index: number, project: { assets: string[]; kit?: SceneKit }): SceneIssue[] {
   const id = shotId(index);
   const issues: SceneIssue[] = [];
   const add = (code: string, message: string, hint: string) => issues.push({ code, message, hint });
@@ -177,7 +232,18 @@ export function checkScene(html: string, shot: Shot, index: number, project: { a
   }
   const known = new Set(project.assets);
   for (const ref of new Set([...html.matchAll(/(?<![\w/-])assets\/[\w./%@+-]+/g)].map((m) => m[0]))) {
+    if (ref.startsWith("assets/kit/")) continue;   // the kit's own files (an example image), copied by Sorot
     if (!known.has(ref)) add("scene_unknown_asset", `The scene uses ${ref}, which isn't in the project.`, `Use only these files: ${project.assets.join(", ") || "(none)"}.`);
+  }
+  const kit = project.kit;
+  if (kit) {
+    for (const name of new Set([...scripts.matchAll(KIT_REF)].map((m) => m[1] as string))) {
+      if (!kit.installed.includes(name)) add("kit_unknown_part", `The scene mounts the kit part "${name}", which isn't installed.`, `Use only these parts: ${kit.allowed.join(", ") || "(none)"}.`);
+      else if (!kit.allowed.includes(name)) add("kit_not_allowed", `The kit part "${name}" isn't allowed at the ${kit.level} level on this machine.`, `Use one of: ${kit.allowed.join(", ") || "(none)"}, or draw it with HTML and GSAP.`);
+    }
+    if (WEBGL.test(scripts) && (kit.level !== "free" || !kit.webgl)) {
+      add("scene_webgl_not_allowed", kit.webgl ? `The scene draws WebGL, which the ${kit.level} level doesn't allow.` : "The scene draws WebGL, which this machine can't draw.", "Draw it with HTML, SVG or a 2D canvas, or mount a kit part.");
+    }
   }
   return issues;
 }

@@ -36,10 +36,13 @@ async function reviewImages(ctx: StepContext, dir: string): Promise<string[]> {
 }
 
 /**
- * The CREATIVE verdict. Jev answers the recipe's questions first; when it is off or fails, a fresh
- * LLM judge does (with the review frames when a vision model is set up). The verdict is decided
- * here from the answers.
+ * The CREATIVE verdict. With a vision model, the questions about how the film looks (SEEN) go to a
+ * fresh LLM judge with the review frames; Jev answers the others first; whatever Jev doesn't answer
+ * (off or failing) goes to the LLM judge too. The verdict is decided here from the answers.
  */
+/** The questions only the frames can answer: a vision judge takes them when one is set up. */
+const SEEN = new Set(["finished", "motion"]);
+
 export const run: RunFn = async (ctx) => {
   const { dir, plan } = buildTarget(ctx);
   const { project, version } = ctx;
@@ -47,34 +50,43 @@ export const run: RunFn = async (ctx) => {
   const facts = builtFacts(project.brief, plan, chosenStoryline(project), (i) => readScene(dir, i));
   const asked = { projectId: project.id, versionId: version!.id, kind: "judge" };
 
-  let judgements: Judgement[] | null = null;
-  let judgedBy = "";
+  const mode = String(ctx.settings.vision);
+  if (mode === "on" && !ctx.director.canSee) throw new Error("The creative step needs the LLM to look at the frames (vision: on): connect it in Settings, or use vision: auto");
+  const canSee = mode !== "off" && ctx.director.canSee;
+  // what only pictures can answer goes to the vision judge when there is one: Jev reads text, and it
+  // passed a film whose world was tilted on its side and whose closing line sat on the house (2026-11-02)
+  const seen = (q: { id: string }) => canSee && SEEN.has(q.id);
+  let judgements: Judgement[] = [];
+  const judges: string[] = [];
   let pictures = 0;
-  if (ctx.jev.enabled) {
+  let left = { criteria, risks };
+  const toJev = { criteria: criteria.filter((q) => !seen(q)), risks: risks.filter((q) => !seen(q)) };
+  if (ctx.jev.enabled && toJev.criteria.length + toJev.risks.length) {
+    const questions = [...toJev.criteria, ...toJev.risks];
     try {
       const decision = await ctx.log.track(
-        { ...asked, model: ctx.jev.model, request: { state: creativeState(facts), questions: [...criteria, ...risks].map((c) => c.id) } },
-        () => ctx.jev.decide(creativeState(facts), jevQuestions([...criteria, ...risks])),
+        { ...asked, model: ctx.jev.model, request: { state: creativeState(facts), questions: questions.map((c) => c.id) } },
+        () => ctx.jev.decide(creativeState(facts), jevQuestions(questions)),
         (d) => ({ response: Object.fromEntries(Object.entries(d.answers).map(([id, a]) => [id, noul(a)])), tokens: d.inputTokens }),
       );
-      judgements = fromJev(Object.fromEntries(Object.entries(decision.answers).map(([id, a]) => [id, noul(a)])), criteria, risks);
-      judgedBy = `jev:${decision.model}`;
+      judgements = fromJev(Object.fromEntries(Object.entries(decision.answers).map(([id, a]) => [id, noul(a)])), toJev.criteria, toJev.risks);
+      judges.push(`jev:${decision.model}`);
+      left = { criteria: criteria.filter(seen), risks: risks.filter(seen) };
     } catch (e) {
-      if (!(e instanceof JevError)) throw e;   // Jev failed: the LLM judges instead
+      if (!(e instanceof JevError)) throw e;   // Jev failed: the LLM judges everything
     }
   }
-  if (!judgements) {
-    const mode = String(ctx.settings.vision);
-    if (mode === "on" && !ctx.director.visionModel) throw new Error("The creative step needs a vision model (vision: on): set one up in Settings, or use vision: auto");
-    const images = mode !== "off" && ctx.director.visionModel ? await reviewImages(ctx, dir) : [];
+  if (left.criteria.length + left.risks.length) {
+    const images = canSee ? await reviewImages(ctx, dir) : [];
     const answer = await ctx.director.judge({
-      project, step: ctx.step, facts, criteria: criteria.map(({ id, question }) => ({ id, question: question.replace(/`/g, "") })),
-      risks: risks.map(({ id, question }) => ({ id, question: question.replace(/`/g, "") })), images,
+      project, step: ctx.step, facts, criteria: left.criteria.map(({ id, question }) => ({ id, question: question.replace(/`/g, "") })),
+      risks: left.risks.map(({ id, question }) => ({ id, question: question.replace(/`/g, "") })), images,
     });
-    judgements = fromLlm(answer, criteria, risks);
+    judgements = [...judgements, ...fromLlm(answer, left.criteria, left.risks)];
     pictures = images.length;
-    judgedBy = `${pictures ? "llm-vision" : "llm"}:${pictures ? ctx.director.visionModel : ctx.director.model}`;
+    judges.push(`${pictures ? "llm-vision" : "llm"}:${ctx.director.judgeModel}`);
   }
+  const judgedBy = judges.join(" + ");
 
   const verdict = creativeVerdict(judgements);
   const findings = verdict.findings;

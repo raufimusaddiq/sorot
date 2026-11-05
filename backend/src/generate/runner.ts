@@ -50,6 +50,9 @@ export interface RunnerDeps {
   web?: FactWeb;
   config: AppConfig;
   catalog: StepContext["catalog"];
+  /** The installed kit (absent in tests that don't use it). */
+  kit?: StepContext["kit"];
+  capabilities?: StepContext["capabilities"];
   /** The step library; tests pass stubs. */
   steps?: Record<StepType, StepModule>;
 }
@@ -104,8 +107,15 @@ export class Runner {
       if (known && known.inputHash === key && known.status === "waiting") return this.stop(projectId, i, states, "WAITING");
 
       const outcome = await this.runStep(ctx, key, states, (s) => this.saveProjectStates(projectId, i, s));
+      // a step that changes its own input (the voice step rewrites a script that ran past the film) is kept under
+      // the input it left behind; under the old one the next run would redo it and every step after it
+      const after = this.inputHash(prev, this.context(this.mustProject(projectId), null, recipe, step, signal));
+      if (after !== key && states[id] && states[id]!.status !== "failed") {
+        states[id] = { ...states[id]!, inputHash: after };
+        this.saveProjectStates(projectId, i, states);
+      }
       if (outcome.stop) return this.stop(projectId, i, states, outcome.stop === "failed" ? "FAILED" : "WAITING", outcome.error);
-      prev = key;
+      prev = after;
     }
     // Everything before the build is done: the project waits for the user to start it.
     this.store.updateGenProject(projectId, { status: "WAITING", stepIndex: end, stepState: JSON.stringify(states) });
@@ -169,9 +179,6 @@ export class Runner {
     const version = this.mustVersion(versionId);
     const project = this.mustProject(version.projectId);
     const recipe = parseRecipe(project);
-    const planState = parseStates(project.stepState)[stepId(recipe.steps.find((s) => s.use === "plan") as RecipeStep)];
-    if (!planState || planState.status !== "done") throw new RunnerError("The plan isn't approved yet, so nothing can be built");
-
     const start = authorIndex(recipe);
     const steps = recipe.steps.slice(start).filter((s) => opts.withExport || s.use !== "export");
     const states = parseStates(version.stepState);
@@ -181,7 +188,11 @@ export class Runner {
     let prev = hash([version.planId, this.projectBase(project)]);
 
     try {
+      // checked inside the try: a build refused here ends FAILED with the reason, instead of staying BUILDING for good
+      const planState = parseStates(project.stepState)[stepId(recipe.steps.find((s) => s.use === "plan") as RecipeStep)];
+      if (!planState || planState.status !== "done") throw new RunnerError("The plan isn't approved yet, so nothing can be built");
       for (const [n, step] of steps.entries()) {
+        signal?.throwIfAborted();   // a cancel lands between steps even when the last one was a model call, which can't be interrupted
         const id = stepId(step);
         const ctx = this.context(this.mustProject(project.id), this.mustVersion(versionId), recipe, step, signal);
         const key = this.inputHash(prev, ctx);
@@ -311,7 +322,7 @@ export class Runner {
   private context(project: GenProject, version: GenVersion | null, recipe: Recipe, step: RecipeStep, signal?: AbortSignal): StepContext {
     return {
       project, version, recipe, step, signal, store: this.store, log: this.log,
-      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, runScript: this.deps.runScript, narrator: this.deps.narrator, images: this.deps.images, web: this.deps.web, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog,
+      director: this.deps.director, hyperframes: this.deps.hyperframes, jev: this.deps.jev, exec: this.deps.exec, runScript: this.deps.runScript, narrator: this.deps.narrator, images: this.deps.images, web: this.deps.web, config: this.deps.config, connected: this.deps.connected, catalog: this.deps.catalog, kit: this.deps.kit, capabilities: this.deps.capabilities,
       settings: settingsOf(step.use, step.with),
       progress: (percent) => { if (version) this.store.updateGenVersion(version.id, { progress: Math.max(0, Math.min(100, Math.round(percent))) }); },
     };

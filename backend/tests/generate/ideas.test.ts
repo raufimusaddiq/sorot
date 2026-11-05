@@ -6,7 +6,7 @@ import { earlierConcepts } from "../../src/generate/novelty";
 import { STEPS, settingsOf } from "../../src/generate/steps";
 import { Store } from "../../src/store";
 import type { GenProject } from "../../src/types";
-import { EFFECTS_DONE, makeEnv, procOk, quickRecipe, samplePlan, sceneHtml, scriptLlm, type TestEnv } from "../helpers";
+import { EFFECTS_DONE, makeEnv, procOk, quickRecipe, samplePlan, sceneHtml, scriptLlm, type TestEnv, judgeYes } from "../helpers";
 
 const T = "2026-01-01T00:00:00.000Z";
 const json = JSON.stringify;
@@ -192,7 +192,7 @@ const STORIES = json({ storylines: [story(1), story(2), story(3)] });
 const PICK = json({ decision: "pick", index: 0, reason: "paling jelas" });
 const APPROVE = json({ decision: "approve", reason: "siap" });
 const SCENES = [0, 1, 2].map((i) => json({ html: sceneHtml(i) }));
-const JUDGE = json({ criteria: ["hook", "main_message"].map((id) => ({ id, answer: "yes", reason: "ok" })), risks: ["misleading_claim", "flat_film"].map((id) => ({ id, flagged: false, reason: "" })) });
+const JUDGE = judgeYes(["hook"]);
 const COPY = json({ title: "Bunga berbunga", description: "Uang tumbuh sendiri." });
 const probe = json({ streams: [{ codec_type: "video", width: 1080, height: 1920, avg_frame_rate: "30/1", duration: "30.0" }], format: { duration: "30.0" } });
 
@@ -335,5 +335,14 @@ describe("unattended runs", () => {
     await env!.json("POST", `${base}/run`, { ideaId: "IDEA-1" });
     await env!.app.generate.whenIdle();
     expect(env!.app.store.genVersionsForProject(id)).toHaveLength(2);
+
+    // a build cut off by a restart (the sweep marks the project and the version "interrupted") goes on in the same version
+    const cut = env!.app.store.genVersionsForProject(id)[0]!;
+    env!.app.store.updateGenVersion(cut.id, { status: "FAILED", errorMessage: "interrupted" });
+    env!.app.store.updateGenProject(id, { status: "FAILED", errorMessage: "interrupted" });
+    scriptLlm(env!, [...SCENES, JUDGE, COPY]);
+    await env!.json("POST", `${base}/run`, { ideaId: "IDEA-1" });
+    await env!.app.generate.whenIdle();
+    expect(env!.app.store.genVersionsForProject(id).map((x) => [x.id, x.status])).toEqual([[cut.id, "BUILT"], expect.anything()]);
   });
 });

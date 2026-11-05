@@ -43,6 +43,9 @@ export interface ChatMessage {
   name?: string;
   /** Tokens the call used, when the server reports it (replies only; never sent). */
   usage?: number;
+  /** Of the input, how many tokens there were and how many the provider served from its cache (replies only). */
+  inputTokens?: number;
+  cachedTokens?: number;
 }
 
 export interface ToolDef {
@@ -160,8 +163,9 @@ export function jsonError(text: string): { message: string; at: number; excerpt:
 
 export class Llm {
   constructor(
-    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec">
-      & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmVision?: boolean; llmVisionModel?: string; llmStream?: boolean },
+    private readonly config: Pick<AppConfig, "llmBaseUrl" | "llmModel" | "llmApiKey" | "llmTimeoutSec"> & { llmMaxCallSec?: number }
+      & { llmEnabled?: boolean; llmMaxTokens?: number; genLlmMaxTokens?: number; llmStream?: boolean }
+      & { genPlanModel?: string; genSceneModel?: string; genJudgeModel?: string; genSession?: boolean; genContextTokens?: number; genTurnTokens?: number },
     private readonly fetchFn: typeof fetch = fetch,
     private readonly retryWaitMs = 2000,
   ) {}
@@ -174,10 +178,24 @@ export class Llm {
     return this.config.llmModel;
   }
 
-  /** The model that looks at images: set, switched on, and the LLM itself on. */
-  get visionModel(): string | null {
-    return this.enabled && this.config.llmVision !== false && this.config.llmVisionModel ? this.config.llmVisionModel : null;
+  /** Generate's build session (GEN_SESSION, default on) and how far it may grow (GEN_CONTEXT_TOKENS, Settings → LLM). */
+  get genSession(): boolean {
+    return this.config.genSession !== false;
   }
+  get genContextTokens(): number {
+    return this.config.genContextTokens ?? 600000;
+  }
+  get genTurnTokens(): number {
+    return this.config.genTurnTokens ?? 60000;
+  }
+
+  /** Generate's model for a role (Settings → LLM): its own when set, else LLM_MODEL. */
+  modelFor(role: "plan" | "scene" | "judge"): string {
+    const own = { plan: this.config.genPlanModel, scene: this.config.genSceneModel, judge: this.config.genJudgeModel }[role];
+    return own?.trim() || this.config.llmModel;
+  }
+
+
 
   /** The configured output budget per call; it includes a reasoning model's thinking. */
   get maxTokens(): number {
@@ -194,11 +212,9 @@ export class Llm {
     return this.send(messages, opts);
   }
 
-  /** A call with pictures in it, to the vision model (LlmError when none is set up). */
+  /** A call with pictures in it. There is no separate vision model: the model answering must see (a Generate director reasons and sees). */
   async see(messages: ChatInput[], opts: ChatOptions = {}): Promise<ChatMessage> {
-    const model = this.visionModel;
-    if (!model) throw new LlmError("No vision model configured (set LLM_VISION_MODEL)");
-    return this.send(messages, { ...opts, model: opts.model ?? model });
+    return this.send(messages, opts);
   }
 
   private async send(messages: ChatInput[], opts: ChatOptions): Promise<ChatMessage> {
@@ -229,13 +245,17 @@ export class Llm {
     if (streaming) Object.assign(body, { stream: true, stream_options: { include_usage: true } });
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.config.llmApiKey) headers.Authorization = `Bearer ${this.config.llmApiKey}`;
-    // LLM_TIMEOUT is the longest silence: the wait for the first byte, then between streamed chunks.
+    // LLM_TIMEOUT is the longest silence: the wait for the first byte, then between streamed chunks that
+    // carry part of the answer (a keep-alive ping doesn't count). LLM_MAX_CALL_SEC caps the whole call:
+    // a gateway that kept a Generate scene call open with pings held a build for over 30 min (2026-11-02).
     const abort = new AbortController();
     let timer = setTimeout(() => abort.abort(), this.config.llmTimeoutSec * 1000);
     const alive = () => {
       clearTimeout(timer);
       timer = setTimeout(() => abort.abort(), this.config.llmTimeoutSec * 1000);
     };
+    let overLong = false;
+    const cap = setTimeout(() => { overLong = true; abort.abort(); }, (this.config.llmMaxCallSec ?? 1800) * 1000);
     let res: Response;
     let text = "";
     let data: Json = {};
@@ -247,10 +267,12 @@ export class Llm {
       } catch (e) {
         // A timeout already waited LLM_TIMEOUT: not retried, so a stage can't stall twice as long.
         const timedOut = abort.signal.aborted || (e as Error).name === "TimeoutError";
+        if (overLong) throw new LlmError(`LLM call ran past LLM_MAX_CALL_SEC (${this.config.llmMaxCallSec ?? 1800} s) without finishing`, false);
         throw new LlmError(`LLM unreachable at ${base}: ${timedOut ? `no answer for ${this.config.llmTimeoutSec} s` : (e as Error).message}`, !timedOut);
       }
     } finally {
       clearTimeout(timer);
+      clearTimeout(cap);
     }
     if (!res.ok) throw new LlmError(`LLM HTTP ${res.status}: ${text.slice(0, 300)}`, TRANSIENT_STATUSES.has(res.status));
     if (!data.choices && !data.error) {
@@ -270,8 +292,10 @@ export class Llm {
     if (!msg.content && !msg.tool_calls?.length && choice?.finish_reason === "length") {
       throw new LlmError(`LLM used all ${String(body.max_tokens)} max_tokens before answering (raise ${opts.budgetName ?? "LLM_MAX_TOKENS"} for reasoning models)`, false, true);
     }
-    const used = (data.usage as { total_tokens?: unknown } | undefined)?.total_tokens;
-    return { ...msg, content: msg.content ?? "", ...(typeof used === "number" ? { usage: used } : {}) };
+    const u = (data.usage ?? {}) as { total_tokens?: unknown; prompt_tokens?: unknown; prompt_tokens_details?: { cached_tokens?: unknown }; prompt_cache_hit_tokens?: unknown };
+    const n = (v: unknown) => (typeof v === "number" ? v : undefined);
+    const used = n(u.total_tokens), input = n(u.prompt_tokens), cached = n(u.prompt_tokens_details?.cached_tokens) ?? n(u.prompt_cache_hit_tokens);
+    return { ...msg, content: msg.content ?? "", ...(used !== undefined ? { usage: used } : {}), ...(input !== undefined ? { inputTokens: input } : {}), ...(cached !== undefined ? { cachedTokens: cached } : {}) };
   }
 
   /**
@@ -286,14 +310,14 @@ export class Llm {
     opts: {
       maxSteps?: number; temperature?: number; finalPrompt?: string; onCall?: (name: string, args: Json, result: unknown) => void;
       /** Per call, and the setting it comes from. */
-      maxTokens?: number; budgetName?: string;
+      maxTokens?: number; budgetName?: string; model?: string;
       /** Tokens the whole loop may use (as the server reports them); past it the loop ends like at maxSteps. */
       tokenBudget?: number;
     } = {},
   ): Promise<string> {
     const history = [...messages];
     const maxSteps = opts.maxSteps ?? 8;
-    const per = { temperature: opts.temperature, maxTokens: opts.maxTokens, budgetName: opts.budgetName };
+    const per = { temperature: opts.temperature, maxTokens: opts.maxTokens, budgetName: opts.budgetName, model: opts.model };
     let used = 0;
     for (let step = 0; step < maxSteps && !(opts.tokenBudget && used >= opts.tokenBudget); step++) {
       const msg = await this.chat(history, { tools, ...per });
@@ -333,6 +357,7 @@ export class Llm {
  * gateway's error. `alive` is called on every chunk, so only a silence times out.
  */
 async function readStream(res: Response, alive: () => void, signal: AbortSignal): Promise<Json> {
+  // only a chunk that carries part of the answer (or its end) keeps the call alive, not a keep-alive ping
   const reader = (res.body as ReadableStream<Uint8Array>).getReader();
   // a silence ends the read here too, whatever the fetch implementation does with the signal
   signal.addEventListener("abort", () => void reader.cancel().catch(() => undefined), { once: true });
@@ -352,6 +377,7 @@ async function readStream(res: Response, alive: () => void, signal: AbortSignal)
     } catch {
       return;   // a keep-alive or a broken line: the rest of the stream still counts
     }
+    if (chunk.error || chunk.usage || chunk.choices) alive();
     if (chunk.error) error = chunk.error as Json;
     if (chunk.usage) usage = chunk.usage as Json;
     const choice = (chunk.choices as Array<{ delta?: Json; finish_reason?: string | null }> | undefined)?.[0];
@@ -369,7 +395,6 @@ async function readStream(res: Response, alive: () => void, signal: AbortSignal)
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    alive();
     buffer += decoder.decode(value, { stream: true });
     let end: number;
     while ((end = buffer.indexOf("\n")) >= 0) {

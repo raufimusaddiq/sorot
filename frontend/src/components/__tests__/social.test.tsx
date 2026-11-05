@@ -34,15 +34,16 @@ describe('ConnectionsPanel', () => {
     fireEvent.change(within(llm).getByLabelText('LLM Model'), { target: { value: 'qwen2.5:7b' } });
     expect(within(llm).getByLabelText('LLM Generate token budget')).toHaveValue('32000');
     fireEvent.change(within(llm).getByLabelText('LLM Generate token budget'), { target: { value: '48000' } });
+    fireEvent.change(within(llm).getByLabelText('LLM Generate scene model'), { target: { value: 'glm-5-3-flash' } });   // a model per Generate role
     fireEvent.change(key, { target: { value: ' sk-1234abcd ' } });
     fireEvent.click(save);
     await waitFor(() => expect(within(llm).getByText('active')).toBeInTheDocument());
-    expect(sent('PUT', '/api/settings/llm')[0]).toEqual({ baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b', genMaxTokens: '48000', apiKey: 'sk-1234abcd' });
+    expect(sent('PUT', '/api/settings/llm')[0]).toEqual({ baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5:7b', genMaxTokens: '48000', sceneModel: 'glm-5-3-flash', apiKey: 'sk-1234abcd' });
     expect(key).toHaveValue('');
     expect(key).toHaveAttribute('placeholder', '••••abcd (leave empty to keep)');
 
     fireEvent.click(within(llm).getByRole('button', { name: 'Use .env' }));
-    await waitFor(() => expect(sent('PUT', '/api/settings/llm')[1]).toEqual({ baseUrl: null, model: null, genMaxTokens: null, apiKey: null }));
+    await waitFor(() => expect(sent('PUT', '/api/settings/llm')[1]).toEqual({ baseUrl: null, model: null, genMaxTokens: null, sceneModel: null, apiKey: null }));
     const jevDirector = within(region('Jev quality gate')).getByLabelText(/wins over the LLM director/);
     fireEvent.click(jevDirector);
     await waitFor(() => expect(jevDirector).not.toBeChecked());
@@ -387,6 +388,7 @@ describe('GenerateConnections (Settings)', () => {
     await waitFor(() => expect(sent('PUT', '/api/settings/image')[0]).toEqual({ baseUrl: 'http://img/v1', model: 'flux', apiKey: 'img-key-9999' }));
     fireEvent.click(within(image).getByLabelText('Use images'));
     await waitFor(() => expect(sent('PUT', '/api/settings/image')[1]).toEqual({ enabled: false }));
+    await waitFor(() => expect(within(image).getByRole('button', { name: 'Test' })).toBeEnabled());   // the save has come back
     fireEvent.click(within(image).getByRole('button', { name: 'Test' }));
     expect(await within(image).findByText('Failed: Not configured')).toBeInTheDocument();
   });

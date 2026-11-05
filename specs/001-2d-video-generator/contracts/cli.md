@@ -7,18 +7,20 @@ raw API data.
 | Command | Does | Key flags |
 |---|---|---|
 | `sorot gen status` | availability and reasons | |
-| `sorot gen new "<brief>"` | create a project → prints storylines (or the plan) | `--recipe <id>` `--facts facts.md` `--format 9:16\|16:9\|1:1` `--length <sec>` `--lang id\|en` `--style "<notes>"` `--preset <name>` `--narration` `--no-stop` |
+| `sorot gen new "<brief>"` | create a project → prints storylines (or the plan) | `--recipe <id>` `--facts facts.md` `--format 9:16\|16:9\|1:1` `--length <sec>` `--lang id\|en` `--style "<notes>"` `--preset <name>` `--narration` / `--no-narration` (neither: a recipe with a voice step speaks) `--no-stop` `--no-numbers` (forbid numbers no fact supports) `--no-wait` (return at once) |
 | `sorot gen run --recipe <id>` | unattended run on the next new idea | `--idea <ID>` resume without moving the cursor · `--json` (for outside agents and schedulers) |
 | `sorot gen steps` | list the step library with settings and dependencies | `--json` |
 | `sorot gen recipes` / `recipe show <id>` | list recipes with availability / print one | |
 | `sorot gen recipe new <id>` / `recipe validate <file>` | start an empty recipe (plan + two verdicts) / check a file | |
 | `sorot gen recipe copy <from> <id>` / `recipe edit <id>` / `recipe export <id>` / `recipe import <file>` | customise recipes | `edit` opens `$EDITOR` on the JSON, validated on save |
-| `sorot gen idea add <BRIEF.md>` / `ideas` / `idea show <id>` | idea bank | `--facts facts.md` `--id IDEA-042` `--slug <s>` |
+| `sorot gen idea add <BRIEF.md>` / `ideas` / `idea show <id>` | idea bank | `--facts facts.md` `--id IDEA-042` `--slug <s>`; the idea's flags: `--length` `--lang` `--format` `--preset` `--narration` / `--no-narration` `--no-numbers` (`market_data: false`) |
 | `sorot gen facts <project>` / `facts verify <project>` | list or re-verify facts | |
+| `sorot gen facts add <project> "<claim>"` / `facts rm <project> <fact>` | add a fact with its source / delete one | `--source <url>` (required) `--value <v>` |
 | `sorot gen files <project> [<name>]` | list or print the mirrored files | |
 | `sorot gen import-history <file.json>` | import past concepts (for novelty) and ideas from the documented JSON shape | |
 | `sorot gen approve-step <project> <stepId>` | pass an `owner` gate | `--note` |
 | `sorot gen list` / `sorot gen show <project>` | projects / a project's state, plan and versions | |
+| `sorot gen retry <project>` | after a failure before the build: the failed step runs again, finished steps are kept | |
 | `sorot gen storylines <project>` | ask for 3 new storylines | `--note "<text>"` |
 | `sorot gen pick <project> <1-3>` | pick a storyline → plan | `--note` |
 | `sorot gen plan <project>` | print the current plan as a shot table | `--edit` opens `$EDITOR` on the JSON |
@@ -28,7 +30,8 @@ raw API data.
 | `sorot gen build <project>` | build a version and follow its progress | `--no-watch` |
 | `sorot gen verdicts <version>` | show TECHNICAL and CREATIVE with findings | |
 | `sorot gen fix <version>` | fix must-fix items (or chosen ones) | `--finding <id>`... `--note "<text>"` `--shot <id>` |
-| `sorot gen cancel <version>` / `restore <version>` / `accept <version>` | | |
+| `sorot gen cancel <version\|project>` / `restore <version\|project>` / `accept <version\|project>` | a version id, or a project's newest version | |
+| `sorot gen resume <version\|project>` | a failed build goes on from its failed step (same version), then is followed like `build` | `--no-watch` |
 | `sorot gen export <version>` | delivery render → library | `--title` `--description` `--out <path>` (also downloads) |
 
 Publishing a generated export goes through the existing command:
