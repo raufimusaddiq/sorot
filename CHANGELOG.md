@@ -7,6 +7,9 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 ## [Unreleased]
 
 ### Generate: briefs to finished 2D videos
+- The director's `check` and `look` now also measure the draft's motion (a frame that jumps, a shot that freezes
+  and moves again) from a draft render of just that shot, with the same measure the TECHNICAL verdict uses: on
+  built films it found the same jumps at the same moments, so the director can fix them before the build.
 - Cancelling a build while the director is writing now stops it: the shots not yet asked for are never written,
   and the version ends CANCELLED before the next step. (It used to run on to the end of the author step, because
   only HyperFrames calls saw the cancel. The model call already in flight still finishes.)

@@ -133,8 +133,11 @@ export class Hyperframes {
   /** Renders `dir` to `output`; the time limit follows `durationSec` × `fps`. */
   async render(dir: string, o: {
     output: string; quality: string; fps: number; durationSec: number; workers?: number; gpu?: boolean;
+    /** Render only this span of the film (seconds); the clip starts at 0. `durationSec` is then the span's length. */
+    span?: { start: number; end: number };
   }, opts: HfCallOptions = {}) {
     const args = [dir, "-o", o.output, "-q", RENDER_QUALITY[o.quality] ?? o.quality, "-f", String(o.fps), "--quiet"];
+    if (o.span) args.push("--start", String(o.span.start), "--end", String(o.span.end));
     if (o.workers) args.push("-w", String(o.workers));
     if (o.gpu) args.push("--gpu");
     const res = await this.run("render", args, { ...opts, timeoutMs: opts.timeoutMs ?? renderTimeoutMs(o.durationSec, o.fps) });

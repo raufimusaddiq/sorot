@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { frameDiffArgs, motionFindings, parseFrameDiffs } from "../../src/generate/motion";
+import { frameDiffArgs, motionFindings, parseFrameDiffs, shotMotionFindings } from "../../src/generate/motion";
 import type { Plan } from "../../src/generate/planSchema";
 
 // a plan of shots with these lengths (seconds) at 10 fps, so frame n is n / 10 s
@@ -23,6 +23,14 @@ describe("motion measure", () => {
     ["a mostly still shot", [...moving(5, 0), 0.3, ...moving(9, 0), 0.3, ...moving(24, 0)], plan(4), []],
   ])("%s", (_name, diffs, p, found) => {
     expect(codes(diffs, p) as unknown[]).toEqual(found);
+  });
+
+  test("one shot from a render of just that shot: the same findings, at shot-local times, for that shot only", () => {
+    // shot 2 of three (2 s, 4 s, 2 s): a spike 1.6 s into it, and a spike in the render's neighbours' share would be someone else's
+    const p = plan(2, 4, 2);
+    const clip = [...moving(15), 20, ...moving(24)];
+    expect(shotMotionFindings(clip, p, 1, 10).map((f) => [f.code, f.shotId, f.fromSec, f.description])).toEqual([["motion_jump", "s02", 1.6, "s02 jumps at 1.6 s: one frame changes 67× more than the frames around it."]]);
+    expect(shotMotionFindings(moving(20), p, 0, 10)).toEqual([]);   // the first shot has no earlier neighbour to pad for
   });
 
   test("ffmpeg prints one YAVG per frame pair", () => {

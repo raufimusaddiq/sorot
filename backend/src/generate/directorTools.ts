@@ -8,6 +8,7 @@ import type { Plan, Shot } from "./planSchema";
 import type { Hyperframes, HfFinding } from "./hyperframes";
 import type { StrangerRead } from "./look";
 import type { SceneKit } from "./composer";
+import { shotMotionFindings } from "./motion";
 import { PROBE_PREFIX, probeConfig, probeFindings, readProbe, withProbe } from "./sceneProbe";
 
 // The tools a director may use inside one shot's turn (docs/director-loop.md, FR-049): find a
@@ -92,7 +93,7 @@ export function searchBlocks(catalog: CatalogEntry[], args: ToolArgs): ToolOutco
 export interface ToolEnv {
   /** The version's HyperFrames project. */
   dir: string;
-  hyperframes: Pick<Hyperframes, "add" | "lint" | "snapshot" | "check">;
+  hyperframes: Pick<Hyperframes, "add" | "lint" | "snapshot" | "check" | "render">;
   catalog: () => Promise<CatalogEntry[]>;
   /** The recipe's plan step allows registry blocks. */
   blocksAllowed: boolean;
@@ -100,6 +101,8 @@ export interface ToolEnv {
   /** The film's plan and frame rate: with them `check` and `look` also run the scene probe on the draft. */
   plan?: Plan;
   fps?: number;
+  /** The change from each frame of a rendered clip to the next (motion.ts): with it, `check` and `look` also measure the draft's motion. */
+  frameDiffs?: (file: string) => Promise<number[]>;
   /** 0-based position of the shot in the plan. */
   index: number;
   /** Where the shot starts in the film, seconds (frames are taken at film time). */
@@ -159,16 +162,22 @@ export function writeDraft(env: ToolEnv, html: string): void {
 const stub = (id: string, w: number, h: number) =>
   `<!doctype html><html><body><div data-composition-id="${id}" data-width="${w}" data-height="${h}"><script>window.__timelines = window.__timelines || {}; window.__timelines["${id}"] = gsap.timeline({ paused: true });</script></div></body></html>`;
 
+type Evaluated = { code: string; severity: string; message: string; hint?: string };
+
 /**
- * The scene probe (sceneProbe.ts) on the draft: text sitting on a drawing, a title missing on the first frame,
- * two moves fighting over one property, a hard swap. It needs the whole film to load, and the shots after this
- * one aren't written yet, so it runs on a scratch copy of the project (the root, the shots so far, a
- * placeholder for each missing one, and the assets linked) and never touches the version's own folder.
- * Takes a few seconds; failing to run is no finding (the check step runs the same probe after the build).
+ * What the build's own checks would say about the draft, while the director can still change it: the scene probe
+ * (sceneProbe.ts: text sitting on a drawing, a title missing on the first frame, two moves fighting over one
+ * property, a hard swap) and the motion measure (motion.ts: a frame that jumps, a shot that freezes and moves
+ * again) on a draft render of just this shot. Both need the whole film to load, and the shots after this one
+ * aren't written yet, so they run on a scratch copy of the project (the root, the shots so far, a placeholder
+ * for each missing one, the assets linked) and never touch the version's own folder. About 20 s together
+ * (5 s the probe, 13 s the render of a 3.5 s shot on this CPU); a measure that can't run adds nothing (the
+ * check step runs the same ones after the build).
  */
-export async function probeDraft(env: ToolEnv): Promise<Array<{ code: string; severity: string; message: string; hint?: string }>> {
+export async function evaluateDraft(env: ToolEnv): Promise<Evaluated[]> {
   if (!env.plan) return [];
   const plan = env.plan;
+  const fps = env.fps ?? 30;
   const copy = mkdtempSync(join(tmpdir(), "sorot-probe-"));
   try {
     for (const f of ["index.html", "hyperframes.json", "package.json", "meta.json"]) if (existsSync(join(env.dir, f))) cpSync(join(env.dir, f), join(copy, f));
@@ -184,10 +193,22 @@ export async function probeDraft(env: ToolEnv): Promise<Array<{ code: string; se
         writeFileSync(join(copy, file), stub(`shot-${String(i + 1).padStart(2, "0")}`, Number(size?.[1] ?? 1080), Number(size?.[2] ?? 1920)));
       }
     });
-    const result = await withProbe(copy, probeConfig(plan, env.fps ?? 30), () => env.hyperframes.check(copy, { signal: env.signal }));
-    const messages = Object.values(result).flatMap((v) => (v && typeof v === "object" && Array.isArray((v as { findings?: unknown }).findings) ? (v as { findings: HfFinding[] }).findings : [])).map((f) => f.message).filter((m) => m.startsWith(PROBE_PREFIX));
-    const data = readProbe(messages);
-    return data ? probeFindings(data, plan).filter((f) => f.shot === env.index).map((f) => ({ code: f.code, severity: f.severity, message: f.message, hint: f.hint })) : [];
+    const found: Evaluated[] = [];
+    try {
+      const result = await withProbe(copy, probeConfig(plan, fps), () => env.hyperframes.check(copy, { signal: env.signal }));
+      const messages = Object.values(result).flatMap((v) => (v && typeof v === "object" && Array.isArray((v as { findings?: unknown }).findings) ? (v as { findings: HfFinding[] }).findings : [])).map((f) => f.message).filter((m) => m.startsWith(PROBE_PREFIX));
+      const data = readProbe(messages);
+      if (data) found.push(...probeFindings(data, plan).filter((f) => f.shot === env.index).map((f) => ({ code: f.code, severity: f.severity, message: f.message, hint: f.hint })));
+    } catch { /* no probe this time */ }
+    if (env.frameDiffs) {
+      try {
+        const clip = join(copy, "motion.mp4");
+        await env.hyperframes.render(copy, { output: clip, quality: "draft", fps, durationSec: env.shot.durationSec, span: { start: env.startSec, end: env.startSec + env.shot.durationSec } }, { signal: env.signal });
+        const diffs = await env.frameDiffs(clip);
+        if (diffs.length) found.push(...shotMotionFindings(diffs, plan, env.index, fps).map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })));
+      } catch { /* no render this time */ }
+    }
+    return found;
   } catch {
     return [];
   } finally {
@@ -204,7 +225,7 @@ export async function checkDraft(env: ToolEnv, args: ToolArgs): Promise<ToolOutc
   const lint = await env.hyperframes.lint(env.dir, { signal: env.signal });
   const mine = shotFile(env.index);
   const own = lint.findings.filter((f) => `${f.file ?? ""} ${f.sourceFile ?? ""} ${f.selector ?? ""}`.includes(mine) || (!f.file && !f.sourceFile)).map(fromLint);
-  return { result: { findings: [...rules, ...own, ...(await probeDraft(env))] } };
+  return { result: { findings: [...rules, ...own, ...(await evaluateDraft(env))] } };
 }
 
 /** The tool definitions the model sees (all of them, so the list never changes between turns). */
@@ -274,7 +295,7 @@ export async function lookAtDraft(env: ToolEnv, read: (images: string[]) => Prom
   const { findings, seen } = await read(images);
   markLooked(env.dir, env.shot.id, html);
   return {
-    result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...(await probeDraft(env))] },
+    result: { frames: inShot, seen, findings: [...findings.map((f) => ({ code: f.code, severity: f.severity, message: f.description, hint: f.suggestedFix })), ...(await evaluateDraft(env))] },
     images,
   };
 }

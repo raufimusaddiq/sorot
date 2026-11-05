@@ -86,7 +86,7 @@ describe("tools on a version's project", () => {
     expect(((await checkDraft(env(), { html: "  " })).result as any).error).toContain("empty");
   });
 
-  test("check and look also run the scene probe on a scratch copy (placeholders for the shots not written yet, assets linked) and keep only this shot's findings; a probe that can't run adds nothing", async () => {
+  test("check and look also run the scene probe and the motion measure (a draft render of just this shot) on a scratch copy (placeholders for the shots not written yet, assets linked) and keep only this shot's findings; a measure that can't run adds nothing", async () => {
     const plan = validatePlan(samplePlan(), { brief: "x", targetSec: 30, format: "9:16", language: "id", fonts: ["Plus Jakarta Sans"], imageConnected: false, narration: false }).plan as Plan;
     const moment = (t: number, c: string) => ({ t, c, texts: [{ el: "t", r: [10, 10, 40, 10], o: 1, v: 1 }], objects: [{ el: "svg#hull", r: [0, 0, 40, 40], o: 1 }] });
     const probe = { v: 1, size: [100, 100], labels: {}, tweens: [], fades: [], frames: [moment(4, "shot-02"), moment(5, "shot-02"), moment(1, "shot-01"), moment(2, "shot-01")] };
@@ -97,14 +97,20 @@ describe("tools on a version's project", () => {
       seen.push(copy, readFileSync(join(copy, "compositions/shot-03.html"), "utf-8"), existsSync(join(copy, "assets/a.png")) ? "linked" : "no assets", existsSync(join(copy, "compositions/shot-02.html")) ? "draft" : "no draft");
       return { lint: { findings: [] }, runtime: { findings: [{ code: "console_warning", severity: "warning", message: PROBE_PREFIX + JSON.stringify(probe) }] } };
     };
-    const hf = { lint: async () => ({ ok: true, findings: [] }), check } as never;
-    const out = (await checkDraft(env({ hyperframes: hf, plan, fps: 30 }), { html: HTML })).result as { findings: Array<{ code: string; message: string }> };
+    const spans: unknown[] = [];
+    const render = async (_copy: string, o: { span?: unknown }) => { spans.push(o.span); };
+    const hf = { lint: async () => ({ ok: true, findings: [] }), check, render } as never;
+    // the draft's own render (shot 2 starts at 10 s in the sample plan): 1.6 s in, one frame changes far more than its neighbours
+    const frameDiffs = async () => [...Array(48).fill(0.3), 20, ...Array(70).fill(0.3)];
+    const out = (await checkDraft(env({ hyperframes: hf, plan, fps: 30, frameDiffs }), { html: HTML })).result as { findings: Array<{ code: string; message: string }> };
+    expect(spans).toEqual([{ start: 3, end: 3 + shot.durationSec }]);   // the shot's own span of the film
+    expect(out.findings.filter((f) => f.code === "motion_jump").map((f) => f.message)).toEqual([expect.stringContaining("jumps at 1.63 s")]);
     expect(out.findings.filter((f) => f.code === "text_over_object").map((f) => f.message)).toEqual([expect.stringContaining("svg#hull")]);   // shot 2's, not shot 1's
     expect(seen.slice(1)).toEqual([expect.stringContaining('data-composition-id="shot-03"'), "linked", "draft"]);
     expect(existsSync(seen[0]!)).toBe(false);                                                                                              // the scratch copy is gone
     expect(existsSync(join(dir, "assets/a.png"))).toBe(true);                                                                            // and the version's own files are not
-    const broken = { lint: async () => ({ ok: true, findings: [] }), check: async () => { throw new Error("no browser"); } } as never;
-    expect(((await checkDraft(env({ hyperframes: broken, plan }), { html: HTML })).result as any).findings.map((f: any) => f.code)).not.toContain("text_over_object");
+    const broken = { lint: async () => ({ ok: true, findings: [] }), check: async () => { throw new Error("no browser"); }, render: async () => { throw new Error("no render"); } } as never;
+    expect(((await checkDraft(env({ hyperframes: broken, plan, frameDiffs }), { html: HTML })).result as any).findings.map((f: any) => f.code)).not.toEqual(expect.arrayContaining(["text_over_object", "motion_jump"]));
   });
 
   test("look renders frames at film time (clamped into the shot, at most three), returns them with the stranger's read, and remembers which file was looked at", async () => {

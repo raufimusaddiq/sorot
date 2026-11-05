@@ -56,7 +56,7 @@ const median = (xs: number[]) => {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Jumps and stalls in each shot, as findings with the shot and the moment. */
-export function motionFindings(diffs: number[], plan: Plan, fps: number, settings: Partial<MotionSettings> = {}): NewFinding[] {
+export function motionFindings(diffs: number[], plan: Plan, fps: number, settings: Partial<MotionSettings> = {}, offsetSec = 0): NewFinding[] {
   const s = { ...MOTION_DEFAULTS, ...settings };
   const starts = shotStarts(plan);
   const found: NewFinding[] = [];
@@ -68,7 +68,7 @@ export function motionFindings(diffs: number[], plan: Plan, fps: number, setting
     const from = Math.round((starts[k]! + inReach) * fps) + SEAM_FRAMES;
     const to = Math.min(diffs.length, Math.round((starts[k]! + shot.durationSec - outReach) * fps) - 1 - SEAM_FRAMES);
     if (to - from < 3) return;
-    const at = (i: number) => round2((i + 1) / fps);
+    const at = (i: number) => round2((i + 1) / fps - offsetSec);
 
     // jumps: a spike over its neighbours inside the shot; an out-and-back teleport is one jump
     let i = from;
@@ -111,4 +111,16 @@ export function motionFindings(diffs: number[], plan: Plan, fps: number, setting
     }
   });
   return found;
+}
+
+/**
+ * The same jumps and stalls for one shot, from a render of just that shot (`diffs` start at the shot's first
+ * frame). The shots around it matter only for the seams they leave out, so they stand in as silent neighbours.
+ */
+export function shotMotionFindings(diffs: number[], plan: Plan, index: number, fps: number, settings: Partial<MotionSettings> = {}): NewFinding[] {
+  const before = plan.shots[index - 1];
+  const shots = [...(before ? [before] : []), plan.shots[index]!, ...(plan.shots[index + 1] ? [plan.shots[index + 1]!] : [])];
+  const lead = before ? Math.round(before.durationSec * fps) : 0;
+  const own = plan.shots[index]!.id;
+  return motionFindings([...Array(lead).fill(0), ...diffs], { ...plan, shots }, fps, settings, before?.durationSec ?? 0).filter((f) => f.shotId === own);
 }

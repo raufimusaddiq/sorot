@@ -41,7 +41,7 @@ user: {request, shot fields, task}
 | `search_blocks` | `query` (≤ 120 chars), `type?` `block`\|`component`, `limit?` ≤ 8 | name, type, title, description, tags, size, duration of the best matches in the cached catalog (word and tag match, no embeddings) | 4 |
 | `use_block` | `name` | installs it (`hyperframes add`), returns its files and its source (≤ 24 KB, the rest cut with a note) | 2; refused when the recipe's plan step has `blocks: false` |
 | `look` | `html` (the draft), `times` (1–3 s inside the shot) | the frames as images, and a stranger's read of them as findings (see Vision) | 2 (`author.looks`) |
-| `check` | `html` (the draft) | Sorot's scene rules (`checkScene`), HyperFrames `lint` for this shot, and the scene probe's findings for this shot (text on a drawing, a missing first-frame title, fighting moves; see "The probe in the loop"): code, severity, message, hint | 3 |
+| `check` | `html` (the draft) | Sorot's scene rules (`checkScene`), HyperFrames `lint` for this shot, and the scene probe's findings for this shot (text on a drawing, a missing first-frame title, fighting moves, and the motion measure's jumps and stalls; see "The probe and the motion measure in the loop"): code, severity, message, hint | 3 |
 | `submit_*` | as today | `{accepted}` or the problems (one more try, as today) | ends the turn |
 
 - `look` and `check` write the draft to `compositions/shot-NN.html` before they run; `submit_*`
@@ -61,14 +61,18 @@ So the first submit of a **scene** turn that has `look` available is turned back
 is accepted. `author.looks: 0` turns the look off, and with it this rule. The authoring guide's
 "Your tools" section says when `search_blocks` and `use_block` are worth a step; those stay optional.
 
-## The probe in the loop
+## The probe and the motion measure in the loop
 
 The probe took the director's own drawing as its only judge before this: GLM's films had 14 to 16% of their
 text moments under a drawing (a hull made of CSS boxes, which the probe did not count as a drawing), and
 nothing said so. Now `check` and `look` both return the probe's findings for the shot being written. HyperFrames'
 check refuses a project whose shots are missing, so the probe runs on a scratch copy: the root, the shots so
 far, a placeholder for each shot not yet written, the assets linked; the version's own folder is never touched.
-It takes about 5 s. A probe that can't run adds nothing. CSS-drawn boxes count as drawings, except a box a
+The probe takes about 5 s. The same scratch copy then renders just this shot at draft quality (`hyperframes render
+--start/--end`, about 13 s for 3.5 s on this CPU) and runs the TECHNICAL motion measure on it (`shotMotionFindings`):
+a frame that jumps, a shot that freezes and moves again. On films already built, the in-loop measure found the same
+jumps at the same moments as the build's verdict (0.37 s, 0.6 s and 1.83 s) and kept clean shots clean. A measure
+that can't run adds nothing. CSS-drawn boxes count as drawings, except a box a
 fifth of the frame or more (`panelShare`), which is a card the words sit on; and a text lying wholly inside a
 drawing at least 5 times its own area (`labelShare`, `labelSize`) is a label on it, not a collision (GLM's
 labels on its own panels were flagged until then). A text only partly over a drawing is the collision.

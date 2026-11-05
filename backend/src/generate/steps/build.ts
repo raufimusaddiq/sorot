@@ -5,6 +5,7 @@ import { shotFile, shotStarts, type SceneKit } from "../composer";
 import { atMost, isLevel, recipeLevel, recipeMaxLevel, type Level } from "../capabilities";
 import { lookAtDraft, sceneTools, type SceneTools } from "../directorTools";
 import { strangerRead } from "../look";
+import { frameDiffArgs, parseFrameDiffs } from "../motion";
 import { chooseLevel, modelPin, recordOf } from "../levels";
 import type { Plan, Shot } from "../planSchema";
 import type { StepContext } from "./types";
@@ -95,7 +96,7 @@ export function sceneToolsFor(ctx: StepContext, dir: string, plan: Plan, index: 
   const planWith = (ctx.recipe.steps.find((s) => s.use === "plan")?.with ?? {}) as Record<string, unknown>;
   const steps = Number.isInteger(authorWith.toolSteps) ? (authorWith.toolSteps as number) : DEFAULT_TOOL_STEPS;
   const looks = Number.isInteger(authorWith.looks) ? (authorWith.looks as number) : DEFAULT_LOOKS;
-  const env = { dir, hyperframes: ctx.hyperframes, catalog: ctx.catalog, blocksAllowed: planWith.blocks !== false, shot: plan.shots[index]!, plan, fps: ctx.recipe.output.fps, index, startSec: shotStarts(plan)[index]!, rules: sceneRules(ctx, level), signal: ctx.signal };
+  const env = { dir, hyperframes: ctx.hyperframes, catalog: ctx.catalog, blocksAllowed: planWith.blocks !== false, shot: plan.shots[index]!, plan, fps: ctx.recipe.output.fps, frameDiffs: async (file: string) => { const res = await ctx.exec(ctx.config.ffmpegPath, frameDiffArgs(file), { signal: ctx.signal, timeoutMs: 120_000 }); return res.exitCode === 0 ? parseFrameDiffs(res.stdout) : []; }, index, startSec: shotStarts(plan)[index]!, rules: sceneRules(ctx, level), signal: ctx.signal };
   const read = (images: string[]) => strangerRead(ctx.director, { project: ctx.project, step: ctx.step, plan, index, images });
   return sceneTools(env, { steps, looks, ...(ctx.director.canSee ? { look: (e, args) => lookAtDraft(e, read, args) } : {}) });
 }
