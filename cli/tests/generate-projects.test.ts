@@ -122,6 +122,12 @@ describe("gen list, show and project references", () => {
     expect(h.text()).toContain("Error: late warning");
     expect(h.text()).toContain("Files: logo 12345678-logo.png");
     expect(h.text()).toContain("sorot gen pick 11111111");
+    // a built project: its build steps come from the newest version; an idea's "# heading" brief reads as the title
+    const built = harness({ [`GET ${BASE}`]: list, [`GET ${BASE}/${ID}`]: { ...detail({ brief: "# Kenapa LTS\nisi", recipe: { steps: [{ use: "author" }] } }), versions: [{ id: "v1", stepState: { author: { status: "done" } } }] } });
+    expect(await built.run("gen", "show", "1111")).toBe(0);
+    expect(built.text()).toContain("Kenapa LTS");
+    expect(built.text()).not.toContain("# Kenapa");
+    expect(built.text()).toContain("done     author");
     const j = await harness({ [`GET ${BASE}`]: list }).run("gen", "list", "--json");
     expect(j).toBe(0);
   });

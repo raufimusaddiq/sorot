@@ -135,8 +135,10 @@ async function showCmd(d: Deps, a: Args): Promise<number> {
   const detail = await d.api.get(`${BASE}/${await projectId(d, need(a, 2, "project"))}`);
   if (json(d, a, detail)) return 0;
   const p = detail.project as Json;
-  d.out(`${p.title ?? truncate(p.brief, 60)}  [${p.status}]  ${p.format} · ${p.targetSec} s · ${p.language} · recipe ${p.recipeId}`);
-  const states = (p.stepState ?? {}) as Record<string, Json>;
+  // an idea's brief is markdown: its "# heading" reads as the title
+  d.out(`${p.title ?? truncate(String(p.brief).replace(/^#+\s*/, ""), 60)}  [${p.status}]  ${p.format} · ${p.targetSec} s · ${p.language} · recipe ${p.recipeId}`);
+  // the steps up to the build live on the project, the build's own on its newest version
+  const states = { ...(p.stepState ?? {}), ...((detail.versions as Json[])[0]?.stepState ?? {}) } as Record<string, Json>;
   for (const step of (p.recipe?.steps ?? []) as Json[]) {
     const s = states[step.id ?? step.use];
     d.out(`  ${s ? s.status.padEnd(8) : "pending "} ${step.id ?? step.use}${s?.reason ? ` — ${s.reason}` : ""}`);
