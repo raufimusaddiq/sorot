@@ -60,7 +60,12 @@ fields) and the answer stays in the conversation. Turns run one at a time, in th
 Each request extends the last, so the provider's prompt cache covers almost all of it (separate calls
 reached at most 44 to 51% on real builds, 2026-11-02), and every shot sees the shots before it.
 `GEN_CONTEXT_TOKENS` (default 600000) caps the conversation; past it the session restarts from its
-opening and the latest version of each shot. `GEN_SESSION=off` goes back to one fresh call per shot.
+opening and the latest version of each shot (never past the window: the newest shots that fit are kept).
+`GEN_SESSION=off` goes back to one fresh call per shot. Inside the conversation the director's look frames are
+shrunk to 360×640 (about a fifth of the image tokens of a 1080×1920 frame), and `look` or `check` called
+without `html` read the last draft the director wrote, so it does not send the shot again. Each call's input
+and cached tokens are kept in `gen_event`, so a build's cache share can be read from its own log (the story
+brief reached 90.8%, 89.5% over 16 builds; `specs/001-2d-video-generator/research.md`).
 
 **Tools in a turn** (`docs/director-loop.md`). Before it submits, the director may `search_blocks`
 (the HyperFrames registry: words and tags), `use_block` (installs a block and returns its source to
@@ -84,13 +89,13 @@ records "looked in the loop" and makes no vision call of its own.
 |---|---|
 | `idea` | takes the recipe's next idea from the idea bank (or a named one) |
 | `facts` | builds or checks the fact list against its sources |
-| `script`, `voice`, `align` | narration lines (the film's length is a word target, not a rule), voice, word timings (engine timestamps or Whisper); a voice that runs more than 0.5 s past the film has the script written again, up to twice, told each line's measured seconds |
+| `script`, `voice`, `align` | narration lines (the film's length is a word target, not a rule), voice, word timings (engine timestamps or Whisper); a voice more than 0.5 s past the film has the script written again, up to twice, told each line's measured seconds; one still up to 10% too long after that is sped up to fit (ffmpeg `atempo`, any engine; the step records "sped up N×"), and further over fails with the numbers. The voice keeps the script's order |
 | `storylines` | N different films in words (gate: owner / director) |
 | `concept` | names the visual mechanism and checks it against past work |
 | `plan` | the shot-by-shot plan, numeric (hex palette, type, easing, frames) (**required gate**) |
 | `images`, `music` | generated images for marked shots; a music bed with ducking under the voice |
 | `author`, `check` | one scene per shot, then HyperFrames `lint` + `check` with repair rounds |
-| `look` | the model looks at three pictures of each shot (early, mid-move, settled; vision), answers once per shot, and audits for defaults |
+| `look` | the model looks at three pictures of each shot (early, mid-move, settled; vision), answers up to three shots a call (all of a film's frames in one request was refused by a gateway with HTTP 413), once per shot, and audits for defaults. What it finds too faint against its ground comes back as a `look_faint` should-fix for the director, not saved as a finding |
 | `render` | `draft`, `standard` or `delivery` |
 | `command` | a local command registered in Settings; its findings join a verdict |
 | `technical`, `creative` | the two verdicts |
@@ -188,8 +193,10 @@ when `render.motionBlur` is `auto` (the default; `on` blurs every shot, `off` no
 TECHNICAL always measures motion inside each shot from the rendered video: ffmpeg's per-frame luma
 difference (`tblend` + `signalstats`). A frame that changes far more than its neighbours is a
 `motion_jump`; a moving shot that stops for a while and moves again is a `motion_stall`; both carry
-the shot and the moment. The frames next to a seam and hold shots are left out. Defaults
-(`measures.motion.jumpRatio` 6, `stallFrames` 8; must-fix at twice that) come from spike S7. CREATIVE
+the shot and the moment. The frames next to a seam and hold shots are left out. A jump is at least 6× its neighbours and at least 2/255 of the frame (`minJump`), and not a
+whole-frame change (128/255 or more: a flash, a fade) or a move that carries on after it (a move starting from
+rest, a counter ticking). On the first bench 23 jumps found by the older measure were 2 real ones. Defaults
+(`measures.motion.jumpRatio` 6, `minJump` 2, `stallFrames` 8; must-fix at twice that) come from spike S7. CREATIVE
 always asks two more questions: whether the things in the film read as what they are and look
 finished, and whether the motion moves smoothly and with weight.
 
@@ -202,7 +209,9 @@ plan was made from changed. Fish speaks with its default voice when no voice id 
 A build that failed (a gateway error, an interruption) can go on from its failed step: `POST
 /versions/{id}/retry`, `sorot gen resume`, or "Continue from the failed step" in the window. It is the
 same version, and every step and shot already finished is kept. It is refused (409) once the plan is
-no longer the approved one the build started from; build again then.
+no longer the approved one the build started from; build again then. An unattended run
+(`sorot gen run --recipe R --idea ID`) that finds its idea's build FAILED or interrupted (the server
+restarted) goes on from that step too (on the plan it was started from) instead of starting a new version.
 
 Cancelling a build stops it between steps and before each shot is asked for. A model call already sent
 finishes first; nothing after it runs, and the version ends CANCELLED.
@@ -231,7 +240,14 @@ Facts are claims with a source page. `verify` checks that the evidence is **on t
 correction is quoted from it, and that a headline alone is "unverifiable". `sourcedNumbers` makes
 TECHNICAL fail any number on screen or in the voice that no verified fact states (digits and
 spelled-out Indonesian or English numbers alike); "No other numbers" on a brief is the same rule
-applied by the brief. Plan and script refuse an unsourced number for a factual recipe.
+applied by the brief. Plan and script refuse an unsourced number for a factual recipe, and name it with its shot and words; a brief
+with "no numbers" holds both to it. Only figures count: digits, a percent, a number spelled ten or above.
+A small spelled count ("two steps") is allowed. A plan or script that holds a forbidden figure goes through the usual one repair call, told which figure.
+
+**Plan slips set right in code** (`planSchema.ts`), instead of failing the plan: shot lengths within 25% of
+the target are scaled to it; a kit part named as a block (or the reverse) is moved to the right list; an
+effect value out of range is clamped; tracking written as a CSS string and GSAP eases with settings
+(`back.out(1.7)`) are read as such.
 
 ## Presets and defaults
 
@@ -256,6 +272,7 @@ Recorded in `specs/001-2d-video-generator/research.md`; they are one machine, on
 | S2 | Render speed, 1080×1920, 30 s light scene, RTX 4060 + Ryzen 5 7500F | 25 s draft, 25 s delivery, 24 s with `--gpu` (about 0.8 s per second of video); CPU Docker 19 s / 17 s. A real 60 s narrated film is still to be measured; plan on 6 to 10 s per second until then. |
 | S3 | Local Indonesian voice; ElevenLabs and Fish fixtures | Not done: needs a listening test and keys. Engine is KittenTTS 2; online engines are the Indonesian route. |
 | S7 (CPU) | Motion blur and Three.js cost, 10 s at 1080×1920, 4-core Xeon, no GPU, draft, 2 workers | 2D movers 1.0 s per second of video, with motion blur 3.5 s; six lit Three.js coins (software WebGL) 2.3 s, with blur 3.6 s. CPU installs keep `maxLevel: free`. The RTX 4060 half is still to be measured. |
+| Bench | 20 briefs on GLM (set A), a small model pinned to `kit` (set B), 2026-11-05 | Not all targets met: 4 of 20 films passed TECHNICAL on the replay (SC-004, aim 80%), 22% of shots had an unexplained object (SC-022, aim under 10%; the Quick recipe has no look step), cache share 89.5% across 16 builds (SC-021, aim above 90%; the story brief 90.8%). Set C and a rerun of set B are open (T150). |
 | S4 | Does the model write one valid scene? | 10 of 10 scenes passed plan-lock, `lint` and `check` (8 first call, 2 after a repair). Writing them took 1,170 s (about 2 min per shot): authoring is the slow step of a build. |
 
 ---

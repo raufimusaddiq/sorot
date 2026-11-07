@@ -35,7 +35,7 @@ The template contains placeholders so nothing personal ships in a recipe:
 - **`MY_VERIFY_COMMAND`**: Settings → Commands: your existing verifier as `name`, command, arguments,
   timeout. It must print `{"success":true,"data":{"findings":[…]}}` (see generate-recipes.md) and accept
   `--project-dir` and `--version-dir`; a thin wrapper that calls your script is fine.
-- **Models**: Settings → LLM (director) and, for `look` and vision judging, a vision-capable model.
+- **Models**: Settings → LLM: the director's model must both reason and see (there is no separate vision model); `look` and the CREATIVE pictures use it.
 
 ## 3. Import and tune
 

@@ -40,6 +40,10 @@ the pipeline falls back to rules and clips are posted by hand. Design:
 - Calls yt-dlp and ffmpeg as subprocess
 - SQLite for all metadata (`src/db.ts` schema + migrations, `src/store.ts` repo)
 - Streams clip previews with HTTP Range support
+- Generate (`src/generate/`, optional): turns a brief into a 2D video. A recipe is a list of steps (facts,
+  script, voice, storylines, plan, build, look, render, verdicts, export) run by `runner.ts` and queued next
+  to clip jobs; a director model decides, always as one forced tool call validated in code; HyperFrames
+  (`generator/`, Node) renders. Needs an LLM; clipping never does. See [generate.md](generate.md).
 
 ### In the backend (Bun)
 - Segmenting, clip scoring (13 weighted signals, tiers, titles; `scoring.ts`,
@@ -88,11 +92,14 @@ What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 - Video preview player
 - Export/download controls
 - Settings (LLM / Jev / Tebar connections) and a Publish panel per clip
+- Generate windows (`components/generate/`): brief form, storylines and plan editor, build panel with the two
+  verdicts, version history, facts, recipes, kit parts, idea bank, and the Generated library
 
 ### CLI (`cli/`)
 - `sorot`: a client of the same HTTP API (import, jobs, clips, download,
   discovery) plus `up/down/logs` for the local install; compiled to one binary
-  with `bun build --compile`. See [cli.md](cli.md), [integration.md](integration.md).
+  with `bun build --compile`. See [cli.md](cli.md), [integration.md](integration.md). `sorot gen` drives
+  Generate (`cli/src/generate.ts`).
 
 ## Deployment
 

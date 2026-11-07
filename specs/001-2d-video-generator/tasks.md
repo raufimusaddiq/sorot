@@ -6,7 +6,7 @@ description: "Task list for the 2D Video Generator (Studio)"
 
 **Input**: Design documents from `specs/001-2d-video-generator/`: [plan.md](plan.md),
 [spec.md](spec.md), [research.md](research.md), [data-model.md](data-model.md),
-[contracts/](contracts/), [quickstart.md](quickstart.md); constitution v2.1.0.
+[contracts/](contracts/), [quickstart.md](quickstart.md); constitution v2.2.0.
 
 **Tests**: required by the constitution's gate (Principle III: 100% pass, ≥ 95% line/func
 coverage, zero type errors). The owner dislikes test bloat, so tests are **not separate tasks**:
@@ -258,7 +258,7 @@ the second; resuming the first by name doesn't move the cursor (quickstart §9).
 - [x] T093 [P] Write `docs/generate.md` (design, step library, recipes, the two rules, verdict rules, measurements from S2/S3/S4, voice compute rule) and update `docs/api-spec.md`, `docs/cli.md` and `docs/data-model.md`
 - [x] T094 [P] Write the guides "Build your own pipeline" and "Porting an agent pipeline", with the placeholder example `docs/examples/recipes/agent-explainer.json`
 - [X] T095 Spike S6 / SC-012: rebuild one video made by an existing agent pipeline as a recipe from `docs/examples/recipes/agent-explainer.json` with local Settings; time the setup (< 30 min, no code) and compare TECHNICAL numbers with that pipeline's own checks; record in `specs/001-2d-video-generator/research.md` (settled 2026-11-05 by the owner's call: the recipe was imported and made runnable on this install in minutes, with no code (a sqlite data source and a custom command registered in Settings), so SC-012's setup half is met; there is no original agent pipeline on this machine to compare TECHNICAL numbers with, so that half is not measured; research.md "Quickstart run on a real server")
-- [ ] T096 Spike S2 (final) and S5: measure delivery renders for a 60 s narrated recipe (SC-013) and the vision look review; record in `specs/001-2d-video-generator/research.md` (S5 done and the CPU half of S2 measured 2026-11-02, see "S2 and S5 on the CPU test install"; open: the RTX 4060 render and a full unattended 60 s narrated run for SC-013)
+- [ ] T096 Spike S2 (final) and S5: measure delivery renders for a 60 s narrated recipe (SC-013) and the vision look review; record in `specs/001-2d-video-generator/research.md` (S5 done and the CPU half of S2 measured 2026-11-02, see "S2 and S5 on the CPU test install"; the 60 s narrated run went unattended from idea to a checked film on the CPU, see research.md "SC-013 (CPU half)"; open: the RTX 4060 render)
 - [x] T097 [P] Add Generate rules to `AGENTS.md` (pointers to `docs/generate.md`, the two rules, the voice compute rule, `generator/` holds no Sorot logic) and a user-facing entry under `## [Unreleased]` in `CHANGELOG.md`
 - [x] T098 [P] Add a journal entry for the feature in `docs/journal/`
 - [x] T099 Extend the CI smoke test to check that the CPU image has Node and HyperFrames but no local-TTS packages, in `.github/workflows/ci.yml`
