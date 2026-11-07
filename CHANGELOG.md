@@ -84,7 +84,7 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
   look at its own draft (three pictures and a stranger's read, including what is too faint to see) and check it
   before it submits. The session keeps its look frames small (360×640) and reuses its last draft, which took one
   story brief from 82.1% to 90.8% of input tokens served from the provider's cache and made it 34% faster.
-- A narration up to 10% longer than the video is sped up to fit instead of failing the run; a plan whose shots
+- A narration that is still up to 10% too long after its rewrites is sped up to fit instead of failing the run; a plan whose shots
   add up to within 25% of the target is scaled, and a kit part listed as a block (or the reverse) is moved to
   the right list. A brief that says "no numbers" rules out figures (digits, percents, spelled numbers from ten),
   not small counts like "two steps".

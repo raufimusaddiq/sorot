@@ -89,7 +89,7 @@ records "looked in the loop" and makes no vision call of its own.
 |---|---|
 | `idea` | takes the recipe's next idea from the idea bank (or a named one) |
 | `facts` | builds or checks the fact list against its sources |
-| `script`, `voice`, `align` | narration lines (the film's length is a word target, not a rule), voice, word timings (engine timestamps or Whisper); a voice up to 10% longer than the film is sped up to fit (ffmpeg `atempo`, any engine; the step records "sped up N×"); one further over (more than 0.5 s) has the script written again, up to twice, told each line's measured seconds. The voice keeps the script's order |
+| `script`, `voice`, `align` | narration lines (the film's length is a word target, not a rule), voice, word timings (engine timestamps or Whisper); a voice more than 0.5 s past the film has the script written again, up to twice, told each line's measured seconds; one still up to 10% too long after that is sped up to fit (ffmpeg `atempo`, any engine; the step records "sped up N×"), and further over fails with the numbers. The voice keeps the script's order |
 | `storylines` | N different films in words (gate: owner / director) |
 | `concept` | names the visual mechanism and checks it against past work |
 | `plan` | the shot-by-shot plan, numeric (hex palette, type, easing, frames) (**required gate**) |

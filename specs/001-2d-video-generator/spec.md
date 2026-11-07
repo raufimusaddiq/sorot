@@ -739,7 +739,8 @@ rate, and the build takes at most twice as long.
 - **SC-021**: On a build's scene and repair calls the provider reports more than 90% of input tokens
   served from its cache (`gen_event.cached_tokens` over `input_tokens`; raised from 75% by the owner,
   2026-11-05: measured 78 to 85% on real builds, where each look's new frames and the turn's own new text
-  are the only uncached input).
+  are the only uncached input. After the 360×640 session frames and draft reuse: 90.8% on the story brief,
+  89.5% over 16 builds, so not yet met across the set; see research.md).
 - **SC-022**: On the story brief with a fast model, the final build has no `look_unexplained`
   must-fix finding (3 on the first build without tools, 2026-11-02), and in the 20-brief set fewer
   than 1 shot in 10 has one.
