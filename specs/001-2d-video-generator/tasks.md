@@ -6,7 +6,7 @@ description: "Task list for the 2D Video Generator (Studio)"
 
 **Input**: Design documents from `specs/001-2d-video-generator/`: [plan.md](plan.md),
 [spec.md](spec.md), [research.md](research.md), [data-model.md](data-model.md),
-[contracts/](contracts/), [quickstart.md](quickstart.md); constitution v2.1.0.
+[contracts/](contracts/), [quickstart.md](quickstart.md); constitution v2.2.0.
 
 **Tests**: required by the constitution's gate (Principle III: 100% pass, ≥ 95% line/func
 coverage, zero type errors). The owner dislikes test bloat, so tests are **not separate tasks**:

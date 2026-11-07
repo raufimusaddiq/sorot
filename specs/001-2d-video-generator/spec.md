@@ -773,7 +773,7 @@ rate, and the build takes at most twice as long.
   must support Indonesian, and the local engine's Indonesian quality is checked during planning.
   CPU-only installs (including the CPU Docker image) don't ship a local voice engine at all, so
   they stay small and fast.
-- **AI-only mode**: Generate is an AI-only mode under constitution Principle IV (v2.1.0): it
+- **AI-only mode**: Generate is an AI-only mode under constitution Principle IV (v2.2.0): it
   requires a configured AI director (FR-016), while clipping keeps its rules fallback and never
   depends on Generate. Generated images and synthetic voice are optional extras that degrade
   gracefully (FR-017, FR-018).
