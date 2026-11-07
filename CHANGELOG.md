@@ -80,6 +80,19 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 - Smooth motion: a new always-on check finds jumps and stalls inside shots; fast shots can get motion
   blur (`render.motionBlur`, auto by default; it costs about 3.4× the render time on a CPU), and the
   judge always asks whether the film looks finished and moves with weight.
+- A shot's look is a short tool loop: the director can search the HyperFrames registry, install a block, and
+  look at its own draft (three pictures and a stranger's read, including what is too faint to see) and check it
+  before it submits. The session keeps its look frames small (360×640) and reuses its last draft, which took one
+  story brief from 82.1% to 90.8% of input tokens served from the provider's cache and made it 34% faster.
+- A narration up to 10% longer than the video is sped up to fit instead of failing the run; a plan whose shots
+  add up to within 25% of the target is scaled, and a kit part listed as a block (or the reverse) is moved to
+  the right list. A brief that says "no numbers" rules out figures (digits, percents, spelled numbers from ten),
+  not small counts like "two steps".
+- Fixes: videos made over the API, CLI or UI now start with narration as the recipe says (it was off for all of
+  them); an unattended run goes on from an interrupted build; the look step asks about three shots a call (a
+  whole film's frames in one request was refused with HTTP 413); `sorot gen show` lists steps and idea titles.
+- Fix: cutting silences and the hook-first replay cut and join the ranges (`trim`/`atrim` and `concat`), because
+  `select`/`aselect` kept the full length under ffmpeg 8.
 
 ## [1.0.0] - 2026-10-29
 

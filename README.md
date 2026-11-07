@@ -29,6 +29,7 @@ AI features default to [Kenari](https://kenari.id) (paste one API key and go), b
 | ✏️ **Fix anything** | Nudge timing, fix a word, change style: re-renders one clip in ~20 s |
 | 🔎 **Finds source videos** | ✨ Auto-discover reads what's trending and picks sources with reasons; plus search and a channel crawler |
 | 📈 **Learns what works** | Views and likes come back (from Tebar, or typed in), after 5+ results the weights re-fit to reality |
+| 🎞️ **Generate** | A second, optional mode: a written brief becomes a finished 2D motion video, with no source footage. A director model plans it (you approve), writes each shot with HyperFrames, and two verdicts (code, then a fresh judge) decide if it ships. Needs an LLM; clipping never does. [docs/generate.md](docs/generate.md) |
 | ⌨️ **Scriptable** | `sorot` CLI + plain HTTP API |
 
 ---
@@ -218,6 +219,7 @@ sorot discover search "podcast indonesia"                         # 🔎 or sear
 sorot connect setup                                               # 🔌 Jev, LLM, Tebar: asks, saves, tests
 sorot publish <clip>                                              # 🚀 pick accounts, check copy, post
 sorot posts <clip> · sorot sync                                   # 📊 post status · numbers into learning
+sorot gen new "a 30 s explainer about …" · sorot gen build <video>  # 🎞️ brief → 2D video (Generate)
 sorot up | down | logs -f | doctor                                # 🛠️ run the app
 ```
 
@@ -353,6 +355,7 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 ```
 ├── backend/        🟨 Bun/TS API, orchestrator, scoring, discovery, UI host (+ Dockerfile)
 ├── ai-pipeline/    🐍 Python media scripts (transcribe, render, reframe, subtitle, …)
+├── generator/      🎞️ Generate's tool bundle: HyperFrames, prompts, fonts, recipes, kit parts
 ├── frontend/       ⚛️ Next.js UI (static export → frontend/out)
 ├── cli/            ⌨️ sorot client
 ├── scripts/        🛠️ install.sh (Linux) · install/start/stop/verify/e2e .ps1 (Windows)
@@ -394,6 +397,7 @@ To ship: 📋 [docs/release.md](docs/release.md): versions, checklist, checking 
 | 🏅 [scoring-spec.md](docs/scoring-spec.md) | Scoring in depth |
 | 🔬 [ai-audit.md](docs/ai-audit.md) | Model vs rule vs LLM |
 | 🎬 [creative-loop.md](docs/creative-loop.md) | Jev director, LLM director, Jev quality gate, Tebar publishing |
+| 🎞️ [generate.md](docs/generate.md) | Generate: briefs to 2D videos; also [recipes](docs/generate-recipes.md), [kit](docs/generate-kit.md), [director loop](docs/director-loop.md), [porting](docs/generate-porting.md) |
 | 🐍 [python-pipeline.md](docs/python-pipeline.md) | Each pipeline script's inputs and outputs |
 | 🚀 [release.md](docs/release.md) · 📰 [CHANGELOG.md](CHANGELOG.md) | Cutting a release · what each one changed |
 

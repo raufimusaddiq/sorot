@@ -86,7 +86,9 @@ were still on their way in, whoever the director was (the same on a hand-drawn f
 Now the step takes three pictures of each shot, at 20%, 55% and 90% of its length, and the stranger answers once
 per shot from all of them: `objects` and `unexplained` are what is on screen in the last picture (something
 only arriving or leaving earlier doesn't count), `matches` is whether the shot reads as meant by then, and
-`heroVisible` whether the move can be seen across the pictures. The director's own `look` tool does the same
+`heroVisible` whether the move can be seen across the pictures. A stranger's read also lists what is `faint`
+(barely lighter or darker than what is behind it); the director's `look` tool is told, the look step
+returns it as a should-fix, and neither saves it as a finding. The director's own `look` tool does the same
 with the times it picks (sorted early to late; it is told to spread them). `beatOffsetSec` is gone.
 
 ## Vision: who looks at what
@@ -143,13 +145,19 @@ looked at; the look step does nothing when every scene is still the one that was
 | `author.looks` | 2 | recipe |
 | `GEN_TURN_TOKENS` | 60000 (5000 to 500000) | env / Settings → LLM |
 | `GEN_CONTEXT_TOKENS` | 600000 (20000 to 2000000) | env / Settings → LLM |
+| Session frame width | 360 px (frames in the conversation only; the look step keeps full frames) | code (`SESSION_FRAME_WIDTH`) |
 
 ## Measuring it
 
 The same story brief on GLM, against the 2026-11-02 builds: the look findings "a stranger can't
 tell what it is" (3 must-fix on the first build), the CREATIVE `finished` answer, the frames side by
-side, build time (`look` costs about a minute each on CPU), tokens and cache reuse (87% on the
-session build), and how often the director used each tool.
+side, build time (`look` costs about a minute each on CPU), tokens and cache reuse, and how often the director
+used each tool. Cache reuse was 87% on the first session build and 82.1% on the story brief with the loop
+on, because about 49,000 of 82,500 uncached tokens were look frames. Shrinking the director's frames to
+360×640 and letting `look` and `check` read the last draft (instead of sending it again) took the same brief
+to 90.8% and made it 34% faster; over 16 builds it was 89.5% (83 to 93% each). The misses left are each
+build's first request and every turn's own new text. The turn's budget is the smaller of `GEN_TURN_TOKENS`
+and what the window has left after the opening.
 
 ## Open questions
 

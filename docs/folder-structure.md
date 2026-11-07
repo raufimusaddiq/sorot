@@ -24,6 +24,11 @@ sorot/
 │   │   ├── youtube.ts · youtubeCaptions.ts · captionAnalysis.ts  # yt-dlp feeds, captions, whole-video scoring
 │   │   ├── discovery.ts · channels.ts · discoveryAgent.ts · webSearch.ts  # candidates, crawler, auto-discover
 │   │   ├── feedback.ts · learning.ts  # posted-clip metrics, viral score, weight re-fitting
+│   │   ├── generate/               # Generate (briefs → 2D videos): service.ts (projects, versions, queue hooks), runner.ts
+│   │   │                           #   (recipe steps), steps/ (one file per step type), director.ts · directorTools.ts ·
+│   │   │                           #   compaction.ts (the model's session, tool loop), kit.ts · kitScene.ts · levels.ts ·
+│   │   │                           #   capabilities.ts, sceneProbe.ts · motion.ts · technical.ts · creative.ts · look.ts
+│   │   │                           #   (the two verdicts), voice.ts · narration.ts, planSchema.ts · facts.ts · numbers.ts
 │   │   └── http.ts                 # Router, JSON envelope, static files
 │   ├── scripts/jev-eval.ts         # `bun run jev-eval`: gate questions vs labelled excerpts (Jev and rules)
 │   ├── tests/                      # bun test (fake scripts, in-memory SQLite, golden fixtures from the Python originals)
@@ -47,8 +52,13 @@ sorot/
 │   │   └── supervised.py            # LightGBM loader
 │   └── tests/                       # pytest (in-process, no GPU needed)
 │
+├── generator/                       # Generate's tool bundle (no Sorot logic): pinned hyperframes, fonts, presets.json,
+│   ├── prompts/                     #   authoring guide, story guide, two worked example scenes
+│   ├── recipes/                     #   shipped pipelines (quick, story, narrated-explainer; read-only)
+│   └── kit/                         #   browser parts (part.json + part.js + example.json) and _runtime.js; Three.js vendored
+│
 ├── cli/                             # sorot command-line client (Bun)
-│   ├── src/                         # main.ts (entry + help), commands.ts, service.ts (up/down/logs/doctor), api.ts,
+│   ├── src/                         # generate.ts (`sorot gen`), main.ts (entry + help), commands.ts, service.ts (up/down/logs/doctor), api.ts,
 │   │                                # args.ts, config.ts (cli.conf lookup), format.ts (tables),
 │   │                                # social.ts (accounts, publish, posts, sync, connect setup), prompt.ts (terminal questions)
 │   └── tests/                       # bun test (fake API, processes, files, stdin and a scripted terminal: helpers.ts)
@@ -82,17 +92,21 @@ sorot/
 │   ├── analytics/                   # Per-video analytics report JSON
 │   ├── edits/                       # Clip-editor timelines and caption fixes
 │   ├── logs/                        # sorot.log of a native Windows install (start.ps1)
+│   ├── generate/                    # Generate projects (one folder each: plan, shots, renders, mirrored files)
+│   ├── kit/                         # Your Generate kit parts (built-in ones stay in generator/kit/)
 │   └── music/                       # Background music tracks
 │
 ├── docs/                            # Design specifications
 │   ├── architecture.md · api-spec.md · data-model.md · folder-structure.md
 │   ├── creative-loop.md             # Jev director, LLM director, quality gate, Tebar
+│   ├── generate.md · generate-recipes.md · generate-kit.md · director-loop.md · generate-porting.md   # Generate
 │   ├── scoring-spec.md · self-learning-scoring.md · discovery-system.md
 │   ├── python-pipeline.md · cli.md · integration.md · linux-install.md · ai-audit.md
 │   ├── release.md                   # Cutting a release, versions, rollback
 │   ├── screenshots/                 # README and release screenshots of the UI
 │   └── journal/                     # Session history and decisions
 │
+├── specs/001-2d-video-generator/    # Spec kit for Generate: spec, plan, research, data model, tasks, contracts
 ├── AGENTS.md                        # Agent instructions (CLAUDE.md imports it)
 ├── README.md                        # Project overview
 ├── CHANGELOG.md                     # What each release changed

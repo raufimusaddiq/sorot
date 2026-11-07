@@ -67,7 +67,7 @@ Briefs to finished 2D videos ([generate.md](generate.md); full flags in
 
 | Command | What it does |
 |---|---|
-| `gen status` | Is Generate available, and what is missing (LLM, voice, vision). |
+| `gen status` | Is Generate available, and what is missing (LLM, Jev, images, voice engines, HyperFrames). |
 | `gen new "<brief>" [--recipe R --facts F --preset P --format F --length S --lang id\|en --style "…" --narration\|--no-narration --no-numbers --no-stop --no-wait]` | Create a video; prints the storylines or the plan. |
 | `gen list`, `gen show <p>`, `gen plan <p>`, `gen files <p> [name]` | Videos, one video's state, its plan as a shot table, its mirrored files. |
 | `gen retry <p>` | After a failure before the build: the failed step runs again; finished steps are kept. |
