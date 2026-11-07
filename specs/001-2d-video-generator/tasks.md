@@ -621,3 +621,50 @@ Ship Phase 20 first with `check` and the registry tools: it needs no new renderi
 lets the director find a character or a chart. Then the stranger's look (21), which is what fixes
 unnameable drawings, then compaction (22) once looks add images to the session, then measure (23)
 against the 2026-11-02 builds.
+
+---
+
+## Traceability: requirements the task lines do not name
+
+Most task lines name the requirement they build (`FR-0xx`). These requirements are built under a user
+story without being named, so this table links each to the tasks that build or measure it (checked
+against the task text on 2026-11-07). A requirement with no task is said so.
+
+| Requirement | Tasks | Note |
+|---|---|---|
+| FR-001 start from a brief, format, length, language | T027, T030, T031, T033 | |
+| FR-002 attach assets | T028, T031 | |
+| FR-003 storyline options | T024, T025 | |
+| FR-005 edit the plan directly or in plain words | T024, T026, T030, T032, T033 | |
+| FR-008 build a draft from the approved plan | T034, T036, T039 | |
+| FR-010 watch the draft before export | T039, T045, T046 | |
+| FR-011 two verdicts with ranked findings | T040, T042, T046 | |
+| FR-015 fix rounds, versions restorable | T049 to T053 | |
+| FR-017 visuals from anything drawable, uploads, generated images | T028, T075, T123 | |
+| FR-019 exports in the library, publishable | T054 to T059 | |
+| FR-020 title and description per export | T054, T057, T059 | |
+| FR-021 web UI and command line | T021, T022, T031 to T033 | |
+| FR-022 recipes from the step library | T014, T060 to T062 | |
+| FR-023 per-step settings, gates, dependencies | T014, T015, T016, T060, T061 | |
+| FR-025 recipe unavailable when the install lacks something | T019, T060 | |
+| FR-026 facts with sources, verify | T081, T083, T084 | |
+| FR-027 sourced numbers | T079, T082 | |
+| FR-030 novelty of the visual concept | T073, T089 | |
+| FR-032 verdicts on the final render, output rules | T040, T054 | The recipe-level switch is described in `contracts/recipe.md`, with no task line of its own |
+| FR-033 blocking content rules count toward TECHNICAL | T040, T042 | Same: the routing is in `contracts/recipe.md` and `director.md` |
+| FR-034 idea bank, unattended runs | T088 to T092, T185 | |
+| FR-035 the two working rules in every recipe | T014, T060 | |
+| FR-036 registered check commands | T077 | |
+| FR-037 shipped example recipes | T017, T018, T078 | |
+| SC-001 brief to approved plan under 5 min | T100 | Measured only in the quickstart run |
+| SC-002 30 s draft within 10 min | T008, T096 | CPU half measured, RTX 4060 half open |
+| SC-003 no export while TECHNICAL is FAIL | T045, T054 | |
+| SC-004 80% of 20 briefs PASS | T172 | Measured on set A, not met (research.md) |
+| SC-005 70% accepted within three versions | none | Needs the owner's judgement; no task measures it |
+| SC-006 on-screen text readable on a phone | T040 | `readability` and `layout` measures |
+| SC-007 identical rebuild of the same plan | none | No task checks it; the kit parts are held to it (T126), the whole build is not |
+| SC-008 one published video a week | none | A use outcome, not buildable work |
+| SC-009 every number traces to a verified fact | T079, T082 | |
+| SC-010 exports meet the recipe's output rules | T040, T070 | |
+| SC-011 recipe changes take effect without a restart | T060, T061 | |
+| SC-014 recipe export and import between installs | T062, T060 | |
