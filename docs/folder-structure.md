@@ -29,6 +29,9 @@ sorot/
 │   │   │                           #   compaction.ts (the model's session, tool loop), kit.ts · kitScene.ts · levels.ts ·
 │   │   │                           #   capabilities.ts, sceneProbe.ts · motion.ts · technical.ts · creative.ts · look.ts
 │   │   │                           #   (the two verdicts), voice.ts · narration.ts, planSchema.ts · facts.ts · numbers.ts
+│   │   │                           #   events.ts (local director log), findings.ts · fixes.ts (findings, fix rounds), images.ts,
+│   │   │                           #   numbers.ts (numbers as a viewer reads them), planContext.ts, presets.ts · recipes.ts,
+│   │   │                           #   transitions.ts (seams), views.ts (API shapes), voice.ts (voice.json), zip.ts (kit .zip)
 │   │   └── http.ts                 # Router, JSON envelope, static files
 │   ├── scripts/jev-eval.ts         # `bun run jev-eval`: gate questions vs labelled excerpts (Jev and rules)
 │   ├── tests/                      # bun test (fake scripts, in-memory SQLite, golden fixtures from the Python originals)
