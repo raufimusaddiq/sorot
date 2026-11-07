@@ -48,14 +48,14 @@ Captions and ranking are the landing page's live demo.
 
 ### 🎞️ Generate: two films made from a written brief
 
-![Four frames each from two generated films: a jamu seller in Yogyakarta at dawn, and an isometric coin-and-house film about compound interest](docs/screenshots/generate-samples.png)
+![Four frames each from two generated films: a jamu seller in Yogyakarta at dawn, and why a steel ship floats while a nail sinks](docs/screenshots/generate-samples.png)
 
 ![A generated film, 14 s of a 30 s story about a jamu seller in Yogyakarta](docs/screenshots/generate-sample.gif)
 
-Full films (9:16, silent here): [the Yogya story, 30 s](docs/screenshots/generate-sample-story.mp4) · [the isometric savings film, 20 s](docs/screenshots/generate-sample-iso.mp4).
-They are drafts from real runs (the story by GLM, the isometric film by Kimi), shrunk to 540×960. They were
-not picked for passing every check: see [docs/generate.md](docs/generate.md) for what the two verdicts found
-and what the bench measured.
+Full films (9:16, silent here): [the Yogya story, 30 s](docs/screenshots/generate-sample-story.mp4) · [why a ship floats, 30 s](docs/screenshots/generate-sample-ship.mp4).
+They are drafts from real runs, shrunk to 540×960, and were not picked for passing every check; they can
+have small flaws. See [docs/generate.md](docs/generate.md) for what the two verdicts found and what the
+bench measured.
 
 ---
 
