@@ -336,7 +336,7 @@ fn mini<H: Host>(dark: bool, key: String, shown: &str, label: &str, active: bool
     let p = pal(dark);
     let (fill, ink) = match (active, enabled) {
         (_, false) => (p.surface, p.muted),
-        (true, true) => (p.beam, p.bg),
+        (true, true) => (p.beam, p.on_beam),
         (false, true) => (p.raised, p.text),
     };
     let b = col().key(key).role("button").label(label).px(10.0).py(8.0).radius(6.0).fill(fill).border(1.0, p.divider).child(text(shown).font(type_::LABEL).color(ink));

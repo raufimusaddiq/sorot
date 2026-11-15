@@ -3,6 +3,7 @@
 use rune::tok::type_;
 use rune::{El, Tx, col, row, text};
 
+use sorot_desktop_core::prefs::Theme;
 use crate::app::{Conn, Screen, State};
 use crate::i18n::tr;
 use crate::screens::panels::{Host, Page};
@@ -10,7 +11,7 @@ use crate::ui::kit::{button, pal};
 
 /// Shown while the engine is lost or failed; `None` when the connection is fine.
 pub fn banner(s: &State) -> Option<El> {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let words = match &s.conn {
         Conn::Lost => "Lost the connection to the engine. Sorot is reconnecting; running jobs keep their state.",
         Conn::Failed(_) => "The engine is not running. Restart it, or export a report for support.",
@@ -19,8 +20,8 @@ pub fn banner(s: &State) -> Option<El> {
     Some(
         row().key("shell/banner").role("alert").label(words).gap(12.0).padding(12.0).items_center().w_full().fill(p.raised).border(1.0, p.skip)
             .child(text(words).key("shell/banner/text").font(type_::BODY).color(p.text).wrap().grow(1.0))
-            .child(button(s.dark, "engine/restart", "Restart engine", true, |s: &mut State| s.restart_engine()))
-            .child(button(s.dark, "shell/export-diagnostic", "Export diagnostic report", false, |s: &mut State| s.export_diagnostic())),
+            .child(button(s.dark(), "engine/restart", "Restart engine", true, |s: &mut State| s.restart_engine()))
+            .child(button(s.dark(), "shell/export-diagnostic", "Export diagnostic report", false, |s: &mut State| s.export_diagnostic())),
     )
 }
 
@@ -29,12 +30,12 @@ pub fn gpu_notice(s: &State) -> Option<El> {
     if !s.gpu_notice {
         return None;
     }
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let words = tr(s.lang, "gpu.notice");
     Some(
         row().key("shell/gpu-notice").role("status").label(words.clone()).gap(12.0).padding(12.0).items_center().w_full().fill(p.raised).border(1.0, p.divider)
             .child(text(words).key("shell/gpu-notice/text").font(type_::BODY).color(p.text).wrap().grow(1.0))
-            .child(button(s.dark, "shell/gpu-notice/dismiss", &tr(s.lang, "gpu.dismiss"), false, |s: &mut State| s.dismiss_gpu_notice())),
+            .child(button(s.dark(), "shell/gpu-notice/dismiss", &tr(s.lang, "gpu.dismiss"), false, |s: &mut State| s.dismiss_gpu_notice())),
     )
 }
 
@@ -86,7 +87,7 @@ pub fn menu_items(menu: Menu) -> Vec<(&'static str, &'static str, Act)> {
             ("discover", "shell.discover", |s, _| s.show(Page::Discover)),
             ("learning", "shell.learning", |s, _| s.show(Page::Learning)),
             ("settings", "shell.settings", |s, _| s.show(Page::Connections)),
-            ("theme", "menu.theme", |s, _| s.dark = !s.dark),
+            ("theme", "menu.theme", |s, _| s.theme = if s.dark() { Theme::Light } else { Theme::Dark }),
         ],
         Menu::Window => vec![("hide", "menu.hide", |s, _| s.hide_window())],
         Menu::Help => vec![("diagnostic", "menu.diagnostic", |s, _| s.export_diagnostic()), ("restart", "menu.restart", |s, _| s.restart_engine())],
@@ -95,7 +96,7 @@ pub fn menu_items(menu: Menu) -> Vec<(&'static str, &'static str, Act)> {
 
 /// The bar across the top: five menus, and the open one's list under it.
 pub fn menu_bar(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let mut bar = row().key("shell/menubar").role("menubar").label("Sorot").gap(4.0).padding(4.0).items_center().w_full().h(32.0).fill(p.bg);
     for m in Menu::ALL {
         let open = s.menu_open == Some(m);
@@ -112,7 +113,7 @@ pub fn menu_bar(s: &State) -> El {
 /// The open menu's list, under the bar; pressing an item runs it and closes the list.
 pub fn menu_list(s: &State) -> Option<El> {
     let m = s.menu_open?;
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let mut list = col().key("shell/menu-list").role("menu").label(tr(s.lang, &format!("menu.{}", m.id()))).gap(2.0).padding(6.0).w(280.0).fill(p.raised).border(1.0, p.divider).radius(8.0);
     for (key, words, act) in menu_items(m) {
         let label = tr(s.lang, words);
@@ -128,7 +129,7 @@ pub fn menu_list(s: &State) -> Option<El> {
 }
 
 fn rail_item(s: &State, key: &str, words: &str, active: bool, on_press: impl Fn(&mut State) + 'static) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let label = tr(s.lang, words);
     col().key(key).role("button").label(label.clone()).focusable(true).px(4.0).py(10.0).radius(8.0).w_full().items_center()
         .fill(if active { p.raised } else { p.surface }).hover(p.text.alpha(0.08)).on_press(on_press)
@@ -152,7 +153,7 @@ fn logo(_: &State) -> El {
 
 /// The rail holds only screens that exist, the same ones the View menu lists.
 pub fn with_rail(s: &State, content: El) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let screen = s.screen();
     let on = |a: &[Screen]| a.contains(&screen);
     let mut rail = col().key("shell/rail").role("navigation").label("Sorot").w(64.0).gap(4.0).px(4.0).py(12.0).items_center().fill(p.surface)
@@ -171,15 +172,15 @@ pub fn with_rail(s: &State, content: El) -> El {
 
 /// "Close Sorot?" while jobs run: keep running, wait, or cancel and quit.
 pub fn close_dialog(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let n = s.running_jobs();
     let mut actions = col().gap(8.0);
     if s.background_ok {
-        actions = actions.child(button(s.dark, "close/background", "Keep running in the background", true, |s: &mut State| s.answer_close(CloseAnswer::Background)));
+        actions = actions.child(button(s.dark(), "close/background", "Keep running in the background", true, |s: &mut State| s.answer_close(CloseAnswer::Background)));
     }
     actions = actions
-        .child(button(s.dark, "close/wait", "Wait for the jobs, then close", !s.background_ok, |s: &mut State| s.answer_close(CloseAnswer::Wait)))
-        .child(button(s.dark, "close/cancel-quit", "Cancel the jobs and quit", false, |s: &mut State| s.answer_close(CloseAnswer::CancelAndQuit)));
+        .child(button(s.dark(), "close/wait", "Wait for the jobs, then close", !s.background_ok, |s: &mut State| s.answer_close(CloseAnswer::Wait)))
+        .child(button(s.dark(), "close/cancel-quit", "Cancel the jobs and quit", false, |s: &mut State| s.answer_close(CloseAnswer::CancelAndQuit)));
     let label = format!("Close Sorot? {n} job(s) are still running.");
     col().key("close/dialog").role("alertdialog").label(label).gap(16.0).padding(24.0).max_w(460.0).fill(p.raised).border(1.0, p.divider).radius(10.0)
         .child(text("Close Sorot?").role("heading").level(1).font(type_::TITLE).color(p.text))

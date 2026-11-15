@@ -12,7 +12,7 @@ pub fn btn<H: 'static>(dark: bool, key: impl Into<String>, label: &str, primary:
     let p = pal(dark);
     let (fill, ink) = match (primary, enabled) {
         (_, false) => (p.surface, p.muted),
-        (true, true) => (p.beam, p.bg),
+        (true, true) => (p.beam, p.on_beam),
         (false, true) => (p.raised, p.text),
     };
     let b = col().key(key.into()).role("button").label(label).padding(10.0).radius(6.0).fill(fill).border(1.0, p.divider)
@@ -64,7 +64,7 @@ pub fn toggle<H: 'static>(dark: bool, l: Lang, key: &str, label: &str, on: bool,
 /// One of several choices (role `radio`).
 pub fn choice<H: 'static>(dark: bool, key: &str, label: &str, chosen: bool, f: impl Fn(&mut H) + 'static) -> El {
     let p = pal(dark);
-    let (fill, ink) = if chosen { (p.beam, p.bg) } else { (p.raised, p.text) };
+    let (fill, ink) = if chosen { (p.beam, p.on_beam) } else { (p.raised, p.text) };
     col().key(key).role("radio").label(label).checked(chosen).focusable(true).padding(8.0).radius(6.0).fill(fill).border(1.0, p.divider)
         .on_press(f).child(text(label).font(type_::LABEL).color(ink))
 }
