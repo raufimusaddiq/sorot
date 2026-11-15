@@ -90,7 +90,7 @@ app sends only the clip layer it changed.
 
 ### Connection (Jev, LLM, Tebar)
 
-`{ kind, configured, healthy, maskedKey, model?, profiles? }`, from `/api/settings`. Keys are
+the `/api/settings` view as the engine returns it (`desktop/core/src/model.rs` mirrors the real shape: active, enabled, masked apiKey, model, profiles); the code is the source of truth. Keys are
 written through the API and never held after the request (constitution IV).
 
 ### Toast and Notification
