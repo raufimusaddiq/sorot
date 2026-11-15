@@ -66,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14, ubuntu-24.04]
+        os: [windows-latest, macos-15, ubuntu-24.04]
     defaults:
       run:
         working-directory: desktop
@@ -89,6 +89,7 @@ jobs:
       - name: Tests and coverage (95% lines and functions, shims in coverage-exclude.txt)
         env:
           SOROT_HEADLESS_DEADLINE_SECS: "180"
+          SOROT_HEADLESS_TRACE: "1"
         run: cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95 --ignore-filename-regex "$(sh scripts/cov-ignore.sh)"
       - name: Kani proofs (desktop/core)
         if: runner.os == 'Linux'

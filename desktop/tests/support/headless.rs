@@ -69,13 +69,36 @@ fn finish(mut cmd: Command) -> std::process::Output {
             break s;
         }
         if std::time::Instant::now() > deadline {
-            let _ = child.kill();
+            kill_tree(&mut child);
             let _ = child.wait();
-            panic!("the headless binary did not exit in {} s: {}", deadline_secs(), String::from_utf8_lossy(&e.join().unwrap()));
+            let tail = |b: Vec<u8>| {
+                let t: Vec<char> = String::from_utf8_lossy(&b).chars().collect();
+                t[t.len().saturating_sub(4000)..].iter().collect::<String>()
+            };
+            panic!(
+                "the headless binary did not exit in {} s
+command: {cmd:?}
+--- stdout (tail) ---
+{}
+--- stderr (tail) ---
+{}",
+                deadline_secs(),
+                tail(o.join().unwrap()),
+                tail(e.join().unwrap())
+            );
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
     std::process::Output { status, stdout: o.join().unwrap(), stderr: e.join().unwrap() }
+}
+
+/// Kills the binary and anything it started (Windows: `taskkill /T`), so no pipe stays open. On a timeout the panic shows both tails; set
+/// `SOROT_HEADLESS_TRACE` to run scripts with `--realtime`, which prints each mark passed.
+fn kill_tree(child: &mut std::process::Child) {
+    if cfg!(windows) {
+        let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &child.id().to_string()]).output();
+    }
+    let _ = child.kill();
 }
 
 fn binary() -> Command {
@@ -110,6 +133,10 @@ pub fn run_at(scene: &str, script: Option<&str>, mark: &str, args: &[&str], env:
     cmd.args(["--scene", scene, "--tree"]).arg(&tree);
     if let Some(name) = script {
         cmd.arg("--script").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"))).args(["--at", &format!("mark:{mark}")]);
+    }
+    if script.is_some() && std::env::var_os("SOROT_HEADLESS_TRACE").is_some() {
+        // the binary prints `rune-mark NAME T` as the script passes each mark: a timeout shows the last one
+        cmd.arg("--realtime");
     }
     let out = finish({ cmd.args(args); cmd });
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
