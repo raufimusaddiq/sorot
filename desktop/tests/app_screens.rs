@@ -1,6 +1,5 @@
 //! L2: the app's screens on Rune's headless `Runtime`, against `FakeEngine`.
 
-mod support;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,7 +11,7 @@ use sorot_desktop::engine::{Engine, EngineError};
 use sorot_desktop_core::handshake::Ready;
 use sorot_desktop_core::model::Job;
 use sorot_desktop_core::toast::ToastKind;
-use support::*;
+use crate::support::*;
 
 fn has(rt: &Runtime<State>, key: &str) -> bool {
     rt.find(key).is_some()

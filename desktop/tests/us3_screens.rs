@@ -1,12 +1,11 @@
 //! L2 for User Story 3: the no-GPU path and the beam's light, in process against fakes.
 
-mod support;
 
 use std::sync::Arc;
 
 use sorot_desktop::app::Msg;
 use sorot_desktop::ui::fx_moments::{Look, Moment, Placed, layers};
-use support::*;
+use crate::support::*;
 
 fn layers_drawn(rt: &rune::Runtime<sorot_desktop::app::State>, t: f32, look: Look) -> usize {
     slots(rt).into_iter().map(|(moment, data)| layers(Placed { moment, data, rect: rune_fx::Rect::new(0.0, 0.0, 24.0, 24.0), scale: 1.0 }, t, look).len()).sum()
