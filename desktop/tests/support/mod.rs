@@ -93,6 +93,8 @@ pub fn live_of(sup: sorot_desktop::app::Supervisor) -> sorot_desktop::app::Live 
         notifier: std::sync::Arc::new(RecordNotifier::default()),
         preview: || Box::new(sorot_desktop::preview::NullPreview::default()),
         gpu: std::sync::Arc::new(FakeGpu(false)),
+        taskbar: std::sync::Arc::new(sorot_desktop::session::NoTaskbar),
+        view: Default::default(),
     }
 }
 

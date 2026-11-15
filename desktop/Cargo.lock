@@ -3595,6 +3595,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rune-mac"
+version = "0.0.1"
+source = "git+https://github.com/anomalyco/rune?rev=73b7dec296e6c1284ebdf8af53f544444611c0ae#73b7dec296e6c1284ebdf8af53f544444611c0ae"
+dependencies = [
+ "objc2 0.5.3",
+ "rune-notify",
+]
+
+[[package]]
 name = "rune-motion"
 version = "0.1.0"
 source = "git+https://github.com/anomalyco/rune?rev=73b7dec296e6c1284ebdf8af53f544444611c0ae#73b7dec296e6c1284ebdf8af53f544444611c0ae"
@@ -4020,12 +4029,16 @@ dependencies = [
  "libc",
  "minisign-verify",
  "notify-rust",
+ "objc2 0.5.3",
+ "objc2-foundation 0.2.2",
  "png 0.18.1",
+ "raw-window-handle",
  "rfd",
  "rune",
  "rune-fx",
  "rune-i18n",
  "rune-kit",
+ "rune-mac",
  "rune-motion",
  "rune-notify",
  "serde",
@@ -4035,6 +4048,7 @@ dependencies = [
  "tiny_http",
  "ureq",
  "wgpu",
+ "windows 0.62.2",
  "windows-sys 0.61.2",
 ]
 
