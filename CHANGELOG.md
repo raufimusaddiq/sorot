@@ -6,6 +6,12 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
 
 ## [Unreleased]
 
+### Engine ready for a desktop app
+- The engine can bind to loopback (`SERVER_HOST`), take a random port (`SERVER_PORT=0`), require a
+  Bearer token (`SOROT_TOKEN`; `sorot --token` sends it), print a `SOROT_READY` line, stop when its
+  parent's stdin closes and, as sole owner of the data folder, fail leftover jobs as `interrupted`.
+  Clip and Generate export responses carry the absolute `exportPath`. Docker and the CLI behave as before.
+
 ### Native desktop app (planned)
 - A native desktop app for Windows, macOS and Linux (Rust on Rune) is being built to replace the web UI. It talks to
   the engine only over its HTTP API, so it can drive a local or a remote engine, and the engine will require a

@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { resolve } from "node:path";
 import type { AppConfig } from "./config";
 import { CHANNEL_STATUSES, ChannelCrawler, channelToMap } from "./channels";
 import { openDatabase } from "./db";
@@ -51,6 +52,9 @@ const intArg = (body: Body, key: string, fallback: number): number => {
   if (typeof v === "string" && /^-?\d+$/.test(v.trim())) return Number.parseInt(v, 10);
   return fallback;
 };
+
+/** The file's absolute path on the engine's machine (the desktop app's "Show in folder"). */
+const withExportPath = <T extends { path: string }>(e: T) => ({ ...e, exportPath: resolve(e.path) });
 
 export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const db = deps.db ?? openDatabase(config.dbPath);
@@ -191,7 +195,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     const ids = (await c.body()).clipIds;
     if (!Array.isArray(ids) || ids.length === 0) return fail(400, "clipIds required");
     try {
-      return ok({ exported: clips.exportClips(ids.map(String)) });
+      return ok({ exported: clips.exportClips(ids.map(String)).map((x) => ({ ...x, exportPath: resolve(x.exportPath as string) })) });
     } catch (e) {
       return fail(500, (e as Error).message);
     }
@@ -491,10 +495,10 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     ok({ project: projectView(generate.approveStep(c.params.id as string, c.params.stepId as string)) }));
   router.on("POST", "/api/generate/versions/:id/export", async (c) => {
     const b = await c.body();
-    return ok({ export: await generate.exportVersion(c.params.id as string, { title: strArg(b, "title") || undefined, description: strArg(b, "description") || undefined }) }, 201);
+    return ok({ export: withExportPath(await generate.exportVersion(c.params.id as string, { title: strArg(b, "title") || undefined, description: strArg(b, "description") || undefined })) }, 201);
   });
   router.on("GET", "/api/generate/exports", () => ok({
-    exports: generate.listExports(),
+    exports: generate.listExports().map(withExportPath),
   }));
   router.on("GET", "/api/generate/exports/:id/file", (c) =>
     serveFile(c.req, generate.exportFile(c.params.id as string), c.url.searchParams.get("download") === "1" ? { contentType: "application/octet-stream", attachment: true } : { contentType: "video/mp4" }));
@@ -522,6 +526,9 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     const cors = corsHeaders(req, allowedOrigins);
     if (url.pathname.startsWith("/api/")) {
       if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+      if (config.token && req.headers.get("authorization") !== `Bearer ${config.token}`) {
+        return withHeaders(fail(401, "unauthorized"), cors);
+      }
       const res = (await router.handle(req, url)) ?? fail(404, `No route for ${req.method} ${url.pathname}`);
       return withHeaders(res, cors);
     }

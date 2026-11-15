@@ -587,6 +587,16 @@ describe("orphan sweep", () => {
     expect(env.app.jobs.sweepOrphans(1, "periodic")).toBe(1);
   });
 
+  test("a sole owner's startup sweep fails every orphan as interrupted, however fresh", () => {
+    const m = makeEnv({ soleOwner: true });
+    const t = new Date().toISOString();
+    m.app.store.saveJob({ id: "fresh", videoId: "v", status: "RUNNING", currentStage: null, errorMessage: null, createdAt: t, updatedAt: t });
+    m.app.jobs.startMaintenance();
+    expect(m.app.store.getJob("fresh")).toMatchObject({ status: "FAILED" });
+    expect(m.app.store.getJob("fresh")!.errorMessage).toContain("(interrupted)");
+    m.cleanup();
+  });
+
   test("live pipelines are never swept", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });

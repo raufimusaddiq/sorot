@@ -107,6 +107,7 @@ describe("loadConfig", () => {
       dataDir: "data", dbPath: "data/sorot.db", whisperModel: "large-v3-turbo", whisperDevice: "cuda",
       whisperLanguage: "id", maxConcurrentPipelines: 2, maxRenderClips: 0, queueCapacity: 50, staticDir: "../frontend/out",
       subtitleStyle: "default", silenceTrim: false, silenceGapSec: 0.6, reframeMode: "face",
+      serverHost: "0.0.0.0", token: "", parentPipe: false, soleOwner: false,
     });
   });
 
@@ -127,6 +128,17 @@ describe("loadConfig", () => {
     expect(loadConfig({ HOOK_FIRST: "1", YOUTUBE_CAPTIONS: "true", YOUTUBE_AUTO_CAPTIONS: "on", BGM_FILE: " lofi.mp3 ", BGM_VOLUME: "0.3" }))
       .toMatchObject({ hookFirst: true, youtubeCaptions: true, allowAutoCaptions: true, bgmFile: "lofi.mp3", bgmVolume: 0.3 });
     expect(loadConfig({ BGM_VOLUME: "7" }).bgmVolume).toBe(0.12);
+  });
+
+  test.each([
+    ["SERVER_HOST", "127.0.0.1", "serverHost", "127.0.0.1"],
+    ["SOROT_TOKEN", "abc", "token", "abc"],
+    ["SOROT_PARENT_PIPE", "1", "parentPipe", true],
+    ["SOROT_SOLE_OWNER", "1", "soleOwner", true],
+    ["SERVER_PORT", "0", "port", 0],
+    ["STATIC_DIR", "", "staticDir", ""],
+  ])("desktop engine launch: %s", (name, value, key, expected) => {
+    expect(loadConfig({ [name]: value })).toMatchObject({ [key]: expected });
   });
 
   test("env overrides; empty strings fall back; bad ints fall back", () => {

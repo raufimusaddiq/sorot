@@ -27,6 +27,11 @@ SOROT_SERVICE=sorot       # systemd unit (native)
 `SOROT_URL` in the environment, or `--url`, overrides the URL, e.g. to drive
 the app on another machine (`up/down/logs` still act on the local install).
 
+An engine started with a token (the desktop app does this, `SOROT_TOKEN` on the
+engine) answers 401 without it: pass `--token TOKEN` or set `SOROT_TOKEN`, and
+every request carries `Authorization: Bearer TOKEN`. Without a token on the
+server, nothing changes.
+
 ## Commands
 
 | Command | What it does |

@@ -133,7 +133,7 @@ export class JobService {
         console.warn(`Could not parse updatedAt for job ${job.id}: ${job.updatedAt}`);
         continue;
       }
-      if (updated < cutoff) {
+      if (updated <= cutoff) {
         this.store.updateJob(job.id, {
           status: "FAILED",
           errorMessage: `Orphan job recovered (${reason}); last heartbeat ${job.updatedAt}`,
@@ -145,9 +145,9 @@ export class JobService {
     return recovered;
   }
 
-  /** Startup sweep (30 min cutoff) plus a periodic live sweep (10 min). */
+  /** Startup sweep (30 min cutoff; a sole owner of the data folder has no live job, so cutoff 0) plus a periodic live sweep (10 min). */
   startMaintenance() {
-    const n = this.sweepOrphans(30, "startup");
+    const n = this.config.soleOwner ? this.sweepOrphans(0, "interrupted") : this.sweepOrphans(30, "startup");
     if (n > 0) console.info(`Recovered ${n} orphan jobs on startup`);
     const periodic = () => {
       const m = this.sweepOrphans(10, "periodic");

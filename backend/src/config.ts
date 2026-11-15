@@ -1,6 +1,14 @@
 import { existsSync } from "node:fs";
 export interface AppConfig {
   port: number;
+  /** Interface to bind (SERVER_HOST); the desktop app sets 127.0.0.1. */
+  serverHost: string;
+  /** With a token (SOROT_TOKEN), every /api/* request needs `Authorization: Bearer <token>`; "" = open. */
+  token: string;
+  /** The engine stops when stdin closes (SOROT_PARENT_PIPE): its parent app is gone. */
+  parentPipe: boolean;
+  /** Nothing else shares the data folder (SOROT_SOLE_OWNER): the startup sweep fails every RUNNING job as interrupted. */
+  soleOwner: boolean;
   pythonPath: string;
   pipelineDir: string;
   ffmpegPath: string;
@@ -152,6 +160,10 @@ export function loadConfig(env: Env = process.env): AppConfig {
   const cpu = (env.WHISPER_DEVICE || "cuda") === "cpu";
   return {
     port: int(env.SERVER_PORT, 8080),
+    serverHost: env.SERVER_HOST || "0.0.0.0",
+    token: env.SOROT_TOKEN || "",
+    parentPipe: bool(env.SOROT_PARENT_PIPE),
+    soleOwner: bool(env.SOROT_SOLE_OWNER),
     pythonPath: env.PYTHON_PATH || "python3",
     pipelineDir: env.PIPELINE_DIR || "ai-pipeline",
     ffmpegPath: env.FFMPEG_PATH || "ffmpeg",

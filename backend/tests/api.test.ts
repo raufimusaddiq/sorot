@@ -3,14 +3,16 @@
 // DiscoveryControllerIT, HealthControllerIT); the rest cover the endpoints
 // those suites never reached.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { analyzeCaptions, parseVttLines, predictScore } from "../src/captionAnalysis";
 import { CATEGORY_SEED_QUERIES } from "../src/channels";
 import { viralScore } from "../src/learning";
 import { DEFAULT_WEIGHTS } from "../src/ruleConstants";
 import { FEATURE_ORDER } from "../src/scoring";
 import { TRENDING_HASHTAGS, TRENDING_NICHE_QUERIES } from "../src/youtube";
+import { startServer } from "../src/index";
 import { argAfter, defaultExec, FAKE_VTT, makeEnv, procOk, ytLines, type TestEnv } from "./helpers";
 
 let env: TestEnv;
@@ -34,6 +36,39 @@ function seedClip(id: string, fields: Record<string, unknown> = {}) {
     exportStatus: "PENDING", exportPath: null, createdAt: new Date().toISOString(), ...fields,
   });
 }
+
+describe("bearer token", () => {
+  test.each([
+    ["no header", "tok", undefined, 401],
+    ["wrong token", "tok", "Bearer nope", 401],
+    ["right token", "tok", "Bearer tok", 200],
+    ["token unset", "", undefined, 200],
+  ])("%s", async (_name, token, auth, status) => {
+    const m = makeEnv({ token });
+    const r = await m.req("GET", "/api/health", undefined, auth ? { authorization: auth } : {});
+    expect(r.status).toBe(status);
+    if (status === 401) expect(await r.json()).toEqual({ status: "error", error: "unauthorized" });
+    m.cleanup();
+  });
+});
+
+describe("startServer", () => {
+  test("prints one SOROT_READY line on the chosen port; closing stdin runs the shutdown", async () => {
+    const lines: string[] = [];
+    const exits: number[] = [];
+    const stdin = new EventEmitter();
+    const { server } = startServer(
+      { ...env.config, port: 0, serverHost: "127.0.0.1", parentPipe: true },
+      { print: (l) => lines.push(l), stdin, exit: (c) => exits.push(c) },
+    );
+    expect(lines).toEqual([`SOROT_READY {"port":${server.port},"version":"1.0.0","api":1}`]);
+    expect(server.hostname).toBe("127.0.0.1");
+    stdin.emit("end");
+    stdin.emit("close");
+    await Bun.sleep(20);
+    expect(exits).toEqual([0]);
+  });
+});
 
 describe("health (HealthControllerIT)", () => {
   test("GET /api/health", async () => {
@@ -221,7 +256,7 @@ describe("clips (ClipControllerIT)", () => {
     const r = await env.json("POST", "/api/clips/export", { clipIds: ["c1", "c2"] });
     expect(r.body.data.exported).toHaveLength(1);
     const exportPath = `${env.config.dataDir}/exports/c1_final.mp4`;
-    expect(r.body.data.exported[0].exportPath).toBe(exportPath);
+    expect(r.body.data.exported[0].exportPath).toBe(resolve(exportPath));
     expect(await Bun.file(exportPath).text()).toBe("render");
     // second export copies from the export itself (no self-copy crash)
     expect((await env.json("POST", "/api/clips/export", { clipIds: ["c1"] })).status).toBe(200);

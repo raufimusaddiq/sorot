@@ -84,7 +84,7 @@ App
   logs [-f]                     app logs
   health | doctor               is it up? / check the whole install
 
-Global: --json (raw output), --url URL (or $SOROT_URL), --help, --version
+Global: --json (raw output), --url URL (or $SOROT_URL), --token TOKEN (or $SOROT_TOKEN), --help, --version
 `;
 
 export async function main(argv: string[], deps: Omit<Deps, "api"> & { fetchFn?: typeof fetch }): Promise<number> {
@@ -100,7 +100,8 @@ export async function main(argv: string[], deps: Omit<Deps, "api"> & { fetchFn?:
       return cmd || args.flags.help ? 0 : 2;
     }
     const url = typeof args.flags.url === "string" ? args.flags.url.replace(/\/+$/, "") : deps.config.url;
-    const d: Deps = { ...deps, config: { ...deps.config, url }, api: new Api(url, deps.fetchFn) };
+    const token = typeof args.flags.token === "string" ? args.flags.token : deps.config.token;
+    const d: Deps = { ...deps, config: { ...deps.config, url, token }, api: new Api(url, deps.fetchFn, token) };
     const handler = COMMANDS[cmd] ?? SOCIAL_COMMANDS[cmd] ?? SERVICE_COMMANDS[cmd];
     if (!handler) throw new UsageError(`Unknown command: ${cmd}`);
     return await handler(d, args);

@@ -13,6 +13,8 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
   const err: string[] = [];
   const runs: { cmd: string[]; cwd?: string }[] = [];
   const requests: { method: string; path: string; body: any }[] = [];
+  /** The Authorization header of each request ("" = none). */
+  const auths: string[] = [];
   const files = new Map<string, number>();
   const copies: [string, string][] = [];
   const existing = new Set<string>();
@@ -42,6 +44,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
       ? { file: (raw.get("file") as File).name, size: (raw.get("file") as File).size, kind: raw.get("kind"), shotId: raw.get("shotId") ?? undefined }
       : raw ? JSON.parse(String(raw)) : undefined;
     requests.push({ method, path: url.pathname + url.search, body });
+    auths.push((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
     const route = routes[`${method} ${url.pathname}`];
     if (route === undefined) return Response.json({ status: "error", error: `no route ${method} ${url.pathname}` }, { status: 404 });
     const result = typeof route === "function" ? (route as Handler)(body, url) : route;
@@ -50,7 +53,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
     return Response.json({ status: "ok", data: result });
   }) as unknown as typeof fetch;
 
-  const cfg: CliConfig = { url: "http://app:8080", mode: "docker", appDir: "/opt/vc", service: "sorot", source: "/etc/sorot/cli.conf", ...config };
+  const cfg: CliConfig = { url: "http://app:8080", token: "", mode: "docker", appDir: "/opt/vc", service: "sorot", source: "/etc/sorot/cli.conf", ...config };
 
   const deps = {
     config: cfg,
@@ -96,7 +99,7 @@ export function harness(routes: Record<string, Handler | unknown> = {}, config: 
   };
 
   return {
-    out, err, runs, requests, files, copies, existing, state, texts, bytesOf, dirs,
+    out, err, runs, requests, auths, files, copies, existing, state, texts, bytesOf, dirs,
     run: (...argv: string[]) => main(argv, deps),
     text: () => out.join("\n"),
   };

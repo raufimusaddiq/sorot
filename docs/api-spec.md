@@ -38,6 +38,27 @@ camelCase form of their SQLite columns, with `null` for unset values. Their
 TypeScript shapes are in [`backend/src/types.ts`](../backend/src/types.ts) and
 [`frontend/src/types.ts`](../frontend/src/types.ts). Timestamps are ISO-8601 UTC strings.
 
+### Desktop engine (token, ready line)
+
+Docker and the CLI are unchanged. The desktop app starts the engine with
+`SERVER_HOST=127.0.0.1`, `SERVER_PORT=0`, `SOROT_TOKEN`, `STATIC_DIR=`,
+`SOROT_PARENT_PIPE=1` and `SOROT_SOLE_OWNER=1`
+([contract](../specs/003-native-desktop-app/contracts/engine-connection.md)):
+
+- **Token.** With `SOROT_TOKEN` set, every `/api/*` request (`/api/health`
+  included, CORS preflight excepted) needs `Authorization: Bearer <token>`.
+  Otherwise: `401 {"status":"error","error":"unauthorized"}`. The header is never
+  logged; the token never goes in a URL. `sorot --token` / `SOROT_TOKEN` sends it.
+- **Ready line.** Once listening the engine prints one stdout line,
+  `SOROT_READY {"port":54321,"version":"1.0.0","api":1}` (`api` = contract version).
+- **Lifetime.** With `SOROT_PARENT_PIPE`, closing stdin runs the normal shutdown.
+  With `SOROT_SOLE_OWNER`, the startup sweep fails every RUNNING/QUEUED job as
+  `interrupted`, whatever its heartbeat.
+- **`exportPath`.** Clip export and Generate export responses carry the absolute
+  path of the file on the engine's machine.
+- Readiness routes (`/api/readiness`), the 507 disk-space answer and the library
+  startup commands are described in the contract (section 5, 7, 8).
+
 ---
 
 ## Health
@@ -270,7 +291,7 @@ are set to `FAILED`).
 ```
 Copies each clip's best file (the subtitled export if present, otherwise the
 render) to `data/exports/{clipId}_final.mp4` and marks it `COMPLETED`.
-Unrendered clips are skipped. Returns `{ "exported": [Clip] }`.
+Unrendered clips are skipped. Returns `{ "exported": [Clip] }`; each clip's `exportPath` is absolute.
 400 `clipIds required`; 500 `Clip not found: {id}`.
 
 ### `GET /api/clips/{clipId}/preview`
@@ -591,7 +612,7 @@ envelope; `409` means the step is not allowed in the project's current state, `4
 | Facts | `GET/POST /projects/{id}/facts` · `POST …/facts/verify` · `PATCH/DELETE /facts/{id}` |
 | Recipes | `GET/POST /recipes` · `GET/PUT/DELETE /recipes/{id}` · `POST /recipes/validate\|import` · `GET /recipes/{id}/export` |
 | Ideas and runs | `GET/POST /ideas` · `GET/PATCH/DELETE /ideas/{id}` · `POST /run` · `POST /import-history` |
-| Export and publish | `POST /versions/{id}/export` · `GET /exports` · `GET /exports/{id}/file` · `POST /exports/{id}/publish/draft\|publish` · `GET /exports/{id}/posts` |
+| Export and publish (an export carries its absolute `exportPath`) | `POST /versions/{id}/export` · `GET /exports` · `GET /exports/{id}/file` · `POST /exports/{id}/publish/draft\|publish` · `GET /exports/{id}/posts` |
 | Kit ([generate-kit.md](generate-kit.md)) | `GET/POST /kit` (POST: multipart `file`, a `.zip` of one part; `400` with `findings` when it doesn't pass) · `GET/DELETE /kit/{name}` (`409` for a built-in) · `GET /kit/{name}/export` (`.zip`) |
 | Levels | `GET /capabilities?level=kit\|compose\|free` (what a director call is told now) · `GET /models` (per model: records, pin, `auto`, the `proven` level; the calibration in progress) · `POST /models/calibrate` (`202`, runs in the background) · `PUT /models/{model}/level` (`{level}` or `{level: null}` for auto) |
 

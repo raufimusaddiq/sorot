@@ -40,14 +40,15 @@ describe("config", () => {
     };
     const read = (p: string) => files[p] ?? null;
     expect(loadConfig({ SOROT_CONFIG: "/custom.conf", HOME: "/home/u" }, read)).toEqual({
-      url: "http://box:9000", mode: "docker", appDir: "/srv/vc", service: "sorot", source: "/custom.conf",
+      url: "http://box:9000", token: "", mode: "docker", appDir: "/srv/vc", service: "sorot", source: "/custom.conf",
     });
     const home = loadConfig({ HOME: "/home/u", SOROT_URL: "http://other/" }, read);
     expect(home).toMatchObject({ url: "http://other", mode: "native", service: "vc2", appDir: "" });
     expect(loadConfig({}, read).source).toBe("/etc/sorot/cli.conf");
     expect(loadConfig({ USERPROFILE: "/home/u" }, read).mode).toBe("native");   // Windows home
-    expect(loadConfig({}, () => null)).toEqual({ url: "http://localhost:8080", mode: "none", appDir: "", service: "sorot", source: null });
+    expect(loadConfig({}, () => null)).toEqual({ url: "http://localhost:8080", token: "", mode: "none", appDir: "", service: "sorot", source: null });
     expect(loadConfig({}, () => "SOROT_MODE=weird").mode).toBe("none");
+    expect(loadConfig({ SOROT_TOKEN: "t0k" }, () => null).token).toBe("t0k");
   });
 
   test("installs from before the rename (Viral Clipper) keep working", () => {
@@ -58,7 +59,7 @@ describe("config", () => {
     };
     const read = (p: string) => files[p] ?? null;
     expect(loadConfig({}, read)).toEqual({
-      url: "http://old:8080", mode: "native", appDir: "/srv/old", service: "viralclip", source: "/etc/viralclip/cli.conf",
+      url: "http://old:8080", token: "", mode: "native", appDir: "/srv/old", service: "viralclip", source: "/etc/viralclip/cli.conf",
     });
     expect(loadConfig({ HOME: "/home/u" }, read).source).toBe("/home/u/.config/viralclip/cli.conf");
     expect(loadConfig({ VCLIP_CONFIG: "/old.conf", VCLIP_URL: "http://x" }, read)).toMatchObject({ source: "/old.conf", url: "http://x" });

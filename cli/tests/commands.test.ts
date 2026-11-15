@@ -42,6 +42,16 @@ describe("main", () => {
     await h.run("jobs", "--url", "http://elsewhere:1/");
     expect(h.text()).toBe("(none)");
   });
+
+  test.each([
+    ["the configured token", ["jobs"], { token: "cfg" }, "Bearer cfg"],
+    ["--token over the configured one", ["jobs", "--token", "flag"], { token: "cfg" }, "Bearer flag"],
+    ["no token", ["jobs"], {}, ""],
+  ])("sends %s as a Bearer header", async (_name, argv, config, header) => {
+    const h = harness({ "GET /api/jobs": { jobs: [] } }, config);
+    await h.run(...argv);
+    expect(h.auths).toEqual([header]);
+  });
 });
 
 describe("import / watch", () => {

@@ -2,12 +2,14 @@
 // Lookup: $SOROT_CONFIG, ~/.config/sorot/cli.conf (Windows: %USERPROFILE%\.config\…),
 // /etc/sorot/cli.conf, then the paths of installs from before the rename
 // (Viral Clipper: viralclip/cli.conf). $SOROT_URL overrides the URL (e.g. to
-// drive a remote machine). The old VCLIP_* names are still read.
+// drive a remote machine). $SOROT_TOKEN (or --token) is sent as a Bearer token. The old VCLIP_* names are still read.
 
 export type Mode = "docker" | "native" | "none";
 
 export interface CliConfig {
   url: string;
+  /** Bearer token of an engine started with SOROT_TOKEN (desktop app); "" = none. */
+  token: string;
   mode: Mode;
   appDir: string;
   /** Unit name for native installs. */
@@ -49,6 +51,7 @@ export function loadConfig(
   const mode = get("MODE") === "docker" || get("MODE") === "native" ? (get("MODE") as Mode) : "none";
   return {
     url: (env.SOROT_URL || env.VCLIP_URL || get("URL") || "http://localhost:8080").replace(/\/+$/, ""),
+    token: env.SOROT_TOKEN ?? "",
     mode,
     appDir: get("APP_DIR") ?? "",
     service: get("SERVICE") || "sorot",

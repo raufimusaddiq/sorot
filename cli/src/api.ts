@@ -8,14 +8,19 @@ export class ApiError extends Error {
 }
 
 export class Api {
-  constructor(readonly baseUrl: string, private readonly fetchFn: typeof fetch = fetch) {}
+  constructor(readonly baseUrl: string, private readonly fetchFn: typeof fetch = fetch, private readonly token = "") {}
+
+  private headers(extra?: Record<string, string>): Record<string, string> | undefined {
+    const h = { ...extra, ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}) };
+    return Object.keys(h).length ? h : undefined;
+  }
 
   private async request(method: string, path: string, body?: unknown): Promise<Json> {
     let res: Response;
     try {
       res = await this.fetchFn(`${this.baseUrl}${path}`, {
         method,
-        headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+        headers: this.headers(body === undefined ? undefined : { "Content-Type": "application/json" }),
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (e) {
@@ -39,7 +44,7 @@ export class Api {
   async upload(path: string, form: FormData): Promise<Json> {
     let res: Response;
     try {
-      res = await this.fetchFn(`${this.baseUrl}${path}`, { method: "POST", body: form });
+      res = await this.fetchFn(`${this.baseUrl}${path}`, { method: "POST", headers: this.headers(), body: form });
     } catch (e) {
       throw new ApiError(`Cannot reach ${this.baseUrl} (${(e as Error).message}). Is the app running? Try: sorot up`, 0);
     }
@@ -53,7 +58,7 @@ export class Api {
   async raw(path: string): Promise<Response> {
     let res: Response;
     try {
-      res = await this.fetchFn(`${this.baseUrl}${path}`);
+      res = await this.fetchFn(`${this.baseUrl}${path}`, { headers: this.headers() });
     } catch (e) {
       throw new ApiError(`Cannot reach ${this.baseUrl} (${(e as Error).message}). Is the app running? Try: sorot up`, 0);
     }

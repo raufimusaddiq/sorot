@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ProcResult } from "../../src/runner";
 import { EFFECTS_DONE, makeEnv, procOk, samplePlan, sceneHtml, scriptLlm, type TestEnv, judgeYes } from "../helpers";
@@ -84,6 +84,7 @@ describe("a build, from the approved plan to two verdicts", () => {
     const exp = made.body.data.export;
     expect(exp).toMatchObject({ projectId: id, versionId: v, title: "Judul saya", description: "Uang tumbuh.", format: "9:16" });
     expect(exp.path).toBe(join(env.config.genDir, id, "exports", `${v}.mp4`));
+    expect(exp.exportPath).toBe(resolve(exp.path));
     expect(await (await env.req("GET", `${base}/exports/${exp.id}/file`)).text()).toBe("mp4-bytes");
     const dl = await env.req("GET", `${base}/exports/${exp.id}/file?download=1`);
     expect(dl.headers.get("content-disposition")).toContain(`${v}.mp4`);
