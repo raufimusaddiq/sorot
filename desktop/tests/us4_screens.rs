@@ -72,6 +72,22 @@ fn the_palette_arrows_wrap_and_a_press_runs_a_row() {
     assert!(rt.find("palette").is_none());
 }
 
+/// The rail, the View menu, the palette and the macOS system menu offer the same destinations.
+#[test]
+fn the_rail_the_menu_the_palette_and_the_system_menu_list_the_same_destinations() {
+    let mut state = sorot_desktop::app::State::scene("clips-ranked");
+    state.show_clips("vnew");
+    let rt = runtime_of(state);
+    let rail: Vec<String> = rt.elements().iter().filter_map(|e| e.key.as_deref()?.strip_prefix("shell/rail/").map(String::from)).collect();
+    assert_eq!(rail, ["home", "clips", "discover", "generate", "learning", "settings"]);
+    let menu = |m| sorot_desktop::screens::menu_bar::menu_items(&rt.state, m).into_iter().map(|(k, ..)| k.to_string()).filter(|k| k != "theme").collect::<Vec<_>>();
+    assert_eq!(menu(sorot_desktop::screens::menu_bar::Menu::View), rail, "the View menu");
+    let palette: Vec<String> = rt.state.palette_hits().into_iter().map(|h| h.0.to_string()).collect();
+    assert!(rail.iter().all(|k| palette.contains(k)), "the palette");
+    let system: Vec<String> = sorot_desktop::screens::menu_bar::native_entries(sorot_desktop::i18n::Lang::En).into_iter().map(|e| e.0).collect();
+    assert!(rail.iter().all(|k| system.contains(&format!("view/{k}"))), "the system menu: {system:?}");
+}
+
 /// Where the system draws pop-up menus (Windows, macOS, every headless run) a menu of the bar opens as one and a pick runs
 /// the item; on Linux the in-window list (`the_menus_open_run_and_close`) stands in.
 #[test]

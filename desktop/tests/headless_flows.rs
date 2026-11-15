@@ -125,16 +125,21 @@ fn the_us4_menu_journey_picks_settings_from_the_bar() {
 }
 
 /// US4 keyboard-only journey: only `key` and `type` events, import to export. After each step the focused element is the
-/// one named and its focus ring shows.
+/// one named and its focus ring shows. The tree is dumped at one mark per run (`--tree` has no second dump, `--trace`
+/// no focus), so each mark is its own run of the one script, all at once.
 #[test]
 fn the_us4_keyboard_only_journey_keeps_focus_visible_at_every_step() {
+    const STEPS: [(&str, &str); 8] = [("link", "home/link"), ("import", "home/import"), ("clips", "shell/rail/settings"), ("export-focus", "clips/export"), ("back", "clips/edit"), ("palette", "palette/input"), ("closed", "clips/edit"), ("end", "clips/export")];
     let at = |mark: &str| run_at("home-empty", Some("us4-keyboard-only"), mark, &[], &[]);
-    let focused = |t: &Tree| t.0["elements"].as_array().unwrap().iter().filter(|e| e["focused"] == true).map(|e| (e["key"].as_str().unwrap_or_default().to_string(), e["focusVisible"] == true)).collect::<Vec<_>>();
-    for (mark, key) in [("link", "home/link"), ("import", "home/import"), ("clips", "shell/rail/settings"), ("export-focus", "clips/export"), ("back", "clips/edit"), ("palette", "palette/input"), ("closed", "clips/edit"), ("end", "clips/export")] {
-        let tree = at(mark);
-        let want = if key == "palette/input" { vec![(key.to_string(), tree.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key && e["focusVisible"] == true))] } else { vec![(key.to_string(), true)] };
-        assert_eq!(focused(&tree), want, "{mark}");
+    let trees: Vec<Tree> = std::thread::scope(|s| {
+        let runs: Vec<_> = STEPS.iter().map(|(mark, _)| s.spawn(move || at(mark))).chain(std::iter::once(s.spawn(|| at("job")))).collect();
+        runs.into_iter().map(|r| r.join().unwrap()).collect()
+    });
+    let elements = |t: &Tree| t.0["elements"].as_array().unwrap().clone();
+    for ((mark, key), tree) in STEPS.iter().zip(&trees) {
+        let focused: Vec<(String, bool)> = elements(tree).iter().filter(|e| e["focused"] == true).map(|e| (e["key"].as_str().unwrap_or_default().to_string(), e["focusVisible"] == true)).collect();
+        assert_eq!(focused, [(key.to_string(), true)], "{mark}");
     }
-    let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
-    assert!(has(&at("job"), "job/progress") && has(&at("end"), "clips/reveal"), "the keys alone reached the job and exported the clip");
+    let has = |t: &Tree, key: &str| elements(t).iter().any(|e| e["key"] == key);
+    assert!(has(&trees[8], "job/progress") && has(&trees[7], "clips/reveal"), "the keys alone reached the job and exported the clip");
 }

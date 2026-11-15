@@ -1233,7 +1233,7 @@ pub fn run(live: fn() -> Live) {
             return State::scene("home-empty");
         }
         if cfg!(target_os = "macos") {
-            let _ = menus.set_menu(menu_bar::native_items(&State::default(), crate::i18n::Lang::default()));
+            let _ = menus.set_menu(menu_bar::native_items(crate::i18n::Lang::default()));
         }
         start_live(handle, live())
     })

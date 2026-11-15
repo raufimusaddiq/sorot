@@ -40,6 +40,11 @@ pub type Act = fn(&mut State, &mut Tx);
 
 /// One list of a menu: `(key, i18n key, what it does)`. The View menu lists the rail's places.
 pub fn menu_items(s: &State, menu: Menu) -> Vec<(&'static str, &'static str, Act)> {
+    items_of(menu, s.clips.video_id.is_some())
+}
+
+/// `menu_items` with Clips listed or not: the rail shows it once a video is open.
+fn items_of(menu: Menu, clips: bool) -> Vec<(&'static str, &'static str, Act)> {
     match menu {
         Menu::File => vec![
             ("new", "menu.new", |s, _| s.go_home()),
@@ -56,7 +61,7 @@ pub fn menu_items(s: &State, menu: Menu) -> Vec<(&'static str, &'static str, Act
         })],
         Menu::View => {
             let mut v: Vec<(&'static str, &'static str, Act)> = vec![("home", "shell.home", |s, _| s.go_home())];
-            if s.clips.video_id.is_some() {
+            if clips {
                 v.push(("clips", "shell.clips", |s, _| {
                     if let Some(video) = s.clips.video_id.clone() {
                         s.show_clips(&video);
@@ -148,14 +153,20 @@ pub fn menu_list(s: &State) -> Option<El> {
     Some(row().w_full().padding(0.0).child(col().w(8.0).h(1.0)).child(list))
 }
 
-/// The same menus as the system menu bar's items (macOS): each action under its menu. The words
-/// follow `lang` at the time the menus are set.
-pub fn native_items(s: &State, lang: Lang) -> Vec<MenuItem<State>> {
+/// The same menus as the system menu bar's items (macOS): each action under its menu, Clips included (pressing it
+/// with no video open does nothing, as the system menu cannot change with the screen). The words follow `lang` at
+/// the time the menus are set.
+pub fn native_items(lang: Lang) -> Vec<MenuItem<State>> {
+    native_entries(lang).into_iter().map(|(id, title, menu, act)| MenuItem::new(title, act).id(id).menu(menu)).collect()
+}
+
+/// What `native_items` builds from: `(id "menu/key", title, menu title, action)`.
+pub fn native_entries(lang: Lang) -> Vec<(String, String, String, Act)> {
     let mut out = vec![];
     for m in Menu::ALL {
-        let title = tr(lang, &format!("menu.{}", m.id()));
-        for (key, words, act) in menu_items(s, m) {
-            out.push(MenuItem::new(tr(lang, words), act).id(format!("{}/{key}", m.id())).menu(title.clone()));
+        let menu = tr(lang, &format!("menu.{}", m.id()));
+        for (key, words, act) in items_of(m, true) {
+            out.push((format!("{}/{key}", m.id()), tr(lang, words), menu.clone(), act));
         }
     }
     out
