@@ -1,0 +1,29 @@
+{
+  "status": "ok",
+  "data": {
+    "available": true,
+    "reasons": [],
+    "hyperframes": {
+      "ok": true,
+      "version": "0.8.223"
+    },
+    "llm": {
+      "configured": true
+    },
+    "jev": {
+      "configured": false
+    },
+    "image": {
+      "configured": false
+    },
+    "vision": {
+      "configured": false
+    },
+    "voice": {
+      "engines": [],
+      "localAvailable": true
+    },
+    "compute": "gpu",
+    "presets": []
+  }
+}

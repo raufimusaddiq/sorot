@@ -1,0 +1,21 @@
+{
+  "status": "ok",
+  "data": {
+    "id": "g1",
+    "title": null,
+    "brief": "Jelaskan bunga majemuk",
+    "format": "9:16",
+    "targetSec": 30,
+    "language": "id",
+    "styleNotes": null,
+    "recipeId": "quick",
+    "stepIndex": 0,
+    "stepState": null,
+    "narration": 0,
+    "status": "WAITING",
+    "currentPlanId": null,
+    "errorMessage": null,
+    "createdAt": "2026-11-15T09:00:00.000Z",
+    "updatedAt": "2026-11-15T09:00:00.000Z"
+  }
+}

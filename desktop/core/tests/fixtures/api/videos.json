@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "data": {
+    "videos": [
+      {
+        "id": "v1",
+        "sourceType": "YOUTUBE",
+        "sourceUrl": "https://youtu.be/v1",
+        "title": "Video v1",
+        "filePath": "/data/raw/v1.mp4",
+        "createdAt": "2026-11-15T09:00:00.000Z"
+      }
+    ]
+  }
+}

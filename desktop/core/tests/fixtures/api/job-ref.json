@@ -1,0 +1,8 @@
+{
+  "status": "ok",
+  "data": {
+    "jobId": "j1",
+    "status": "QUEUED",
+    "currentStage": ""
+  }
+}

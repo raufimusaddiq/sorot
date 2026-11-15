@@ -13,3 +13,6 @@ thiserror = "2"
 
 [package.metadata.kani]
 flags = { default-unwind = "8" }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }

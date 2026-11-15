@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "data": {
+    "id": "ver1",
+    "projectId": "g1",
+    "planId": "pl1",
+    "number": 1,
+    "parentVersionId": null,
+    "status": "BUILT",
+    "step": null,
+    "progress": 100,
+    "renderKind": "draft",
+    "draftPath": "data/generate/g1/v1/draft.mp4",
+    "errorMessage": null,
+    "createdAt": "2026-11-15T09:00:00.000Z",
+    "updatedAt": "2026-11-15T09:00:00.000Z"
+  }
+}

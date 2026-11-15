@@ -1,0 +1,88 @@
+{
+  "status": "ok",
+  "data": {
+    "job": {
+      "id": "j1",
+      "videoId": "v1",
+      "status": "RUNNING",
+      "currentStage": "TRANSCRIBE",
+      "errorMessage": null,
+      "createdAt": "2026-11-15T09:00:00.000Z",
+      "updatedAt": "2026-11-15T09:00:00.000Z"
+    },
+    "stages": [
+      {
+        "id": "j1-IMPORT",
+        "jobId": "j1",
+        "stage": "IMPORT",
+        "status": "COMPLETED",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-AUDIO_EXTRACT",
+        "jobId": "j1",
+        "stage": "AUDIO_EXTRACT",
+        "status": "COMPLETED",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-TRANSCRIBE",
+        "jobId": "j1",
+        "stage": "TRANSCRIBE",
+        "status": "IN_PROGRESS",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-SEGMENT",
+        "jobId": "j1",
+        "stage": "SEGMENT",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-SCORE",
+        "jobId": "j1",
+        "stage": "SCORE",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-RENDER",
+        "jobId": "j1",
+        "stage": "RENDER",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-SUBTITLE",
+        "jobId": "j1",
+        "stage": "SUBTITLE",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-VARIATION",
+        "jobId": "j1",
+        "stage": "VARIATION",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null
+      },
+      {
+        "id": "j1-ANALYTICS",
+        "jobId": "j1",
+        "stage": "ANALYTICS",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null
+      }
+    ]
+  }
+}

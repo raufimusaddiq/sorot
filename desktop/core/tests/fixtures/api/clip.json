@@ -1,0 +1,35 @@
+{
+  "status": "ok",
+  "data": {
+    "clip": {
+      "id": "c1",
+      "videoId": "v1",
+      "rankPos": 1,
+      "score": 0.8,
+      "tier": "PRIMARY",
+      "startTime": 30,
+      "endTime": 55,
+      "durationSec": 25,
+      "textContent": "teks c1",
+      "title": "Judul c1",
+      "description": "Deskripsi c1",
+      "renderStatus": "COMPLETED",
+      "renderPath": "/data/renders/c1.mp4",
+      "exportStatus": "PENDING",
+      "exportPath": null,
+      "createdAt": "2026-11-15T09:00:00.000Z",
+      "options": "{}",
+      "updatedAt": "2026-11-15T09:00:00.000Z",
+      "hookStart": 31.5,
+      "hookEnd": 34,
+      "gateVerdict": "PASS",
+      "reason": "hook kuat",
+      "scoredBy": "jev+rules"
+    },
+    "scoreBreakdown": {
+      "hookStrength": 0.8,
+      "keywordTrigger": 0.5,
+      "sceneChange": null
+    }
+  }
+}

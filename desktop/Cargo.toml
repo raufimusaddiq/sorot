@@ -22,6 +22,11 @@ rune-motion = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1
 rune-fx = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
 rune-i18n = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
 rune-notify = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
+ureq = { version = "3", default-features = false }
+getrandom = "0.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2"
 
 # A dependency's [patch] does not apply here, so each crate Rune patches is patched again
 # (same rev as the dependencies above; see RUNE.md).
@@ -31,3 +36,12 @@ parley_engine = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6
 wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
 accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
 accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
+
+[dev-dependencies]
+tiny_http = "0.12.0"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.191"
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

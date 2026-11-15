@@ -1,0 +1,39 @@
+{
+  "status": "ok",
+  "data": {
+    "items": [
+      {
+        "id": "ffmpeg",
+        "required": true,
+        "ok": false,
+        "fixable": true,
+        "detail": "ffmpeg not found at <path>"
+      },
+      {
+        "id": "python",
+        "required": true,
+        "ok": true,
+        "fixable": true,
+        "detail": "Python 3.12, packages up to date"
+      },
+      {
+        "id": "whisperModel",
+        "required": true,
+        "ok": false,
+        "fixable": true,
+        "detail": "large-v3-turbo not downloaded (1.6 GB)",
+        "progress": {
+          "percent": 40,
+          "label": "Downloading"
+        }
+      },
+      {
+        "id": "gpu",
+        "required": false,
+        "ok": true,
+        "fixable": false,
+        "detail": "NVIDIA RTX 4060, CUDA 12"
+      }
+    ]
+  }
+}

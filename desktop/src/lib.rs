@@ -1,7 +1,14 @@
-//! Sorot desktop app: Rune front end for the engine. Placeholder shell until the screens land.
+//! Sorot desktop app: Rune front end for the engine. Rust holds no pipeline logic; it shows what
+//! the engine's HTTP API says (constitution I, V).
 
-use rune::tok;
-use rune::{AppSpec, Cx, El, col, text};
+pub mod app;
+pub mod engine;
+pub mod ui;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use engine::sidecar::{LaunchConfig, OsSpawn, Sidecar, SystemClock};
 
 /// OS shims, each listed in `coverage-exclude.txt`; `tests/platform_list.rs` guards the list.
 pub mod platform {
@@ -11,6 +18,10 @@ pub mod platform {
     #[cfg(unix)]
     #[path = "process_unix.rs"]
     pub mod process_unix;
+    #[cfg(windows)]
+    pub use process_windows as process;
+    #[cfg(unix)]
+    pub use process_unix as process;
     #[path = "tray.rs"]
     pub mod tray;
     #[path = "reveal.rs"]
@@ -30,26 +41,45 @@ pub mod platform {
     pub mod gpu_probe;
 }
 
-#[derive(Default)]
-pub struct State;
+/// Where the engine and its tools are, from the environment (`SOROT_ENGINE`, `SOROT_ENGINE_ARGS`,
+/// `SOROT_DATA_DIR`, ...). The packaged layout and the data folder come with the workspace tasks.
+pub fn launch_config(env: impl Fn(&str) -> Option<String>) -> LaunchConfig {
+    let path = |key: &str, default: &str| PathBuf::from(env(key).unwrap_or_else(|| default.to_string()));
+    LaunchConfig {
+        program: path("SOROT_ENGINE", "sorot-engine"),
+        args: env("SOROT_ENGINE_ARGS").map(|a| a.split_whitespace().map(String::from).collect()).unwrap_or_default(),
+        data_dir: path("SOROT_DATA_DIR", "data"),
+        pipeline_dir: path("SOROT_PIPELINE_DIR", "ai-pipeline"),
+        generator_dir: path("SOROT_GENERATOR_DIR", "generator"),
+        python_path: path("SOROT_PYTHON", "python"),
+        ffmpeg_path: path("SOROT_FFMPEG", "ffmpeg"),
+        gpu: env("WHISPER_DEVICE").is_some_and(|d| d != "cpu"),
+    }
+}
 
-pub fn view(_: &State, _: &mut Cx<State>) -> El {
-    let t = tok::theme(true);
-    col().w_full().h_full().center().fill(t.bg).child(text("Sorot").font(tok::type_::TITLE).color(t.text))
+pub fn supervisor() -> app::Supervisor {
+    let sidecar = Sidecar::new(Arc::new(OsSpawn), Arc::new(SystemClock::default()), launch_config(|k| std::env::var(k).ok()));
+    app::Supervisor::new(sidecar, app::http_engine)
 }
 
 pub fn run() {
-    rune::run(AppSpec::<State>::new("Sorot", (1100.0, 720.0), State::default, view));
+    app::run(supervisor);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rune::{Env, Runtime};
 
     #[test]
-    fn the_placeholder_view_lays_out() {
-        let mut rt = Runtime::new(State, view, (320.0, 200.0), Env { system_dark: true, scale: 1.0 });
-        rt.frame(0.0);
+    fn the_launch_config_reads_the_environment_or_falls_back() {
+        let none = launch_config(|_| None);
+        assert_eq!((none.program, none.args, none.gpu), (PathBuf::from("sorot-engine"), vec![], false));
+        let set = launch_config(|k| match k {
+            "SOROT_ENGINE" => Some("bun".into()),
+            "SOROT_ENGINE_ARGS" => Some("run backend/src/index.ts".into()),
+            "WHISPER_DEVICE" => Some("cuda".into()),
+            _ => None,
+        });
+        assert_eq!((set.program, set.args, set.gpu), (PathBuf::from("bun"), vec!["run".into(), "backend/src/index.ts".into()], true));
     }
 }

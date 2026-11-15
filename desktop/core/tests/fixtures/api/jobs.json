@@ -1,0 +1,25 @@
+{
+  "status": "ok",
+  "data": {
+    "jobs": [
+      {
+        "id": "j1",
+        "videoId": "v1",
+        "status": "RUNNING",
+        "currentStage": "TRANSCRIBE",
+        "errorMessage": null,
+        "createdAt": "2026-11-15T09:00:00.000Z",
+        "updatedAt": "2026-11-15T09:00:00.000Z"
+      },
+      {
+        "id": "j2",
+        "videoId": "v1",
+        "status": "QUEUED",
+        "currentStage": null,
+        "errorMessage": null,
+        "createdAt": "2026-11-15T09:00:00.000Z",
+        "updatedAt": "2026-11-15T09:00:00.000Z"
+      }
+    ]
+  }
+}
