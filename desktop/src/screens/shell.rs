@@ -87,7 +87,7 @@ pub fn menu_items(menu: Menu) -> Vec<(&'static str, &'static str, Act)> {
             ("discover", "shell.discover", |s, _| s.show(Page::Discover)),
             ("learning", "shell.learning", |s, _| s.show(Page::Learning)),
             ("settings", "shell.settings", |s, _| s.show(Page::Connections)),
-            ("theme", "menu.theme", |s, _| s.theme = if s.dark() { Theme::Light } else { Theme::Dark }),
+            ("theme", "menu.theme", |s, _| s.set_theme(if s.dark() { Theme::Light } else { Theme::Dark })),
         ],
         Menu::Window => vec![("hide", "menu.hide", |s, _| s.hide_window())],
         Menu::Help => vec![("diagnostic", "menu.diagnostic", |s, _| s.export_diagnostic()), ("restart", "menu.restart", |s, _| s.restart_engine())],
@@ -166,7 +166,7 @@ pub fn with_rail(s: &State, content: El) -> El {
         .child(rail_item(s, "shell/rail/discover", "shell.discover", on(&[Screen::Discover]), |s| s.show(Page::Discover)))
         .child(rail_item(s, "shell/rail/generate", "shell.generate", on(&[Screen::Generate]), |s| s.show(Page::Generate)))
         .child(rail_item(s, "shell/rail/learning", "shell.learning", on(&[Screen::Learning]), |s| s.show(Page::Learning)))
-        .child(rail_item(s, "shell/rail/settings", "shell.settings", on(&[Screen::Connections, Screen::GenerateSettings]), |s| s.show(Page::Connections)));
+        .child(rail_item(s, "shell/rail/settings", "shell.settings", on(&[Screen::General, Screen::Connections, Screen::GenerateSettings]), |s| s.show(Page::Connections)));
     row().w_full().grow(1.0).shrink().child(rail).child(col().grow(1.0).shrink().center().child(content))
 }
 

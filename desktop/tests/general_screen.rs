@@ -1,0 +1,88 @@
+//! L2: Settings > General on Rune's headless `Runtime`. Preferences are applied and saved at once,
+//! loaded at the next start, and a chord another action holds is refused under the recorder.
+
+use rune::prefs::Prefs;
+use rune::{Env, Mods, Runtime, PhysicalInput, PhysicalKeyCode as K};
+use sorot_desktop::app::State;
+use sorot_desktop::i18n::Lang;
+use sorot_desktop::screens::panels::{Host, Page};
+use sorot_desktop_core::prefs::{Action, Chord, CloseBehaviour, Language, Preferences, Theme};
+
+use crate::support::*;
+
+fn stored(path: &std::path::Path) -> Preferences {
+    Prefs::at(path).get("preferences").expect("the preferences were saved")
+}
+
+fn general(path: &std::path::Path) -> rune::Runtime<State> {
+    let mut s = State::scene("home-empty").with_preferences(Prefs::at(path));
+    s.show(Page::General);
+    // Tall, so the ten recorders are all on screen to press.
+    let mut rt = Runtime::new(s, sorot_desktop::app::view, (1100.0, 2400.0), Env { system_dark: true, scale: 1.0 });
+    rt.frame(0.0);
+    rt
+}
+
+fn temp(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("sorot-general-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir.join("preferences.json")
+}
+
+#[test]
+fn a_choice_updates_the_app_and_is_saved_and_a_restart_reads_it_back() {
+    let path = temp("choices");
+    let mut rt = general(&path);
+    let mut want = Preferences::default();
+    type Row = (&'static str, fn(&mut Preferences));
+    let rows: [Row; 4] = [
+        ("general/theme/light", |p| p.theme = Theme::Light),
+        ("general/language/en", |p| p.language = Language::En),
+        ("general/close/quit", |p| p.close_behaviour = CloseBehaviour::Quit),
+        ("general/notifications", |p| p.notifications = false),
+    ];
+    for (key, set) in rows {
+        click(&mut rt, key);
+        set(&mut want);
+        assert_eq!(stored(&path), want, "{key}");
+    }
+    assert_eq!((rt.state.theme, rt.state.lang, rt.state.notifications), (Theme::Light, Lang::En, false));
+
+    let restarted = State::scene("home-empty").with_preferences(Prefs::at(&path));
+    assert_eq!((restarted.theme, restarted.lang, restarted.notifications), (Theme::Light, Lang::En, false));
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn a_shortcut_edit_is_saved_or_refused_inline() {
+    let ctrl = Mods { ctrl: true, cmd: true, ..Mods::default() };
+    let shift = Mods { shift: true, ..ctrl };
+    let alt = Mods { alt: true, ..ctrl };
+    // (action, key pressed, modifiers, the chord it ends on or None when refused, words of the refusal)
+    let rows = [
+        ("export", K::KeyU, shift, Some(Chord::new(true, true, 'u')), ""),
+        ("export", K::KeyK, ctrl, None, "Ctrl+K sudah dipakai untuk Palet perintah"),
+        ("export", K::KeyU, alt, None, "tidak bisa dipakai"),
+        ("export", K::Backspace, Mods::default(), None, "tidak bisa dihapus"),
+    ];
+    for (name, key, mods, saved, words) in rows {
+        let path = temp("keys");
+        let mut rt = general(&path);
+        click(&mut rt, &format!("general/shortcut/{name}"));
+        rt.physical_input(PhysicalInput::Key { key, mods, pressed: true, repeat: false });
+        rt.frame(1.0 / 60.0);
+        let kept = rt.state.panels.general.prefs.shortcuts.get(Action::ExportClip);
+        match saved {
+            Some(chord) => {
+                assert_eq!((kept, stored(&path).shortcuts.get(Action::ExportClip), rt.find("error").is_none()), (chord, chord, true), "{key:?}");
+            }
+            None => {
+                let default = Preferences::default().shortcuts.get(Action::ExportClip);
+                assert_eq!(kept, default, "{key:?}");
+                assert!(rt.find("error").is_some() && rt.accessibility_json().to_string().contains(words), "{key:?}");
+                assert!(!path.exists(), "a refused chord is not saved");
+            }
+        }
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+}

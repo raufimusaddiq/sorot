@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod connections;
+pub mod general;
 pub mod generate;
 pub mod image;
 pub mod voice;
@@ -80,6 +81,7 @@ pub fn test_words(lang: Lang, t: &ConnTest) -> String {
 pub fn tabs<H: Host>(dark: bool, lang: Lang, on: Page) -> El {
     let tab = |key: &str, label: &str, page: Page| choice(dark, key, label, on == page, move |h: &mut H| h.show(page));
     row().gap(8.0)
+        .child(tab("settings/tab/general", &tr(lang, "settings.tab.general"), Page::General))
         .child(tab("settings/tab/connections", &tr(lang, "settings.tab.connections"), Page::Connections))
         .child(tab("settings/tab/generate", &tr(lang, "settings.tab.generate"), Page::GenerateSettings))
 }
