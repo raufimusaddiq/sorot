@@ -270,7 +270,7 @@ fn recent_row(s: &State, j: &Job) -> El {
 
 /// Jobs the last session left running, each with its Retry.
 fn interrupted_block(s: &State) -> Option<El> {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let mut block = col().key("home/interrupted").role("list").label(tr(s.lang, "home.interrupted")).gap(12.0).w_full()
         .child(text(tr(s.lang, "home.interrupted")).font(type_::TITLE).color(p.text));
     let mut any = false;
