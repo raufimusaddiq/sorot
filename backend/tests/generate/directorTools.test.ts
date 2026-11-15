@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { PROBE_PREFIX } from "../../src/generate/sceneProbe";
 import { BLOCK_SOURCE_CHARS, checkDraft, lookAtDraft, lookedInLoop, sceneTools, searchBlocks, useBlock, type CatalogEntry, type ToolEnv } from "../../src/generate/directorTools";
@@ -122,6 +122,21 @@ describe("tools on a version's project", () => {
     const cancelled = { lint: async () => ({ ok: true, findings: [] }), check: async () => { ctl.abort(); throw new Error("aborted"); }, render: async () => { rendered = true; } } as never;
     await expect(checkDraft(env({ hyperframes: cancelled, plan, frameDiffs, signal: ctl.signal }), { html: HTML })).rejects.toThrow("aborted");
     expect(rendered).toBe(false);
+  });
+
+  test.each([
+    ["the link is made: the copy holds the link, nothing is copied", () => {}, ["link a.png", "none"]],
+    ["the OS refuses the link (Windows without developer mode): the file is copied instead", () => { throw new Error("EPERM"); }, ["link a.png", "copied"]],
+  ])("the scratch copy's assets: %s", async (_name, behave, expected) => {
+    mkdirSync(join(dir, "assets"), { recursive: true });
+    writeFileSync(join(dir, "assets/a.png"), "x");
+    const calls: string[] = [];
+    let state = "";
+    const check = async (copy: string) => { state = existsSync(join(copy, "assets/a.png")) ? "copied" : "none"; return { lint: { findings: [] }, runtime: { findings: [] } }; };
+    const hf = { lint: async () => ({ ok: true, findings: [] }), check, render: async () => {} } as never;
+    const link = (from: string) => { calls.push(`link ${basename(from)}`); behave(); };
+    await checkDraft(env({ hyperframes: hf, plan, fps: 30, link }), { html: HTML });
+    expect([calls[0], state]).toEqual(expected);
   });
 
   test("look renders frames at film time (clamped into the shot, at most three), returns them with the stranger's read, and remembers which file was looked at", async () => {

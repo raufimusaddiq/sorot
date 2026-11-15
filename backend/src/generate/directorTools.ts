@@ -112,6 +112,8 @@ export interface ToolEnv {
   /** The rules a scene is held to at this shot's level (`sceneRules`). */
   rules: { assets: string[]; kit?: SceneKit };
   signal?: AbortSignal;
+  /** Makes a link for the scratch copy (a symlink); tests inject it. */
+  link?: (from: string, to: string) => void;
 }
 
 /**
@@ -120,7 +122,7 @@ export interface ToolEnv {
  * when the report names none, the two flat places a block may sit.
  */
 export function blockFiles(dir: string, name: string, added: Record<string, unknown>): string[] {
-  const written = (Array.isArray(added.written) ? added.written : []).filter((p): p is string => typeof p === "string").map((p) => relative(dir, p));
+  const written = (Array.isArray(added.written) ? added.written : []).filter((p): p is string => typeof p === "string").map((p) => relative(dir, p).replaceAll("\\", "/"));
   const mine = written.filter((rel) => rel.split("/").some((part) => part === name || part === `${name}.html`));
   return (mine.length ? mine : [`compositions/${name}.html`, `compositions/components/${name}.html`]).filter((rel) => existsSync(join(dir, rel)));
 }
@@ -130,6 +132,11 @@ export function blockSource(dir: string, files: string[], max: number): { source
   const full = files.filter((f) => f.endsWith(".html")).map((f) => readFileSync(join(dir, f), "utf-8")).join("\n");
   const external = [...new Set([...full.matchAll(/\b(?:src|href)\s*=\s*["'](https?:\/\/[^"']+)["']/gi)].map((m) => m[1] as string))].slice(0, 6);
   return { source: full.slice(0, max), cut: full.length > max, external };
+}
+
+/** A symlink; Windows without developer mode refuses it (EPERM), so the file is copied there. */
+function linkOrCopy(from: string, to: string, link: (from: string, to: string) => void = symlinkSync): void {
+  try { link(from, to); } catch { cpSync(from, to, { recursive: true }); }
 }
 
 /** Installs a registry block into the project and hands its source over to adapt. */
@@ -207,7 +214,7 @@ export async function evaluateDraft(env: ToolEnv): Promise<Evaluated[]> {
     for (const f of ["index.html", "hyperframes.json", "package.json", "meta.json"]) if (existsSync(join(env.dir, f))) cpSync(join(env.dir, f), join(copy, f));
     mkdirSync(join(copy, "assets"));
     // linked, not copied (fonts, voice, images are large); the probe script is the copy's own, written by withProbe
-    if (existsSync(join(env.dir, "assets"))) for (const name of readdirSync(join(env.dir, "assets"))) if (name !== "sorot-probe.js") symlinkSync(join(env.dir, "assets", name), join(copy, "assets", name));
+    if (existsSync(join(env.dir, "assets"))) for (const name of readdirSync(join(env.dir, "assets"))) if (name !== "sorot-probe.js") linkOrCopy(join(env.dir, "assets", name), join(copy, "assets", name), env.link);
     // every composition (installed blocks included), then a placeholder for each shot not written yet
     if (existsSync(join(env.dir, "compositions"))) cpSync(join(env.dir, "compositions"), join(copy, "compositions"), { recursive: true });
     mkdirSync(join(copy, "compositions"), { recursive: true });

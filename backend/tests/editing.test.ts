@@ -396,22 +396,21 @@ describe("clip editor", () => {
     let inFlight = 0;
     let most = 0;
     const gates: Array<() => void> = [];
+    let arrived: (() => void) | null = null;                       // wakes the test when a render reaches the script
     const orig = env.scripts["render.py"]!;
     env.scripts["render.py"] = async (args) => {
       most = Math.max(most, ++inFlight);
-      await new Promise<void>((r) => gates.push(r));
+      await new Promise<void>((r) => { gates.push(r); arrived?.(); });
       inFlight--;
       return orig(args);
     };
+    const until = async (n: number) => { while (gates.length < n) await new Promise<void>((r) => { arrived = r; }); };
     const reqs = clips.map((c) => env.json("POST", `/api/clips/${c.id}/rerender`, {}));
-    const tick = () => new Promise((r) => setTimeout(r, 5));
-    await tick();
-    expect(gates).toHaveLength(2);                       // the third waits for a slot
-    expect(env.app.store.getClip(clips[2]!.id)!.renderStatus).toBe("RENDERING");
-    gates.shift()!();
-    await tick();
-    expect(gates).toHaveLength(2);                       // …and takes the freed one
-    while (gates.length) { gates.shift()!(); await tick(); }
+    await until(2);                                                // two renders run; the third has no slot yet
+    expect(gates).toHaveLength(2);
+    gates.shift()!();                                              // one finishes: the third takes the freed slot
+    await until(2);
+    gates.splice(0).forEach((open) => open());
     expect((await Promise.all(reqs)).map((r) => r.status)).toEqual([200, 200, 200]);
     expect(most).toBe(2);
   });

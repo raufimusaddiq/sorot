@@ -84,6 +84,7 @@ export function defaultExec(cmd: string, args: string[]): ProcResult {
   }
   if (cmd === "ffmpeg") {
     const out = args.at(-1) as string;
+    if (out === "-") return procOk(); // `-f null -` analysis runs write nothing
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, "wav-bytes");
     return procOk();

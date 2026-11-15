@@ -1,5 +1,8 @@
+import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { harness } from "./helpers";
+
+const at = (file: string) => resolve("/home/u", file).replaceAll("\\", "/");   // platform resolve (drive letter on Windows)
 
 const status = (over: Record<string, unknown> = {}) => ({
   available: true, reasons: [], hyperframes: { ok: true, version: "0.8.223" }, llm: { configured: true }, jev: { configured: false },
@@ -65,16 +68,16 @@ describe("sorot gen kit", () => {
 
   test("add sends a folder as a zip with the folder at the top, or a .zip as it is; a folder without part.json is refused", async () => {
     const h = harness({ "POST /api/generate/kit": { part: part("glow", "user") } });
-    h.dirs.set("/home/u/glow", ["example.json", "part.js", "part.json"]);
-    for (const f of ["example.json", "part.js", "part.json"]) h.bytesOf.set(`/home/u/glow/${f}`, new TextEncoder().encode("{}"));
+    h.dirs.set(at("glow"), ["example.json", "part.js", "part.json"]);
+    for (const f of ["example.json", "part.js", "part.json"]) h.bytesOf.set(at(`glow/${f}`), new TextEncoder().encode("{}"));
     expect(await h.run("gen", "kit", "add", "glow")).toBe(0);
     expect(h.requests.at(-1)!.body.file).toBe("glow.zip");
     expect(h.out.at(-1)).toBe("Added glow 1.0.0. Directors are offered it from their next call.");
-    h.existing.add("/home/u/g.zip");
-    h.bytesOf.set("/home/u/g.zip", new Uint8Array(5));
+    h.existing.add(at("g.zip"));
+    h.bytesOf.set(at("g.zip"), new Uint8Array(5));
     expect(await h.run("gen", "kit", "add", "g.zip")).toBe(0);
     expect(h.requests.at(-1)!.body).toMatchObject({ file: "g.zip", size: 5 });
-    h.dirs.set("/home/u/empty", ["readme.md"]);
+    h.dirs.set(at("empty"), ["readme.md"]);
     expect(await h.run("gen", "kit", "add", "empty")).toBe(2);
     expect(h.err.at(-1)).toContain("empty has no part.json");
   });
@@ -82,7 +85,7 @@ describe("sorot gen kit", () => {
   test("export saves the zip; remove deletes yours", async () => {
     const h = harness({ "GET /api/generate/kit/glow/export": new Response(new Uint8Array(12)), "DELETE /api/generate/kit/glow": { deleted: true } });
     expect(await h.run("gen", "kit", "export", "glow", "-o", "out/g.zip")).toBe(0);
-    expect(h.files.get("/home/u/out/g.zip")).toBe(12);
+    expect(h.files.get(at("out/g.zip"))).toBe(12);
     expect(await h.run("gen", "kit", "remove", "glow")).toBe(0);
     expect(h.out.at(-1)).toContain("Removed glow.");
   });

@@ -86,7 +86,7 @@ describe("part folder", () => {
   test("a missing file, or a link out of the folder, is refused", () => {
     expect(readPart(folder(partFiles().slice(0, 2))).errors).toEqual(["example.json is missing"]);
     const dir = folder(partFiles());
-    symlinkSync("/etc/hostname", join(dir, "host.txt"));
+    symlinkSync(tmpdir(), join(dir, "host.txt"), "junction");   // a junction needs no Windows privilege; ignored elsewhere
     expect(readPart(dir).errors).toEqual(["host.txt: links aren't allowed in a part"]);
   });
 });
