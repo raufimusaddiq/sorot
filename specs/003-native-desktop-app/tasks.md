@@ -57,7 +57,7 @@ design.md, data-model.md, contracts/, quickstart.md); constitution v3.0.0.
 checks from plan.md (Linux A/V preview sync and seek, the compiled engine running HyperFrames
 with `BUN_BE_BUN`, the installers building from `release-desktop.yml`, the macOS open-documents
 handler) and the real-run success criteria (SC-001 install time, SC-002 window within 3 s,
-SC-008 screen-reader passes, SC-010 no leftover processes) are run by the owner from
+SC-008 screen-reader passes, SC-010 no leftover processes, and the close-while-running dialog re-showing the window, since Rune has no close veto) are run by the owner from
 quickstart.md sections 2, 3, 6, 7 and 8 before the parity release (T115 waits for them). The
 results are recorded in the journal (T116). Unit tests and Kani cover their logic; only these
 manual runs cover their real-machine behaviour.
