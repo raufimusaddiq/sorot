@@ -1,0 +1,20 @@
+{
+  "status": "ok",
+  "data": {
+    "account": {
+      "plan": "Pro",
+      "windows": {
+        "5 jam": {
+          "usedFrac": 0.32,
+          "remainingRp": 13600
+        }
+      },
+      "balanceRp": 48200,
+      "usage": {
+        "requests": 412,
+        "promptTokens": 1820000,
+        "completionTokens": 310000
+      }
+    }
+  }
+}

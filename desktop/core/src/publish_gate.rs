@@ -38,9 +38,40 @@ pub fn can_post(draft: &[Target], choices: &[Choices]) -> bool {
     !draft.is_empty() && draft.len() == choices.len() && draft.iter().zip(choices).all(|(t, c)| ready(t, c))
 }
 
+/// One account as the list shows it: its id, whether it can take a video, and its Tebar workspace.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Listed<'a> {
+    pub id: &'a str,
+    pub supported: bool,
+    pub workspace: &'a str,
+}
+
+/// The accounts picked last time that are still listed and can post, kept to one workspace (a post
+/// goes to one): the workspace of the first of them in the list.
+pub fn preselect(saved: &[String], listed: &[Listed]) -> Vec<String> {
+    let ok: Vec<&Listed> = listed.iter().filter(|a| a.supported && saved.iter().any(|s| s == a.id)).collect();
+    let Some(first) = ok.first() else { return vec![] };
+    ok.iter().filter(|a| a.workspace == first.workspace).map(|a| a.id.to_string()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn last_times_accounts_come_back_only_if_listed_postable_and_in_one_workspace() {
+        let a = |id, supported, workspace| Listed { id, supported, workspace };
+        let list = [a("tt", true, "w1"), a("ig", true, "w2"), a("yt", true, "w1"), a("th", false, "w1")];
+        let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        for (saved, want) in [
+            (ids(&["tt", "yt"]), ids(&["tt", "yt"])),
+            (ids(&["ig", "tt"]), ids(&["tt"])),
+            (ids(&["th", "gone"]), ids(&[])),
+            (ids(&[]), ids(&[])),
+        ] {
+            assert_eq!(preselect(&saved, &list), want, "{saved:?}");
+        }
+    }
 
     #[test]
     fn exemption_and_draft_mode_stand_in_for_privacy() {

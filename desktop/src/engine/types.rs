@@ -215,6 +215,16 @@ pub struct Candidate {
     pub view_count: Option<u64>,
     #[serde(default)]
     pub relevance_score: f64,
+    /// Null until the captions were read in the background.
+    #[serde(default)]
+    pub transcript_score: Option<f64>,
+    #[serde(default)]
+    pub predicted_score: Option<f64>,
+    #[serde(default)]
+    pub source_mode: Option<String>,
+    /// `algorithm`, or the model that picked it.
+    #[serde(default)]
+    pub picked_by: Option<String>,
     pub status: String,
     #[serde(default)]
     pub why: Vec<String>,
@@ -254,4 +264,84 @@ pub struct AutoRun {
     pub error: Option<String>,
     #[serde(default)]
     pub count: u32,
+    /// `agent` (the LLM drove the run) or `algorithm`.
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub steps: Vec<AutoStep>,
+}
+
+/// One tool call of an auto run's log.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AutoStep {
+    pub tool: String,
+    #[serde(default)]
+    pub args: serde_json::Value,
+    #[serde(default)]
+    pub result: String,
+}
+
+/// One model Kenari offers (`GET /api/settings/{llm,image}/kenari-models`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KenariModel {
+    pub id: String,
+    #[serde(default)]
+    pub free: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KenariModelList {
+    pub models: Vec<KenariModel>,
+}
+
+/// A text-to-speech model with the voice ids it offers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KenariVoiceModel {
+    pub id: String,
+    #[serde(default)]
+    pub voices: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KenariVoiceList {
+    pub models: Vec<KenariVoiceModel>,
+}
+
+/// One quota window of the Kenari plan.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KenariWindow {
+    pub budget_rp: u64,
+    pub remaining_rp: u64,
+    pub used_frac: f64,
+    #[serde(default)]
+    pub resets_at: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KenariUsage {
+    pub requests: u64,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+}
+
+/// `GET /api/settings/llm/kenari-account`: the balance, plan quota and usage totals.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KenariAccount {
+    #[serde(default)]
+    pub plan: Option<String>,
+    #[serde(default)]
+    pub windows: std::collections::BTreeMap<String, KenariWindow>,
+    pub balance_rp: u64,
+    #[serde(default)]
+    pub usage: KenariUsage,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KenariAccountOne {
+    pub account: Option<KenariAccount>,
 }

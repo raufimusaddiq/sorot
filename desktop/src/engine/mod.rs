@@ -103,6 +103,13 @@ pub trait Engine: Send + Sync {
     // Settings and Generate status.
     fn update_settings(&self, kind: &str, patch: &Value) -> Result<Settings>;
     fn test_connection(&self, kind: &str) -> Result<ConnTest>;
+    /// Kenari's chat models (`kind` = `llm`) or image models (`image`).
+    fn kenari_models(&self, kind: &str) -> Result<Vec<KenariModel>>;
+    fn kenari_voice_models(&self) -> Result<Vec<KenariVoiceModel>>;
+    /// The saved Kenari connection's balance and quota; `None` when it is not Kenari or cannot be read.
+    fn kenari_account(&self) -> Result<Option<KenariAccount>>;
+    /// Tries a candidate model and key before they are saved.
+    fn probe_llm(&self, model: &str, api_key: &str) -> Result<ConnTest>;
     fn generate_status(&self) -> Result<GenerateStatus>;
     fn generate_models(&self) -> Result<GenModels>;
     fn calibrate(&self) -> Result<()>;
@@ -113,6 +120,7 @@ pub trait Engine: Send + Sync {
     fn publish_draft(&self, clip_id: &str, account_ids: &[String]) -> Result<PublishDraft>;
     fn publish(&self, clip_id: &str, body: &Value) -> Result<SocialPost>;
     fn clip_posts(&self, clip_id: &str) -> Result<Vec<SocialPost>>;
+    fn refresh_post(&self, id: &str) -> Result<SocialPost>;
     fn retry_post(&self, id: &str) -> Result<SocialPost>;
     fn cancel_post(&self, id: &str) -> Result<SocialPost>;
     // Learning.

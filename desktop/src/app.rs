@@ -855,7 +855,7 @@ impl State {
             self.panels.polled = t;
             match self.route {
                 Route::GenerateSettings if self.panels.generate.calibrating() => generate::poll(self),
-                Route::Discover if self.panels.discover.running() => discover::poll(self),
+                Route::Discover if self.panels.discover.polling() => discover::poll(self),
                 _ => {}
             }
         }
@@ -927,6 +927,10 @@ impl Host for State {
         self.dark
     }
 
+    fn lang(&self) -> crate::i18n::Lang {
+        self.lang
+    }
+
     fn engine(&self) -> Option<Arc<dyn Engine>> {
         self.engine.clone()
     }
@@ -937,6 +941,20 @@ impl Host for State {
             Some(bus) => bus.background(Box::new(move || vec![Msg::Panel(work(engine.as_ref()))])),
             None => self.apply(Msg::Panel(work(engine.as_ref()))),
         }
+    }
+
+    fn remembered(&self) -> Vec<String> {
+        self.config_dir.as_deref().map(crate::remembered::load).unwrap_or_default()
+    }
+
+    fn remember(&mut self, ids: &[String]) {
+        if let Some(dir) = &self.config_dir {
+            crate::remembered::store(dir, ids);
+        }
+    }
+
+    fn open_url(&mut self, url: &str) -> Result<(), String> {
+        self.reveal.as_ref().ok_or_else(|| "no browser to open it in".to_string())?.open_url(url)
     }
 
     fn show(&mut self, page: crate::screens::panels::Page) {
@@ -1015,6 +1033,7 @@ pub const SCENES: &[Scene] = &[
     ("discover", |s| {
         *s = State::scene("discover");
         s.show(Page::Discover);
+        s.panels.discover.run = s.engine.as_ref().and_then(|e| e.auto_status("run1").ok());
     }),
     ("publish", |s| {
         *s = State::scene("publish");

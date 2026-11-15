@@ -12,7 +12,7 @@ pub enum Kind {
 }
 
 /// A button under the text: `(key, label, handler)`.
-pub type Action<S> = (&'static str, &'static str, fn(&mut S));
+pub type Action<'a, S> = (&'static str, &'a str, fn(&mut S));
 
 /// `key` names the block (`{key}/cause`, `{key}/next` inside). An error is announced at once
 /// (role `alert`); empty and loading are polite (`status`).
