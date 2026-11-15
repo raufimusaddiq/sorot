@@ -490,10 +490,10 @@ mod tests {
         let _ = (g::projects(&e), g::create_project(&e, &brief), g::project(&e, "p"), g::delete_project(&e, "p"), g::retry_project(&e, "p"), g::more_storylines(&e, "p", "n"), g::pick_storyline(&e, "p", 1, "n"));
         let _ = (g::save_plan(&e, "p", &plan), g::revise_plan(&e, "p", "r"), g::approve_plan(&e, "p", "pl"), g::estimate(&e, "p"), g::build(&e, "p"), g::version(&e, "v"), g::version_action(&e, "v", "cancel"));
         let _ = (g::fix(&e, "v", &["f".to_string()], "n", Some("s1")), g::fix(&e, "v", &[], "", None), g::export_version(&e, "v"), g::events(&e, "p"), g::ideas(&e), g::add_idea(&e, "s", "b"), g::delete_idea(&e, "i"));
-        let _ = (g::run_idea(&e, Some("i"), Some("r")), g::run_idea(&e, None, None), g::facts(&e, "p"), g::add_fact(&e, "p", "c", "v", "u"), g::add_fact(&e, "p", "c", "", "u"), g::delete_fact(&e, "f"), g::verify_facts(&e, "p"));
+        let _ = (g::run_idea(&e, Some("i"), Some("r")), g::run_idea(&e, None, None), g::facts(&e, "p"), g::add_fact(&e, "p", "c", "v", "u"), g::add_fact(&e, "p", "c", "", "u"), g::update_fact(&e, "f", "c", "v", "u"), g::delete_fact(&e, "f"), g::verify_facts(&e, "p"));
         let r = json!({"id": "r"});
         let _ = (g::recipes(&e), g::validate_recipe(&e, &r), g::copy_recipe(&e, "a", "b", "n"), g::save_recipe(&e, "r", &r), g::delete_recipe(&e, "r"), g::import_recipe(&e, &r), g::export_recipe(&e, "r"));
-        let _ = (g::kit_parts(&e), g::remove_kit_part(&e, "a b"), g::steps(&e), g::delete_asset(&e, "a1"));
+        let _ = (g::kit_parts(&e), g::remove_kit_part(&e, "a b"), g::steps(&e), g::delete_asset(&e, "a1"), g::exports(&e), g::publish_draft(&e, "x", &["a".to_string()]), g::publish(&e, "x", &json!({"targets": []})), g::export_posts(&e, "x"));
         let file = std::env::temp_dir().join(format!("sorot-up-{}.png", std::process::id()));
         std::fs::write(&file, b"PNGDATA").unwrap();
         let _ = g::upload_asset(&e, "p", &file, "logo");
@@ -514,18 +514,19 @@ mod tests {
             "POST /api/generate/projects/p/versions {}",
             "GET /api/generate/versions/v ",
             "POST /api/generate/versions/v/cancel {}",
-            r#"POST /api/generate/versions/v/fix {"findingIds":["f"],"note":"n"}"#,
+            r#"POST /api/generate/versions/v/fix {"findingIds":["f"],"note":"n","shotId":"s1"}"#,
             "POST /api/generate/versions/v/fix {}",
             "POST /api/generate/versions/v/export {}",
             "GET /api/generate/projects/p/events?limit=100 ",
             "GET /api/generate/ideas ",
             r#"POST /api/generate/ideas {"brief":"b","slug":"s"}"#,
             "DELETE /api/generate/ideas/i ",
-            r#"POST /api/generate/run {"ideaId":"i"}"#,
+            r#"POST /api/generate/run {"ideaId":"i","recipeId":"r"}"#,
             "POST /api/generate/run {}",
             "GET /api/generate/projects/p/facts ",
             r#"POST /api/generate/projects/p/facts {"claim":"c","sourceUrl":"u","value":"v"}"#,
             r#"POST /api/generate/projects/p/facts {"claim":"c","sourceUrl":"u"}"#,
+            r#"PATCH /api/generate/facts/f {"claim":"c","sourceUrl":"u","value":"v"}"#,
             "DELETE /api/generate/facts/f ",
             "POST /api/generate/projects/p/facts/verify {}",
             "GET /api/generate/recipes ",
@@ -539,6 +540,10 @@ mod tests {
             "DELETE /api/generate/kit/a%20b ",
             "GET /api/generate/steps ",
             "DELETE /api/generate/assets/a1 ",
+            "GET /api/generate/exports ",
+            r#"POST /api/generate/exports/x/publish/draft {"accountIds":["a"]}"#,
+            r#"POST /api/generate/exports/x/publish {"targets":[]}"#,
+            "GET /api/generate/exports/x/posts ",
         ];
         assert_eq!(&got[..want.len()], want);
         let up = got.last().unwrap();

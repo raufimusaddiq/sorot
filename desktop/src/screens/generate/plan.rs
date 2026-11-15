@@ -148,7 +148,7 @@ fn shots<H: Host>(dark: bool, s: &Studio, draft: &Plan, approved: bool) -> El {
         }
         if let (true, Some(level)) = (open, edit.level.as_deref()) {
             sc = sc.child(if approved {
-                text(tf("plan.level_is", &[level])).key(format!("generate/plan/shot/{i}/level")).font(type_::LABEL).color(p.muted).into()
+                text(tf("plan.level_is", &[level])).key(format!("generate/plan/shot/{i}/level")).font(type_::LABEL).color(p.muted)
             } else {
                 let mut r = row().gap(6.0).flex_wrap().w_full().items_center().child(text(tf("plan.level", &[&n])).font(type_::LABEL).color(p.muted));
                 for l in LEVELS {
