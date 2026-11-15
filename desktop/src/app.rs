@@ -66,6 +66,7 @@ pub enum Screen {
     Publish,
     Learning,
     Discover,
+    Generate,
 }
 
 /// Which working screen is open once the engine is ready.
@@ -85,6 +86,7 @@ pub enum Route {
     Publish(String),
     Learning,
     Discover,
+    Generate,
 }
 
 /// What the OS tells the app when a person clicks a notification: the job to open.
@@ -140,6 +142,8 @@ pub enum Msg {
     Options { options: EditOptions, music: Vec<String> },
     /// The local file of a clip's preview, or why there is none.
     PreviewReady { clip_id: String, path: Result<PathBuf, String> },
+    /// A Generate version's draft is on this machine, or why it is not.
+    DraftReady { version_id: String, path: Result<PathBuf, String> },
     /// A notification was clicked.
     OpenJob(String),
     /// What the GPU probe found: Rune draws on a CPU renderer.
@@ -526,6 +530,7 @@ impl State {
                 Route::Publish(_) => Screen::Publish,
                 Route::Learning => Screen::Learning,
                 Route::Discover => Screen::Discover,
+                Route::Generate => Screen::Generate,
             },
         }
     }
@@ -588,6 +593,18 @@ impl State {
                     }
                 }
             }
+            Msg::DraftReady { version_id, path } => match path {
+                Ok(file) => {
+                    self.clips.preview_error = None;
+                    if self.cpu_renderer {
+                        self.clips.external = Some(file);
+                    } else {
+                        self.preview.open(&file, None);
+                    }
+                    self.panels.studio.watching = Some(version_id);
+                }
+                Err(why) => self.panels.studio.error = Some(why),
+            },
             Msg::Gpu { software } => (self.cpu_renderer, self.gpu_notice) = (software, software),
             Msg::OpenJob(id) => {
                 if let Some(h) = &self.handle {
@@ -856,6 +873,7 @@ impl State {
             match self.route {
                 Route::GenerateSettings if self.panels.generate.calibrating() => generate::poll(self),
                 Route::Discover if self.panels.discover.polling() => discover::poll(self),
+                Route::Generate if self.panels.studio.working() => crate::screens::generate::poll(self),
                 _ => {}
             }
         }
@@ -874,6 +892,7 @@ impl State {
 }
 
 pub fn view(s: &State, _: &mut Cx<State>) -> El {
+    crate::i18n::set_current(s.lang);
     crate::ui::beam::begin_screen();
     let p = pal(s.dark);
     let body = match s.screen() {
@@ -886,6 +905,7 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
         Screen::Publish => shell::with_rail(s, publish::view(s)),
         Screen::Learning => shell::with_rail(s, learning::view(s)),
         Screen::Discover => shell::with_rail(s, discover::view(s)),
+        Screen::Generate => shell::with_rail(s, crate::screens::generate::view(s)),
         screen => {
             let content = match screen {
                 Screen::Starting => state_block::<State>(s.dark, "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
@@ -943,6 +963,33 @@ impl Host for State {
         }
     }
 
+    fn reveal(&mut self, path: &str) {
+        self.reveal_path(std::path::Path::new(path));
+    }
+
+    fn publish_export(&mut self, export_id: &str, title: &str) {
+        self.open_publish_export(export_id, title);
+    }
+
+    fn watch(&mut self, version: &str) {
+        let Some(engine) = self.engine.clone() else { return };
+        let dest = self.preview_dir().join(format!("draft-{}.mp4", version.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()));
+        let id = version.to_string();
+        let work = move || {
+            let _ = dest.parent().map(std::fs::create_dir_all);
+            let path = crate::engine::generate::download_draft(engine.as_ref(), &id, &dest).map(|_| dest).map_err(|e| e.to_string());
+            vec![Msg::DraftReady { version_id: id, path }]
+        };
+        match self.bus.clone() {
+            Some(bus) => bus.background(Box::new(work)),
+            None => work().into_iter().for_each(|m| self.apply(m)),
+        }
+    }
+
+    fn stage(&self, label: &str) -> Option<rune::El> {
+        Some(crate::ui::clip_stage::stage(self, label, 0.0))
+    }
+
     fn remembered(&self) -> Vec<String> {
         self.config_dir.as_deref().map(crate::remembered::load).unwrap_or_default()
     }
@@ -976,11 +1023,21 @@ impl Host for State {
                 self.route = Route::Discover;
                 discover::open(self);
             }
+            Page::Generate => {
+                self.route = Route::Generate;
+                crate::screens::generate::open(self);
+            }
         }
     }
 }
 
 impl State {
+    /// The publish panel for an exported Generate video.
+    pub fn open_publish_export(&mut self, export_id: &str, title: &str) {
+        self.route = Route::Publish(export_id.to_string());
+        publish::open_export(self, export_id, title);
+    }
+
     /// The publish panel for one clip (the clips screen opens it).
     pub fn open_publish(&mut self, clip_id: &str, title: &str) {
         self.route = Route::Publish(clip_id.to_string());
@@ -1025,6 +1082,18 @@ pub const SCENES: &[Scene] = &[
     ("generate-settings", |s| {
         *s = State::scene("generate-settings");
         s.show(Page::GenerateSettings);
+    }),
+    ("generate-no-ai", |s| {
+        *s = State::scene("generate-no-ai");
+        s.show(Page::Generate);
+    }),
+    ("generate", |s| {
+        *s = State::scene("generate");
+        s.show(Page::Generate);
+    }),
+    ("generate-flow", |s| {
+        *s = State::scene("generate-flow");
+        s.show(Page::Generate);
     }),
     ("learning", |s| {
         *s = State::scene("learning");

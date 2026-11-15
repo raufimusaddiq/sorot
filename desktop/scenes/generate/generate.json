@@ -1,0 +1,837 @@
+{
+  "GET /api/generate/projects": {
+    "projects": [
+      {
+        "id": "p1",
+        "title": "Penjelasan alur kerja Sorot",
+        "brief": "Jelaskan bagaimana Sorot mengubah video panjang menjadi klip pendek.",
+        "format": "9:16",
+        "targetSec": 24,
+        "language": "id",
+        "styleNotes": null,
+        "recipeId": "quick",
+        "stepIndex": 2,
+        "narration": 0,
+        "storylines": [
+          {
+            "title": "Alur 1: hasil dulu, lalu langkah",
+            "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+            "opening": "Klip jadi, 9:16",
+            "beats": [
+              "unduh",
+              "pilih",
+              "potong"
+            ],
+            "look": "hangat",
+            "sound": "tenang",
+            "bold": false,
+            "recommended": true,
+            "reason": "Paling jelas untuk pemula."
+          },
+          {
+            "title": "Alur 2: hasil dulu, lalu langkah",
+            "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+            "opening": "Klip jadi, 9:16",
+            "beats": [
+              "unduh",
+              "pilih",
+              "potong"
+            ],
+            "look": "hangat",
+            "sound": "tenang",
+            "bold": false,
+            "recommended": false,
+            "reason": "Paling jelas untuk pemula."
+          },
+          {
+            "title": "Alur 3: hasil dulu, lalu langkah",
+            "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+            "opening": "Klip jadi, 9:16",
+            "beats": [
+              "unduh",
+              "pilih",
+              "potong"
+            ],
+            "look": "hangat",
+            "sound": "tenang",
+            "bold": false,
+            "recommended": false,
+            "reason": "Paling jelas untuk pemula."
+          }
+        ],
+        "pickedStoryline": 0,
+        "status": "WAITING",
+        "currentPlanId": "pl1",
+        "errorMessage": null,
+        "createdAt": "2026-11-14T09:00:00Z",
+        "updatedAt": "2026-11-14T09:30:00Z",
+        "recipe": {
+          "steps": [
+            {
+              "use": "storylines"
+            },
+            {
+              "use": "plan"
+            },
+            {
+              "use": "author"
+            }
+          ]
+        }
+      },
+      {
+        "id": "p2",
+        "title": "Video produk 30 detik",
+        "brief": "Jelaskan bagaimana Sorot mengubah video panjang menjadi klip pendek.",
+        "format": "9:16",
+        "targetSec": 24,
+        "language": "id",
+        "styleNotes": null,
+        "recipeId": "quick",
+        "stepIndex": 2,
+        "narration": 0,
+        "storylines": null,
+        "pickedStoryline": null,
+        "status": "RUNNING",
+        "currentPlanId": null,
+        "errorMessage": null,
+        "createdAt": "2026-11-14T09:00:00Z",
+        "updatedAt": "2026-11-14T09:30:00Z",
+        "recipe": {
+          "steps": [
+            {
+              "use": "storylines"
+            },
+            {
+              "use": "plan"
+            },
+            {
+              "use": "author"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "GET /api/generate/projects/p1": {
+    "project": {
+      "id": "p1",
+      "title": "Penjelasan alur kerja Sorot",
+      "brief": "Jelaskan bagaimana Sorot mengubah video panjang menjadi klip pendek.",
+      "format": "9:16",
+      "targetSec": 24,
+      "language": "id",
+      "styleNotes": null,
+      "recipeId": "quick",
+      "stepIndex": 2,
+      "narration": 0,
+      "storylines": [
+        {
+          "title": "Alur 1: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": true,
+          "reason": "Paling jelas untuk pemula."
+        },
+        {
+          "title": "Alur 2: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": false,
+          "reason": "Paling jelas untuk pemula."
+        },
+        {
+          "title": "Alur 3: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": false,
+          "reason": "Paling jelas untuk pemula."
+        }
+      ],
+      "pickedStoryline": 0,
+      "status": "WAITING",
+      "currentPlanId": "pl1",
+      "errorMessage": null,
+      "createdAt": "2026-11-14T09:00:00Z",
+      "updatedAt": "2026-11-14T09:30:00Z",
+      "recipe": {
+        "steps": [
+          {
+            "use": "storylines"
+          },
+          {
+            "use": "plan"
+          },
+          {
+            "use": "author"
+          }
+        ]
+      }
+    },
+    "plans": [
+      {
+        "id": "pl1",
+        "projectId": "p1",
+        "revision": 1,
+        "plan": {
+          "title": "Penjelasan alur kerja Sorot",
+          "message": "Dari video panjang ke klip pendek",
+          "format": "9:16",
+          "totalSec": 24,
+          "language": "id",
+          "look": {
+            "palette": [],
+            "fonts": [],
+            "pacing": "",
+            "notes": ""
+          },
+          "sound": {
+            "music": "",
+            "narration": false
+          },
+          "narrationScript": null,
+          "blocks": [],
+          "assumptions": [
+            "Penonton pemula"
+          ],
+          "shots": [
+            {
+              "id": "s1",
+              "purpose": "Pembuka",
+              "durationSec": 4,
+              "text": [
+                {
+                  "role": "title",
+                  "value": "Pembuka"
+                }
+              ],
+              "visual": {
+                "description": "Gambar Pembuka"
+              },
+              "motion": "perlahan",
+              "hold": false,
+              "transition": "cut",
+              "audio": "",
+              "narration": null,
+              "level": "compose",
+              "look": {
+                "description": "hangat",
+                "values": {
+                  "warna": "krem"
+                },
+                "parts": [
+                  {
+                    "part": "iso"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "s2",
+              "purpose": "Video panjang",
+              "durationSec": 6,
+              "text": [
+                {
+                  "role": "title",
+                  "value": "Video panjang"
+                }
+              ],
+              "visual": {
+                "description": "Gambar Video panjang"
+              },
+              "motion": "perlahan",
+              "hold": false,
+              "transition": "cut",
+              "audio": "",
+              "narration": null
+            },
+            {
+              "id": "s3",
+              "purpose": "Pemilihan momen",
+              "durationSec": 8,
+              "text": [
+                {
+                  "role": "title",
+                  "value": "Pemilihan momen"
+                }
+              ],
+              "visual": {
+                "description": "Gambar Pemilihan momen"
+              },
+              "motion": "perlahan",
+              "hold": false,
+              "transition": "cut",
+              "audio": "",
+              "narration": null
+            },
+            {
+              "id": "s4",
+              "purpose": "Hasil akhir",
+              "durationSec": 6,
+              "text": [
+                {
+                  "role": "title",
+                  "value": "Hasil akhir"
+                }
+              ],
+              "visual": {
+                "description": "Gambar Hasil akhir"
+              },
+              "motion": "perlahan",
+              "hold": false,
+              "transition": "cut",
+              "audio": "",
+              "narration": null
+            }
+          ],
+          "effectNotes": [
+            "Gerak lambat di pembuka"
+          ]
+        },
+        "changeRequest": null,
+        "changeSummary": null,
+        "approvedAt": null,
+        "createdAt": "2026-11-14T09:00:00Z"
+      }
+    ],
+    "versions": [],
+    "assets": [
+      {
+        "id": "a1",
+        "projectId": "p1",
+        "kind": "image",
+        "origin": "upload",
+        "path": "assets/0a1b2c3d-logo.png",
+        "shotId": null
+      }
+    ],
+    "exports": [],
+    "verdictStatuses": {}
+  },
+  "GET /api/generate/projects/p2": {
+    "project": {
+      "id": "p2",
+      "title": "Video produk 30 detik",
+      "brief": "Jelaskan bagaimana Sorot mengubah video panjang menjadi klip pendek.",
+      "format": "9:16",
+      "targetSec": 24,
+      "language": "id",
+      "styleNotes": null,
+      "recipeId": "quick",
+      "stepIndex": 2,
+      "narration": 0,
+      "storylines": null,
+      "pickedStoryline": null,
+      "status": "RUNNING",
+      "currentPlanId": null,
+      "errorMessage": null,
+      "createdAt": "2026-11-14T09:00:00Z",
+      "updatedAt": "2026-11-14T09:30:00Z",
+      "recipe": {
+        "steps": [
+          {
+            "use": "storylines"
+          },
+          {
+            "use": "plan"
+          },
+          {
+            "use": "author"
+          }
+        ]
+      }
+    },
+    "plans": [],
+    "versions": [],
+    "assets": [],
+    "exports": [],
+    "verdictStatuses": {}
+  },
+  "GET /api/generate/projects/p1/events?limit=100": {
+    "events": [
+      {
+        "id": "e1",
+        "kind": "scene",
+        "model": "qwen2.5",
+        "request": "Tulis adegan 3",
+        "response": "ok",
+        "ok": 1,
+        "ms": 4200,
+        "createdAt": "2026-11-14T10:00:00Z"
+      }
+    ]
+  },
+  "GET /api/generate/projects/p1/facts": {
+    "facts": [
+      {
+        "id": "f1",
+        "projectId": "p1",
+        "claim": "Sorot membuat klip 9:16",
+        "value": null,
+        "sourceUrl": "https://sorot.id/docs",
+        "status": "verified",
+        "originalValue": null,
+        "evidence": "klip 9:16",
+        "addedBy": "owner"
+      },
+      {
+        "id": "f2",
+        "projectId": "p1",
+        "claim": "Klip rata-rata lebih singkat dari satu menit",
+        "value": "60 detik",
+        "sourceUrl": null,
+        "status": "unverified",
+        "originalValue": null,
+        "evidence": null,
+        "addedBy": "owner"
+      }
+    ]
+  },
+  "GET /api/generate/projects/p1/estimate": {
+    "draftSec": 40,
+    "exportSec": 120
+  },
+  "GET /api/generate/ideas": {
+    "ideas": [
+      {
+        "id": "i1",
+        "slug": "sebelum-sesudah",
+        "brief": "Sebelum dan sesudah: satu video panjang jadi lima klip",
+        "flags": null,
+        "status": "new",
+        "projectId": null
+      },
+      {
+        "id": "i2",
+        "slug": "satu-jam",
+        "brief": "Satu jam rekaman, satu menit hasil",
+        "flags": null,
+        "status": "built",
+        "projectId": "p1"
+      }
+    ]
+  },
+  "GET /api/generate/recipes": {
+    "recipes": [
+      {
+        "id": "explainer",
+        "name": "Penjelasan produk",
+        "version": 1,
+        "builtIn": true,
+        "description": "Rencana sebelum bangun. Dua putusan.",
+        "recipe": {
+          "id": "explainer",
+          "name": "Penjelasan produk",
+          "steps": [
+            {
+              "use": "plan"
+            }
+          ]
+        },
+        "available": true,
+        "reasons": []
+      },
+      {
+        "id": "mine",
+        "name": "Resep saya",
+        "version": 1,
+        "builtIn": false,
+        "description": null,
+        "recipe": {
+          "id": "mine",
+          "name": "Resep saya",
+          "steps": [
+            {
+              "use": "plan"
+            }
+          ]
+        },
+        "available": true,
+        "reasons": []
+      }
+    ]
+  },
+  "POST /api/generate/recipes/validate": {
+    "ok": false,
+    "errors": [
+      "steps: harus ada langkah author"
+    ],
+    "warnings": [
+      "tidak ada langkah voice"
+    ]
+  },
+  "GET /api/generate/kit": {
+    "parts": [
+      {
+        "name": "iso",
+        "source": "builtIn",
+        "version": "1.0.0",
+        "checkedAt": null,
+        "manifest": {
+          "name": "iso",
+          "does": "Gambar isometrik",
+          "runtime": "webgl",
+          "needs": {
+            "gpu": "preferred"
+          },
+          "example": "",
+          "settings": {},
+          "defaults": {}
+        }
+      },
+      {
+        "name": "timeline",
+        "source": "user",
+        "version": "0.2.0",
+        "checkedAt": null,
+        "manifest": {
+          "name": "timeline",
+          "does": "Garis waktu",
+          "runtime": "dom",
+          "needs": {
+            "gpu": "no"
+          },
+          "example": "",
+          "settings": {},
+          "defaults": {}
+        }
+      }
+    ]
+  },
+  "POST /api/generate/projects": {
+    "project": {
+      "id": "p1",
+      "title": "Penjelasan alur kerja Sorot",
+      "brief": "Jelaskan bagaimana Sorot mengubah video panjang menjadi klip pendek.",
+      "format": "9:16",
+      "targetSec": 24,
+      "language": "id",
+      "styleNotes": null,
+      "recipeId": "quick",
+      "stepIndex": 2,
+      "narration": 0,
+      "storylines": [
+        {
+          "title": "Alur 1: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": true,
+          "reason": "Paling jelas untuk pemula."
+        },
+        {
+          "title": "Alur 2: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": false,
+          "reason": "Paling jelas untuk pemula."
+        },
+        {
+          "title": "Alur 3: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": false,
+          "reason": "Paling jelas untuk pemula."
+        }
+      ],
+      "pickedStoryline": 0,
+      "status": "WAITING",
+      "currentPlanId": "pl1",
+      "errorMessage": null,
+      "createdAt": "2026-11-14T09:00:00Z",
+      "updatedAt": "2026-11-14T09:30:00Z",
+      "recipe": {
+        "steps": [
+          {
+            "use": "storylines"
+          },
+          {
+            "use": "plan"
+          },
+          {
+            "use": "author"
+          }
+        ]
+      }
+    }
+  },
+  "POST /api/generate/run": {
+    "project": {
+      "id": "p1",
+      "title": "Penjelasan alur kerja Sorot",
+      "brief": "Jelaskan bagaimana Sorot mengubah video panjang menjadi klip pendek.",
+      "format": "9:16",
+      "targetSec": 24,
+      "language": "id",
+      "styleNotes": null,
+      "recipeId": "quick",
+      "stepIndex": 2,
+      "narration": 0,
+      "storylines": [
+        {
+          "title": "Alur 1: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": true,
+          "reason": "Paling jelas untuk pemula."
+        },
+        {
+          "title": "Alur 2: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": false,
+          "reason": "Paling jelas untuk pemula."
+        },
+        {
+          "title": "Alur 3: hasil dulu, lalu langkah",
+          "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+          "opening": "Klip jadi, 9:16",
+          "beats": [
+            "unduh",
+            "pilih",
+            "potong"
+          ],
+          "look": "hangat",
+          "sound": "tenang",
+          "bold": false,
+          "recommended": false,
+          "reason": "Paling jelas untuk pemula."
+        }
+      ],
+      "pickedStoryline": 0,
+      "status": "WAITING",
+      "currentPlanId": "pl1",
+      "errorMessage": null,
+      "createdAt": "2026-11-14T09:00:00Z",
+      "updatedAt": "2026-11-14T09:30:00Z",
+      "recipe": {
+        "steps": [
+          {
+            "use": "storylines"
+          },
+          {
+            "use": "plan"
+          },
+          {
+            "use": "author"
+          }
+        ]
+      }
+    }
+  },
+  "GET /api/generate/steps": {
+    "steps": [
+      {
+        "type": "storylines",
+        "gates": [
+          "none",
+          "owner",
+          "director"
+        ],
+        "fields": {
+          "count": {
+            "t": "int",
+            "min": 1,
+            "max": 5
+          },
+          "requireBold": {
+            "t": "bool"
+          }
+        },
+        "required": [],
+        "defaults": {
+          "count": 3
+        }
+      },
+      {
+        "type": "plan",
+        "gates": [
+          "none",
+          "owner"
+        ],
+        "fields": {
+          "blocks": {
+            "t": "bool"
+          },
+          "mode": {
+            "t": "enum",
+            "values": [
+              "short",
+              "long"
+            ]
+          },
+          "note": {
+            "t": "str",
+            "max": 80
+          },
+          "tags": {
+            "t": "strs",
+            "maxItems": 5
+          },
+          "extra": {
+            "t": "obj",
+            "fields": {
+              "depth": {
+                "t": "int",
+                "min": 1,
+                "max": 9
+              }
+            }
+          },
+          "effects": {
+            "t": "flag",
+            "fields": {
+              "maxSteps": {
+                "t": "int",
+                "min": 1,
+                "max": 30
+              }
+            }
+          },
+          "crit": {
+            "t": "list",
+            "max": 2,
+            "item": {
+              "t": "obj",
+              "fields": {
+                "question": {
+                  "t": "str",
+                  "max": 500
+                }
+              }
+            }
+          }
+        },
+        "required": [],
+        "defaults": {}
+      },
+      {
+        "type": "export",
+        "gates": [
+          "none"
+        ],
+        "fields": {},
+        "required": [],
+        "defaults": {}
+      }
+    ]
+  },
+  "POST /api/generate/kit": {
+    "part": {
+      "name": "mine-part",
+      "source": "user",
+      "version": "1.0.0",
+      "manifest": {
+        "does": "x",
+        "runtime": "dom"
+      }
+    }
+  },
+  "POST /api/generate/exports/x1/publish/draft": {
+    "clip": {
+      "id": "x1",
+      "title": "Kenapa orang menunda mulai",
+      "gateVerdict": "PASS",
+      "gateReasons": []
+    },
+    "copyCheckedBy": "Jev",
+    "targets": [
+      {
+        "accountId": "tt",
+        "platform": "tiktok",
+        "name": "@akunanda",
+        "content": "Ternyata bukan malas, tapi takut mulai. Ini yang saya pelajari. #produktif",
+        "copyBy": "llm",
+        "needs": {
+          "tiktokPrivacy": [
+            "PUBLIC_TO_EVERYONE",
+            "SELF_ONLY"
+          ]
+        },
+        "warnings": [],
+        "blockers": []
+      },
+      {
+        "accountId": "yt",
+        "platform": "youtube",
+        "name": "Kanal Anda",
+        "content": "Kenapa orang menunda mulai",
+        "title": "Kenapa orang menunda mulai",
+        "copyBy": "template",
+        "needs": {
+          "madeForKids": true
+        },
+        "warnings": [
+          "shortened to the 5000-character limit"
+        ],
+        "blockers": []
+      }
+    ]
+  },
+  "GET /api/generate/exports/x1/posts": {
+    "posts": []
+  }
+}

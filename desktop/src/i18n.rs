@@ -21,6 +21,28 @@ fn tables() -> &'static [HashMap<String, String>; 2] {
     T.get_or_init(|| [table(include_str!("../i18n/id.json")), table(include_str!("../i18n/en.json"))])
 }
 
+static CURRENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The language screens that hold no `State` read with `t`; the view sets it each frame.
+pub fn set_current(lang: Lang) {
+    CURRENT.store(lang == Lang::En, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The language set for this frame.
+pub fn current() -> Lang {
+    if CURRENT.load(std::sync::atomic::Ordering::Relaxed) { Lang::En } else { Lang::Id }
+}
+
+/// The text for `key` in the current language.
+pub fn t(key: &str) -> String {
+    tr(if CURRENT.load(std::sync::atomic::Ordering::Relaxed) { Lang::En } else { Lang::Id }, key)
+}
+
+/// `t(key)` with `{0}`, `{1}` ... replaced by `args`.
+pub fn tf(key: &str, args: &[&str]) -> String {
+    args.iter().enumerate().fold(t(key), |s, (i, a)| s.replace(&format!("{{{i}}}"), a))
+}
+
 /// The text for `key` in `lang`; the other language's, then the key itself, when it is missing.
 pub fn tr(lang: Lang, key: &str) -> String {
     let [id, en] = tables();

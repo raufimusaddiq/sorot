@@ -28,7 +28,7 @@ unless a row says otherwise.
 
 | Screen (scene, frame) | Status | Differences |
 |---|---|---|
-| Shell: menu bar, rail, logo (all scenes, `shell-*`) | matches | Menu bar (Berkas, Sunting, Tampilan, Jendela, Bantuan) with working lists, 64 pt rail, the approved icon (`assets/icon/icon-512.png`) at 32 pt, Indonesian labels from `i18n/id.json`, English from `en.json`. The frames' "Pratinjau desain, data contoh" note is the design file's own label and is not shipped. Generate has no screen, so the rail omits it (R-24) |
+| Shell: menu bar, rail, logo (all scenes, `shell-*`) | matches | Menu bar (Berkas, Sunting, Tampilan, Jendela, Bantuan) with working lists, 64 pt rail, the approved icon (`assets/icon/icon-512.png`) at 32 pt, Indonesian labels from `i18n/id.json`, English from `en.json`. The frames' "Pratinjau desain, data contoh" note is the design file's own label and is not shipped. Generate (T-18) sits between Temukan and Belajar and opens the Generate window |
 | Home (`home-empty`, `home-*`) | differs | No right "Opsi impor" card with dropdowns and toggles (the options are a sheet); no "Terakhir dipotong" list; English copy; no dashed drop field |
 | Job (`job-running`, `job-*`) | differs | Beam, head glow and stage ring match; missing the large percent beside the stage name, the "Catatan terakhir" panel, the elapsed time sentence and the disabled "Lihat klip" action; English copy |
 | Clips (`clips-ranked`, `clips-*`) | differs | Missing the filter tabs (Semua, PASS, REVIEW, SKIP), row thumbnails, the score bar, outlined verdict pills, the subtitle sample on the stage, Terbitkan and "Tampilkan di folder" placement; the transport bar sits under the stage, not on it; English copy |

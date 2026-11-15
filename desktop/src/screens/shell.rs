@@ -163,6 +163,7 @@ pub fn with_rail(s: &State, content: El) -> El {
     }
     rail = rail
         .child(rail_item(s, "shell/rail/discover", "shell.discover", on(&[Screen::Discover]), |s| s.show(Page::Discover)))
+        .child(rail_item(s, "shell/rail/generate", "shell.generate", on(&[Screen::Generate]), |s| s.show(Page::Generate)))
         .child(rail_item(s, "shell/rail/learning", "shell.learning", on(&[Screen::Learning]), |s| s.show(Page::Learning)))
         .child(rail_item(s, "shell/rail/settings", "shell.settings", on(&[Screen::Connections, Screen::GenerateSettings]), |s| s.show(Page::Connections)));
     row().w_full().grow(1.0).shrink().child(rail).child(col().grow(1.0).shrink().center().child(content))

@@ -1,0 +1,3 @@
+{
+  "GET /api/generate/projects": { "projects": [] }
+}

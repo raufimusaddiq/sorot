@@ -1,0 +1,33 @@
+{
+  "status": "ok",
+  "data": {
+    "llm": {
+      "active": true,
+      "enabled": true,
+      "saved": [],
+      "apiKey": "••••a1f3",
+      "apiKeySet": true,
+      "baseUrl": "https://api.contoh.id/v1",
+      "model": "qwen2.5",
+      "director": false
+    },
+    "jev": {
+      "active": false,
+      "enabled": true,
+      "saved": [],
+      "apiKey": "",
+      "apiKeySet": false,
+      "url": "",
+      "model": "jev-1.14.0",
+      "director": true
+    },
+    "tebar": {
+      "active": false,
+      "enabled": true,
+      "saved": [],
+      "apiKey": "",
+      "apiKeySet": false,
+      "baseUrl": ""
+    }
+  }
+}

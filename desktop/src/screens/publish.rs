@@ -9,6 +9,7 @@ use rune::{El, TextEdit, col, edit_access, row, text};
 use serde_json::{Map, Value, json};
 use sorot_desktop_core::publish_gate::{Choices, Listed, Platform, Target, can_post, preselect};
 
+use crate::engine::generate as api;
 use crate::engine::types::{DraftTarget, PublishDraft, SocialAccount, SocialPost};
 use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
@@ -38,7 +39,10 @@ pub enum Problem {
 
 #[derive(Default)]
 pub struct Publish {
+    /// The clip's id, or the id of an exported Generate video (`generated`).
     pub clip_id: String,
+    /// The subject is an exported Generate video, not a clip.
+    pub generated: bool,
     pub clip_title: String,
     pub load: Load,
     /// False when Tebar is not connected.
@@ -139,11 +143,20 @@ impl TargetEdit {
 /// Opens the panel for a clip: its accounts and earlier posts. The accounts picked last time come
 /// back selected when they are still listed and can post.
 pub fn open<H: Host>(h: &mut H, clip_id: &str, clip_title: &str) {
+    begin(h, clip_id, clip_title, false);
+}
+
+/// The same panel for an exported Generate video: the same choices and protections, other routes.
+pub fn open_export<H: Host>(h: &mut H, export_id: &str, title: &str) {
+    begin(h, export_id, title, true);
+}
+
+fn begin<H: Host>(h: &mut H, clip_id: &str, clip_title: &str, generated: bool) {
     let id = clip_id.to_string();
     let saved = h.remembered();
-    h.panels_mut().publish = Publish { clip_id: id.clone(), clip_title: clip_title.into(), load: Load::Loading, ..Publish::default() };
+    h.panels_mut().publish = Publish { clip_id: id.clone(), generated, clip_title: clip_title.into(), load: Load::Loading, ..Publish::default() };
     go(h, move |e| {
-        let both = e.social_accounts().and_then(|a| Ok((a, e.clip_posts(&id)?)));
+        let both = e.social_accounts().and_then(|a| Ok((a, if generated { api::export_posts(e, &id)? } else { e.clip_posts(&id)? })));
         answer(both, move |p, r| {
             let s = &mut p.publish;
             s.load = Load::of(&r);
@@ -173,9 +186,9 @@ pub fn select_account<H: Host>(h: &mut H, id: &str) {
 pub fn write_copy<H: Host>(h: &mut H) {
     let s = &mut h.panels_mut().publish;
     (s.busy, s.error) = (true, None);
-    let (id, accounts) = (s.clip_id.clone(), s.selected.clone());
+    let (id, accounts, generated) = (s.clip_id.clone(), s.selected.clone(), s.generated);
     go(h, move |e| {
-        answer(e.publish_draft(&id, &accounts), |p, r| {
+        answer(if generated { api::publish_draft(e, &id, &accounts) } else { e.publish_draft(&id, &accounts) }, |p, r| {
             let s = &mut p.publish;
             s.busy = false;
             match r {
@@ -202,9 +215,9 @@ pub fn post<H: Host>(h: &mut H) {
         }
     }
     (s.busy, s.error) = (true, None);
-    let id = s.clip_id.clone();
+    let (id, generated) = (s.clip_id.clone(), s.generated);
     go(h, move |e| {
-        answer(e.publish(&id, &body), |p, r| {
+        answer(if generated { api::publish(e, &id, &body) } else { e.publish(&id, &body) }, |p, r| {
             let s = &mut p.publish;
             s.busy = false;
             match r {
