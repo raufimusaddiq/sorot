@@ -37,6 +37,7 @@ pub fn with_rail(s: &State, content: El) -> El {
         .child(col().key("shell/rail/home").role("button").label("Home").focusable(true).padding(10.0).radius(6.0).fill(p.raised)
             .child(text("Home").font(type_::LABEL).color(p.beam_text)))
         .child(rail_item(s, "shell/rail/discover", "Discover", Page::Discover))
+        .child(rail_item(s, "shell/rail/generate", "Generate", Page::Generate))
         .child(rail_item(s, "shell/rail/learning", "Learning", Page::Learning))
         .child(rail_item(s, "shell/rail/settings", "Settings", Page::Connections));
     row().w_full().grow(1.0).child(rail).child(col().grow(1.0).h_full().center().child(content))

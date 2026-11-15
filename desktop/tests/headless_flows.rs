@@ -9,6 +9,9 @@ use support::headless::*;
 /// role and a name, and the `source` that `workspace.json` must end up with (the journey chose a library).
 type Flow = (&'static str, Option<&'static str>, &'static [(&'static str, &'static str)], &'static [&'static str], Option<&'static str>);
 
+/// A journey's marks: `(mark, key shown, key gone)`.
+type Marks = &'static [(&'static str, &'static str, &'static str)];
+
 const FLOWS: &[Flow] = &[
     ("home-empty", None, &[("home/empty/cause", "No videos yet")], &["home/empty"], None),
     ("readiness-missing", None, &[("readiness/title", "Sorot needs a few things first"), ("readiness/whisperModel/progress", "Downloading 40%")], &["readiness/title", "readiness/ffmpeg/fix"], None),
@@ -39,7 +42,7 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
 
 #[test]
 fn the_scenes_are_listed_and_render_in_both_themes() {
-    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "connections", "generate-settings", "learning", "discover", "publish"]);
+    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
     for theme in ["dark", "light"] {
         let png = snap("readiness-missing", theme, "900x600");
         let _ = std::fs::remove_file(png);
@@ -66,4 +69,33 @@ fn the_us2_journeys_reach_their_screens() {
 
     let tree = at("us2-pick-file", "end", &log);
     assert!(has(&tree, "job/progress") && !has(&tree, "home/choose-file"), "a picked file opens its job");
+}
+
+/// US5 journeys, binary only: the screen reached at each mark and the end state. The rules and the
+/// per-control routes are L1 and L2.
+#[test]
+fn the_us5_journeys_reach_their_screens() {
+    // the publish page (T-15) is taller than the default window, so its journey runs in a tall one
+    let at = |scene: &str, script: &str, mark: &str| run_at(scene, Some(script), mark, if scene == "publish" { &["--size", "1100x2400"] } else { &[] }, &[]);
+    let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
+
+    // (scene, script, [(mark, key shown, key absent)]): no AI connection, then one saved, then Generate is open
+    let journeys: [(&str, &str, Marks); 3] = [
+        ("generate-no-ai", "us5-connect-then-generate", &[("settings", "conn/llm/key", "generate/unavailable"), ("end", "generate/ready", "generate/unavailable")]),
+        (
+            "generate-flow",
+            "us5-generate-end-to-end",
+            &[("stories", "generate/step/stories", "generate/brief/create"), ("plan", "generate/plan/approve", "generate/story/0/pick"), ("approved", "generate/build/start", "generate/build/gate"), ("built", "generate/build/start", "generate/build/cancel"), ("end", "generate/build/accepted", "generate/build/accept")],
+        ),
+        ("publish", "us5-clip-to-post", &[("choices", "publish/post", "publish/post/p9/row"), ("end", "publish/post/p9/row", "publish/post")]),
+    ];
+    for (scene, script, marks) in journeys {
+        for (mark, shown, absent) in marks {
+            let tree = at(scene, script, mark);
+            assert!(has(&tree, shown) && !has(&tree, absent), "{script} at {mark}: {shown} shown, {absent} gone");
+            if shown.starts_with("generate/") {
+                assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{script} at {mark}");
+            }
+        }
+    }
 }

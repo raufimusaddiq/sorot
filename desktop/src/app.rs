@@ -62,6 +62,7 @@ pub enum Screen {
     Publish,
     Learning,
     Discover,
+    Generate,
 }
 
 /// Which working screen is open once the engine is ready.
@@ -81,6 +82,7 @@ pub enum Route {
     Publish(String),
     Learning,
     Discover,
+    Generate,
 }
 
 /// What the OS tells the app when a person clicks a notification: the job to open.
@@ -510,6 +512,7 @@ impl State {
                 Route::Publish(_) => Screen::Publish,
                 Route::Learning => Screen::Learning,
                 Route::Discover => Screen::Discover,
+                Route::Generate => Screen::Generate,
             },
         }
     }
@@ -820,6 +823,7 @@ impl State {
             match self.route {
                 Route::GenerateSettings if self.panels.generate.calibrating() => generate::poll(self),
                 Route::Discover if self.panels.discover.running() => discover::poll(self),
+                Route::Generate if self.panels.studio.working() => crate::screens::generate::poll(self),
                 _ => {}
             }
         }
@@ -847,6 +851,7 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
         Screen::Publish => shell::with_rail(s, publish::view(s)),
         Screen::Learning => shell::with_rail(s, learning::view(s)),
         Screen::Discover => shell::with_rail(s, discover::view(s)),
+        Screen::Generate => shell::with_rail(s, crate::screens::generate::view(s)),
         screen => {
             let content = match screen {
                 Screen::Starting => state_block::<State>(s.dark, "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
@@ -894,6 +899,10 @@ impl Host for State {
         }
     }
 
+    fn reveal(&mut self, path: &str) {
+        self.reveal_path(std::path::Path::new(path));
+    }
+
     fn show(&mut self, page: crate::screens::panels::Page) {
         use crate::screens::panels::Page;
         match page {
@@ -912,6 +921,10 @@ impl Host for State {
             Page::Discover => {
                 self.route = Route::Discover;
                 discover::open(self);
+            }
+            Page::Generate => {
+                self.route = Route::Generate;
+                crate::screens::generate::open(self);
             }
         }
     }
@@ -941,6 +954,18 @@ pub const SCENES: &[Scene] = &[
     ("generate-settings", |s| {
         *s = State::scene("generate-settings");
         s.show(Page::GenerateSettings);
+    }),
+    ("generate-no-ai", |s| {
+        *s = State::scene("generate-no-ai");
+        s.show(Page::Generate);
+    }),
+    ("generate", |s| {
+        *s = State::scene("generate");
+        s.show(Page::Generate);
+    }),
+    ("generate-flow", |s| {
+        *s = State::scene("generate-flow");
+        s.show(Page::Generate);
     }),
     ("learning", |s| {
         *s = State::scene("learning");

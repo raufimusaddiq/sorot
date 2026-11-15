@@ -2,6 +2,7 @@
 
 pub mod discover;
 pub mod feedback;
+pub mod generate;
 pub mod learning;
 pub mod panels;
 pub mod publish;

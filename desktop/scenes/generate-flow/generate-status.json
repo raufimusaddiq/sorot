@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "data": {
+    "available": true,
+    "reasons": [],
+    "hyperframes": {
+      "ok": true,
+      "version": "0.4"
+    },
+    "llm": {
+      "configured": true
+    },
+    "jev": {
+      "configured": false
+    },
+    "compute": "cpu"
+  }
+}

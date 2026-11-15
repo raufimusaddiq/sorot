@@ -1,0 +1,19 @@
+{"events": [
+  {"t":0.2,"type":"tap","key":"generate/new"},
+  {"t":0.9,"type":"tap","key":"generate/brief/text"},
+  {"t":1.6,"type":"type","text":"Jelaskan bunga majemuk"},
+  {"t":2.5,"type":"tap","key":"generate/brief/create"},
+  {"t":3.2,"type":"mark","name":"stories"},
+  {"t":3.3,"type":"tap","key":"generate/step/stories"},
+  {"t":4,"type":"tap","key":"generate/story/0/pick"},
+  {"t":4.7,"type":"mark","name":"plan"},
+  {"t":4.8,"type":"tap","key":"generate/steptab/plan"},
+  {"t":5.5,"type":"tap","key":"generate/plan/approve"},
+  {"t":6.2,"type":"mark","name":"approved"},
+  {"t":6.3,"type":"tap","key":"generate/steptab/build"},
+  {"t":7,"type":"tap","key":"generate/build/start"},
+  {"t":7.7,"type":"mark","name":"built"},
+  {"t":7.8,"type":"tap","key":"generate/steptab/verdict"},
+  {"t":8.5,"type":"tap","key":"generate/build/accept"},
+  {"t":9.2,"type":"mark","name":"end"}
+]}

@@ -51,6 +51,10 @@ struct Inner {
     job_steps: VecDeque<JobDetail>,
     job: Option<JobDetail>,
     imported: bool,
+    /// How many answers each `$steps` route has given.
+    steps_given: HashMap<String, usize>,
+    /// Settings were saved: `settings-saved.json`, when the scene has one, answers from now on.
+    saved: bool,
 }
 
 /// What the engine shows while one job walks every stage: each stage reports `PROGRESS` (50%),
@@ -134,6 +138,11 @@ impl FakeEngine {
         FakeEngine { dir: scenes_dir().join("__none__"), inner: Mutex::new(Inner::default()) }
     }
 
+    /// The settings file to answer from: the saved one once settings were saved and the scene has it.
+    fn settings_file(&self) -> &'static str {
+        if self.inner.lock().unwrap().saved && self.dir.join("settings-saved.json").is_file() { "settings-saved" } else { "settings" }
+    }
+
     fn enter(&self, call: String, method: &str) -> Result<()> {
         let mut i = self.inner.lock().unwrap();
         i.calls.push(call);
@@ -191,7 +200,7 @@ impl Engine for FakeEngine {
 
     fn settings(&self) -> Result<Settings> {
         self.enter("settings".into(), "settings")?;
-        self.load("settings", NO_SETTINGS)
+        self.load(self.settings_file(), NO_SETTINGS)
     }
 
     fn videos(&self) -> Result<Vec<Video>> {
@@ -296,7 +305,8 @@ impl Engine for FakeEngine {
 
     fn update_settings(&self, kind: &str, patch: &Value) -> Result<Settings> {
         self.enter(format!("update_settings({kind}, {patch})"), "update_settings")?;
-        self.load("settings", NO_SETTINGS)
+        self.inner.lock().unwrap().saved = true;
+        self.load(self.settings_file(), NO_SETTINGS)
     }
 
     fn test_connection(&self, kind: &str) -> Result<ConnTest> {
@@ -402,6 +412,38 @@ impl Engine for FakeEngine {
     fn auto_status(&self, id: &str) -> Result<AutoRun> {
         self.enter(format!("auto_status({id})"), "auto_status")?;
         self.load("auto-done", r#"{"status":"ok","data":{"id":"run1","status":"DONE","count":3}}"#)
+    }
+
+    fn download(&self, path: &str, dest: &Path) -> Result<u64> {
+        self.enter(format!("download({path})"), "download")?;
+        write_fake(dest)
+    }
+
+    /// A route answers from a test's `serve("METHOD path", envelope)`, else from the scene's
+    /// `generate.json` (`{"METHOD path": data}`, or `{"$steps": [..]}` for one answer per call, the
+/// last repeating); a write nobody described answers `{}`.
+    fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
+        let key = format!("{method} {path}");
+        self.enter(format!("{key}{}", body.map(|b| format!(" {b}")).unwrap_or_default()), &key)?;
+        let served = self.inner.lock().unwrap().files.get(&key).cloned();
+        if let Some(text) = served {
+            let env: Envelope<Value> = serde_json::from_str(&text).map_err(|e| EngineError::Malformed(format!("{key}: {e}")))?;
+            return env.into_result().map_err(|message| EngineError::Api { status: 409, message });
+        }
+        let scene: Option<Value> = std::fs::read_to_string(self.dir.join("generate.json")).ok().and_then(|t| serde_json::from_str(&t).ok());
+        match scene.and_then(|mut s| s.get_mut(&key).map(Value::take)) {
+            Some(Value::Object(mut o)) if o.len() == 1 && o.contains_key("$steps") => {
+                let steps = o.remove("$steps").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+                let mut i = self.inner.lock().unwrap();
+                let n = i.steps_given.entry(key).or_default();
+                let answer = steps.get((*n).min(steps.len().saturating_sub(1))).cloned().unwrap_or(Value::Null);
+                *n += 1;
+                Ok(answer)
+            }
+            Some(data) => Ok(data),
+            None if method != "GET" => Ok(Value::Object(Default::default())),
+            None => Err(EngineError::Api { status: 404, message: format!("no answer for {key} in this scene") }),
+        }
     }
 }
 
