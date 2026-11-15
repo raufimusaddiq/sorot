@@ -94,6 +94,22 @@ pub struct FakeEngine {
 }
 
 impl FakeEngine {
+    /// What the scene's `generate.json` answers for `key` (`METHOD path`): its data, or the next of its `$steps`.
+    fn scene_route(&self, key: &str) -> Option<Value> {
+        let scene: Option<Value> = std::fs::read_to_string(self.dir.join("generate.json")).ok().and_then(|t| serde_json::from_str(&t).ok());
+        match scene.and_then(|mut s| s.get_mut(key).map(Value::take))? {
+            Value::Object(mut o) if o.len() == 1 && o.contains_key("$steps") => {
+                let steps = o.remove("$steps").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+                let mut i = self.inner.lock().unwrap();
+                let n = i.steps_given.entry(key.to_string()).or_default();
+                let answer = steps.get((*n).min(steps.len().saturating_sub(1))).cloned().unwrap_or(Value::Null);
+                *n += 1;
+                Some(answer)
+            }
+            data => Some(data),
+        }
+    }
+
     /// Answers come from `desktop/scenes/{scene}/{route}.json` (the engine's own payloads).
     pub fn scene(name: &str) -> Self {
         let dir = scenes_dir().join(name);
@@ -449,6 +465,9 @@ impl Engine for FakeEngine {
         let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let fields = fields.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
         self.enter(format!("POST {path} upload({name}|{fields})"), &format!("POST {path}"))?;
+        if let Some(answer) = self.scene_route(&format!("POST {path}")) {
+            return Ok(answer);
+        }
         Ok(json!({ "asset": { "id": "a1", "projectId": "p1", "kind": "image", "origin": "upload", "path": name } }))
     }
 
@@ -463,16 +482,7 @@ impl Engine for FakeEngine {
             let env: Envelope<Value> = serde_json::from_str(&text).map_err(|e| EngineError::Malformed(format!("{key}: {e}")))?;
             return env.into_result().map_err(|message| EngineError::Api { status: 409, message });
         }
-        let scene: Option<Value> = std::fs::read_to_string(self.dir.join("generate.json")).ok().and_then(|t| serde_json::from_str(&t).ok());
-        match scene.and_then(|mut s| s.get_mut(&key).map(Value::take)) {
-            Some(Value::Object(mut o)) if o.len() == 1 && o.contains_key("$steps") => {
-                let steps = o.remove("$steps").and_then(|v| v.as_array().cloned()).unwrap_or_default();
-                let mut i = self.inner.lock().unwrap();
-                let n = i.steps_given.entry(key).or_default();
-                let answer = steps.get((*n).min(steps.len().saturating_sub(1))).cloned().unwrap_or(Value::Null);
-                *n += 1;
-                Ok(answer)
-            }
+        match self.scene_route(&key) {
             Some(data) => Ok(data),
             None if method != "GET" => Ok(Value::Object(Default::default())),
             None => Err(EngineError::Api { status: 404, message: format!("no answer for {key} in this scene") }),

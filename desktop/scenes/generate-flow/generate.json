@@ -979,6 +979,216 @@
         "assets": [],
         "exports": [],
         "verdictStatuses": {}
+      },
+      {
+        "project": {
+          "id": "p1",
+          "title": "Video baru",
+          "brief": "Jelaskan bagaimana Sorot mengubah video panjang menjadi klip pendek.",
+          "format": "9:16",
+          "targetSec": 24,
+          "language": "id",
+          "styleNotes": null,
+          "recipeId": "quick",
+          "stepIndex": 2,
+          "narration": 0,
+          "storylines": [
+            {
+              "title": "Alur 1: hasil dulu, lalu langkah",
+              "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+              "opening": "Klip jadi, 9:16",
+              "beats": [
+                "unduh",
+                "pilih",
+                "potong"
+              ],
+              "look": "hangat",
+              "sound": "tenang",
+              "bold": false,
+              "recommended": true,
+              "reason": "Paling jelas untuk pemula."
+            },
+            {
+              "title": "Alur 2: hasil dulu, lalu langkah",
+              "pitch": "Mulai dari klip jadi, mundur ke video panjangnya.",
+              "opening": "Klip jadi, 9:16",
+              "beats": [
+                "unduh",
+                "pilih",
+                "potong"
+              ],
+              "look": "hangat",
+              "sound": "tenang",
+              "bold": false,
+              "recommended": false,
+              "reason": "Paling jelas untuk pemula."
+            }
+          ],
+          "pickedStoryline": 0,
+          "status": "EXPORTED",
+          "currentPlanId": "pl1",
+          "errorMessage": null,
+          "createdAt": "2026-11-14T09:00:00Z",
+          "updatedAt": "2026-11-14T09:30:00Z",
+          "recipe": {
+            "steps": [
+              {
+                "use": "storylines"
+              },
+              {
+                "use": "plan"
+              },
+              {
+                "use": "author"
+              }
+            ]
+          }
+        },
+        "plans": [
+          {
+            "id": "pl1",
+            "projectId": "p1",
+            "revision": 1,
+            "plan": {
+              "title": "Penjelasan alur kerja Sorot",
+              "message": "Dari video panjang ke klip pendek",
+              "format": "9:16",
+              "totalSec": 24,
+              "language": "id",
+              "look": {
+                "palette": [],
+                "fonts": [],
+                "pacing": "",
+                "notes": ""
+              },
+              "sound": {
+                "music": "",
+                "narration": false
+              },
+              "narrationScript": null,
+              "blocks": [],
+              "assumptions": [
+                "Penonton pemula"
+              ],
+              "shots": [
+                {
+                  "id": "s1",
+                  "purpose": "Pembuka",
+                  "durationSec": 4,
+                  "text": [
+                    {
+                      "role": "title",
+                      "value": "Pembuka"
+                    }
+                  ],
+                  "visual": {
+                    "description": "Gambar Pembuka"
+                  },
+                  "motion": "perlahan",
+                  "hold": false,
+                  "transition": "cut",
+                  "audio": "",
+                  "narration": null
+                },
+                {
+                  "id": "s2",
+                  "purpose": "Video panjang",
+                  "durationSec": 6,
+                  "text": [
+                    {
+                      "role": "title",
+                      "value": "Video panjang"
+                    }
+                  ],
+                  "visual": {
+                    "description": "Gambar Video panjang"
+                  },
+                  "motion": "perlahan",
+                  "hold": false,
+                  "transition": "cut",
+                  "audio": "",
+                  "narration": null
+                },
+                {
+                  "id": "s3",
+                  "purpose": "Pemilihan momen",
+                  "durationSec": 8,
+                  "text": [
+                    {
+                      "role": "title",
+                      "value": "Pemilihan momen"
+                    }
+                  ],
+                  "visual": {
+                    "description": "Gambar Pemilihan momen"
+                  },
+                  "motion": "perlahan",
+                  "hold": false,
+                  "transition": "cut",
+                  "audio": "",
+                  "narration": null
+                },
+                {
+                  "id": "s4",
+                  "purpose": "Hasil akhir",
+                  "durationSec": 6,
+                  "text": [
+                    {
+                      "role": "title",
+                      "value": "Hasil akhir"
+                    }
+                  ],
+                  "visual": {
+                    "description": "Gambar Hasil akhir"
+                  },
+                  "motion": "perlahan",
+                  "hold": false,
+                  "transition": "cut",
+                  "audio": "",
+                  "narration": null
+                }
+              ],
+              "effectNotes": [
+                "Gerak lambat di pembuka"
+              ]
+            },
+            "changeRequest": null,
+            "changeSummary": null,
+            "approvedAt": "2026-11-14T10:00:00Z",
+            "createdAt": "2026-11-14T09:00:00Z"
+          }
+        ],
+        "versions": [
+          {
+            "id": "ver1",
+            "projectId": "p1",
+            "planId": "pl1",
+            "number": 1,
+            "parentVersionId": null,
+            "status": "BUILT",
+            "step": null,
+            "progress": null,
+            "renderKind": "draft",
+            "draftPath": "/drafts/ver1.mp4",
+            "stepState": null,
+            "hyperframesVersion": "0.4",
+            "buildMs": null,
+            "errorMessage": null,
+            "createdAt": "2026-11-14T10:00:00Z",
+            "updatedAt": "2026-11-14T10:05:00Z"
+          }
+        ],
+        "assets": [],
+        "exports": [
+          {
+            "id": "ex1",
+            "projectId": "p1",
+            "versionId": "ver1",
+            "path": "D:/exports/video-baru.mp4",
+            "title": "Video baru"
+          }
+        ],
+        "verdictStatuses": {}
       }
     ]
   },
@@ -1040,5 +1250,66 @@
         "createdAt": "2026-11-14T10:06:00Z"
       }
     ]
+  },
+  "POST /api/generate/versions/ver1/export": {
+    "export": {
+      "id": "ex1",
+      "projectId": "p1",
+      "versionId": "ver1",
+      "path": "D:/exports/video-baru.mp4",
+      "title": "Video baru"
+    }
+  },
+  "POST /api/generate/exports/ex1/publish/draft": {
+    "clip": {
+      "id": "ex1",
+      "title": "Kenapa orang menunda mulai",
+      "gateVerdict": "PASS",
+      "gateReasons": []
+    },
+    "copyCheckedBy": "Jev",
+    "targets": [
+      {
+        "accountId": "tt",
+        "platform": "tiktok",
+        "name": "@akunanda",
+        "content": "Ternyata bukan malas, tapi takut mulai. Ini yang saya pelajari. #produktif",
+        "copyBy": "llm",
+        "needs": {
+          "tiktokPrivacy": [
+            "PUBLIC_TO_EVERYONE",
+            "SELF_ONLY"
+          ]
+        },
+        "warnings": [],
+        "blockers": []
+      },
+      {
+        "accountId": "yt",
+        "platform": "youtube",
+        "name": "Kanal Anda",
+        "content": "Kenapa orang menunda mulai",
+        "title": "Kenapa orang menunda mulai",
+        "copyBy": "template",
+        "needs": {
+          "madeForKids": true
+        },
+        "warnings": [
+          "shortened to the 5000-character limit"
+        ],
+        "blockers": []
+      }
+    ]
+  },
+  "POST /api/generate/exports/ex1/publish": {
+    "post": {
+      "id": "p9",
+      "clipId": "ex1",
+      "status": "QUEUED",
+      "targets": "[{\"platform\": \"tiktok\", \"status\": \"QUEUED\"}]"
+    }
+  },
+  "GET /api/generate/exports/ex1/posts": {
+    "posts": []
   }
 }

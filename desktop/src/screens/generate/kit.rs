@@ -6,14 +6,14 @@
 use std::path::PathBuf;
 
 use rune::tok::type_;
-use rune::{El, col, row, text};
+use rune::{El, FileDialogOptions, Tx, col, row, text};
 
 use crate::engine::generate as api;
 use crate::engine::generate::KitPart;
 use crate::screens::generate::Studio;
 use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
-use crate::ui::form::{Tone, btn, card, heading, note};
+use crate::ui::form::{Tone, btn, btn_tx, card, heading, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 
@@ -41,6 +41,31 @@ fn listed(p: &mut Panels, r: Result<Vec<KitPart>, String>) {
 pub fn load<H: Host>(h: &mut H) {
     h.panels_mut().studio.kit.load = Load::Loading;
     go(h, |e| answer(api::kit_parts(e), listed));
+}
+
+/// Sends a part's .zip to the engine, which checks it before it is kept.
+pub fn add<H: Host>(h: &mut H, zip: PathBuf) {
+    let k = &mut h.panels_mut().studio.kit;
+    (k.busy, k.error, k.notice) = (true, None, None);
+    go(h, move |e| {
+        answer(api::add_kit_part(e, &zip).and_then(|part| Ok((part, api::kit_parts(e)?))), |p, r| match r {
+            Ok((part, parts)) => {
+                p.studio.kit.notice = Some(tf("kit.added", &[&part.name, &part.version]));
+                listed(p, Ok(parts));
+            }
+            Err(why) => (p.studio.kit.busy, p.studio.kit.error) = (false, Some(why)),
+        })
+    });
+}
+
+/// The dialog for the .zip of a part.
+fn ask<H: Host>(_: &mut H, tx: &mut Tx) {
+    let options = FileDialogOptions { title: t("kit.add"), ..Default::default() }.filter("Kit", &["zip"]);
+    tx.open_file(options, |h: &mut H, r, _| match r {
+        Ok(Some(path)) => add(h, path),
+        Ok(None) => {}
+        Err(e) => h.panels_mut().studio.kit.error = Some(e.to_string()),
+    });
 }
 
 pub fn remove<H: Host>(h: &mut H, name: &str) {
@@ -86,7 +111,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     let p = pal(dark);
     let k = &s.kit;
     let head = heading(dark, "generate/kit/title", &t("kit.title"), &t("kit.sub"));
-    let mut c = col().gap(16.0).w_full().child(head);
+    let mut c = col().gap(16.0).w_full().child(head).child(btn_tx(dark, "generate/kit/add", &t("kit.add"), !k.busy, ask::<H>));
     if k.load == Load::Ready && k.parts.is_empty() {
         return c.child(state_block::<H>(dark, "generate/kit/empty", Kind::Empty, &t("kit.empty.cause"), &t("kit.empty.next"), None));
     }

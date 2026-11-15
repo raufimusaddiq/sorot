@@ -364,6 +364,31 @@ pub struct GenerateStatus {
     pub llm: Configured,
     pub jev: Configured,
     pub compute: String,
+    /// The voice engines that are set up: narration is offered only with one.
+    #[serde(default)]
+    pub voice: GenVoice,
+    /// Ready-made formats a brief can start from.
+    #[serde(default)]
+    pub presets: Vec<GenPreset>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenVoice {
+    #[serde(default)]
+    pub engines: Vec<String>,
+    #[serde(default)]
+    pub local_available: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenPreset {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+    pub target_sec: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

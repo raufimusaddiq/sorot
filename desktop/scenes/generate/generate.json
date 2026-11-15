@@ -236,7 +236,19 @@
               "hold": false,
               "transition": "cut",
               "audio": "",
-              "narration": null
+              "narration": null,
+              "level": "compose",
+              "look": {
+                "description": "hangat",
+                "values": {
+                  "warna": "krem"
+                },
+                "parts": [
+                  {
+                    "part": "iso"
+                  }
+                ]
+              }
             },
             {
               "id": "s2",
@@ -307,7 +319,16 @@
       }
     ],
     "versions": [],
-    "assets": [],
+    "assets": [
+      {
+        "id": "a1",
+        "projectId": "p1",
+        "kind": "image",
+        "origin": "upload",
+        "path": "assets/0a1b2c3d-logo.png",
+        "shotId": null
+      }
+    ],
     "exports": [],
     "verdictStatuses": {}
   },
@@ -712,7 +733,36 @@
           },
           "extra": {
             "t": "obj",
-            "fields": {}
+            "fields": {
+              "depth": {
+                "t": "int",
+                "min": 1,
+                "max": 9
+              }
+            }
+          },
+          "effects": {
+            "t": "flag",
+            "fields": {
+              "maxSteps": {
+                "t": "int",
+                "min": 1,
+                "max": 30
+              }
+            }
+          },
+          "crit": {
+            "t": "list",
+            "max": 2,
+            "item": {
+              "t": "obj",
+              "fields": {
+                "question": {
+                  "t": "str",
+                  "max": 500
+                }
+              }
+            }
           }
         },
         "required": [],
@@ -728,5 +778,60 @@
         "defaults": {}
       }
     ]
+  },
+  "POST /api/generate/kit": {
+    "part": {
+      "name": "mine-part",
+      "source": "user",
+      "version": "1.0.0",
+      "manifest": {
+        "does": "x",
+        "runtime": "dom"
+      }
+    }
+  },
+  "POST /api/generate/exports/x1/publish/draft": {
+    "clip": {
+      "id": "x1",
+      "title": "Kenapa orang menunda mulai",
+      "gateVerdict": "PASS",
+      "gateReasons": []
+    },
+    "copyCheckedBy": "Jev",
+    "targets": [
+      {
+        "accountId": "tt",
+        "platform": "tiktok",
+        "name": "@akunanda",
+        "content": "Ternyata bukan malas, tapi takut mulai. Ini yang saya pelajari. #produktif",
+        "copyBy": "llm",
+        "needs": {
+          "tiktokPrivacy": [
+            "PUBLIC_TO_EVERYONE",
+            "SELF_ONLY"
+          ]
+        },
+        "warnings": [],
+        "blockers": []
+      },
+      {
+        "accountId": "yt",
+        "platform": "youtube",
+        "name": "Kanal Anda",
+        "content": "Kenapa orang menunda mulai",
+        "title": "Kenapa orang menunda mulai",
+        "copyBy": "template",
+        "needs": {
+          "madeForKids": true
+        },
+        "warnings": [
+          "shortened to the 5000-character limit"
+        ],
+        "blockers": []
+      }
+    ]
+  },
+  "GET /api/generate/exports/x1/posts": {
+    "posts": []
   }
 }

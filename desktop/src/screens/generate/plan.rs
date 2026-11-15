@@ -10,7 +10,7 @@ use crate::engine::generate::{Detail, Plan, PlanRow};
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Step, Studio, View, act};
 use crate::screens::panels::Host;
-use crate::ui::form::{Tone, area, btn, card, field, note};
+use crate::ui::form::{Tone, area, btn, card, choice, field, note};
 use crate::ui::kit::pal;
 
 /// One shot's editable text.
@@ -19,7 +19,12 @@ pub struct ShotEdit {
     pub texts: Vec<TextEdit>,
     pub visual: TextEdit,
     pub motion: TextEdit,
+    /// kit, compose or free; `None` when the plan has no levels.
+    pub level: Option<String>,
 }
+
+/// How much of a scene the model writes.
+pub const LEVELS: [&str; 3] = ["kit", "compose", "free"];
 
 pub struct Draft {
     /// The plan row these edits start from.
@@ -57,6 +62,7 @@ impl Draft {
                 texts: s.text.iter().map(|t| TextEdit::new(&t.value)).collect(),
                 visual: TextEdit::new(&s.visual.description),
                 motion: TextEdit::new(&s.motion),
+                level: s.level.clone(),
             })
             .collect();
     }
@@ -73,6 +79,7 @@ impl Draft {
             }
             shot.visual.description = edit.visual.text.clone();
             shot.motion = edit.motion.text.clone();
+            shot.level = edit.level.clone();
         }
         plan
     }
@@ -98,6 +105,12 @@ pub fn revise<H: Host>(h: &mut H) {
     }
     h.panels_mut().studio.plan.request = TextEdit::new("");
     act(h, move |e, id| api::revise_plan(e, id, &request).map(|()| None));
+}
+
+fn set_level<H: Host>(h: &mut H, i: usize, level: &str) {
+    if let Some(shot) = h.panels_mut().studio.plan.shots.get_mut(i) {
+        shot.level = Some(level.to_string());
+    }
 }
 
 fn toggle<H: Host>(h: &mut H, i: usize) {
@@ -130,6 +143,20 @@ fn shots<H: Host>(dark: bool, s: &Studio, draft: &Plan, approved: bool) -> El {
             .child(col().grow(1.0).child(btn(dark, format!("generate/plan/shot/{i}/toggle"), &format!("{n}. {}", shot.purpose), open, true, move |h: &mut H| toggle(h, i))))
             .child(when);
         let mut sc = col().key(format!("generate/plan/shot/{i}")).role("group").label(format!("{n}. {}", shot.purpose)).gap(8.0).padding(8.0).w_full().border(1.0, p.divider).radius(8.0).child(head);
+        if let Some(look) = shot.look_line().filter(|_| open) {
+            sc = sc.child(text(tf("plan.look", &[&look])).key(format!("generate/plan/shot/{i}/look")).font(type_::LABEL).color(p.muted).wrap());
+        }
+        if let (true, Some(level)) = (open, edit.level.as_deref()) {
+            sc = sc.child(if approved {
+                text(tf("plan.level_is", &[level])).key(format!("generate/plan/shot/{i}/level")).font(type_::LABEL).color(p.muted).into()
+            } else {
+                let mut r = row().gap(6.0).flex_wrap().w_full().items_center().child(text(tf("plan.level", &[&n])).font(type_::LABEL).color(p.muted));
+                for l in LEVELS {
+                    r = r.child(choice(dark, &format!("generate/plan/shot/{i}/level/{l}"), &t(&format!("plan.level.{l}")), level == l, move |h: &mut H| set_level(h, i, l)));
+                }
+                r
+            });
+        }
         if open && approved {
             sc = sc.child(text(shot.visual.description.as_str()).font(type_::BODY).color(p.muted).wrap());
             for tx in &shot.text {

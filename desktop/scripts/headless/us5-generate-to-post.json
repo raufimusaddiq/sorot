@@ -1,0 +1,134 @@
+{
+  "events": [
+    {
+      "t": 0.2,
+      "type": "tap",
+      "key": "generate/new"
+    },
+    {
+      "t": 0.9,
+      "type": "tap",
+      "key": "generate/brief/text"
+    },
+    {
+      "t": 1.6,
+      "type": "type",
+      "text": "Jelaskan bunga majemuk"
+    },
+    {
+      "t": 2.5,
+      "type": "tap",
+      "key": "generate/brief/create"
+    },
+    {
+      "t": 3.3,
+      "type": "tap",
+      "key": "generate/step/stories"
+    },
+    {
+      "t": 4.0,
+      "type": "tap",
+      "key": "generate/story/0/pick"
+    },
+    {
+      "t": 4.8,
+      "type": "tap",
+      "key": "generate/steptab/plan"
+    },
+    {
+      "t": 5.5,
+      "type": "tap",
+      "key": "generate/plan/approve"
+    },
+    {
+      "t": 6.3,
+      "type": "tap",
+      "key": "generate/steptab/build"
+    },
+    {
+      "t": 7.0,
+      "type": "tap",
+      "key": "generate/build/start"
+    },
+    {
+      "t": 7.8,
+      "type": "tap",
+      "key": "generate/steptab/verdict"
+    },
+    {
+      "t": 8.5,
+      "type": "tap",
+      "key": "generate/build/accept"
+    },
+    {
+      "t": 9.2,
+      "type": "tap",
+      "key": "generate/build/export"
+    },
+    {
+      "t": 9.9,
+      "type": "mark",
+      "name": "exported"
+    },
+    {
+      "t": 11.5,
+      "type": "tap",
+      "key": "generate/build/publish"
+    },
+    {
+      "t": 12.1,
+      "type": "tap",
+      "key": "publish/account/tt"
+    },
+    {
+      "t": 12.3,
+      "type": "tap",
+      "key": "publish/account/yt"
+    },
+    {
+      "t": 12.5,
+      "type": "tap",
+      "key": "publish/write"
+    },
+    {
+      "t": 16.1,
+      "type": "tap",
+      "key": "publish/0/privacy/0"
+    },
+    {
+      "t": 16.2,
+      "type": "tap",
+      "key": "publish/tab/1"
+    },
+    {
+      "t": 16.3,
+      "type": "tap",
+      "key": "publish/1/kids-no"
+    },
+    {
+      "t": 16.5,
+      "type": "tap",
+      "key": "publish/1/title"
+    },
+    {
+      "t": 16.6,
+      "type": "type",
+      "text": "Judul"
+    },
+    {
+      "t": 17.1,
+      "type": "mark",
+      "name": "choices"
+    },
+    {
+      "t": 17.2,
+      "type": "tap",
+      "key": "publish/post"
+    },
+    {
+      "t": 17.7,
+      "type": "mark",
+      "name": "end"
+    }
+  ]
+}

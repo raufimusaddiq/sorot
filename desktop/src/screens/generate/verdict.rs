@@ -10,7 +10,7 @@ use crate::engine::generate::{Detail, Finding, Verdict};
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Studio, build};
 use crate::screens::panels::Host;
-use crate::ui::form::{Tone, area, btn, card, note};
+use crate::ui::form::{Tone, area, btn, card, choice, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 
@@ -77,6 +77,18 @@ fn one<H: Host>(dark: bool, kind: &str, v: Option<&Verdict>, version_id: &str, b
     c
 }
 
+/// Which shot a note is about: any, or one of the plan's.
+fn shot_choice<H: Host>(dark: bool, s: &Studio, d: &Detail) -> El {
+    let p = pal(dark);
+    let mut r = row().gap(6.0).flex_wrap().w_full().items_center().child(text(t("verdict.shot")).font(type_::LABEL).color(p.muted));
+    r = r.child(choice(dark, "generate/build/shot/any", &t("verdict.shot_any"), s.build.shot.is_none(), |h: &mut H| h.panels_mut().studio.build.shot = None));
+    for shot in d.current_plan().map(|row| row.plan.shots.as_slice()).unwrap_or_default() {
+        let id = shot.id.clone();
+        r = r.child(choice(dark, &format!("generate/build/shot/{}", shot.id), &shot.id, s.build.shot.as_deref() == Some(shot.id.as_str()), move |h: &mut H| h.panels_mut().studio.build.shot = Some(id.clone())));
+    }
+    r
+}
+
 pub fn view<H: Host>(dark: bool, s: &Studio, d: &Detail) -> El {
     let p = pal(dark);
     let Some(built) = s.built.as_ref() else {
@@ -95,6 +107,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio, d: &Detail) -> El {
     let mut actions = card(dark, "generate/verdict/actions", &t("step.verdict"))
         .child(btn(dark, "generate/build/fix-must", &tf("verdict.fix_must", &[&must.len().to_string()]), false, !s.busy && !must.is_empty(), move |h: &mut H| build::fix(h, &v1, vec![], false)))
         .child(area(dark, "generate/build/note", &t("verdict.note"), &s.build.note, edit_access(|h: &mut H| &mut h.panels_mut().studio.build.note)))
+        .child(shot_choice::<H>(dark, s, d))
         .child(btn(dark, "generate/build/fix-note", &t("verdict.fix_note"), false, !s.busy && !s.build.note.text.trim().is_empty(), move |h: &mut H| build::fix(h, &v2, vec![], true)));
     if let Some(path) = &shown.draft_path {
         let (path, wv) = (path.clone(), shown.id.clone());
@@ -107,8 +120,9 @@ pub fn view<H: Host>(dark: bool, s: &Studio, d: &Detail) -> El {
         actions = actions.child(note(dark, "generate/build/accepted", Tone::Ok, &t("verdict.accepted")));
         actions = match d.exports.iter().find(|x| x.version_id == shown.id) {
             Some(x) => {
-                let path = x.path.clone();
+                let (path, export_id, title) = (x.path.clone(), x.id.clone(), x.title.clone().unwrap_or_else(|| d.project.name()));
                 actions
+                    .child(btn(dark, "generate/build/publish", &t("verdict.publish"), false, true, move |h: &mut H| h.publish_export(&export_id, &title)))
                     .child(note(dark, "generate/build/exported", Tone::Ok, &tf("verdict.exported", &[&x.path])))
                     .child(btn(dark, "generate/build/reveal", &t("verdict.reveal"), false, true, move |h: &mut H| h.reveal(&path)))
             }

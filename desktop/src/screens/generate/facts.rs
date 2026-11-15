@@ -19,13 +19,16 @@ pub struct Facts {
     pub claim: TextEdit,
     pub value: TextEdit,
     pub url: TextEdit,
+    /// The fact being edited, and its claim, value and source address boxes.
+    pub editing: Option<String>,
+    pub boxes: [TextEdit; 3],
     pub busy: bool,
     pub error: Option<String>,
 }
 
 impl Default for Facts {
     fn default() -> Self {
-        Facts { load: Load::Idle, list: vec![], claim: TextEdit::new(""), value: TextEdit::new(""), url: TextEdit::new(""), busy: false, error: None }
+        Facts { load: Load::Idle, list: vec![], claim: TextEdit::new(""), value: TextEdit::new(""), url: TextEdit::new(""), editing: None, boxes: [TextEdit::new(""), TextEdit::new(""), TextEdit::new("")], busy: false, error: None }
     }
 }
 
@@ -58,6 +61,27 @@ pub fn add<H: Host>(h: &mut H) {
     });
     let f = &mut h.panels_mut().studio.facts;
     (f.claim, f.value, f.url) = (TextEdit::new(""), TextEdit::new(""), TextEdit::new(""));
+}
+
+/// Opens one fact to its claim, value and source address.
+pub fn edit<H: Host>(h: &mut H, fact: &Fact) {
+    let f = &mut h.panels_mut().studio.facts;
+    f.editing = Some(fact.id.clone());
+    f.boxes = [TextEdit::new(&fact.claim), TextEdit::new(fact.value.as_deref().unwrap_or_default()), TextEdit::new(fact.source_url.as_deref().unwrap_or_default())];
+}
+
+pub fn save<H: Host>(h: &mut H) {
+    let f = &h.panels().studio.facts;
+    let Some(fact_id) = f.editing.clone() else { return };
+    let [claim, value, url] = f.boxes.each_ref().map(|b| b.text.trim().to_string());
+    if claim.is_empty() {
+        return;
+    }
+    h.panels_mut().studio.facts.editing = None;
+    run(h, move |e, id| {
+        api::update_fact(e, &fact_id, &claim, &value, &url)?;
+        api::facts(e, id)
+    });
 }
 
 pub fn remove<H: Host>(h: &mut H, fact_id: &str) {
@@ -99,9 +123,22 @@ pub fn view<H: Host>(dark: bool, s: &Studio, working: bool) -> El {
             body = body.child(text(format!("{lead}: \u{201c}{why}\u{201d}")).font(type_::LABEL).color(p.muted).wrap());
         }
         let ink = if fact.status == "verified" { p.pass } else { p.muted };
+        if f.editing.as_deref() == Some(fact.id.as_str()) {
+            let [claim, value, url] = &f.boxes;
+            c = c.child(
+                col().key(k("form")).role("group").label(fact.claim.as_str()).gap(8.0).w_full()
+                    .child(field(dark, &k("claim-edit"), &t("facts.claim"), claim, "", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.facts.boxes[0])))
+                    .child(field(dark, &k("value-edit"), &t("facts.value"), value, "", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.facts.boxes[1])))
+                    .child(field(dark, &k("url-edit"), &t("facts.url"), url, "https://", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.facts.boxes[2])))
+                    .child(row().gap(8.0).child(btn(dark, k("save"), &t("facts.save"), true, !off && !claim.text.trim().is_empty(), save::<H>)).child(btn(dark, k("cancel"), &t("facts.cancel"), false, true, |h: &mut H| h.panels_mut().studio.facts.editing = None))),
+            );
+            continue;
+        }
+        let this = fact.clone();
         c = c.child(
             row().key(k("row")).role("listitem").label(fact.claim.as_str()).gap(12.0).items_center().w_full().child(body)
                 .child(text(t(&format!("fact.{}", fact.status))).key(k("status")).font(type_::LABEL).color(ink))
+                .child(btn(dark, k("edit"), &t("facts.edit"), false, !off, move |h: &mut H| edit(h, &this)))
                 .child(btn(dark, k("delete"), &t("facts.delete"), false, !off, move |h: &mut H| remove(h, &id))),
         );
     }

@@ -11,7 +11,7 @@ use crate::engine::generate::{Checked, RecipeItem, StepSpec};
 use crate::screens::generate::{Studio, steps};
 use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
-use crate::ui::form::{Tone, area, btn, card, choice, heading, note};
+use crate::ui::form::{Tone, area, btn, card, choice, field, heading, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 
@@ -33,6 +33,9 @@ pub struct Recipes {
     pub typing: Option<(usize, String)>,
     pub typed: TextEdit,
     pub name: TextEdit,
+    /// Copying: the id asked for the new recipe.
+    pub copying: bool,
+    pub copy_id: TextEdit,
     pub load: Load,
     pub items: Vec<RecipeItem>,
     pub selected: Option<String>,
@@ -49,7 +52,7 @@ pub struct Recipes {
 
 impl Default for Recipes {
     fn default() -> Self {
-        Recipes { tab: Tab::Steps, specs: vec![], adding: 0, open_step: None, typing: None, typed: TextEdit::new(""), name: TextEdit::new(""), load: Load::Idle, items: vec![], selected: None, text: TextEdit::new(""), checked: None, import: TextEdit::new(""), shared: None, busy: false, error: None }
+        Recipes { tab: Tab::Steps, specs: vec![], adding: 0, open_step: None, typing: None, typed: TextEdit::new(""), name: TextEdit::new(""), copying: false, copy_id: TextEdit::new(""), load: Load::Idle, items: vec![], selected: None, text: TextEdit::new(""), checked: None, import: TextEdit::new(""), shared: None, busy: false, error: None }
     }
 }
 
@@ -67,7 +70,7 @@ impl Recipes {
         self.selected = id.or_else(|| self.items.first().map(|r| r.id.clone())).filter(|id| self.items.iter().any(|r| &r.id == id));
         let json = self.current().map(|r| serde_json::to_string_pretty(&r.recipe).unwrap_or_default()).unwrap_or_default();
         (self.text, self.checked, self.shared) = (TextEdit::new(json), None, None);
-        (self.open_step, self.typing) = (None, None);
+        (self.open_step, self.typing, self.copying) = (None, None, false);
         self.name = TextEdit::new(self.current().map(|r| r.name.clone()).unwrap_or_default());
     }
 }
@@ -130,13 +133,22 @@ pub fn save<H: Host>(h: &mut H) {
     go(h, move |e| answer(api::save_recipe(e, &id, &recipe).and_then(|()| api::recipes(e)), listed(Some(id.clone()))));
 }
 
-/// Copies a shipped (or any) recipe into one of your own.
+/// Starts a copy of a shipped (or any) recipe: asks for the new recipe's id.
+pub fn ask_copy<H: Host>(h: &mut H) {
+    let r = &mut h.panels_mut().studio.recipes;
+    let Some(id) = r.current().map(|c| format!("{}-copy", c.id)) else { return };
+    (r.copying, r.copy_id) = (true, TextEdit::new(id));
+}
+
+/// Copies the recipe into one of your own, under the id asked for.
 pub fn copy<H: Host>(h: &mut H) {
     let r = &mut h.panels_mut().studio.recipes;
-    let Some(cur) = r.current() else { return };
+    let (Some(cur), id) = (r.current(), r.copy_id.text.trim().to_string()) else { return };
+    if id.is_empty() {
+        return;
+    }
     let (from, name) = (cur.id.clone(), format!("{} (copy)", cur.name));
-    let id = format!("{from}-copy");
-    (r.busy, r.error) = (true, None);
+    (r.copying, r.busy, r.error) = (false, true, None);
     go(h, move |e| {
         answer(api::copy_recipe(e, &from, &id, &name).and_then(|new| Ok((new, api::recipes(e)?))), |p, r| match r {
             Ok((new, items)) => listed(Some(new))(p, Ok(items)),
@@ -210,7 +222,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
             detail = detail
                 .child(text(t("recipes.readonly")).font(type_::LABEL).color(p.muted).wrap())
                 .child(text(serde_json::to_string_pretty(&cur.recipe).unwrap_or_default()).key("generate/recipes/readonly").font(type_::LABEL).color(p.text).wrap())
-                .child(btn(dark, "generate/recipes/copy", &t("recipes.copy_mine"), true, !r.busy, copy::<H>));
+                .child(btn(dark, "generate/recipes/copy", &t("recipes.copy_mine"), true, !r.busy, ask_copy::<H>));
         } else {
             detail = detail
                 .child(row().gap(8.0).child(choice(dark, "generate/recipes/tab/steps", &t("recipes.tab_steps"), r.tab == Tab::Steps, |h: &mut H| h.panels_mut().studio.recipes.tab = Tab::Steps)).child(choice(dark, "generate/recipes/tab/json", &t("recipes.tab_json"), r.tab == Tab::Json, |h: &mut H| h.panels_mut().studio.recipes.tab = Tab::Json)));
@@ -224,9 +236,17 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
                     row().gap(10.0)
                         .child(btn(dark, "generate/recipes/save", &t("recipes.save"), true, !r.busy, save::<H>))
                         .child(btn(dark, "generate/recipes/validate", &t("recipes.validate"), false, !r.busy, validate::<H>))
-                        .child(btn(dark, "generate/recipes/copy", &t("recipes.copy"), false, !r.busy, copy::<H>))
+                        .child(btn(dark, "generate/recipes/copy", &t("recipes.copy"), false, !r.busy, ask_copy::<H>))
                         .child(btn(dark, "generate/recipes/delete", &t("recipes.delete"), false, !r.busy, remove::<H>)),
                 );
+        }
+        if r.copying {
+            detail = detail.child(
+                row().gap(8.0).items_center().w_full()
+                    .child(col().grow(1.0).child(field(dark, "generate/recipes/copy-id", &t("recipes.copy_id"), &r.copy_id, "", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.recipes.copy_id))))
+                    .child(btn(dark, "generate/recipes/copy-do", &t("recipes.copy_make"), true, !r.busy && !r.copy_id.text.trim().is_empty(), copy::<H>))
+                    .child(btn(dark, "generate/recipes/copy-cancel", &t("recipes.copy_cancel"), false, true, |h: &mut H| h.panels_mut().studio.recipes.copying = false)),
+            );
         }
         detail = detail.child(btn(dark, "generate/recipes/export", &t("recipes.export"), false, true, export::<H>));
     }

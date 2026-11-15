@@ -10,7 +10,7 @@ use crate::engine::generate::Idea;
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Studio, open_one, opened};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
-use crate::ui::form::{area, btn, card, field};
+use crate::ui::form::{area, btn, card, choice, field};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 
@@ -19,11 +19,13 @@ pub struct Ideas {
     pub list: Vec<Idea>,
     pub slug: TextEdit,
     pub brief: TextEdit,
+    /// The pipeline a run uses (an index into `Studio::pipelines`).
+    pub recipe: usize,
 }
 
 impl Default for Ideas {
     fn default() -> Self {
-        Ideas { load: Load::Idle, list: vec![], slug: TextEdit::new(""), brief: TextEdit::new("") }
+        Ideas { load: Load::Idle, list: vec![], slug: TextEdit::new(""), brief: TextEdit::new(""), recipe: 0 }
     }
 }
 
@@ -71,7 +73,8 @@ pub fn remove<H: Host>(h: &mut H, id: &str) {
 pub fn run<H: Host>(h: &mut H, id: Option<String>) {
     let s = &mut h.panels_mut().studio;
     (s.busy, s.error) = (true, None);
-    go(h, move |e| answer(api::run_idea(e, id.as_deref()).and_then(|p| open_one(e, &p.id)), opened));
+    let recipe = s.pipelines.get(s.ideas.recipe).map(|p| p.id.clone());
+    go(h, move |e| answer(api::run_idea(e, id.as_deref(), recipe.as_deref()).and_then(|p| open_one(e, &p.id)), opened));
 }
 
 fn open_video<H: Host>(h: &mut H, id: &str) {
@@ -85,9 +88,15 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     let i = &s.ideas;
     let waiting = i.list.iter().filter(|x| x.status == "new").count();
     let label = if waiting > 0 { tf("ideas.run_next", &[&waiting.to_string()]) } else { t("ideas.none_new") };
-    let mut c = col().gap(16.0).w_full()
-        .child(text(t("ideas.note")).font(type_::BODY).color(p.muted).wrap())
-        .child(btn(dark, "generate/ideas/run-next", &label, true, !s.busy && waiting > 0, |h: &mut H| run(h, None)));
+    let mut c = col().gap(16.0).w_full().child(text(t("ideas.note")).font(type_::BODY).color(p.muted).wrap());
+    if s.pipelines.len() > 1 {
+        let mut pipes = row().gap(8.0).flex_wrap().w_full().items_center().child(text(t("ideas.pipeline")).font(type_::LABEL).color(p.muted));
+        for (k, pl) in s.pipelines.iter().enumerate() {
+            pipes = pipes.child(choice(dark, &format!("generate/ideas/pipeline/{k}"), &pl.name, i.recipe == k, move |h: &mut H| h.panels_mut().studio.ideas.recipe = k));
+        }
+        c = c.child(pipes);
+    }
+    c = c.child(btn(dark, "generate/ideas/run-next", &label, true, !s.busy && waiting > 0, |h: &mut H| run(h, None)));
     if i.load == Load::Ready && i.list.is_empty() {
         c = c.child(state_block::<H>(dark, "generate/ideas/empty", Kind::Empty, &t("ideas.empty.cause"), &t("ideas.empty.next"), None));
     }

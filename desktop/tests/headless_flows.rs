@@ -74,7 +74,7 @@ fn the_us2_journeys_reach_their_screens() {
 #[test]
 fn the_us5_journeys_reach_their_screens() {
     // the publish page (T-15) is taller than the default window, so its journey runs in a tall one
-    let at = |scene: &str, script: &str, mark: &str| run_at(scene, Some(script), mark, if scene == "publish" { &["--size", "1100x2400"] } else { &[] }, &[]);
+    let at = |scene: &str, script: &str, mark: &str| run_at(scene, Some(script), mark, if matches!(scene, "publish" | "generate-flow") { &["--size", "1100x2400"] } else { &[] }, &[]);
     let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
 
     // (scene, script, [(mark, key shown, key absent)]): no AI connection, then one saved, then Generate is open
@@ -85,7 +85,7 @@ fn the_us5_journeys_reach_their_screens() {
             "us5-generate-end-to-end",
             &[("stories", "generate/step/stories", "generate/brief/create"), ("plan", "generate/plan/approve", "generate/story/0/pick"), ("approved", "generate/build/start", "generate/build/gate"), ("built", "generate/build/start", "generate/build/cancel"), ("end", "generate/build/accepted", "generate/build/accept")],
         ),
-        ("publish", "us5-clip-to-post", &[("choices", "publish/post", "publish/post/p9/row"), ("end", "publish/post/p9/row", "publish/post")]),
+        ("generate-flow", "us5-generate-to-post", &[("exported", "generate/build/publish", "generate/build/export"), ("choices", "publish/post", "publish/post/p9/row"), ("end", "publish/post/p9/row", "publish/post")]),
     ];
     for (scene, script, marks) in journeys {
         for (mark, shown, absent) in marks {

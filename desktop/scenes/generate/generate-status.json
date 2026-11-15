@@ -13,6 +13,20 @@
     "jev": {
       "configured": false
     },
-    "compute": "cpu"
+    "compute": "cpu",
+    "voice": {
+      "engines": [
+        "openai"
+      ],
+      "localAvailable": false
+    },
+    "presets": [
+      {
+        "id": "explainer-30",
+        "label": "Penjelasan 30 detik",
+        "description": "Satu ide, tiga adegan.",
+        "targetSec": 30
+      }
+    ]
   }
 }

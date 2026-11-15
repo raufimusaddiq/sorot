@@ -486,11 +486,11 @@ mod tests {
         );
         let e = HttpEngine::new(base, None);
         let plan = g::Plan { title: "t".into(), ..g::Plan::default() };
-        let brief = g::Brief { brief: "b".into(), format: "9:16".into(), target_sec: 30, language: "id".into(), style_notes: String::new() };
+        let brief = g::Brief { brief: "b".into(), format: "9:16".into(), target_sec: 30, language: "id".into(), ..g::Brief::default() };
         let _ = (g::projects(&e), g::create_project(&e, &brief), g::project(&e, "p"), g::delete_project(&e, "p"), g::retry_project(&e, "p"), g::more_storylines(&e, "p", "n"), g::pick_storyline(&e, "p", 1, "n"));
         let _ = (g::save_plan(&e, "p", &plan), g::revise_plan(&e, "p", "r"), g::approve_plan(&e, "p", "pl"), g::estimate(&e, "p"), g::build(&e, "p"), g::version(&e, "v"), g::version_action(&e, "v", "cancel"));
-        let _ = (g::fix(&e, "v", &["f".to_string()], "n"), g::fix(&e, "v", &[], ""), g::export_version(&e, "v"), g::events(&e, "p"), g::ideas(&e), g::add_idea(&e, "s", "b"), g::delete_idea(&e, "i"));
-        let _ = (g::run_idea(&e, Some("i")), g::run_idea(&e, None), g::facts(&e, "p"), g::add_fact(&e, "p", "c", "v", "u"), g::add_fact(&e, "p", "c", "", "u"), g::delete_fact(&e, "f"), g::verify_facts(&e, "p"));
+        let _ = (g::fix(&e, "v", &["f".to_string()], "n", Some("s1")), g::fix(&e, "v", &[], "", None), g::export_version(&e, "v"), g::events(&e, "p"), g::ideas(&e), g::add_idea(&e, "s", "b"), g::delete_idea(&e, "i"));
+        let _ = (g::run_idea(&e, Some("i"), Some("r")), g::run_idea(&e, None, None), g::facts(&e, "p"), g::add_fact(&e, "p", "c", "v", "u"), g::add_fact(&e, "p", "c", "", "u"), g::delete_fact(&e, "f"), g::verify_facts(&e, "p"));
         let r = json!({"id": "r"});
         let _ = (g::recipes(&e), g::validate_recipe(&e, &r), g::copy_recipe(&e, "a", "b", "n"), g::save_recipe(&e, "r", &r), g::delete_recipe(&e, "r"), g::import_recipe(&e, &r), g::export_recipe(&e, "r"));
         let _ = (g::kit_parts(&e), g::remove_kit_part(&e, "a b"), g::steps(&e), g::delete_asset(&e, "a1"));

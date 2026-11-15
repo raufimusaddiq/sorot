@@ -18,7 +18,7 @@ pub mod versions;
 use rune::tok::type_;
 use rune::{El, ScrollSpec, col, row, text};
 use sorot_desktop_core::availability::{Connections, Link, generate_available};
-use sorot_desktop_core::model::Settings;
+use sorot_desktop_core::model::{GenPreset, Settings};
 use sorot_desktop_core::readiness::{Item, ItemId};
 
 use crate::engine::generate as api;
@@ -67,9 +67,9 @@ pub enum View {
 }
 
 /// Whether Generate can run here, from `core::availability`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Avail {
-    Yes { compute: String },
+    Yes { compute: String, voices: Vec<String>, presets: Vec<GenPreset> },
     /// Why not, in the engine's words.
     No { reasons: Vec<String> },
 }
@@ -109,6 +109,16 @@ pub struct Studio {
     pub ideas: ideas::Ideas,
     pub recipes: recipes::Recipes,
     pub kit: kit::Kit,
+    /// The recipes that can run here, for the brief's pipeline choice.
+    pub pipelines: Vec<Pipeline>,
+}
+
+/// A recipe a brief can choose; `speaks`: it has a voice step, so narration starts on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pipeline {
+    pub id: String,
+    pub name: String,
+    pub speaks: bool,
 }
 
 impl Studio {
@@ -216,7 +226,7 @@ fn gate(e: &dyn Engine) -> Result<Avail, EngineError> {
         .collect();
     let link = |c: &sorot_desktop_core::model::Connection| Link { configured: c.api_key_set || c.active, healthy: c.active };
     let ok = generate_available(&Connections { llm: link(&settings.llm), jev: link(&settings.jev) }, &items);
-    Ok(if ok { Avail::Yes { compute: status.compute } } else { Avail::No { reasons: status.reasons } })
+    Ok(if ok { Avail::Yes { compute: status.compute, voices: status.voice.engines, presets: status.presets } } else { Avail::No { reasons: status.reasons } })
 }
 
 /// Opens the window: availability first; when Generate can run, the videos and the first one.
@@ -230,14 +240,17 @@ pub fn open<H: Host>(h: &mut H) {
                     Some(p) => Some(read(e, &p.id, None)?),
                     None => None,
                 };
-                Ok((avail, projects, first))
+                // a recipe list that cannot be read only hides the pipeline choice
+                let pipelines = api::recipes(e).unwrap_or_default().into_iter().filter(|r| r.available).map(|r| Pipeline { speaks: r.speaks(), id: r.id, name: r.name }).collect();
+                Ok((avail, projects, first, pipelines))
             }
-            no => Ok((no, vec![], None)),
+            no => Ok((no, vec![], None, vec![])),
         });
         answer(r, |p, r| {
             let s = &mut p.studio;
             s.load = Load::of(&r);
-            if let Ok((avail, projects, first)) = r {
+            if let Ok((avail, projects, first, pipelines)) = r {
+                s.pipelines = pipelines;
                 (s.avail, s.projects, s.selected, s.shown, s.error, s.view) = (Some(avail), projects, first.as_ref().map(|l| l.detail.project.id.clone()), None, None, View::Home);
                 if let Some(l) = first {
                     s.take(l);
@@ -464,7 +477,7 @@ pub fn view<H: Host>(h: &H) -> El {
             let next = tf("unavailable.next", &[&reasons.join(" ")]);
             blocked::<H>(dark, "generate/unavailable", Kind::Empty, &t("unavailable.cause"), next.trim(), Some(("generate/open-settings", t("unavailable.open"), open_settings::<H>)))
         }
-        (_, Some(Avail::Yes { compute })) => {
+        (_, Some(Avail::Yes { compute, .. })) => {
             let mut c = col().gap(16.0).w_full();
             if let Some(why) = &s.error {
                 c = c.child(note(dark, "generate/error", Tone::Bad, why));
@@ -520,6 +533,7 @@ mod tests {
         }
         used.extend(["lang.id", "lang.en"].map(String::from));
         used.extend(["recipes.open_short", "recipes.close_short"].map(String::from));
+        used.extend(["kit", "compose", "free"].map(|l| format!("plan.level.{l}")));
         used.extend(["image", "font", "music", "logo"].map(|k| format!("brief.kind.{k}")));
         let steps = ["brief", "ideas", "facts", "stories", "plan", "build", "verdict"];
         used.extend(steps.iter().flat_map(|s| [format!("step.{s}"), format!("step.{s}.sub")]));

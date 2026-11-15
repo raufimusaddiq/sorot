@@ -8,6 +8,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+use super::types::{PublishDraft, SocialPost};
 use super::{Engine, EngineError, Result};
 
 const BASE: &str = "/api/generate";
@@ -132,8 +133,23 @@ pub struct Shot {
     pub visual: Visual,
     #[serde(default)]
     pub motion: String,
+    /// kit, compose or free: how much of the scene the model writes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
     #[serde(flatten)]
     pub rest: Map<String, Value>,
+}
+
+impl Shot {
+    /// The shot's look in one line: its description, exact values and the kit parts it names.
+    pub fn look_line(&self) -> Option<String> {
+        let look = self.rest.get("look")?;
+        let values = look["values"].as_object().into_iter().flatten().map(|(k, v)| format!("{k} {}", v.as_str().map(String::from).unwrap_or_else(|| v.to_string()))).collect::<Vec<_>>().join(", ");
+        let parts = look["parts"].as_array().into_iter().flatten().filter_map(|p| p["part"].as_str()).collect::<Vec<_>>().join(", ");
+        let parts = if parts.is_empty() { String::new() } else { format!("parts: {parts}") };
+        let line = [look["description"].as_str().unwrap_or_default().to_string(), values, parts].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
+        (!line.is_empty()).then_some(line)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -205,6 +221,28 @@ pub struct Export {
     pub version_id: String,
     #[serde(default)]
     pub path: String,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+/// A file a video's brief carries (logo, image, font, music).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct Asset {
+    pub id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub path: String,
+}
+
+impl Asset {
+    /// The file's name as the owner gave it (the engine prefixes a hash).
+    pub fn name(&self) -> String {
+        let file = self.path.rsplit('/').next().unwrap_or(&self.path);
+        match file.split_once('-') {
+            Some((hash, rest)) if hash.len() == 8 && hash.chars().all(|c| c.is_ascii_hexdigit()) => rest.to_string(),
+            _ => file.to_string(),
+        }
+    }
 }
 
 /// `{version id: {TECHNICAL: PASS, CREATIVE: REVIEW}}`.
@@ -220,6 +258,8 @@ pub struct Detail {
     pub versions: Vec<Version>,
     #[serde(default)]
     pub exports: Vec<Export>,
+    #[serde(default)]
+    pub assets: Vec<Asset>,
     #[serde(default)]
     pub verdict_statuses: VerdictStatuses,
 }
@@ -356,6 +396,13 @@ pub struct RecipeItem {
     pub recipe: Value,
 }
 
+impl RecipeItem {
+    /// The recipe has a voice step: a video made from it narrates unless told not to.
+    pub fn speaks(&self) -> bool {
+        self.recipe["steps"].as_array().is_some_and(|steps| steps.iter().any(|s| s["use"] == "voice"))
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 pub struct Checked {
     #[serde(default)]
@@ -386,7 +433,7 @@ pub struct KitPart {
 }
 
 /// What `POST /projects` takes.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Brief {
     pub brief: String,
@@ -395,6 +442,26 @@ pub struct Brief {
     pub language: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub style_notes: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipe_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub narration: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub facts: Vec<BriefFact>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub forbidden_numbers: bool,
+}
+
+/// A fact written into the brief: a claim, its value (optional) and the page that states it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BriefFact {
+    pub claim: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub source_url: String,
 }
 
 pub fn projects(e: &dyn Engine) -> Result<Vec<Project>> {
@@ -455,8 +522,11 @@ pub fn version_action(e: &dyn Engine, id: &str, action: &str) -> Result<()> {
 }
 
 /// Asks the director to fix findings (none = every must-fix) or to change what a note says.
-pub fn fix(e: &dyn Engine, id: &str, finding_ids: &[String], note: &str) -> Result<FixResult> {
+pub fn fix(e: &dyn Engine, id: &str, finding_ids: &[String], note: &str, shot_id: Option<&str>) -> Result<FixResult> {
     let mut body = Map::new();
+    if let Some(shot) = shot_id {
+        body.insert("shotId".into(), json!(shot));
+    }
     if !finding_ids.is_empty() {
         body.insert("findingIds".into(), json!(finding_ids));
     }
@@ -487,8 +557,14 @@ pub fn delete_idea(e: &dyn Engine, id: &str) -> Result<()> {
 }
 
 /// Runs the next new idea, or the named one; answers the video it made or resumed.
-pub fn run_idea(e: &dyn Engine, idea_id: Option<&str>) -> Result<Project> {
-    let body = idea_id.map(|i| json!({ "ideaId": i })).unwrap_or_else(|| json!({}));
+pub fn run_idea(e: &dyn Engine, idea_id: Option<&str>, recipe_id: Option<&str>) -> Result<Project> {
+    let mut body = json!({});
+    if let Some(i) = idea_id {
+        body["ideaId"] = json!(i);
+    }
+    if let Some(r) = recipe_id {
+        body["recipeId"] = json!(r);
+    }
     field(e.call("POST", &format!("{BASE}/run"), Some(body))?, "project")
 }
 
@@ -502,6 +578,10 @@ pub fn add_fact(e: &dyn Engine, project_id: &str, claim: &str, value: &str, sour
         body["value"] = json!(value);
     }
     e.call("POST", &format!("{BASE}/projects/{project_id}/facts"), Some(body)).map(drop)
+}
+
+pub fn update_fact(e: &dyn Engine, id: &str, claim: &str, value: &str, source_url: &str) -> Result<()> {
+    e.call("PATCH", &format!("{BASE}/facts/{id}"), Some(json!({ "claim": claim, "value": value, "sourceUrl": source_url }))).map(drop)
 }
 
 pub fn delete_fact(e: &dyn Engine, id: &str) -> Result<()> {
@@ -545,6 +625,11 @@ pub fn kit_parts(e: &dyn Engine) -> Result<Vec<KitPart>> {
     field(e.call("GET", &format!("{BASE}/kit"), None)?, "parts")
 }
 
+/// Adds your own part from a .zip; the engine checks it renders the same twice.
+pub fn add_kit_part(e: &dyn Engine, zip: &Path) -> Result<KitPart> {
+    field(e.upload(&format!("{BASE}/kit"), zip, &[])?, "part")
+}
+
 pub fn remove_kit_part(e: &dyn Engine, name: &str) -> Result<()> {
     e.call("DELETE", &format!("{BASE}/kit/{}", super::http::encode(name)), None).map(drop)
 }
@@ -579,4 +664,22 @@ pub struct StepSpec {
     pub fields: Map<String, Value>,
     #[serde(default)]
     pub defaults: Map<String, Value>,
+}
+
+/// Every exported video, newest first (the ones a video can be published from).
+pub fn exports(e: &dyn Engine) -> Result<Vec<Export>> {
+    field(e.call("GET", &format!("{BASE}/exports"), None)?, "exports")
+}
+
+/// The copy the engine writes for an exported video, per account (Jev checks it).
+pub fn publish_draft(e: &dyn Engine, export_id: &str, account_ids: &[String]) -> Result<PublishDraft> {
+    parse(e.call("POST", &format!("{BASE}/exports/{export_id}/publish/draft"), Some(json!({ "accountIds": account_ids })))?)
+}
+
+pub fn publish(e: &dyn Engine, export_id: &str, body: &Value) -> Result<SocialPost> {
+    field(e.call("POST", &format!("{BASE}/exports/{export_id}/publish"), Some(body.clone()))?, "post")
+}
+
+pub fn export_posts(e: &dyn Engine, export_id: &str) -> Result<Vec<SocialPost>> {
+    field(e.call("GET", &format!("{BASE}/exports/{export_id}/posts"), None)?, "posts")
 }

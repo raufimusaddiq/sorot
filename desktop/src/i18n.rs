@@ -28,6 +28,11 @@ pub fn set_current(lang: Lang) {
     CURRENT.store(lang == Lang::En, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The language set for this frame.
+pub fn current() -> Lang {
+    if CURRENT.load(std::sync::atomic::Ordering::Relaxed) { Lang::En } else { Lang::Id }
+}
+
 /// The text for `key` in the current language.
 pub fn t(key: &str) -> String {
     tr(if CURRENT.load(std::sync::atomic::Ordering::Relaxed) { Lang::En } else { Lang::Id }, key)

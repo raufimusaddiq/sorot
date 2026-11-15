@@ -967,6 +967,10 @@ impl Host for State {
         self.reveal_path(std::path::Path::new(path));
     }
 
+    fn publish_export(&mut self, export_id: &str, title: &str) {
+        self.open_publish_export(export_id, title);
+    }
+
     fn watch(&mut self, version: &str) {
         let Some(engine) = self.engine.clone() else { return };
         let dest = self.preview_dir().join(format!("draft-{}.mp4", version.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()));
@@ -1028,6 +1032,12 @@ impl Host for State {
 }
 
 impl State {
+    /// The publish panel for an exported Generate video.
+    pub fn open_publish_export(&mut self, export_id: &str, title: &str) {
+        self.route = Route::Publish(export_id.to_string());
+        publish::open_export(self, export_id, title);
+    }
+
     /// The publish panel for one clip (the clips screen opens it).
     pub fn open_publish(&mut self, clip_id: &str, title: &str) {
         self.route = Route::Publish(clip_id.to_string());

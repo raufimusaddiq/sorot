@@ -25,11 +25,13 @@ pub struct Panel {
     pub log_error: Option<String>,
     /// The log entry opened to its request and answer.
     pub expanded: Option<String>,
+    /// The shot a fix note is about; `None` is any.
+    pub shot: Option<String>,
 }
 
 impl Default for Panel {
     fn default() -> Self {
-        Panel { note: TextEdit::new(""), events: None, log_error: None, expanded: None }
+        Panel { note: TextEdit::new(""), events: None, log_error: None, expanded: None, shot: None }
     }
 }
 
@@ -68,9 +70,10 @@ pub fn accept<H: Host>(h: &mut H, version_id: &str) {
 /// Asks the director to fix findings (none = every must-fix) or to change what the note says.
 pub fn fix<H: Host>(h: &mut H, version_id: &str, findings: Vec<String>, with_note: bool) {
     let vid = version_id.to_string();
-    let note = if with_note { std::mem::replace(&mut h.panels_mut().studio.build.note, TextEdit::new("")).text.trim().to_string() } else { String::new() };
+    let b = &mut h.panels_mut().studio.build;
+    let (note, shot) = if with_note { (std::mem::replace(&mut b.note, TextEdit::new("")).text.trim().to_string(), b.shot.clone()) } else { (String::new(), None) };
     act(h, move |e, _| {
-        let r = api::fix(e, &vid, &findings, &note)?;
+        let r = api::fix(e, &vid, &findings, &note, shot.as_deref())?;
         Ok(Some(if r.needs_approval { tf("verdict.needs_approval", &[&r.summary]) } else { r.summary }))
     });
 }

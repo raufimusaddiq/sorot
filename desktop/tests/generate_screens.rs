@@ -137,7 +137,7 @@ fn a_brief_makes_a_video_and_ideas_run() {
     rt.frame(1.0 / 60.0);
     click(&mut rt, "generate/brief/language/1");
     click(&mut rt, "generate/brief/create");
-    assert_eq!(calls(&e, "POST /api/generate/projects"), [r#"POST /api/generate/projects {"brief":"Jelaskan bunga majemuk","format":"9:16","language":"en","targetSec":30}"#]);
+    assert_eq!(calls(&e, "POST /api/generate/projects"), [r#"POST /api/generate/projects {"brief":"Jelaskan bunga majemuk","format":"9:16","language":"en","narration":false,"recipeId":"explainer","targetSec":30}"#]);
     assert!(has(&rt, "generate/step/plan"), "the new video opens at its steps");
 
     // ideas: (control, typed, the call)
@@ -147,8 +147,8 @@ fn a_brief_makes_a_video_and_ideas_run() {
     type_into(&mut rt, "generate/ideas/brief", "Bunga majemuk");
     for (key, call) in [
         ("generate/ideas/add", r#"POST /api/generate/ideas {"brief":"Bunga majemuk","slug":"bunga"}"#),
-        ("generate/ideas/run-next", "POST /api/generate/run {}"),
-        ("generate/idea/i1/run", r#"POST /api/generate/run {"ideaId":"i1"}"#),
+        ("generate/ideas/run-next", r#"POST /api/generate/run {"recipeId":"explainer"}"#),
+        ("generate/idea/i1/run", r#"POST /api/generate/run {"ideaId":"i1","recipeId":"explainer"}"#),
         ("generate/idea/i1/delete", "DELETE /api/generate/ideas/i1"),
     ] {
         goto(&mut rt, "ideas");
@@ -174,6 +174,13 @@ fn facts_and_storylines_each_action_is_one_route() {
         click(&mut rt, key);
         assert_eq!(last(&e, "/facts").as_deref(), Some(call), "{key}");
     }
+    // a fact opens to its three boxes and saves as one change
+    click(&mut rt, "generate/fact/f1/edit");
+    type_into(&mut rt, "generate/fact/f1/value-edit", "9%");
+    click(&mut rt, "generate/fact/f1/save");
+    let patch = last(&e, "PATCH /api/generate/facts/f1").unwrap();
+    assert!(patch.contains("9%"), "{patch}");
+    assert!(!has(&rt, "generate/fact/f1/form"));
 
     // storylines wait for a pick while the video has no plan
     p1(&e, |d| (d["plans"], d["project"]["currentPlanId"]) = (json!([]), Value::Null));
@@ -291,6 +298,11 @@ fn both_verdicts_show_and_accept_export_and_restore_are_one_route_each() {
         click(&mut rt, key);
         assert_eq!(calls(&e, "POST /api/generate/versions/ver2/").last().map(String::as_str), Some(call), "{key}");
     }
+    // a note can name one shot
+    type_into(&mut rt, "generate/build/note", "lebih besar");
+    click(&mut rt, "generate/build/shot/s2");
+    click(&mut rt, "generate/build/fix-note");
+    assert_eq!(calls(&e, "POST /api/generate/versions/ver2/fix").last().map(String::as_str), Some(r#"POST /api/generate/versions/ver2/fix {"note":"lebih besar","shotId":"s2"}"#));
     p1(&e, |d| built(d, "ACCEPTED", json!([])));
     reread(&mut rt);
     goto(&mut rt, "verdict");
@@ -302,6 +314,19 @@ fn both_verdicts_show_and_accept_export_and_restore_are_one_route_each() {
     click(&mut rt, "generate/build/reveal");
     click(&mut rt, "generate/build/reveal-draft");
     assert_eq!(shown.shown.lock().unwrap().iter().map(|p| p.display().to_string()).collect::<Vec<_>>(), ["/exports/g.mp4", "/drafts/ver2.mp4"]);
+
+
+    // Publish opens the panel for the export, on the Generate routes
+    click(&mut rt, "generate/build/publish");
+    assert_eq!(rt.state.screen(), Screen::Publish);
+    assert_eq!(calls(&e, "GET /api/generate/exports/x1/posts").len(), 1);
+    click(&mut rt, "publish/account/tt");
+    click(&mut rt, "publish/write");
+    assert_eq!(calls(&e, "POST /api/generate/exports/x1/publish/draft"), [r#"POST /api/generate/exports/x1/publish/draft {"accountIds":["tt"]}"#]);
+    rt.update(|s, _| s.show(Page::Generate));
+    rt.frame(1.0 / 60.0);
+    reread(&mut rt);
+    goto(&mut rt, "verdict");
 
     // the history: restore an older plan, view the other version
     click(&mut rt, "generate/versions/open");
@@ -315,8 +340,12 @@ fn recipes_shipped_are_read_only_and_a_checked_recipe_shows_its_errors_inline() 
     let (mut rt, e) = lab("generate");
     click(&mut rt, "generate/nav/recipes");
     assert!(has(&rt, "generate/recipes/readonly") && !has(&rt, "generate/recipes/text") && !has(&rt, "generate/recipes/save"), "a shipped recipe has no edit control");
+    // a copy asks for its id first (the engine checks it), then makes it
     click(&mut rt, "generate/recipes/copy");
-    assert_eq!(calls(&e, "POST /api/generate/recipes ").len(), 1);
+    assert!(calls(&e, "POST /api/generate/recipes ").is_empty());
+    type_into(&mut rt, "generate/recipes/copy-id", "-2");
+    click(&mut rt, "generate/recipes/copy-do");
+    assert!(calls(&e, "POST /api/generate/recipes ").iter().any(|c| c.contains(r#""id":"explainer-copy-2""#)), "{:?}", e.calls());
 
     click(&mut rt, "generate/recipe/mine");
     assert!(has(&rt, "generate/recipes/step/0") && !has(&rt, "generate/recipes/text"), "your own recipe opens as steps");
@@ -356,6 +385,17 @@ fn the_kit_lists_parts_and_only_your_own_can_be_removed() {
     click(&mut rt, "generate/kit/iso/export");
     assert_eq!(calls(&e, "download("), ["download(/api/generate/kit/iso/export)"]);
     assert!(dir.join("iso.zip").is_file() && has(&rt, "generate/kit/notice"));
+    // your own part comes from a .zip; the engine checks it and may refuse
+    click(&mut rt, "generate/kit/add");
+    rt.resolve_file_dialog(Some("D:/a/part.zip".into())).unwrap();
+    rt.frame(1.0 / 60.0);
+    assert_eq!(calls(&e, "POST /api/generate/kit "), ["POST /api/generate/kit upload(part.zip|)"]);
+    assert_eq!(name_of(&rt, "generate/kit/notice"), tf("kit.added", &["mine-part", "1.0.0"]));
+    e.fail_once("POST /api/generate/kit", EngineError::Api { status: 422, message: "renders differently twice".into() });
+    click(&mut rt, "generate/kit/add");
+    rt.resolve_file_dialog(Some("D:/a/part.zip".into())).unwrap();
+    rt.frame(1.0 / 60.0);
+    assert_eq!(name_of(&rt, "generate/kit/error"), "renders differently twice");
     click(&mut rt, "generate/kit/timeline/remove");
     assert_eq!(calls(&e, "DELETE /api/generate/kit/timeline").len(), 1);
     e.fail_once("DELETE /api/generate/kit/timeline", EngineError::Api { status: 400, message: "no".into() });
@@ -370,12 +410,14 @@ fn plan_edits_revisions_and_a_working_video_that_is_followed() {
     goto(&mut rt, "plan");
     // a shot opens to its words, picture and motion; the edits are saved as they are typed
     click(&mut rt, "generate/plan/shot/0/toggle");
+    assert_eq!(name_of(&rt, "generate/plan/shot/0/look"), tf("plan.look", &["hangat · warna krem · parts: iso"]));
+    click(&mut rt, "generate/plan/shot/0/level/free");
     for (key, typed) in [("generate/plan/shot/0/text/0", "X"), ("generate/plan/shot/0/visual", "Y"), ("generate/plan/shot/0/motion", "Z")] {
         type_into(&mut rt, key, typed);
     }
     click(&mut rt, "generate/plan/save");
     let put = last(&e, "/plan").unwrap();
-    assert!(put.contains("PembukaX") && put.contains("Gambar PembukaY") && put.contains("perlahanZ"), "{put}");
+    assert!(put.contains("PembukaX") && put.contains("Gambar PembukaY") && put.contains("perlahanZ") && put.contains(r#""level":"free""#), "{put}");
     click(&mut rt, "generate/plan/shot/0/toggle");
     assert!(!has(&rt, "generate/plan/shot/0/visual"), "a second press closes it");
 
@@ -497,7 +539,7 @@ fn ideas_open_resume_and_empty_and_recipes_say_what_failed() {
     let (mut rt, e) = lab("generate");
     goto(&mut rt, "ideas");
     click(&mut rt, "generate/idea/i2/run");
-    assert_eq!(last(&e, "/run").as_deref(), Some(r#"POST /api/generate/run {"ideaId":"i2"}"#));
+    assert_eq!(last(&e, "/run").as_deref(), Some(r#"POST /api/generate/run {"ideaId":"i2","recipeId":"explainer"}"#));
     goto(&mut rt, "ideas");
     click(&mut rt, "generate/idea/i2/open");
     assert!(has(&rt, "generate/step/plan"), "Open goes to the video");
@@ -602,7 +644,7 @@ fn a_recipe_is_built_as_steps_and_saved_as_the_json_it_makes() {
     // the second (plan): a choice, a condition, text and a list; an object setting says where it is edited
     click(&mut rt, "generate/recipes/step/1/open");
     assert!(!has(&rt, "generate/recipes/step/0/gate/owner"), "one step is open at a time: {:?}", rt.state.panels.studio.recipes.open_step);
-    assert!(has(&rt, "generate/recipes/step/1/with/extra"), "{:?}", rt.state.panels.studio.recipes.open_step);
+    assert!(has(&rt, "generate/recipes/step/1/with/extra.depth/inc"), "{:?}", rt.state.panels.studio.recipes.open_step);
     for key in ["generate/recipes/step/1/with/mode/long", "generate/recipes/step/1/when/connection:vision"] {
         click(&mut rt, key);
     }
@@ -611,6 +653,18 @@ fn a_recipe_is_built_as_steps_and_saved_as_the_json_it_makes() {
         type_into(&mut rt, &format!("generate/recipes/step/1/with/{name}/input"), words);
         click(&mut rt, &format!("generate/recipes/step/1/with/{name}/set"));
     }
+    // objects, a flag with fields and a list are drawn from the schema; the step has an id and its own prompt
+    for key in ["generate/recipes/step/1/with/extra.depth/inc", "generate/recipes/step/1/with/effects", "generate/recipes/step/1/with/effects.maxSteps/inc", "generate/recipes/step/1/with/crit/add", "generate/recipes/step/1/prompt/append"] {
+        click(&mut rt, key);
+    }
+    for (key, words) in [("generate/recipes/step/1/with/crit.0.question", "apa?"), ("generate/recipes/step/1/id", "rencana"), ("generate/recipes/step/1/prompt/text", "pelan")] {
+        click(&mut rt, &format!("{key}/edit"));
+        type_into(&mut rt, &format!("{key}/input"), words);
+        click(&mut rt, &format!("{key}/set"));
+    }
+    assert_eq!(name_of(&rt, "generate/recipes/step/1/title"), "2. rencana");
+    click(&mut rt, "generate/recipes/step/1/with/crit/add");
+    click(&mut rt, "generate/recipes/step/1/with/crit/1/remove");
     click(&mut rt, "generate/recipes/save");
     let put = last(&e, "PUT /api/generate/recipes/mine").unwrap();
     let body: Value = serde_json::from_str(put.splitn(3, ' ').nth(2).unwrap()).unwrap();
@@ -618,7 +672,7 @@ fn a_recipe_is_built_as_steps_and_saved_as_the_json_it_makes() {
         body["recipe"]["steps"],
         json!([
             { "use": "storylines", "gate": "owner", "with": { "count": 4, "requireBold": true } },
-            { "use": "plan", "when": "connection:vision", "with": { "mode": "long", "note": "pendek", "tags": ["a", "b"] } },
+            { "use": "plan", "id": "rencana", "prompt": { "mode": "append", "text": "pelan" }, "when": "connection:vision", "with": { "mode": "long", "note": "pendek", "tags": ["a", "b"], "extra": { "depth": 2 }, "effects": { "maxSteps": 2 }, "crit": [{ "question": "apa?" }] } },
             { "use": "export" },
         ])
     );
@@ -631,4 +685,46 @@ fn a_recipe_is_built_as_steps_and_saved_as_the_json_it_makes() {
     type_into(&mut rt, "generate/recipes/name", "Baru");
     click(&mut rt, "generate/recipes/name/set");
     assert!(rt.state.panels.studio.recipes.text.text.contains("\"name\": \"Resep sayaBaru\""));
+}
+
+#[test]
+fn a_brief_carries_its_format_pipeline_narration_facts_and_number_rule() {
+    let (mut rt, e) = lab("generate");
+    click(&mut rt, "generate/new");
+    type_into(&mut rt, "generate/brief/text", "Jelaskan bunga majemuk");
+    // a fact line that is not claim | value | https://address is refused before anything is sent
+    type_into(&mut rt, "generate/brief/facts/text", "Bunga 5 persen | 5%");
+    click(&mut rt, "generate/brief/create");
+    assert_eq!(name_of(&rt, "generate/brief/problem"), tf("brief.fact_line", &["Bunga 5 persen | 5%"]));
+    assert!(calls(&e, "POST /api/generate/projects").is_empty());
+    rt.update(|s, _| s.panels.studio.brief.facts = rune::TextEdit::new("Bunga 5 persen | 5% | https://bi.go.id"));
+    rt.frame(1.0 / 60.0);
+    for key in ["generate/brief/preset/0", "generate/brief/pipeline/1", "generate/brief/narration", "generate/brief/no-numbers", "generate/brief/create"] {
+        click(&mut rt, key);
+    }
+    assert_eq!(
+        calls(&e, "POST /api/generate/projects"),
+        [r#"POST /api/generate/projects {"brief":"Jelaskan bunga majemuk","facts":[{"claim":"Bunga 5 persen","sourceUrl":"https://bi.go.id","value":"5%"}],"forbiddenNumbers":true,"format":"9:16","language":"id","narration":true,"preset":"explainer-30","recipeId":"mine","targetSec":30}"#]
+    );
+}
+
+#[test]
+fn narration_needs_a_voice_engine_and_a_videos_own_files_can_be_removed() {
+    let (mut rt, e) = lab("generate");
+    // the open video lists what it was given, and one can be taken off
+    goto(&mut rt, "brief");
+    assert!(name_of(&rt, "generate/asset/a1").starts_with("logo.png"));
+    click(&mut rt, "generate/asset/a1/remove");
+    assert_eq!(calls(&e, "DELETE /api/generate/assets/a1").len(), 1);
+    // without a voice engine the box is off and says what it needs
+    rt.update(|s, _| {
+        if let Some(generate::Avail::Yes { voices, .. }) = &mut s.panels.studio.avail {
+            voices.clear();
+        }
+        generate::select(s, None);
+    });
+    rt.frame(1.0 / 60.0);
+    assert!(has(&rt, "generate/brief/narration/needs"));
+    click(&mut rt, "generate/brief/narration");
+    assert_eq!(rt.state.panels.studio.brief.narration, None);
 }
