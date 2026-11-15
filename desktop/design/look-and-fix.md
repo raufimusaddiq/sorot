@@ -1,7 +1,7 @@
 # Look-and-fix review (T077)
 
 Each scene was rendered with `--snap` in both themes and set beside its frame in `design/frames/`.
-The approved images are `tests/snapshots/*.png` (made with `SOROT_APPROVE=1 cargo test --test snapshots`
+The approved images are `tests/snapshots/*.png` (made with `SOROT_APPROVE=1 cargo test --test suite snapshots::`
 after this review; the test then holds them). Scene to frame: `job-running` to `job-*`,
 `clips-ranked` to `clips-*`, `editor-hook` to `editor-*`, `home-empty` to `home-*`,
 `readiness-missing` to `readiness-*`, `first-run` to `welcome-library-*`, `engine-failed` to none.

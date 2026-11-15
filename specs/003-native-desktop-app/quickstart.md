@@ -91,7 +91,7 @@ cd desktop; cargo build
 target/debug/sorot-desktop --list-scenes
 target/debug/sorot-desktop --scene clips-ranked --theme dark --size 1280x800 --snap out.png
 target/debug/sorot-desktop --scene home-empty --script scripts/headless/us2-drop-import.json --tree tree.json --at mark:end
-cargo test --test headless_flows --test snapshots --test clickthrough
+cargo test --test suite headless_flows:: snapshots:: clickthrough::
 ```
 
 **Expected**:

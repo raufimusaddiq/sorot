@@ -4,7 +4,6 @@
 //! images come from the look-and-fix review (`design/look-and-fix.md`); `SOROT_APPROVE=1` rewrites
 //! them after that review, never otherwise.
 
-mod support;
 
 use std::path::{Path, PathBuf};
 
@@ -78,7 +77,7 @@ fn every_scene_matches_its_approved_image() {
         .into_iter()
         .filter_map(|(scene, theme, size)| {
             let name = format!("{scene}-{theme}-{size}");
-            let got = support::headless::snap(&scene, theme, size);
+            let got = crate::support::headless::snap(&scene, theme, size);
             let result = compare(&name, &got, &dir.join(format!("{name}.png")));
             let _ = std::fs::remove_file(got);
             result.err()
@@ -90,7 +89,7 @@ fn every_scene_matches_its_approved_image() {
 /// The comparison itself: equal images pass, a few changed pixels pass, a changed region fails and writes a diff.
 #[test]
 fn the_comparison_tolerates_noise_and_catches_a_changed_region() {
-    let dir = support::headless::temp_dir();
+    let dir = crate::support::headless::temp_dir();
     let (w, h) = (100u32, 100u32);
     let base = vec![40u8; (w * h * 4) as usize];
     write(&dir.join("approved.png"), w, h, &base);
