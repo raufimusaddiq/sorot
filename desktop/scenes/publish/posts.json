@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "data": {
+    "posts": [
+      {
+        "id": "p1",
+        "clipId": "c1",
+        "status": "FAILED",
+        "targets": "[{\"platform\": \"tiktok\", \"status\": \"FAILED\", \"errorCode\": \"rate_limited\"}]",
+        "errorMessage": "Tebar refused the upload."
+      }
+    ]
+  }
+}

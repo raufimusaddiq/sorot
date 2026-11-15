@@ -9,12 +9,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use sorot_desktop_core::model::*;
 
 use super::sidecar::{Clock, Launch, Out, Proc, Spawn};
 use sorot_desktop_core::clips::Options;
 use sorot_desktop_core::job::STAGE_ORDER;
 
+use super::types::*;
 use super::{EditOptions, Engine, EngineError, ImportRequest, Result, Source, Started};
 
 /// Where the scenes live.
@@ -43,6 +45,8 @@ struct Inner {
     readiness: Option<Readiness>,
     /// Items whose fix was asked for, and how many readiness calls came since.
     fixing: HashMap<String, u8>,
+    /// Answers a test gives in code, ahead of the scene's files: `route -> envelope`.
+    files: HashMap<String, String>,
     /// Each `job` call after an import answers the next step; the last one repeats.
     job_steps: VecDeque<JobDetail>,
     job: Option<JobDetail>,
@@ -120,6 +124,16 @@ impl FakeEngine {
         self.inner.lock().unwrap().readiness_steps = steps.into();
     }
 
+    /// Serves `envelope` (the engine's JSON) for `route` from now on, ahead of the scene's files.
+    pub fn serve(&self, route: &str, envelope: &str) {
+        self.inner.lock().unwrap().files.insert(route.into(), envelope.into());
+    }
+
+    /// A scene with no files: every route answers its empty default until `serve` says otherwise.
+    pub fn blank() -> Self {
+        FakeEngine { dir: scenes_dir().join("__none__"), inner: Mutex::new(Inner::default()) }
+    }
+
     fn enter(&self, call: String, method: &str) -> Result<()> {
         let mut i = self.inner.lock().unwrap();
         i.calls.push(call);
@@ -131,7 +145,8 @@ impl FakeEngine {
 
     /// `{route}.json` as the envelope's data; a missing file is the empty answer `empty`.
     fn load<T: DeserializeOwned>(&self, route: &str, empty: &str) -> Result<T> {
-        let text = std::fs::read_to_string(self.dir.join(format!("{route}.json"))).unwrap_or_else(|_| empty.to_string());
+        let served = self.inner.lock().unwrap().files.get(route).cloned();
+        let text = served.or_else(|| std::fs::read_to_string(self.dir.join(format!("{route}.json"))).ok()).unwrap_or_else(|| empty.to_string());
         let env: Envelope<T> = serde_json::from_str(&text).map_err(|e| EngineError::Malformed(format!("{route}.json: {e}")))?;
         env.into_result().map_err(|message| EngineError::Api { status: 400, message })
     }
@@ -176,7 +191,7 @@ impl Engine for FakeEngine {
 
     fn settings(&self) -> Result<Settings> {
         self.enter("settings".into(), "settings")?;
-        self.load("settings", r#"{"status":"error","error":"no settings in this scene"}"#)
+        self.load("settings", NO_SETTINGS)
     }
 
     fn videos(&self) -> Result<Vec<Video>> {
@@ -278,8 +293,119 @@ impl Engine for FakeEngine {
         self.enter(format!("retry_job({id})"), "retry_job")?;
         Ok(JobRef { job_id: id.into(), status: "QUEUED".into() })
     }
+
+    fn update_settings(&self, kind: &str, patch: &Value) -> Result<Settings> {
+        self.enter(format!("update_settings({kind}, {patch})"), "update_settings")?;
+        self.load("settings", NO_SETTINGS)
+    }
+
+    fn test_connection(&self, kind: &str) -> Result<ConnTest> {
+        self.enter(format!("test_connection({kind})"), "test_connection")?;
+        self.load("test", r#"{"status":"ok","data":{"ok":true,"ms":120,"model":"m","detail":"OK"}}"#)
+    }
+
+    fn generate_status(&self) -> Result<GenerateStatus> {
+        self.enter("generate_status".into(), "generate_status")?;
+        self.load("generate-status", r#"{"status":"error","error":"no Generate status in this scene"}"#)
+    }
+
+    fn generate_models(&self) -> Result<GenModels> {
+        self.enter("generate_models".into(), "generate_models")?;
+        self.load("generate-models", r#"{"status":"ok","data":{"current":"","models":[],"calibration":null}}"#)
+    }
+
+    fn calibrate(&self) -> Result<()> {
+        self.enter("calibrate".into(), "calibrate")
+    }
+
+    fn pin_model(&self, model: &str, level: Option<&str>) -> Result<()> {
+        self.enter(format!("pin_model({model}, {})", level.unwrap_or("auto")), "pin_model")
+    }
+
+    fn social_accounts(&self) -> Result<SocialAccounts> {
+        self.enter("social_accounts".into(), "social_accounts")?;
+        self.load("social-accounts", r#"{"status":"ok","data":{"enabled":false,"accounts":[]}}"#)
+    }
+
+    fn publish_draft(&self, clip_id: &str, account_ids: &[String]) -> Result<PublishDraft> {
+        self.enter(format!("publish_draft({clip_id}, {})", account_ids.join(",")), "publish_draft")?;
+        self.load("publish-draft", r#"{"status":"error","error":"no draft in this scene"}"#)
+    }
+
+    fn publish(&self, clip_id: &str, body: &Value) -> Result<SocialPost> {
+        self.enter(format!("publish({clip_id}, {body})"), "publish")?;
+        self.load::<PostOne>("publish", r#"{"status":"error","error":"no post in this scene"}"#).map(|p| p.post)
+    }
+
+    fn clip_posts(&self, clip_id: &str) -> Result<Vec<SocialPost>> {
+        self.enter(format!("clip_posts({clip_id})"), "clip_posts")?;
+        Ok(self.load::<PostList>("posts", r#"{"status":"ok","data":{"posts":[]}}"#)?.posts)
+    }
+
+    fn retry_post(&self, id: &str) -> Result<SocialPost> {
+        self.enter(format!("retry_post({id})"), "retry_post")?;
+        self.load::<PostOne>("post", r#"{"status":"error","error":"no post in this scene"}"#).map(|p| p.post)
+    }
+
+    fn cancel_post(&self, id: &str) -> Result<SocialPost> {
+        self.enter(format!("cancel_post({id})"), "cancel_post")?;
+        self.load::<PostOne>("post", r#"{"status":"error","error":"no post in this scene"}"#).map(|p| p.post)
+    }
+
+    fn feedback(&self) -> Result<Vec<LoggedResult>> {
+        self.enter("feedback".into(), "feedback")?;
+        Ok(self.load::<FeedbackList>("feedback", r#"{"status":"ok","data":{"results":[]}}"#)?.results)
+    }
+
+    fn weights(&self) -> Result<Weights> {
+        self.enter("weights".into(), "weights")?;
+        self.load("weights", r#"{"status":"ok","data":{"version":0,"trained_on":0,"total_feedback":0,"with_actual_scores":0}}"#)
+    }
+
+    fn train(&self) -> Result<()> {
+        self.enter("train".into(), "train")
+    }
+
+    fn submit_feedback(&self, clip_id: &str, m: &Metrics) -> Result<FeedbackSaved> {
+        self.enter(format!("submit_feedback({clip_id}, {} views, posted {})", m.views, m.posted_at), "submit_feedback")?;
+        self.load("feedback-saved", r#"{"status":"ok","data":{"viralScore":0.5}}"#)
+    }
+
+    fn discover(&self, mode: &str, arg: &str) -> Result<Vec<Candidate>> {
+        self.enter(format!("discover({mode}, {arg})"), "discover")?;
+        Ok(self.load::<CandidateList>("discover", r#"{"status":"ok","data":{"videos":[]}}"#)?.videos)
+    }
+
+    fn candidates(&self, status: Option<&str>) -> Result<Vec<Candidate>> {
+        self.enter(format!("candidates({})", status.unwrap_or("")), "candidates")?;
+        Ok(self.load::<CandidateList>("candidates", r#"{"status":"ok","data":{"videos":[]}}"#)?.videos)
+    }
+
+    fn set_candidate_status(&self, id: &str, status: &str) -> Result<()> {
+        self.enter(format!("set_candidate_status({id}, {status})"), "set_candidate_status")
+    }
+
+    fn queue_candidates(&self, ids: &[String]) -> Result<()> {
+        self.enter(format!("queue_candidates({})", ids.join(",")), "queue_candidates")
+    }
+
+    fn drain_queue(&self) -> Result<Drained> {
+        self.enter("drain_queue".into(), "drain_queue")?;
+        self.load("drained", r#"{"status":"ok","data":{"started":[],"failed":[]}}"#)
+    }
+
+    fn discover_auto(&self, goal: &str) -> Result<AutoRun> {
+        self.enter(format!("discover_auto({goal})"), "discover_auto")?;
+        self.load("auto", r#"{"status":"ok","data":{"id":"run1","status":"RUNNING"}}"#)
+    }
+
+    fn auto_status(&self, id: &str) -> Result<AutoRun> {
+        self.enter(format!("auto_status({id})"), "auto_status")?;
+        self.load("auto-done", r#"{"status":"ok","data":{"id":"run1","status":"DONE","count":3}}"#)
+    }
 }
 
+const NO_SETTINGS: &str = r#"{"status":"error","error":"no settings in this scene"}"#;
 fn write_fake(dest: &Path) -> Result<u64> {
     const BYTES: &[u8] = b"fake-mp4";
     match std::fs::write(dest, BYTES) {

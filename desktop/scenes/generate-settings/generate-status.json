@@ -1,0 +1,20 @@
+{
+  "status": "ok",
+  "data": {
+    "available": false,
+    "reasons": [
+      "The browser Generate renders with is missing. Fix it on the first-run checklist."
+    ],
+    "hyperframes": {
+      "ok": true,
+      "version": "0.4"
+    },
+    "llm": {
+      "configured": true
+    },
+    "jev": {
+      "configured": true
+    },
+    "compute": "cpu"
+  }
+}

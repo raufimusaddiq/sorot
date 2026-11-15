@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "data": {
+    "videos": [
+      {
+        "id": "v1",
+        "sourceType": "YOUTUBE",
+        "title": "Podcast produktivitas",
+        "createdAt": "2026-11-10T09:00:00Z"
+      }
+    ]
+  }
+}

@@ -3,6 +3,7 @@
 
 pub mod http;
 pub mod sidecar;
+pub mod types;
 
 #[cfg(any(test, feature = "headless", debug_assertions))]
 pub mod fake;
@@ -10,8 +11,11 @@ pub mod fake;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 use sorot_desktop_core::clips::Options;
 use sorot_desktop_core::model::*;
+
+use types::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum EngineError {
@@ -96,6 +100,35 @@ pub trait Engine: Send + Sync {
     fn download_export(&self, clip_id: &str, dest: &Path) -> Result<u64>;
     fn cancel_job(&self, id: &str) -> Result<JobRef>;
     fn retry_job(&self, id: &str) -> Result<JobRef>;
+    // Settings and Generate status.
+    fn update_settings(&self, kind: &str, patch: &Value) -> Result<Settings>;
+    fn test_connection(&self, kind: &str) -> Result<ConnTest>;
+    fn generate_status(&self) -> Result<GenerateStatus>;
+    fn generate_models(&self) -> Result<GenModels>;
+    fn calibrate(&self) -> Result<()>;
+    /// `None` hands the model back to `auto`.
+    fn pin_model(&self, model: &str, level: Option<&str>) -> Result<()>;
+    // Publishing through Tebar.
+    fn social_accounts(&self) -> Result<SocialAccounts>;
+    fn publish_draft(&self, clip_id: &str, account_ids: &[String]) -> Result<PublishDraft>;
+    fn publish(&self, clip_id: &str, body: &Value) -> Result<SocialPost>;
+    fn clip_posts(&self, clip_id: &str) -> Result<Vec<SocialPost>>;
+    fn retry_post(&self, id: &str) -> Result<SocialPost>;
+    fn cancel_post(&self, id: &str) -> Result<SocialPost>;
+    // Learning.
+    fn feedback(&self) -> Result<Vec<LoggedResult>>;
+    fn weights(&self) -> Result<Weights>;
+    fn train(&self) -> Result<()>;
+    fn submit_feedback(&self, clip_id: &str, metrics: &Metrics) -> Result<FeedbackSaved>;
+    // Discover.
+    /// `mode` is `search` (`arg` = the query), `trending` or `channel` (`arg` = the channel URL).
+    fn discover(&self, mode: &str, arg: &str) -> Result<Vec<Candidate>>;
+    fn candidates(&self, status: Option<&str>) -> Result<Vec<Candidate>>;
+    fn set_candidate_status(&self, id: &str, status: &str) -> Result<()>;
+    fn queue_candidates(&self, ids: &[String]) -> Result<()>;
+    fn drain_queue(&self) -> Result<Drained>;
+    fn discover_auto(&self, goal: &str) -> Result<AutoRun>;
+    fn auto_status(&self, id: &str) -> Result<AutoRun>;
 }
 
 #[cfg(test)]

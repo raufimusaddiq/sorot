@@ -1,0 +1,21 @@
+{
+  "status": "ok",
+  "data": {
+    "results": [
+      {
+        "clipId": "c9",
+        "title": "Rahasia fokus",
+        "viralScore": 0.64,
+        "views": 12840,
+        "postedAt": "2026-11-01T10:00:00Z"
+      },
+      {
+        "clipId": "c8",
+        "title": "Tiga kebiasaan pagi",
+        "viralScore": 0.31,
+        "views": 2210,
+        "postedAt": "2026-11-03T08:30:00Z"
+      }
+    ]
+  }
+}

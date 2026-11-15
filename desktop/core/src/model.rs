@@ -240,6 +240,19 @@ pub struct Connection {
     pub director: Option<bool>,
     #[serde(default)]
     pub profiles: Option<Vec<Profile>>,
+    /// Generate budgets and per-role models (LLM connection only).
+    #[serde(default)]
+    pub gen_max_tokens: Option<u64>,
+    #[serde(default)]
+    pub context_tokens: Option<u64>,
+    #[serde(default)]
+    pub turn_tokens: Option<u64>,
+    #[serde(default)]
+    pub plan_model: Option<String>,
+    #[serde(default)]
+    pub scene_model: Option<String>,
+    #[serde(default)]
+    pub judge_model: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

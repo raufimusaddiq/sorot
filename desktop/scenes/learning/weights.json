@@ -1,0 +1,9 @@
+{
+  "status": "ok",
+  "data": {
+    "version": 2,
+    "trained_on": 0,
+    "total_feedback": 2,
+    "with_actual_scores": 2
+  }
+}

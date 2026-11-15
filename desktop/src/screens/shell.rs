@@ -4,6 +4,7 @@ use rune::tok::type_;
 use rune::{El, col, row, text};
 
 use crate::app::{Conn, State};
+use crate::screens::panels::{Host, Page};
 use crate::ui::kit::{button, pal};
 
 /// Shown while the engine is lost or failed; `None` when the connection is fine.
@@ -22,13 +23,22 @@ pub fn banner(s: &State) -> Option<El> {
     )
 }
 
-/// The rail holds only screens that exist; Home is the only one so far.
+fn rail_item(s: &State, key: &str, label: &str, page: Page) -> El {
+    let p = pal(s.dark);
+    col().key(key).role("button").label(label).focusable(true).padding(10.0).radius(6.0).fill(p.raised).on_press(move |s: &mut State| s.show(page))
+        .child(text(label).font(type_::LABEL).color(p.text))
+}
+
+/// The rail holds only screens that exist.
 pub fn with_rail(s: &State, content: El) -> El {
     let p = pal(s.dark);
     let rail = col().key("shell/rail").role("navigation").label("Sorot").w(88.0).h_full().gap(8.0).padding(8.0).fill(p.surface)
         .child(text("Sorot").key("shell/wordmark").font(type_::TITLE).color(p.beam))
         .child(col().key("shell/rail/home").role("button").label("Home").focusable(true).padding(10.0).radius(6.0).fill(p.raised)
-            .child(text("Home").font(type_::LABEL).color(p.beam_text)));
+            .child(text("Home").font(type_::LABEL).color(p.beam_text)))
+        .child(rail_item(s, "shell/rail/discover", "Discover", Page::Discover))
+        .child(rail_item(s, "shell/rail/learning", "Learning", Page::Learning))
+        .child(rail_item(s, "shell/rail/settings", "Settings", Page::Connections));
     row().w_full().grow(1.0).child(rail).child(col().grow(1.0).h_full().center().child(content))
 }
 

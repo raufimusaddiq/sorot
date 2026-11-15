@@ -1,0 +1,22 @@
+{
+  "status": "ok",
+  "data": {
+    "clips": [
+      {
+        "id": "c1",
+        "videoId": "v1",
+        "rankPos": 1,
+        "score": 0.82,
+        "tier": "PRIMARY",
+        "startTime": 10,
+        "endTime": 48,
+        "durationSec": 38,
+        "title": "Kenapa orang menunda mulai",
+        "renderStatus": "DONE",
+        "exportStatus": "DONE",
+        "exportPath": "/data/exports/v1/c1.mp4",
+        "createdAt": "2026-11-10T10:00:00Z"
+      }
+    ]
+  }
+}

@@ -39,7 +39,7 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
 
 #[test]
 fn the_scenes_are_listed_and_render_in_both_themes() {
-    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run"]);
+    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "connections", "generate-settings", "learning", "discover", "publish"]);
     for theme in ["dark", "light"] {
         let png = snap("readiness-missing", theme, "900x600");
         let _ = std::fs::remove_file(png);

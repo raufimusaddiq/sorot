@@ -151,7 +151,7 @@ fn welcome_handles_no_library_a_failed_search_and_a_failed_copy() {
     assert!(has(&rt, "welcome/copying") && !has(&rt, "welcome/copy"));
 }
 
-/// The banner shows for the two lost states with its two actions; the rail holds Home only.
+/// The banner shows for the two lost states with its two actions; the rail has Home.
 #[test]
 fn the_banner_follows_the_connection_and_its_buttons_work() {
     for (conn, banner) in [(Conn::Starting, false), (Conn::Ready, false), (Conn::Lost, true), (Conn::Failed("x".into()), true)] {
@@ -161,7 +161,7 @@ fn the_banner_follows_the_connection_and_its_buttons_work() {
         assert_eq!(has(&rt, "shell/banner"), banner, "{conn:?}");
     }
     let mut rt = runtime("home-empty");
-    assert!(has(&rt, "shell/rail/home") && !has(&rt, "shell/rail/settings"));
+    assert!(has(&rt, "shell/rail/home"));
     poke(&mut rt, |s| s.conn = Conn::Lost);
     click(&mut rt, "shell/export-diagnostic");
     assert_eq!(rt.state.toasts[0].toast.kind, ToastKind::Failed, "no engine log without a supervisor");

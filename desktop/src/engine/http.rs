@@ -10,6 +10,7 @@ use std::path::Path;
 
 use sorot_desktop_core::clips::Options;
 
+use super::types::*;
 use super::{EditOptions, Engine, EngineError, ImportRequest, Result, Source, Started};
 
 fn malformed(e: serde_json::Error) -> EngineError {
@@ -60,7 +61,7 @@ impl HttpEngine {
             }
             req.call()
         } else {
-            let mut req = self.agent.post(&url).header("Content-Type", "application/json");
+            let mut req = if method == "PUT" { self.agent.put(&url) } else { self.agent.post(&url) }.header("Content-Type", "application/json");
             if let Some(a) = &auth {
                 req = req.header("Authorization", a);
             }
@@ -109,6 +110,21 @@ impl HttpEngine {
     fn post<T: DeserializeOwned>(&self, path: &str, body: Value) -> Result<T> {
         self.call("POST", path, Some(body))
     }
+
+    fn put<T: DeserializeOwned>(&self, path: &str, body: Value) -> Result<T> {
+        self.call("PUT", path, Some(body))
+    }
+}
+
+/// Percent-encodes what a path segment or query value may not hold (model ids carry `/`).
+fn encode(s: &str) -> String {
+    s.bytes().fold(String::new(), |mut out, b| {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+        out
+    })
 }
 
 impl Engine for HttpEngine {
@@ -177,6 +193,81 @@ impl Engine for HttpEngine {
     }
     fn retry_job(&self, id: &str) -> Result<JobRef> {
         self.post(&format!("/api/jobs/{id}/retry"), json!({}))
+    }
+    fn update_settings(&self, kind: &str, patch: &Value) -> Result<Settings> {
+        self.put(&format!("/api/settings/{kind}"), patch.clone())
+    }
+    fn test_connection(&self, kind: &str) -> Result<ConnTest> {
+        self.post(&format!("/api/settings/{kind}/test"), json!({}))
+    }
+    fn generate_status(&self) -> Result<GenerateStatus> {
+        self.get("/api/generate/status")
+    }
+    fn generate_models(&self) -> Result<GenModels> {
+        self.get("/api/generate/models")
+    }
+    fn calibrate(&self) -> Result<()> {
+        self.post::<Value>("/api/generate/models/calibrate", json!({})).map(drop)
+    }
+    fn pin_model(&self, model: &str, level: Option<&str>) -> Result<()> {
+        self.put::<Value>(&format!("/api/generate/models/{}/level", encode(model)), json!({ "level": level })).map(drop)
+    }
+    fn social_accounts(&self) -> Result<SocialAccounts> {
+        self.get("/api/social/accounts")
+    }
+    fn publish_draft(&self, clip_id: &str, account_ids: &[String]) -> Result<PublishDraft> {
+        self.post(&format!("/api/clips/{clip_id}/publish/draft"), json!({ "accountIds": account_ids }))
+    }
+    fn publish(&self, clip_id: &str, body: &Value) -> Result<SocialPost> {
+        Ok(self.post::<PostOne>(&format!("/api/clips/{clip_id}/publish"), body.clone())?.post)
+    }
+    fn clip_posts(&self, clip_id: &str) -> Result<Vec<SocialPost>> {
+        Ok(self.get::<PostList>(&format!("/api/clips/{clip_id}/posts"))?.posts)
+    }
+    fn retry_post(&self, id: &str) -> Result<SocialPost> {
+        Ok(self.post::<PostOne>(&format!("/api/social/posts/{id}/retry"), json!({}))?.post)
+    }
+    fn cancel_post(&self, id: &str) -> Result<SocialPost> {
+        Ok(self.post::<PostOne>(&format!("/api/social/posts/{id}/cancel"), json!({}))?.post)
+    }
+    fn feedback(&self) -> Result<Vec<LoggedResult>> {
+        Ok(self.get::<FeedbackList>("/api/feedback")?.results)
+    }
+    fn weights(&self) -> Result<Weights> {
+        self.get("/api/feedback/weights")
+    }
+    fn train(&self) -> Result<()> {
+        self.post::<Value>("/api/feedback/train", json!({})).map(drop)
+    }
+    fn submit_feedback(&self, clip_id: &str, metrics: &Metrics) -> Result<FeedbackSaved> {
+        self.post(&format!("/api/clips/{clip_id}/feedback"), json!(metrics))
+    }
+    fn discover(&self, mode: &str, arg: &str) -> Result<Vec<Candidate>> {
+        let body = match mode {
+            "search" => json!({ "query": arg }),
+            "channel" => json!({ "channelUrl": arg }),
+            _ => json!({}),
+        };
+        Ok(self.post::<CandidateList>(&format!("/api/discover/{mode}"), body)?.videos)
+    }
+    fn candidates(&self, status: Option<&str>) -> Result<Vec<Candidate>> {
+        let query = status.map(|s| format!("?status={}", encode(s))).unwrap_or_default();
+        Ok(self.get::<CandidateList>(&format!("/api/discover/candidates{query}"))?.videos)
+    }
+    fn set_candidate_status(&self, id: &str, status: &str) -> Result<()> {
+        self.post::<Value>(&format!("/api/discover/candidates/{id}/status"), json!({ "status": status })).map(drop)
+    }
+    fn queue_candidates(&self, ids: &[String]) -> Result<()> {
+        self.post::<Value>("/api/discover/queue", json!({ "ids": ids })).map(drop)
+    }
+    fn drain_queue(&self) -> Result<Drained> {
+        self.post("/api/discover/queue/drain", json!({}))
+    }
+    fn discover_auto(&self, goal: &str) -> Result<AutoRun> {
+        self.post("/api/discover/auto", json!({ "goal": goal }))
+    }
+    fn auto_status(&self, id: &str) -> Result<AutoRun> {
+        self.get(&format!("/api/discover/auto/{id}"))
     }
 }
 
@@ -297,6 +388,50 @@ mod tests {
             "POST /api/jobs/j1/retry {} Bearer tok",
             "GET /api/settings  Bearer tok",
             "GET /api/jobs/j1  Bearer tok",
+        ];
+        assert_eq!(got, want);
+    }
+
+    /// The settings, publish, learning and discover routes: method, path and body of each.
+    #[test]
+    fn panel_routes_send_their_requests() {
+        let (base, seen) = stub(200, r#"{"status":"ok","data":{"posts":[],"post":{"id":"p","clipId":"c","status":"X"},"results":[],"videos":[],"started":[],"failed":[]}}"#);
+        let e = HttpEngine::new(base, None);
+        let _ = e.update_settings("llm", &json!({"model": "m"}));
+        let _ = (e.test_connection("jev"), e.generate_status(), e.generate_models(), e.calibrate(), e.pin_model("a/b", Some("free")), e.pin_model("c", None));
+        let _ = (e.social_accounts(), e.publish_draft("c1", &["a1".to_string()]), e.publish("c1", &json!({"targets": []})), e.clip_posts("c1"), e.retry_post("p1"), e.cancel_post("p1"));
+        let _ = (e.feedback(), e.weights(), e.train(), e.submit_feedback("c1", &Metrics { views: 3, posted_at: "2026-11-14T19:00:00Z".into(), ..Metrics::default() }));
+        let _ = (e.discover("search", "q"), e.discover("channel", "u"), e.discover("trending", ""), e.candidates(None), e.candidates(Some("NEW")));
+        let _ = (e.set_candidate_status("d1", "SKIPPED"), e.queue_candidates(&["d1".to_string()]), e.drain_queue(), e.discover_auto("g"), e.auto_status("r1"));
+        let got: Vec<_> = seen.lock().unwrap().iter().map(|(m, p, _)| format!("{m} {p}")).collect();
+        let want = [
+            r#"PUT /api/settings/llm {"model":"m"}"#,
+            "POST /api/settings/jev/test {}",
+            "GET /api/generate/status ",
+            "GET /api/generate/models ",
+            "POST /api/generate/models/calibrate {}",
+            r#"PUT /api/generate/models/a%2Fb/level {"level":"free"}"#,
+            r#"PUT /api/generate/models/c/level {"level":null}"#,
+            "GET /api/social/accounts ",
+            r#"POST /api/clips/c1/publish/draft {"accountIds":["a1"]}"#,
+            r#"POST /api/clips/c1/publish {"targets":[]}"#,
+            "GET /api/clips/c1/posts ",
+            "POST /api/social/posts/p1/retry {}",
+            "POST /api/social/posts/p1/cancel {}",
+            "GET /api/feedback ",
+            "GET /api/feedback/weights ",
+            "POST /api/feedback/train {}",
+            r#"POST /api/clips/c1/feedback {"comments":0,"likes":0,"postedAt":"2026-11-14T19:00:00Z","saves":0,"shares":0,"views":3}"#,
+            r#"POST /api/discover/search {"query":"q"}"#,
+            r#"POST /api/discover/channel {"channelUrl":"u"}"#,
+            "POST /api/discover/trending {}",
+            "GET /api/discover/candidates ",
+            "GET /api/discover/candidates?status=NEW ",
+            r#"POST /api/discover/candidates/d1/status {"status":"SKIPPED"}"#,
+            r#"POST /api/discover/queue {"ids":["d1"]}"#,
+            "POST /api/discover/queue/drain {}",
+            r#"POST /api/discover/auto {"goal":"g"}"#,
+            "GET /api/discover/auto/r1 ",
         ];
         assert_eq!(got, want);
     }

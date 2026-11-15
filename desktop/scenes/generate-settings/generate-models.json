@@ -1,0 +1,33 @@
+{
+  "status": "ok",
+  "data": {
+    "current": "qwen2.5",
+    "models": [
+      {
+        "model": "qwen2.5",
+        "pin": null,
+        "auto": "free",
+        "proven": "compose",
+        "records": [
+          {
+            "level": "compose",
+            "asked": 6,
+            "firstPass": 4,
+            "repaired": 1,
+            "dropped": 1,
+            "malformed": 0
+          },
+          {
+            "level": "free",
+            "asked": 3,
+            "firstPass": 1,
+            "repaired": 1,
+            "dropped": 1,
+            "malformed": 0
+          }
+        ]
+      }
+    ],
+    "calibration": null
+  }
+}

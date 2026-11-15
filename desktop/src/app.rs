@@ -29,7 +29,9 @@ use crate::screens::clips::ClipsScreen;
 use crate::screens::editor::Editor;
 use crate::screens::home::{Home, HomeError};
 use crate::screens::job::JobScreen;
-use crate::screens::{clips, editor, home, job, readiness, shell, welcome};
+use crate::screens::panels::{Apply, Host, Page, Panels, Work};
+use crate::screens::settings::{connections, generate};
+use crate::screens::{clips, discover, editor, home, job, learning, publish, readiness, shell, welcome};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 use crate::ui::toast::{ToastItem, toast_stack};
@@ -55,6 +57,11 @@ pub enum Screen {
     Job,
     Clips,
     Editor,
+    Connections,
+    GenerateSettings,
+    Publish,
+    Learning,
+    Discover,
 }
 
 /// Which working screen is open once the engine is ready.
@@ -68,6 +75,12 @@ pub enum Route {
     Clips(String),
     /// A clip id.
     Editor(String),
+    Connections,
+    GenerateSettings,
+    /// A clip id.
+    Publish(String),
+    Learning,
+    Discover,
 }
 
 /// What the OS tells the app when a person clicks a notification: the job to open.
@@ -125,6 +138,8 @@ pub enum Msg {
     PreviewReady { clip_id: String, path: Result<PathBuf, String> },
     /// A notification was clicked.
     OpenJob(String),
+    /// A change to the settings, publish, learning or discover panels.
+    Panel(Apply),
 }
 
 /// Work the UI asks for; it runs off the UI thread and answers with messages.
@@ -390,6 +405,7 @@ pub struct State {
     pub job: JobScreen,
     pub clips: ClipsScreen,
     pub editor: Editor,
+    pub panels: Panels,
     /// The engine's caption styles, framing modes and defaults, and the music it has.
     pub edit_options: Option<EditOptions>,
     pub music: Vec<String>,
@@ -419,7 +435,7 @@ impl Default for State {
         State {
             engine: None, conn: Conn::Starting, jobs: vec![], videos: vec![], readiness: vec![], item_states: vec![], toasts: vec![], dark: true,
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
-            route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(),
+            route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
             now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
         }
@@ -489,6 +505,11 @@ impl State {
                 Route::Job(_) => Screen::Job,
                 Route::Clips(_) => Screen::Clips,
                 Route::Editor(_) => Screen::Editor,
+                Route::Connections => Screen::Connections,
+                Route::GenerateSettings => Screen::GenerateSettings,
+                Route::Publish(_) => Screen::Publish,
+                Route::Learning => Screen::Learning,
+                Route::Discover => Screen::Discover,
             },
         }
     }
@@ -523,6 +544,7 @@ impl State {
                     self.relaunch_engine(ws.data_dir);
                 }
             }
+            Msg::Panel(change) => change(&mut self.panels),
             Msg::Started(started) => {
                 self.home = Home::default();
                 self.open_job(&started.job_id);
@@ -793,6 +815,14 @@ impl State {
             self.send(Cmd::Refresh);
             changed = true;
         }
+        if self.conn == Conn::Ready && t - self.panels.polled >= 2.0 {
+            self.panels.polled = t;
+            match self.route {
+                Route::GenerateSettings if self.panels.generate.calibrating() => generate::poll(self),
+                Route::Discover if self.panels.discover.running() => discover::poll(self),
+                _ => {}
+            }
+        }
         let watching = matches!(self.route, Route::Job(_)) && self.conn == Conn::Ready;
         changed |= watching && (self.poll_job(t) || self.job.detail.as_ref().is_some_and(|d| d.job.is_running()));
         changed || self.preview.state() == crate::preview::PreviewState::Playing
@@ -812,6 +842,11 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
         Screen::Job => shell::with_rail(s, job::view(s)),
         Screen::Clips => shell::with_rail(s, clips::view(s)),
         Screen::Editor => shell::with_rail(s, editor::view(s)),
+        Screen::Connections => shell::with_rail(s, connections::view(s)),
+        Screen::GenerateSettings => shell::with_rail(s, generate::view(s)),
+        Screen::Publish => shell::with_rail(s, publish::view(s)),
+        Screen::Learning => shell::with_rail(s, learning::view(s)),
+        Screen::Discover => shell::with_rail(s, discover::view(s)),
         screen => {
             let content = match screen {
                 Screen::Starting => state_block::<State>(s.dark, "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
@@ -834,6 +869,62 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
     root.child(body).child(toast_stack(s.dark, &s.toasts))
 }
 
+impl Host for State {
+    fn panels(&self) -> &Panels {
+        &self.panels
+    }
+
+    fn panels_mut(&mut self) -> &mut Panels {
+        &mut self.panels
+    }
+
+    fn dark(&self) -> bool {
+        self.dark
+    }
+
+    fn engine(&self) -> Option<Arc<dyn Engine>> {
+        self.engine.clone()
+    }
+
+    fn run(&mut self, work: Work) {
+        let Some(engine) = self.engine.clone() else { return };
+        match self.bus.clone() {
+            Some(bus) => bus.background(Box::new(move || vec![Msg::Panel(work(engine.as_ref()))])),
+            None => self.apply(Msg::Panel(work(engine.as_ref()))),
+        }
+    }
+
+    fn show(&mut self, page: crate::screens::panels::Page) {
+        use crate::screens::panels::Page;
+        match page {
+            Page::Connections => {
+                self.route = Route::Connections;
+                connections::open(self);
+            }
+            Page::GenerateSettings => {
+                self.route = Route::GenerateSettings;
+                generate::open(self);
+            }
+            Page::Learning => {
+                self.route = Route::Learning;
+                learning::open(self);
+            }
+            Page::Discover => {
+                self.route = Route::Discover;
+                discover::open(self);
+            }
+        }
+    }
+}
+
+impl State {
+    /// The publish panel for one clip (the clips screen opens it).
+    pub fn open_publish(&mut self, clip_id: &str, title: &str) {
+        self.route = Route::Publish(clip_id.to_string());
+        publish::open(self, clip_id, title);
+    }
+}
+
 /// Scene functions are plain `fn`s; each folder under `desktop/scenes/` has one here, and a test
 /// holds the list equal to the folders.
 pub type Scene = (&'static str, fn(&mut State));
@@ -843,6 +934,29 @@ pub const SCENES: &[Scene] = &[
     ("readiness-missing", |s| *s = State::scene("readiness-missing")),
     ("engine-failed", |s| *s = State::scene("engine-failed")),
     ("first-run", |s| *s = State::scene("first-run")),
+    ("connections", |s| {
+        *s = State::scene("connections");
+        s.show(Page::Connections);
+    }),
+    ("generate-settings", |s| {
+        *s = State::scene("generate-settings");
+        s.show(Page::GenerateSettings);
+    }),
+    ("learning", |s| {
+        *s = State::scene("learning");
+        s.show(Page::Learning);
+    }),
+    ("discover", |s| {
+        *s = State::scene("discover");
+        s.show(Page::Discover);
+    }),
+    ("publish", |s| {
+        *s = State::scene("publish");
+        s.open_publish("c1", "Kenapa orang menunda mulai");
+        publish::select_account(s, "tt");
+        publish::select_account(s, "yt");
+        publish::write_copy(s);
+    }),
 ];
 
 pub fn spec() -> AppSpec<State> {

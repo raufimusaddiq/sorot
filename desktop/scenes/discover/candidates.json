@@ -1,0 +1,45 @@
+{
+  "status": "ok",
+  "data": {
+    "videos": [
+      {
+        "id": "d1",
+        "title": "Kenapa orang menunda mulai",
+        "url": "https://youtu.be/aaa",
+        "duration": 754,
+        "channel": "Ruang Fokus",
+        "viewCount": 120400,
+        "relevanceScore": 0.84,
+        "status": "NEW",
+        "why": [
+          "strong moments",
+          "speech is clear",
+          "clipped from this channel before"
+        ]
+      },
+      {
+        "id": "d2",
+        "title": "Belajar dari kegagalan",
+        "url": "https://youtu.be/bbb",
+        "duration": 1260,
+        "channel": "Cerita Kita",
+        "viewCount": 8800,
+        "relevanceScore": 0.61,
+        "status": "QUEUED",
+        "why": [
+          "trending in Indonesia"
+        ]
+      },
+      {
+        "id": "d3",
+        "title": "Obrolan panjang tanpa arah",
+        "url": "https://youtu.be/ccc",
+        "duration": 3600,
+        "channel": "Santai",
+        "relevanceScore": 0.22,
+        "status": "SKIPPED",
+        "why": []
+      }
+    ]
+  }
+}
