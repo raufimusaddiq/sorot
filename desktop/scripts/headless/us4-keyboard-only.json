@@ -1,0 +1,201 @@
+{
+ "events": [
+  {
+   "t": 0.2,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 0.3,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 0.4,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 0.5,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 0.6,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 0.7,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 0.8,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 0.9,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 1.0,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 1.1,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 1.2,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 1.3,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 1.4,
+   "type": "mark",
+   "name": "link"
+  },
+  {
+   "t": 1.5,
+   "type": "type",
+   "text": "https://youtu.be/talk"
+  },
+  {
+   "t": 2.5,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 2.6,
+   "type": "mark",
+   "name": "import"
+  },
+  {
+   "t": 2.7,
+   "type": "key",
+   "name": " "
+  },
+  {
+   "t": 3.3,
+   "type": "mark",
+   "name": "job"
+  },
+  {
+   "t": 16.0,
+   "type": "mark",
+   "name": "clips"
+  },
+  {
+   "t": 16.1,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.2,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.3,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.4,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.5,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.6,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.7,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.8,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 16.9,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 17.0,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 17.1,
+   "type": "mark",
+   "name": "export-focus"
+  },
+  {
+   "t": 17.2,
+   "type": "key",
+   "name": "Tab",
+   "shift": true
+  },
+  {
+   "t": 17.3,
+   "type": "mark",
+   "name": "back"
+  },
+  {
+   "t": 17.4,
+   "type": "key",
+   "name": "k",
+   "cmd": true
+  },
+  {
+   "t": 17.5,
+   "type": "mark",
+   "name": "palette"
+  },
+  {
+   "t": 17.6,
+   "type": "key",
+   "name": "Escape"
+  },
+  {
+   "t": 17.7,
+   "type": "mark",
+   "name": "closed"
+  },
+  {
+   "t": 17.8,
+   "type": "key",
+   "name": "Tab"
+  },
+  {
+   "t": 17.9,
+   "type": "key",
+   "name": " "
+  },
+  {
+   "t": 18.5,
+   "type": "mark",
+   "name": "end"
+  }
+ ]
+}

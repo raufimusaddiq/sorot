@@ -1,0 +1,3462 @@
+{
+  "accessibility": {
+    "bounds": [
+      0.0,
+      0.0,
+      1100.0,
+      720.0
+    ],
+    "children": [
+      {
+        "bounds": [
+          0.0,
+          0.0,
+          1100.0,
+          32.0
+        ],
+        "children": [
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              4.0,
+              2.5,
+              61.7,
+              27.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  16.0,
+                  8.5,
+                  37.7,
+                  15.0
+                ],
+                "name": "Berkas",
+                "role": "label"
+              }
+            ],
+            "key": "shell/menu/file",
+            "name": "Berkas",
+            "role": "menu-item"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              69.7,
+              2.5,
+              68.0,
+              27.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  81.7,
+                  8.5,
+                  44.0,
+                  15.0
+                ],
+                "name": "Sunting",
+                "role": "label"
+              }
+            ],
+            "key": "shell/menu/edit",
+            "name": "Sunting",
+            "role": "menu-item"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              141.7,
+              2.5,
+              75.4,
+              27.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  153.7,
+                  8.5,
+                  51.4,
+                  15.0
+                ],
+                "name": "Tampilan",
+                "role": "label"
+              }
+            ],
+            "key": "shell/menu/view",
+            "name": "Tampilan",
+            "role": "menu-item",
+            "states": [
+              "focused"
+            ]
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              221.1,
+              2.5,
+              67.1,
+              27.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  233.1,
+                  8.5,
+                  43.1,
+                  15.0
+                ],
+                "name": "Jendela",
+                "role": "label"
+              }
+            ],
+            "key": "shell/menu/window",
+            "name": "Jendela",
+            "role": "menu-item"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              292.2,
+              2.5,
+              70.8,
+              27.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  304.2,
+                  8.5,
+                  46.8,
+                  15.0
+                ],
+                "name": "Bantuan",
+                "role": "label"
+              }
+            ],
+            "key": "shell/menu/help",
+            "name": "Bantuan",
+            "role": "menu-item"
+          }
+        ],
+        "key": "shell/menubar",
+        "name": "Sorot",
+        "role": "menu-bar"
+      },
+      {
+        "bounds": [
+          0.0,
+          32.0,
+          64.0,
+          772.3
+        ],
+        "children": [
+          {
+            "bounds": [
+              16.0,
+              44.0,
+              32.0,
+              32.0
+            ],
+            "key": "shell/logo",
+            "name": "Sorot",
+            "role": "image"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              4.0,
+              80.0,
+              56.0,
+              35.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  8.7,
+                  90.0,
+                  46.6,
+                  15.0
+                ],
+                "name": "Beranda",
+                "role": "label"
+              }
+            ],
+            "key": "shell/rail/home",
+            "name": "Beranda",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              4.0,
+              119.0,
+              56.0,
+              35.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  21.1,
+                  129.0,
+                  21.8,
+                  15.0
+                ],
+                "name": "Klip",
+                "role": "label"
+              }
+            ],
+            "key": "shell/rail/clips",
+            "name": "Klip",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              4.0,
+              158.0,
+              56.0,
+              35.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  6.1,
+                  168.0,
+                  51.8,
+                  15.0
+                ],
+                "name": "Temukan",
+                "role": "label"
+              }
+            ],
+            "key": "shell/rail/discover",
+            "name": "Temukan",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              4.0,
+              197.0,
+              56.0,
+              35.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  5.9,
+                  207.0,
+                  52.1,
+                  15.0
+                ],
+                "name": "Generate",
+                "role": "label"
+              }
+            ],
+            "key": "shell/rail/generate",
+            "name": "Generate",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              4.0,
+              236.0,
+              56.0,
+              35.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  13.0,
+                  246.0,
+                  38.0,
+                  15.0
+                ],
+                "name": "Belajar",
+                "role": "label"
+              }
+            ],
+            "key": "shell/rail/learning",
+            "name": "Belajar",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              4.0,
+              275.0,
+              56.0,
+              35.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  10.8,
+                  285.0,
+                  42.3,
+                  15.0
+                ],
+                "name": "Setelan",
+                "role": "label"
+              }
+            ],
+            "key": "shell/rail/settings",
+            "name": "Setelan",
+            "role": "button"
+          }
+        ],
+        "key": "shell/rail",
+        "name": "Sorot",
+        "role": "navigation"
+      },
+      {
+        "bounds": [
+          104.0,
+          72.0,
+          956.0,
+          35.0
+        ],
+        "key": "clips/heading",
+        "level": 1,
+        "name": "Klip dari Imported",
+        "role": "heading"
+      },
+      {
+        "bounds": [
+          104.0,
+          111.0,
+          956.0,
+          16.3
+        ],
+        "key": "clips/heading-sub",
+        "name": "Urutan mengikuti skor. Pilih klip untuk melihat pratinjau dan memutuskan mana yang diposting.",
+        "role": "label"
+      },
+      {
+        "bounds": [
+          104.0,
+          147.3,
+          616.0,
+          31.0
+        ],
+        "children": [
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              104.0,
+              147.3,
+              67.0,
+              31.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  118.0,
+                  155.3,
+                  39.0,
+                  15.0
+                ],
+                "name": "Semua",
+                "role": "label"
+              }
+            ],
+            "key": "clips/tab/all",
+            "name": "Semua",
+            "role": "tab",
+            "states": [
+              "checked"
+            ]
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              179.0,
+              147.3,
+              58.3,
+              31.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  193.0,
+                  155.3,
+                  30.3,
+                  15.0
+                ],
+                "name": "PASS",
+                "role": "label"
+              }
+            ],
+            "key": "clips/tab/pass",
+            "name": "PASS",
+            "role": "tab",
+            "states": [
+              "unchecked"
+            ]
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              245.3,
+              147.3,
+              75.5,
+              31.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  259.3,
+                  155.3,
+                  47.5,
+                  15.0
+                ],
+                "name": "REVIEW",
+                "role": "label"
+              }
+            ],
+            "key": "clips/tab/review",
+            "name": "REVIEW",
+            "role": "tab",
+            "states": [
+              "unchecked"
+            ]
+          },
+          {
+            "actions": [
+              "click",
+              "focus"
+            ],
+            "bounds": [
+              328.8,
+              147.3,
+              54.9,
+              31.0
+            ],
+            "children": [
+              {
+                "bounds": [
+                  342.8,
+                  155.3,
+                  26.9,
+                  15.0
+                ],
+                "name": "SKIP",
+                "role": "label"
+              }
+            ],
+            "key": "clips/tab/skip",
+            "name": "SKIP",
+            "role": "tab",
+            "states": [
+              "unchecked"
+            ]
+          }
+        ],
+        "key": "clips/tabs",
+        "name": "Klip, terbaik dulu",
+        "role": "tab-list"
+      },
+      {
+        "actions": [
+          "scroll-up",
+          "scroll-down",
+          "set-scroll-offset"
+        ],
+        "bounds": [
+          104.0,
+          190.3,
+          616.0,
+          574.0
+        ],
+        "children": [
+          {
+            "actions": [
+              "scroll-into-view"
+            ],
+            "bounds": [
+              104.0,
+              190.3,
+              616.0,
+              232.0
+            ],
+            "children": [
+              {
+                "actions": [
+                  "click",
+                  "focus",
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  104.0,
+                  190.3,
+                  616.0,
+                  72.0
+                ],
+                "children": [
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      120.0,
+                      219.1,
+                      20.0,
+                      16.3
+                    ],
+                    "key": "clips/row/c2/rank",
+                    "name": "1",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      212.0,
+                      210.6,
+                      265.7,
+                      16.3
+                    ],
+                    "key": "clips/row/c2/title",
+                    "name": "Ringkasan cepat",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      212.0,
+                      228.9,
+                      265.7,
+                      15.0
+                    ],
+                    "name": "00:25 · hook 0:02",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      493.7,
+                      216.8,
+                      46.3,
+                      21.0
+                    ],
+                    "children": [
+                      {
+                        "actions": [
+                          "scroll-into-view"
+                        ],
+                        "bounds": [
+                          501.7,
+                          219.8,
+                          30.3,
+                          15.0
+                        ],
+                        "name": "PASS",
+                        "role": "label"
+                      }
+                    ],
+                    "key": "clips/row/c2/verdict",
+                    "name": "PASS",
+                    "role": "status",
+                    "states": [
+                      "live-polite"
+                    ]
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      668.0,
+                      219.1,
+                      36.0,
+                      16.3
+                    ],
+                    "key": "clips/row/c2/score",
+                    "name": "0,90",
+                    "role": "label"
+                  }
+                ],
+                "key": "clips/row/c2",
+                "name": "1. Ringkasan cepat, PASS",
+                "position": 1,
+                "role": "list-item"
+              },
+              {
+                "actions": [
+                  "click",
+                  "focus",
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  104.0,
+                  270.3,
+                  616.0,
+                  72.0
+                ],
+                "children": [
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      120.0,
+                      299.1,
+                      20.0,
+                      16.3
+                    ],
+                    "key": "clips/row/c1/rank",
+                    "name": "2",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      212.0,
+                      290.6,
+                      248.5,
+                      16.3
+                    ],
+                    "key": "clips/row/c1/title",
+                    "name": "Bagian lucu",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      212.0,
+                      308.9,
+                      248.5,
+                      15.0
+                    ],
+                    "name": "00:25 · hook 0:02",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      476.5,
+                      296.8,
+                      63.5,
+                      21.0
+                    ],
+                    "children": [
+                      {
+                        "actions": [
+                          "scroll-into-view"
+                        ],
+                        "bounds": [
+                          484.5,
+                          299.8,
+                          47.5,
+                          15.0
+                        ],
+                        "name": "REVIEW",
+                        "role": "label"
+                      }
+                    ],
+                    "key": "clips/row/c1/verdict",
+                    "name": "REVIEW",
+                    "role": "status",
+                    "states": [
+                      "live-polite"
+                    ]
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      668.0,
+                      299.1,
+                      36.0,
+                      16.3
+                    ],
+                    "key": "clips/row/c1/score",
+                    "name": "0,70",
+                    "role": "label"
+                  }
+                ],
+                "key": "clips/row/c1",
+                "name": "2. Bagian lucu, REVIEW",
+                "position": 2,
+                "role": "list-item"
+              },
+              {
+                "actions": [
+                  "click",
+                  "focus",
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  104.0,
+                  350.3,
+                  616.0,
+                  72.0
+                ],
+                "children": [
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      120.0,
+                      379.1,
+                      20.0,
+                      16.3
+                    ],
+                    "key": "clips/row/c3/rank",
+                    "name": "3",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      212.0,
+                      370.6,
+                      269.1,
+                      16.3
+                    ],
+                    "key": "clips/row/c3/title",
+                    "name": "Pembuka lambat",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      212.0,
+                      388.9,
+                      269.1,
+                      15.0
+                    ],
+                    "name": "00:25 · hook 0:02",
+                    "role": "label"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      497.1,
+                      376.8,
+                      42.9,
+                      21.0
+                    ],
+                    "children": [
+                      {
+                        "actions": [
+                          "scroll-into-view"
+                        ],
+                        "bounds": [
+                          505.1,
+                          379.8,
+                          26.9,
+                          15.0
+                        ],
+                        "name": "SKIP",
+                        "role": "label"
+                      }
+                    ],
+                    "key": "clips/row/c3/verdict",
+                    "name": "SKIP",
+                    "role": "status",
+                    "states": [
+                      "live-polite"
+                    ]
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      668.0,
+                      379.1,
+                      36.0,
+                      16.3
+                    ],
+                    "key": "clips/row/c3/score",
+                    "name": "0,40",
+                    "role": "label"
+                  }
+                ],
+                "key": "clips/row/c3",
+                "name": "3. Pembuka lambat, SKIP",
+                "position": 3,
+                "role": "list-item"
+              }
+            ],
+            "key": "clips/list",
+            "name": "Klip, terbaik dulu",
+            "role": "list",
+            "setSize": 3
+          }
+        ],
+        "key": "clips/scroll",
+        "role": "scroll-view",
+        "scroll": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "states": [
+          "clips"
+        ]
+      },
+      {
+        "actions": [
+          "scroll-up",
+          "scroll-down",
+          "set-scroll-offset"
+        ],
+        "bounds": [
+          760.0,
+          147.3,
+          270.0,
+          617.0
+        ],
+        "children": [
+          {
+            "actions": [
+              "scroll-into-view"
+            ],
+            "bounds": [
+              760.0,
+              147.3,
+              270.0,
+              480.0
+            ],
+            "children": [
+              {
+                "actions": [
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  776.0,
+                  163.3,
+                  238.0,
+                  15.0
+                ],
+                "name": "Pratinjau 9:16",
+                "role": "label"
+              },
+              {
+                "actions": [
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  833.3,
+                  380.6,
+                  123.5,
+                  16.3
+                ],
+                "key": "clips/stage/sample",
+                "name": "Contoh teks subtitel",
+                "role": "label"
+              },
+              {
+                "actions": [
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  760.0,
+                  583.3,
+                  270.0,
+                  44.0
+                ],
+                "children": [
+                  {
+                    "actions": [
+                      "click",
+                      "focus",
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      770.0,
+                      590.3,
+                      30.0,
+                      30.0
+                    ],
+                    "children": [
+                      {
+                        "actions": [
+                          "scroll-into-view"
+                        ],
+                        "bounds": [
+                          776.0,
+                          596.3,
+                          18.0,
+                          18.0
+                        ],
+                        "role": "image"
+                      }
+                    ],
+                    "key": "clips/play",
+                    "name": "Putar",
+                    "role": "button"
+                  },
+                  {
+                    "actions": [
+                      "scroll-into-view"
+                    ],
+                    "bounds": [
+                      810.0,
+                      597.8,
+                      61.7,
+                      15.0
+                    ],
+                    "key": "clips/time",
+                    "name": "0:00 / 0:25",
+                    "role": "label"
+                  }
+                ],
+                "key": "clips/transport",
+                "role": "group"
+              }
+            ],
+            "key": "clips/stage",
+            "name": "Ringkasan cepat",
+            "role": "image"
+          },
+          {
+            "actions": [
+              "click",
+              "focus",
+              "scroll-into-view"
+            ],
+            "bounds": [
+              760.0,
+              643.3,
+              130.0,
+              35.0
+            ],
+            "children": [
+              {
+                "actions": [
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  802.8,
+                  653.3,
+                  44.5,
+                  15.0
+                ],
+                "name": "Edit klip",
+                "role": "label"
+              }
+            ],
+            "key": "clips/edit",
+            "name": "Edit klip",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus",
+              "scroll-into-view"
+            ],
+            "bounds": [
+              900.0,
+              643.3,
+              130.0,
+              35.0
+            ],
+            "children": [
+              {
+                "actions": [
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  922.5,
+                  653.3,
+                  85.1,
+                  15.0
+                ],
+                "name": "Ekspor (Ctrl+E)",
+                "role": "label"
+              }
+            ],
+            "key": "clips/export",
+            "name": "Ekspor (Ctrl+E)",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus",
+              "scroll-into-view"
+            ],
+            "bounds": [
+              760.0,
+              688.3,
+              140.0,
+              35.0
+            ],
+            "children": [
+              {
+                "actions": [
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  803.5,
+                  698.3,
+                  53.1,
+                  15.0
+                ],
+                "name": "Terbitkan",
+                "role": "label"
+              }
+            ],
+            "key": "clips/publish",
+            "name": "Terbitkan",
+            "role": "button"
+          },
+          {
+            "actions": [
+              "click",
+              "focus",
+              "scroll-into-view"
+            ],
+            "bounds": [
+              760.0,
+              733.3,
+              133.7,
+              31.0
+            ],
+            "children": [
+              {
+                "actions": [
+                  "scroll-into-view"
+                ],
+                "bounds": [
+                  768.0,
+                  741.3,
+                  117.7,
+                  15.0
+                ],
+                "name": "Catat hasil unggahan",
+                "role": "label"
+              }
+            ],
+            "key": "clips/feedback",
+            "name": "Catat hasil unggahan",
+            "role": "button"
+          }
+        ],
+        "key": "clips/side/scroll",
+        "role": "scroll-view",
+        "scroll": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "states": [
+          "clips"
+        ]
+      },
+      {
+        "bounds": [
+          0.0,
+          696.0,
+          1100.0,
+          24.0
+        ],
+        "key": "toast/stack",
+        "role": "group"
+      },
+      {
+        "bounds": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "role": "status",
+        "states": [
+          "live-polite"
+        ]
+      }
+    ],
+    "name": "Sorot",
+    "role": "window"
+  },
+  "anim_t": 19.000000000000203,
+  "animating": false,
+  "dark_system": true,
+  "elements": [
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0",
+      "rect": [
+        0.0,
+        0.0,
+        1100.0,
+        720.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "shell/menubar",
+      "label": "Sorot",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar",
+      "rect": [
+        0.0,
+        0.0,
+        1100.0,
+        32.0
+      ],
+      "role": "menubar",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/menu/file",
+      "label": "Berkas",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/file",
+      "rect": [
+        4.0,
+        2.5,
+        61.71,
+        27.0
+      ],
+      "role": "menuitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/file/#0",
+      "rect": [
+        16.0,
+        8.5,
+        37.71,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Berkas"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/menu/edit",
+      "label": "Sunting",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/edit",
+      "rect": [
+        69.71,
+        2.5,
+        67.97,
+        27.0
+      ],
+      "role": "menuitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/edit/#0",
+      "rect": [
+        81.71,
+        8.5,
+        43.97,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Sunting"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": true,
+      "focusable": true,
+      "focused": true,
+      "inert": false,
+      "key": "shell/menu/view",
+      "label": "Tampilan",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/view",
+      "rect": [
+        141.68,
+        2.5,
+        75.42,
+        27.0
+      ],
+      "role": "menuitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/view/#0",
+      "rect": [
+        153.68,
+        8.5,
+        51.42,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Tampilan"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/menu/window",
+      "label": "Jendela",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/window",
+      "rect": [
+        221.1,
+        2.5,
+        67.06,
+        27.0
+      ],
+      "role": "menuitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/window/#0",
+      "rect": [
+        233.1,
+        8.5,
+        43.06,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Jendela"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/menu/help",
+      "label": "Bantuan",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/help",
+      "rect": [
+        292.16,
+        2.5,
+        70.76,
+        27.0
+      ],
+      "role": "menuitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/shell/menubar/shell/menu/help/#0",
+      "rect": [
+        304.16,
+        8.5,
+        46.76,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Bantuan"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1",
+      "rect": [
+        0.0,
+        32.0,
+        1100.0,
+        772.25
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "shell/rail",
+      "label": "Sorot",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail",
+      "rect": [
+        0.0,
+        32.0,
+        64.0,
+        772.25
+      ],
+      "role": "navigation",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "shell/logo",
+      "label": "Sorot",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/logo",
+      "rect": [
+        16.0,
+        44.0,
+        32.0,
+        32.0
+      ],
+      "role": "img",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/rail/home",
+      "label": "Beranda",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/home",
+      "rect": [
+        4.0,
+        80.0,
+        56.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/home/#0",
+      "rect": [
+        8.69,
+        90.0,
+        46.63,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Beranda"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#1e2125ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/rail/clips",
+      "label": "Klip",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/clips",
+      "rect": [
+        4.0,
+        119.0,
+        56.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#f0b44cff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/clips/#0",
+      "rect": [
+        21.11,
+        129.0,
+        21.78,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Klip"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/rail/discover",
+      "label": "Temukan",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/discover",
+      "rect": [
+        4.0,
+        158.0,
+        56.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/discover/#0",
+      "rect": [
+        6.11,
+        168.0,
+        51.78,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Temukan"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/rail/generate",
+      "label": "Generate",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/generate",
+      "rect": [
+        4.0,
+        197.0,
+        56.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/generate/#0",
+      "rect": [
+        5.95,
+        207.0,
+        52.12,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Generate"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/rail/learning",
+      "label": "Belajar",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/learning",
+      "rect": [
+        4.0,
+        236.0,
+        56.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/learning/#0",
+      "rect": [
+        13.0,
+        246.0,
+        38.01,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Belajar"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "shell/rail/settings",
+      "label": "Setelan",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/settings",
+      "rect": [
+        4.0,
+        275.0,
+        56.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/shell/rail/shell/rail/settings/#0",
+      "rect": [
+        10.84,
+        285.0,
+        42.33,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Setelan"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1",
+      "rect": [
+        64.0,
+        32.0,
+        1036.0,
+        772.25
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0",
+      "rect": [
+        64.0,
+        32.0,
+        1036.0,
+        772.25
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#0",
+      "rect": [
+        104.0,
+        72.0,
+        956.0,
+        55.25
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/heading",
+      "level": 1,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#0/clips/heading",
+      "rect": [
+        104.0,
+        72.0,
+        956.0,
+        35.0
+      ],
+      "role": "heading",
+      "scale": 1.0,
+      "text": "Klip dari Imported"
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/heading-sub",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#0/clips/heading-sub",
+      "rect": [
+        104.0,
+        111.0,
+        956.0,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Urutan mengikuti skor. Pilih klip untuk melihat pratinjau dan memutuskan mana yang diposting."
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1",
+      "rect": [
+        104.0,
+        147.25,
+        956.0,
+        617.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0",
+      "rect": [
+        104.0,
+        147.25,
+        616.0,
+        617.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/tabs",
+      "label": "Klip, terbaik dulu",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs",
+      "rect": [
+        104.0,
+        147.25,
+        616.0,
+        31.0
+      ],
+      "role": "tablist",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#1e2125ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/tab/all",
+      "label": "Semua",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/all",
+      "rect": [
+        104.0,
+        147.25,
+        66.97,
+        31.0
+      ],
+      "role": "tab",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/all/#0",
+      "rect": [
+        118.0,
+        155.25,
+        38.97,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Semua"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/tab/pass",
+      "label": "PASS",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/pass",
+      "rect": [
+        178.97,
+        147.25,
+        58.33,
+        31.0
+      ],
+      "role": "tab",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/pass/#0",
+      "rect": [
+        192.97,
+        155.25,
+        30.33,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "PASS"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/tab/review",
+      "label": "REVIEW",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/review",
+      "rect": [
+        245.3,
+        147.25,
+        75.48,
+        31.0
+      ],
+      "role": "tab",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/review/#0",
+      "rect": [
+        259.3,
+        155.25,
+        47.48,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "REVIEW"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/tab/skip",
+      "label": "SKIP",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/skip",
+      "rect": [
+        328.78,
+        147.25,
+        54.88,
+        31.0
+      ],
+      "role": "tab",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/tabs/clips/tab/skip/#0",
+      "rect": [
+        342.78,
+        155.25,
+        26.88,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "SKIP"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/scroll",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll",
+      "rect": [
+        104.0,
+        190.25,
+        616.0,
+        574.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/list",
+      "label": "Klip, terbaik dulu",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list",
+      "rect": [
+        104.0,
+        190.25,
+        616.0,
+        232.0
+      ],
+      "role": "list",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c2",
+      "label": "1. Ringkasan cepat, PASS",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2",
+      "rect": [
+        104.0,
+        190.25,
+        616.0,
+        72.0
+      ],
+      "role": "listitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#f0b44cff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#0",
+      "rect": [
+        104.0,
+        190.25,
+        616.0,
+        2.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1",
+      "rect": [
+        104.0,
+        192.25,
+        616.0,
+        70.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#f0b44cff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c2/rank",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/clips/row/c2/rank",
+      "rect": [
+        120.0,
+        219.13,
+        20.0,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "1"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/#1",
+      "rect": [
+        156.0,
+        203.25,
+        40.0,
+        48.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/#2",
+      "rect": [
+        212.0,
+        210.63,
+        265.67,
+        33.25
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c2/title",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/#2/clips/row/c2/title",
+      "rect": [
+        212.0,
+        210.63,
+        265.67,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Ringkasan cepat"
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/#2/#1",
+      "rect": [
+        212.0,
+        228.88,
+        265.67,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "00:25 · hook 0:02"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c2/verdict",
+      "label": "PASS",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/clips/row/c2/verdict",
+      "rect": [
+        493.67,
+        216.75,
+        46.33,
+        21.0
+      ],
+      "role": "status",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#6fbf8eff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/clips/row/c2/verdict/#0",
+      "rect": [
+        501.67,
+        219.75,
+        30.33,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "PASS"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#2a2e33ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/#4",
+      "rect": [
+        556.0,
+        224.25,
+        96.0,
+        6.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#7fa3b8ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/#4/#0",
+      "rect": [
+        556.0,
+        224.25,
+        86.4,
+        6.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c2/score",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c2/#1/clips/row/c2/score",
+      "rect": [
+        668.0,
+        219.13,
+        36.0,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "0,90"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c1",
+      "label": "2. Bagian lucu, REVIEW",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1",
+      "rect": [
+        104.0,
+        270.25,
+        616.0,
+        72.0
+      ],
+      "role": "listitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#0",
+      "rect": [
+        104.0,
+        270.25,
+        616.0,
+        2.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1",
+      "rect": [
+        104.0,
+        272.25,
+        616.0,
+        70.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c1/rank",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/clips/row/c1/rank",
+      "rect": [
+        120.0,
+        299.13,
+        20.0,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "2"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/#1",
+      "rect": [
+        156.0,
+        283.25,
+        40.0,
+        48.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/#2",
+      "rect": [
+        212.0,
+        290.63,
+        248.52,
+        33.25
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c1/title",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/#2/clips/row/c1/title",
+      "rect": [
+        212.0,
+        290.63,
+        248.52,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Bagian lucu"
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/#2/#1",
+      "rect": [
+        212.0,
+        308.88,
+        248.52,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "00:25 · hook 0:02"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c1/verdict",
+      "label": "REVIEW",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/clips/row/c1/verdict",
+      "rect": [
+        476.52,
+        296.75,
+        63.48,
+        21.0
+      ],
+      "role": "status",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#7fa3b8ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/clips/row/c1/verdict/#0",
+      "rect": [
+        484.52,
+        299.75,
+        47.48,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "REVIEW"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#2a2e33ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/#4",
+      "rect": [
+        556.0,
+        304.25,
+        96.0,
+        6.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#7fa3b8ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/#4/#0",
+      "rect": [
+        556.0,
+        304.25,
+        67.2,
+        6.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c1/score",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c1/#1/clips/row/c1/score",
+      "rect": [
+        668.0,
+        299.13,
+        36.0,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "0,70"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c3",
+      "label": "3. Pembuka lambat, SKIP",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3",
+      "rect": [
+        104.0,
+        350.25,
+        616.0,
+        72.0
+      ],
+      "role": "listitem",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#0",
+      "rect": [
+        104.0,
+        350.25,
+        616.0,
+        2.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1",
+      "rect": [
+        104.0,
+        352.25,
+        616.0,
+        70.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c3/rank",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/clips/row/c3/rank",
+      "rect": [
+        120.0,
+        379.13,
+        20.0,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "3"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/#1",
+      "rect": [
+        156.0,
+        363.25,
+        40.0,
+        48.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/#2",
+      "rect": [
+        212.0,
+        370.63,
+        269.12,
+        33.25
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c3/title",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/#2/clips/row/c3/title",
+      "rect": [
+        212.0,
+        370.63,
+        269.12,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Pembuka lambat"
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/#2/#1",
+      "rect": [
+        212.0,
+        388.88,
+        269.12,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "00:25 · hook 0:02"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c3/verdict",
+      "label": "SKIP",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/clips/row/c3/verdict",
+      "rect": [
+        497.12,
+        376.75,
+        42.88,
+        21.0
+      ],
+      "role": "status",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#e07a68ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/clips/row/c3/verdict/#0",
+      "rect": [
+        505.12,
+        379.75,
+        26.88,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "SKIP"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#2a2e33ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/#4",
+      "rect": [
+        556.0,
+        384.25,
+        96.0,
+        6.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#7fa3b8ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/#4/#0",
+      "rect": [
+        556.0,
+        384.25,
+        38.4,
+        6.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/row/c3/score",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#0/clips/scroll/clips/list/clips/row/c3/#1/clips/row/c3/score",
+      "rect": [
+        668.0,
+        379.13,
+        36.0,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "0,40"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1",
+      "rect": [
+        760.0,
+        147.25,
+        300.0,
+        617.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/side/scroll",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll",
+      "rect": [
+        760.0,
+        147.25,
+        270.0,
+        617.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#0e0f11ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/stage",
+      "label": "Ringkasan cepat",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage",
+      "rect": [
+        760.0,
+        147.25,
+        270.0,
+        480.0
+      ],
+      "role": "img",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/#0",
+      "rect": [
+        760.0,
+        147.25,
+        270.0,
+        47.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#a39e95ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/#0/#0",
+      "rect": [
+        776.0,
+        163.25,
+        238.0,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Pratinjau 9:16"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/#1",
+      "rect": [
+        760.0,
+        194.25,
+        270.0,
+        389.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/stage/sample",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/#1/clips/stage/sample",
+      "rect": [
+        833.23,
+        380.63,
+        123.53,
+        16.25
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Contoh teks subtitel"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#16181bff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/transport",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/clips/transport",
+      "rect": [
+        760.0,
+        583.25,
+        270.0,
+        44.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/clips/transport/#0",
+      "rect": [
+        760.0,
+        583.25,
+        270.0,
+        44.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/play",
+      "label": "Putar",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/clips/transport/clips/play",
+      "rect": [
+        770.0,
+        590.25,
+        30.0,
+        30.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/clips/transport/clips/play/#0",
+      "rect": [
+        776.0,
+        596.25,
+        18.0,
+        18.0
+      ],
+      "role": "image",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "clips/time",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/clips/transport/clips/time",
+      "rect": [
+        810.0,
+        597.75,
+        61.68,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "0:00 / 0:25"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#2a2e33ff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/clips/transport/#3",
+      "rect": [
+        881.68,
+        603.75,
+        110.0,
+        3.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#f0b44cff",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/clips/stage/clips/transport/#3/#0",
+      "rect": [
+        881.68,
+        603.75,
+        0.0,
+        3.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1",
+      "rect": [
+        760.0,
+        643.25,
+        270.0,
+        121.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#0",
+      "rect": [
+        760.0,
+        643.25,
+        270.0,
+        35.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#1e2125ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/edit",
+      "label": "Edit klip",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#0/clips/edit",
+      "rect": [
+        760.0,
+        643.25,
+        130.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#0/clips/edit/#0",
+      "rect": [
+        802.77,
+        653.25,
+        44.46,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Edit klip"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#f0b44cff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/export",
+      "label": "Ekspor (Ctrl+E)",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#0/clips/export",
+      "rect": [
+        900.0,
+        643.25,
+        130.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#0e0f11ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#0/clips/export/#0",
+      "rect": [
+        922.46,
+        653.25,
+        85.09,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Ekspor (Ctrl+E)"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#1",
+      "rect": [
+        760.0,
+        688.25,
+        270.0,
+        35.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#1e2125ff",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/publish",
+      "label": "Terbitkan",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#1/clips/publish",
+      "rect": [
+        760.0,
+        688.25,
+        140.0,
+        35.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#ece8e1ff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#1/clips/publish/#0",
+      "rect": [
+        803.45,
+        698.25,
+        53.1,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Terbitkan"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#1/#1",
+      "rect": [
+        910.0,
+        705.75,
+        120.0,
+        0.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#2",
+      "rect": [
+        760.0,
+        733.25,
+        270.0,
+        31.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": true,
+      "focused": false,
+      "inert": false,
+      "key": "clips/feedback",
+      "label": "Catat hasil unggahan",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#2/clips/feedback",
+      "rect": [
+        760.0,
+        733.25,
+        133.67,
+        31.0
+      ],
+      "role": "button",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "color": "#f0b44cff",
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/clips/side/scroll/#1/#2/clips/feedback/#0",
+      "rect": [
+        768.0,
+        741.25,
+        117.67,
+        15.0
+      ],
+      "role": "text",
+      "scale": 1.0,
+      "text": "Catat hasil unggahan"
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/#1/#1/#0/#1/#1/#1",
+      "rect": [
+        1030.0,
+        147.25,
+        30.0,
+        617.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    },
+    {
+      "blur": 0.0,
+      "fill": "#00000000",
+      "focusVisible": false,
+      "focusable": false,
+      "focused": false,
+      "inert": false,
+      "key": "toast/stack",
+      "loopPhase": null,
+      "opacity": 1.0,
+      "path": "#0/toast/stack",
+      "rect": [
+        0.0,
+        696.0,
+        1100.0,
+        24.0
+      ],
+      "role": "group",
+      "scale": 1.0
+    }
+  ],
+  "reduced_motion": false,
+  "scale": 2.0,
+  "t": 19.0,
+  "time_scale": 1.0,
+  "title": "Sorot",
+  "viewport": [
+    1100.0,
+    720.0
+  ],
+  "warnings": []
+}

@@ -111,3 +111,30 @@ fn the_main_screens_reflow_without_clipping_or_overlap() {
         }
     }
 }
+
+/// US4 menu journey, binary only: pressing View on the bar opens the pop-up (the tree lists its items), and picking
+/// Settings by id lands on Settings. The palette is L2.
+#[test]
+fn the_us4_menu_journey_picks_settings_from_the_bar() {
+    let at = |mark: &str| run_at("generate-no-ai", Some("us4-menu"), mark, &[], &[]);
+    let open = at("open");
+    let ids: Vec<&str> = open.0["popupMenu"]["items"].as_array().expect("the pop-up is open").iter().filter_map(|i| i["id"].as_str()).collect();
+    assert!(ids.contains(&"settings") && ids.contains(&"discover"), "{ids:?}");
+    let end = at("end");
+    assert!(end.0.get("popupMenu").is_none() && end.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == "conn/llm/key"), "the pick opened Settings");
+}
+
+/// US4 keyboard-only journey: only `key` and `type` events, import to export. After each step the focused element is the
+/// one named and its focus ring shows.
+#[test]
+fn the_us4_keyboard_only_journey_keeps_focus_visible_at_every_step() {
+    let at = |mark: &str| run_at("home-empty", Some("us4-keyboard-only"), mark, &[], &[]);
+    let focused = |t: &Tree| t.0["elements"].as_array().unwrap().iter().filter(|e| e["focused"] == true).map(|e| (e["key"].as_str().unwrap_or_default().to_string(), e["focusVisible"] == true)).collect::<Vec<_>>();
+    for (mark, key) in [("link", "home/link"), ("import", "home/import"), ("clips", "shell/rail/settings"), ("export-focus", "clips/export"), ("back", "clips/edit"), ("palette", "palette/input"), ("closed", "clips/edit"), ("end", "clips/export")] {
+        let tree = at(mark);
+        let want = if key == "palette/input" { vec![(key.to_string(), tree.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key && e["focusVisible"] == true))] } else { vec![(key.to_string(), true)] };
+        assert_eq!(focused(&tree), want, "{mark}");
+    }
+    let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
+    assert!(has(&at("job"), "job/progress") && has(&at("end"), "clips/reveal"), "the keys alone reached the job and exported the clip");
+}

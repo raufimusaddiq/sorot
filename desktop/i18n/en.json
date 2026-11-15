@@ -771,5 +771,9 @@
   "generate.plan.level.free": "free: any drawing",
   "generate.verdict.shot": "Note is about",
   "generate.verdict.shot_any": "Any shot",
-  "generate.verdict.publish": "Publish"
+  "generate.verdict.publish": "Publish",
+  "palette.title": "Command palette",
+  "palette.hint": "Type a command",
+  "palette.list": "Commands",
+  "palette.empty": "No command matches."
 }

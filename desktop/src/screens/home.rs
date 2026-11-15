@@ -130,6 +130,7 @@ impl State {
     pub fn keys(&mut self, key: &KeyEvent, tx: &mut Tx) -> bool {
         let running = self.job.detail.as_ref().is_some_and(|d| d.job.is_running());
         match (&key.key, key.mods.cmd) {
+            (Key::Command('k'), true) => self.toggle_palette(),
             (Key::Command('o'), true) if matches!(self.route, Route::Home) => self.choose_file(tx),
             (Key::Command('.'), true) if matches!(self.route, Route::Job(_)) && running => self.cancel_shown_job(),
             _ => return self.clips_key(key),
