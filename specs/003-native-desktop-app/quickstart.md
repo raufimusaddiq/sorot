@@ -20,7 +20,7 @@ These are run guides that prove the feature works end to end. Contracts:
 ```
 cd backend;  bun test --coverage; bun run typecheck
 cd desktop;  cargo clippy --all-targets -- -D warnings
-cd desktop;  cargo llvm-cov --fail-under-lines 95 --fail-under-functions 95
+cd desktop;  scripts/cov.sh   # Windows: .\scripts\cov.ps1 (cargo llvm-cov, 95% gates, ignore regex, shared-target lock)
 ```
 
 `/test` runs these through the test-runner subagent; the verdict is OPEN or BLOCKED.
