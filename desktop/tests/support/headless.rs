@@ -41,7 +41,12 @@ fn temp(ext: &str) -> PathBuf {
     std::env::temp_dir().join(format!("sorot-headless-{}-{}.{ext}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)))
 }
 
-/// Runs `cmd` to the end once a slot is free (at most `MAX_APPS` at a time), or kills it after 30 s of
+/// Per-run deadline: `SOROT_HEADLESS_DEADLINE_SECS`, default 30 (CI sets more for coverage builds).
+fn deadline_secs() -> u64 {
+    std::env::var("SOROT_HEADLESS_DEADLINE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(30)
+}
+
+/// Runs `cmd` to the end once a slot is free (at most `MAX_APPS` at a time), or kills it after the deadline of
 /// running (the wait for a slot is not counted: two at a time still finish well inside it) and fails
 /// with what it printed.
 fn finish(mut cmd: Command) -> std::process::Output {
@@ -58,7 +63,7 @@ fn finish(mut cmd: Command) -> std::process::Output {
         })
     };
     let (o, e) = (reader(Box::new(out)), reader(Box::new(err)));
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(deadline_secs());
     let status = loop {
         if let Some(s) = child.try_wait().unwrap() {
             break s;
@@ -66,7 +71,7 @@ fn finish(mut cmd: Command) -> std::process::Output {
         if std::time::Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("the headless binary did not exit in 30 s: {}", String::from_utf8_lossy(&e.join().unwrap()));
+            panic!("the headless binary did not exit in {} s: {}", deadline_secs(), String::from_utf8_lossy(&e.join().unwrap()));
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
