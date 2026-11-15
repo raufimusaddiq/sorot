@@ -1,0 +1,19 @@
+{
+  "status": "ok",
+  "data": {
+    "models": [
+      {
+        "id": "kenari/auto",
+        "free": false
+      },
+      {
+        "id": "qwen3-8-27b",
+        "free": true
+      },
+      {
+        "id": "deepseek-v3",
+        "free": false
+      }
+    ]
+  }
+}

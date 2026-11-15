@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "data": {
+    "models": [
+      {
+        "id": "kenari-img-1",
+        "free": false
+      },
+      {
+        "id": "flux-lite",
+        "free": true
+      }
+    ]
+  }
+}

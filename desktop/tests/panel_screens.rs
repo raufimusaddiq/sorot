@@ -16,6 +16,10 @@ struct Lab {
     panels: Panels,
     engine: Arc<FakeEngine>,
     screen: fn(&Lab) -> El,
+    /// Addresses the screen sent to the browser.
+    opened: Vec<String>,
+    /// The accounts Publish remembers.
+    kept: Vec<String>,
 }
 
 impl Host for Lab {
@@ -35,6 +39,16 @@ impl Host for Lab {
         let apply = work(self.engine.as_ref());
         apply(&mut self.panels);
     }
+    fn remembered(&self) -> Vec<String> {
+        self.kept.clone()
+    }
+    fn remember(&mut self, ids: &[String]) {
+        self.kept = ids.to_vec();
+    }
+    fn open_url(&mut self, url: &str) -> Result<(), String> {
+        self.opened.push(url.into());
+        Ok(())
+    }
     fn show(&mut self, _: Page) {}
 }
 
@@ -48,7 +62,7 @@ fn lab(screen: fn(&Lab) -> El, files: &[(&str, &str)]) -> (Runtime<Lab>, Arc<Fak
     for (route, body) in files {
         engine.serve(route, body);
     }
-    let mut rt = Runtime::new(Lab { panels: Panels::default(), engine: engine.clone(), screen }, show, (1100.0, 2600.0), Env { system_dark: true, scale: 1.0 });
+    let mut rt = Runtime::new(Lab { panels: Panels::default(), engine: engine.clone(), screen, opened: vec![], kept: vec![] }, show, (1100.0, 6000.0), Env { system_dark: true, scale: 1.0 });
     rt.frame(0.0);
     (rt, engine)
 }
@@ -65,6 +79,13 @@ fn type_into(rt: &mut Runtime<Lab>, key: &str, s: &str) {
     click(rt, key);
     rt.key(KeyEvent { key: Key::Text(s.into()), mods: Mods::default() });
     rt.frame(1.0 / 60.0);
+}
+
+/// Fills the day, month, year, hour and minute boxes under `key`.
+fn type_date(rt: &mut Runtime<Lab>, key: &str, parts: [&str; 5]) {
+    for (name, v) in ["day", "month", "year", "hour", "minute"].into_iter().zip(parts) {
+        type_into(rt, &format!("{key}/{name}"), v);
+    }
 }
 
 fn has(rt: &Runtime<Lab>, key: &str) -> bool {
@@ -245,7 +266,7 @@ fn post_follows_the_choices_and_carries_one_workspace() {
     assert_eq!(rt.state.panels.publish.selected, ["tt", "yt"], "the other workspace stays out");
     click(&mut rt, "publish/write");
     assert_eq!(calls(&e, "publish_draft"), ["publish_draft(c1, tt,yt)"]);
-    let steps: [(&str, bool); 4] = [("", false), ("publish/0/privacy/1", false), ("publish/1/kids-no", false), ("publish/1/title", true)];
+    let steps: [(&str, bool); 5] = [("", false), ("publish/0/privacy/1", false), ("publish/tab/1", false), ("publish/1/kids-no", false), ("publish/1/title", true)];
     let mut sent = vec![];
     for (key, typed) in steps {
         match (key, typed) {
@@ -256,7 +277,7 @@ fn post_follows_the_choices_and_carries_one_workspace() {
         click(&mut rt, "publish/post");
         sent.push(calls(&e, "publish(").len());
     }
-    assert_eq!(sent, [0, 0, 0, 1], "Post works only after the last choice");
+    assert_eq!(sent, [0, 0, 0, 0, 1], "Post works only after the last choice");
     let body = calls(&e, "publish(").remove(0);
     assert!(body.contains(r#""accountId":"tt""#) && body.contains(r#""privacyLevel":"SELF_ONLY""#) && body.contains(r#""title":"Judul""#) && body.contains(r#""madeForKids":false"#), "{body}");
     assert!(!body.contains(r#""accountId":"ig""#));
@@ -278,6 +299,7 @@ fn a_review_clip_needs_the_check_and_failed_and_scheduled_posts_can_be_retried_o
     click(&mut rt, "publish/account/tt");
     click(&mut rt, "publish/write");
     click(&mut rt, "publish/0/privacy/0");
+    click(&mut rt, "publish/tab/1");
     click(&mut rt, "publish/1/kids-yes");
     type_into(&mut rt, "publish/1/title", "Judul");
     assert!(!rt.state.panels.publish.post_enabled(), "the gate asks for a check first");
@@ -295,14 +317,15 @@ fn a_schedule_is_sent_as_utc_and_a_bad_one_names_the_format_and_the_gate_blocker
     click(&mut rt, "publish/write");
     assert!(!has(&rt, "publish/1/blocker/0"), "the confirm toggle resolves the gate, so it is not a blocker line");
     click(&mut rt, "publish/0/privacy/0");
+    click(&mut rt, "publish/tab/1");
     click(&mut rt, "publish/1/kids-no");
     type_into(&mut rt, "publish/1/title", "Judul");
     click(&mut rt, "publish/confirm");
-    type_into(&mut rt, "publish/schedule", "tomorrow");
+    type_date(&mut rt, "publish/schedule", ["31", "2", "2027", "10", "0"]);
     click(&mut rt, "publish/post");
-    assert!(has(&rt, "publish/error") && calls(&e, "publish(").is_empty(), "a bad time names the format and sends nothing");
-    rt.update(|l, _| l.panels.publish.schedule.replace_text(""));
-    type_into(&mut rt, "publish/schedule", "2026-11-14 19:00");
+    assert!(has(&rt, "publish/error") && calls(&e, "publish(").is_empty(), "a day the month does not have sends nothing");
+    rt.update(|l, _| l.panels.publish.schedule.clear());
+    type_date(&mut rt, "publish/schedule", ["14", "11", "2026", "19", "0"]);
     click(&mut rt, "publish/post");
     assert!(calls(&e, "publish(")[0].contains(r#""scheduledAt":"2026-11-14T19:00:00Z""#));
 }
@@ -379,26 +402,34 @@ fn learning_that_cannot_load_offers_try_again() {
     assert!(has(&rt, "learning/teach"));
 }
 
+/// 2026-11-15 00:00 UTC: "now" in the sheet tests.
+const NOW: i64 = 1_794_700_800;
+
 #[test]
-fn the_results_sheet_needs_a_post_time_and_sends_the_numbers() {
+fn the_results_sheet_needs_a_real_past_post_time_and_sends_the_numbers() {
     let (mut rt, e) = learning_lab(r#"{"results":[]}"#, 0);
     click(&mut rt, "learning/log/c1");
-    // each row: (field, typed) steps then the Save press; `Some(call)` = the engine call it makes
-    type Typed = &'static [(&'static str, &'static str)];
-    let rows: [(Typed, Option<&str>); 4] = [
-        (&[], None),
-        (&[("feedback/posted-at", "soon")], None),
-        (&[("feedback/posted-at", "2026-11-14 19:00"), ("feedback/views", "12x")], None),
-        (&[("feedback/posted-at", "2026-11-14 19:00"), ("feedback/views", "120")], Some("submit_feedback(c1, 120 views, posted 2026-11-14T19:00:00Z)")),
+    // each row: the five time boxes, the views typed, and `Some(call)` when it reaches the engine
+    type Row = ([&'static str; 5], &'static str, Option<&'static str>);
+    let rows: [Row; 5] = [
+        (["", "", "", "", ""], "", None),
+        (["31", "2", "2026", "19", "0"], "", None),
+        (["1", "12", "2026", "19", "0"], "", None),
+        (["14", "11", "2026", "19", "0"], "12x", None),
+        (["14", "11", "2026", "19", "0"], "120", Some("submit_feedback(c1, 120 views, posted 2026-11-14T19:00:00Z)")),
     ];
-    for (typed, call) in rows {
+    for (boxes, views, call) in rows {
         open(&mut rt, |l| feedback::open(l, "c1", "Best"));
-        for (k, t) in typed {
-            type_into(&mut rt, k, t);
+        rt.update(|l, _| l.panels.feedback.posted.now = NOW);
+        if !boxes[0].is_empty() {
+            type_date(&mut rt, "feedback/posted", boxes);
+        }
+        if !views.is_empty() {
+            type_into(&mut rt, "feedback/views", views);
         }
         click(&mut rt, "feedback/submit");
         match call {
-            None => assert!(has(&rt, "feedback/error") && calls(&e, "submit_feedback").is_empty()),
+            None => assert!(has(&rt, "feedback/error") && calls(&e, "submit_feedback").is_empty(), "{boxes:?}"),
             Some(c) => assert_eq!(calls(&e, "submit_feedback"), [c]),
         }
     }
@@ -408,17 +439,16 @@ fn the_results_sheet_needs_a_post_time_and_sends_the_numbers() {
 }
 
 #[test]
-fn a_refused_result_stays_on_the_sheet_and_the_time_parser_takes_what_it_should() {
+fn a_refused_result_stays_on_the_sheet_and_now_fills_the_boxes() {
     let (mut rt, e) = learning_lab(r#"{"results":[]}"#, 0);
     click(&mut rt, "learning/log/c1");
-    assert!(has(&rt, "feedback/for"));
-    type_into(&mut rt, "feedback/posted-at", "2026-11-14T19:00:30Z");
+    rt.update(|l, _| l.panels.feedback.posted.now = NOW);
+    click(&mut rt, "feedback/posted/now");
+    assert_eq!(rt.state.panels.feedback.posted.parse().map(|s| s.iso()), Ok("2026-11-15T00:00:00Z".to_string()));
+    rt.update(|l, _| l.panels.feedback.posted.now = NOW + 60);
     e.fail_once("submit_feedback", EngineError::Api { status: 400, message: "posted in the future".into() });
     click(&mut rt, "feedback/submit");
     assert!(has(&rt, "feedback/error"));
-    for (input, want) in [("2026-11-14 19:00", Some("2026-11-14T19:00:00Z")), ("2026-11-14T19:00:30Z", Some("2026-11-14T19:00:30Z")), ("2026-13-14 19:00", None), ("2026-11-14", None), ("14-11-2026 19:00", None), ("2026-11-14 25:00", None)] {
-        assert_eq!(feedback::iso_utc(input).as_deref(), want, "{input}");
-    }
 }
 
 fn candidates_json() -> String {
@@ -519,4 +549,209 @@ fn a_long_candidate_list_shows_twenty_until_asked_for_all() {
     e.fail_once("drain_queue", EngineError::Network("down".into()));
     click(&mut rt, "discover/drain");
     assert!(has(&rt, "discover/error"));
+}
+
+// ---- US5 parity follow-ups (T-17) -----------------------------------------------------------
+
+fn kenari_settings(base: &str, active: bool) -> String {
+    ok(&format!(
+        r#"{{"llm":{{"active":{active},"enabled":true,"saved":[],"apiKey":"masked","apiKeySet":{active},"baseUrl":"{base}","model":"kenari/auto","director":false}},
+        "jev":{{"active":false,"enabled":true,"saved":[],"apiKey":"","apiKeySet":false,"url":"","model":"","director":false}},
+        "tebar":{{"active":false,"enabled":true,"saved":[],"apiKey":"","apiKeySet":false,"baseUrl":""}}}}"#
+    ))
+}
+
+#[test]
+fn kenari_is_picked_tried_and_only_then_saved_and_its_balance_shows_once_connected() {
+    let models = ok(r#"{"models":[{"id":"kenari/auto","free":false},{"id":"qwen-free","free":true}]}"#);
+    let (mut rt, e) = lab(connections::view, &[("settings", &kenari_settings("", false)), ("kenari-llm-models", &models)]);
+    open(&mut rt, connections::open);
+    assert!(has(&rt, "conn/llm/mode-kenari") && !has(&rt, "conn/llm/endpoint"), "nothing is chosen yet, so no fields");
+    click(&mut rt, "conn/llm/mode-kenari");
+    assert_eq!(calls(&e, "kenari_models"), ["kenari_models(llm)"]);
+    assert!(has(&rt, "conn/llm/kenari/model/1"), "the catalogue follows kenari/auto");
+    click(&mut rt, "conn/llm/kenari/model/1");
+    click(&mut rt, "conn/llm/kenari/connect");
+    assert!(calls(&e, "update_settings").is_empty(), "nothing is saved before the key was tried");
+    type_into(&mut rt, "conn/llm/kenari/key", "kn-123");
+    click(&mut rt, "conn/llm/kenari/probe");
+    assert_eq!(calls(&e, "probe_llm"), ["probe_llm(qwen-free, kn-123)"]);
+    click(&mut rt, "conn/llm/kenari/connect");
+    let saved = calls(&e, "update_settings").remove(0);
+    assert!(saved.contains(r#""baseUrl":"https://kenari.id/v1""#) && saved.contains(r#""model":"qwen-free""#) && saved.contains(r#""apiKey":"kn-123""#), "{saved}");
+
+    // connected: the balance and quota are shown
+    let account = ok(r#"{"account":{"plan":"Pro","windows":{"daily":{"budgetRp":1000,"remainingRp":400,"usedFrac":0.6,"resetsAt":""}},"balanceRp":12500,"usage":{"requests":3,"promptTokens":10,"completionTokens":20}}}"#);
+    let (mut rt, e) = lab(connections::view, &[("settings", &kenari_settings("https://kenari.id/v1", true)), ("kenari-llm-models", &models), ("kenari-account", &account)]);
+    open(&mut rt, connections::open);
+    assert!(has(&rt, "conn/llm/kenari/account") && has(&rt, "conn/llm/kenari/balance"));
+    assert_eq!(calls(&e, "kenari_account"), ["kenari_account"]);
+
+    // a key without account rights: the note says so instead of showing nothing
+    let (mut rt, _) = lab(connections::view, &[("settings", &kenari_settings("https://kenari.id/v1", true)), ("kenari-llm-models", &models)]);
+    open(&mut rt, connections::open);
+    assert!(has(&rt, "conn/llm/kenari/no-account") && !has(&rt, "conn/llm/kenari/balance"));
+}
+
+fn generate_cards_settings(voice_base: &str) -> String {
+    ok(&format!(
+        r#"{{"llm":{{"active":true,"enabled":true,"saved":[],"apiKey":"","apiKeySet":false,"baseUrl":"https://llm.example/v1","model":"m1","director":false}},
+        "jev":{{"active":false,"enabled":true,"saved":[],"apiKey":"","apiKeySet":false,"url":"","model":"","director":false}},
+        "tebar":{{"active":false,"enabled":true,"saved":[],"apiKey":"","apiKeySet":false,"baseUrl":""}},
+        "voice":{{"active":true,"enabled":true,"saved":[],"engine":"openai","engines":["elevenlabs","fish","openai","local"],"localAvailable":false,"baseUrl":"{voice_base}","model":"tts-1","apiKey":"masked","apiKeySet":true,"voices":{{"id":"alloy"}}}},
+        "image":{{"active":false,"enabled":true,"saved":[],"baseUrl":"","model":"","apiKey":"","apiKeySet":false,"size":"1024x1792","style":""}},
+        "commands":{{"active":true,"allowed":true,"commands":[{{"name":"brand-check","cmd":"python","args":["check.py"],"timeoutSec":60}}]}}}}"#
+    ))
+}
+
+fn generate_cards_lab(voice_base: &str) -> (Runtime<Lab>, Arc<FakeEngine>) {
+    let files = generate_files();
+    let settings = generate_cards_settings(voice_base);
+    let kenari_voices = ok(r#"{"models":[{"id":"tts-1","voices":["alloy","nova"]}]}"#);
+    let mut refs: Vec<(&str, &str)> = files.iter().filter(|(r, _)| *r != "settings").map(|(r, b)| (*r, b.as_str())).collect();
+    refs.push(("settings", &settings));
+    refs.push(("kenari-voice-models", &kenari_voices));
+    let (mut rt, e) = lab(generate::view, &refs);
+    open(&mut rt, generate::open);
+    (rt, e)
+}
+
+/// Voice, scene images and custom commands each save through the settings route with only what changed.
+#[test]
+fn the_voice_the_images_and_the_commands_each_save_only_what_changed() {
+    type Step = (&'static str, Option<&'static str>);
+    let rows: [(&[Step], &str); 6] = [
+        (&[("gen/voice/engine/elevenlabs", None)], r#"update_settings(voice, {"engine":"elevenlabs"})"#),
+        (&[("gen/voice/voice/id", Some("2")), ("gen/voice/save", None)], r#"update_settings(voice, {"voices":{"id":"alloy2"}})"#),
+        (&[("gen/voice/enabled", None)], r#"update_settings(voice, {"enabled":false})"#),
+        (&[("gen/image/mode-custom", None), ("gen/image/baseUrl", Some("https://img.example/v1")), ("gen/image/save", None)], r#"update_settings(image, {"baseUrl":"https://img.example/v1"})"#),
+        (&[("gen/cmd/0/remove", None), ("gen/cmd/save", None)], r#"update_settings(commands, {"commands":[]})"#),
+        (&[("gen/cmd/add", None), ("gen/cmd/1/name", Some("a-b")), ("gen/cmd/1/program", Some("py")), ("gen/cmd/save", None)], r#"update_settings(commands, {"commands":[{"args":["check.py"],"cmd":"python","name":"brand-check","timeoutSec":60},{"args":[],"cmd":"py","name":"a-b","timeoutSec":60}]})"#),
+    ];
+    for (steps, call) in rows {
+        let (mut rt, e) = generate_cards_lab("https://tts.example");
+        for (key, typed) in steps {
+            match typed {
+                Some(t) => type_into(&mut rt, key, t),
+                None => click(&mut rt, key),
+            }
+            rt.frame(0.5);
+        }
+        assert_eq!(calls(&e, "update_settings"), [call], "{steps:?}");
+    }
+}
+
+#[test]
+fn kenari_voice_models_and_their_voices_are_picked_not_typed_and_a_test_shows_its_result() {
+    let (mut rt, e) = generate_cards_lab("https://kenari.id/v1");
+    assert_eq!(calls(&e, "kenari_voice_models"), ["kenari_voice_models"], "a voice already on Kenari reads its models on open");
+    assert!(has(&rt, "gen/voice/kenari/model/0") && has(&rt, "gen/voice/voice/id/1") && !has(&rt, "gen/voice/base-url"));
+    click(&mut rt, "gen/voice/voice/id/1");
+    click(&mut rt, "gen/voice/save");
+    assert_eq!(calls(&e, "update_settings"), [r#"update_settings(voice, {"voices":{"id":"nova"}})"#]);
+    click(&mut rt, "gen/voice/test");
+    click(&mut rt, "gen/image/mode-kenari");
+    assert_eq!(calls(&e, "kenari_models"), ["kenari_models(image)"]);
+    assert!(has(&rt, "gen/voice/result") && has(&rt, "gen/image/kenari/model/0"));
+    // commands the install keeps off cannot be added
+    let off = generate_cards_settings("x").replace(r#""allowed":true"#, r#""allowed":false"#);
+    e.serve("settings", &off);
+    open(&mut rt, generate::open);
+    assert!(has(&rt, "gen/cmd/off"));
+    click(&mut rt, "gen/cmd/add");
+    assert_eq!(rt.state.panels.generate.commands.items.len(), 1);
+}
+
+#[test]
+fn remembered_accounts_come_back_a_post_can_be_refreshed_and_its_link_opened() {
+    let posts = r#"{"posts":[{"id":"p1","clipId":"c1","status":"PUBLISHED","targets":"[{\"platform\":\"tiktok\",\"status\":\"PUBLISHED\",\"permalink\":\"https://tiktok.example/v/1\"},{\"platform\":\"youtube\",\"status\":\"PUBLISHED\",\"permalink\":null}]"}]}"#;
+    let post = ok(r#"{"post":{"id":"p1","clipId":"c1","status":"PUBLISHED","errorMessage":"stale","targets":"[{\"platform\":\"tiktok\",\"status\":\"PUBLISHED\",\"permalink\":\"https://tiktok.example/v/1\"},{\"platform\":\"youtube\",\"status\":\"PUBLISHED\",\"permalink\":null}]"}}"#);
+    let (mut rt, e) = lab(publish::view, &[("social-accounts", &accounts_json()), ("posts", &ok(posts)), ("post", &post)]);
+    rt.update(|l, _| l.kept = vec!["yt".into(), "ig".into(), "gone".into()]);
+    open(&mut rt, |l| publish::open(l, "c1", "My clip"));
+    assert_eq!(rt.state.panels.publish.selected, ["yt"], "only listed accounts of one workspace come back");
+    click(&mut rt, "publish/account/tt");
+    assert_eq!(rt.state.kept, ["yt", "tt"], "a change is remembered for next time");
+
+    click(&mut rt, "publish/post/p1/refresh");
+    assert_eq!(calls(&e, "refresh_post"), ["refresh_post(p1)"]);
+    assert!(has(&rt, "publish/post/p1/error"), "the refreshed post replaces the row");
+    click(&mut rt, "publish/post/p1/target/0/open");
+    assert_eq!(rt.state.opened, ["https://tiktok.example/v/1"]);
+    assert!(!has(&rt, "publish/post/p1/target/1/open"), "no link, no Open");
+    assert!(has(&rt, "publish/generated/soon"), "publishing a generated video is labelled as coming with Generate");
+}
+
+fn enriching_json(scored: bool) -> String {
+    let c = if scored { r#""transcriptScore":0.7,"predictedScore":0.9"# } else { r#""transcriptScore":null,"predictedScore":null"# };
+    ok(&format!(
+        r#"{{"videos":[{{"id":"d1","title":"Podcast","url":"https://youtu.be/a","duration":754,"channel":"Chan","relevanceScore":0.8,{c},"status":"NEW","sourceMode":"auto","pickedBy":"qwen","why":["a","b","c","d","e"]}},
+        {{"id":"d2","title":"Rules pick","url":"https://youtu.be/b","relevanceScore":0.5,"transcriptScore":0.2,"predictedScore":null,"status":"NEW","sourceMode":"auto","pickedBy":"algorithm"}}]}}"#
+    ))
+}
+
+#[test]
+fn discover_shows_enriching_until_the_captions_are_scored_and_reads_the_list_again_by_itself() {
+    let (mut rt, e) = lab(discover::view, &[("candidates", &enriching_json(false))]);
+    open(&mut rt, discover::open);
+    assert!(rt.state.panels.discover.enriching() && rt.state.panels.discover.polling());
+    assert_eq!(rt.state.panels.discover.candidates[0].predicted_score, None);
+    let before = calls(&e, "candidates").len();
+    e.serve("candidates", &enriching_json(true));
+    rt.update(|l, _| discover::poll(l));
+    rt.frame(1.0 / 60.0);
+    assert_eq!(calls(&e, "candidates").len(), before + 1);
+    assert_eq!(rt.state.panels.discover.candidates[0].predicted_score, Some(0.9));
+    assert!(!rt.state.panels.discover.enriching(), "every NEW row has its captions scored");
+    rt.update(|l, _| discover::poll(l));
+    assert_eq!(calls(&e, "candidates").len(), before + 1, "nothing is read when nothing is pending");
+}
+
+#[test]
+fn a_candidate_row_shows_who_picked_it_more_reasons_a_youtube_link_and_the_auto_run_log() {
+    let run = ok(r#"{"id":"r1","status":"DONE","count":2,"mode":"agent","model":"qwen","notes":"cooking is up","steps":[{"tool":"search_web","args":{"query":"masak"},"result":"12 results"}]}"#);
+    let (mut rt, _) = lab(discover::view, &[("candidates", &enriching_json(true)), ("auto", &run)]);
+    open(&mut rt, discover::open);
+    assert!(has(&rt, "discover/c/d1/picked") && has(&rt, "discover/c/d2/picked"));
+    assert!(has(&rt, "discover/c/d1/why/2") && !has(&rt, "discover/c/d1/why/3"));
+    click(&mut rt, "discover/c/d1/more");
+    assert!(has(&rt, "discover/c/d1/why/4"));
+    click(&mut rt, "discover/c/d1/yt");
+    assert_eq!(rt.state.opened, ["https://youtu.be/a"]);
+    rt.update(|l, _| l.panels.discover.run = serde_json::from_str(&run).ok().and_then(|v: serde_json::Value| serde_json::from_value(v["data"].clone()).ok()));
+    rt.frame(1.0 / 60.0);
+    assert!(has(&rt, "discover/run-status") && has(&rt, "discover/run-notes") && has(&rt, "discover/step/0"));
+}
+
+#[test]
+fn learning_lists_each_results_posted_day() {
+    let rows = r#"{"results":[{"clipId":"c1","title":"Best","viralScore":0.42,"views":12345,"postedAt":"2026-11-01T10:00:00Z"},{"clipId":"c2","views":9}]}"#;
+    let (rt, _) = learning_lab(rows, 5);
+    assert!(has(&rt, "learning/result/c1/posted") && has(&rt, "learning/result/c2/posted"));
+    assert_eq!(sorot_desktop::screens::learning::day(Some("2026-11-01T10:00:00Z")), "2026-11-01");
+    assert_eq!(sorot_desktop::screens::learning::day(None), "-");
+}
+
+#[test]
+fn switching_between_kenari_and_an_own_endpoint_and_the_other_card_actions_each_reach_the_engine() {
+    // (steps, engine call that must be among the calls)
+    let rows: [(&[&str], &str); 8] = [
+        (&["gen/voice/mode-kenari", "gen/voice/kenari/model/0", "gen/voice/mode-custom", "gen/voice/save"], "kenari_voice_models"),
+        (&["gen/voice/engine/none"], r#"update_settings(voice, {"engine":""})"#),
+        (&["gen/voice/test"], "test_connection(voice)"),
+        (&["gen/image/mode-kenari", "gen/image/kenari/model/0", "gen/image/mode-custom", "gen/image/mode-kenari"], "kenari_models(image)"),
+        (&["gen/image/mode-custom", "gen/image/enabled"], r#"update_settings(image, {"enabled":false})"#),
+        (&["gen/image/mode-custom", "gen/image/test"], "test_connection(image)"),
+        (&["gen/cmd/test"], "test_connection(commands)"),
+        (&["gen/image/mode-kenari", "gen/image/kenari/model/0", "gen/image/save"], r#"update_settings(image, {"baseUrl":"https://kenari.id/v1","model":"gpt-image-2"})"#),
+    ];
+    for (steps, call) in rows {
+        let (mut rt, e) = generate_cards_lab("https://tts.example");
+        for key in steps {
+            click(&mut rt, key);
+            rt.frame(0.5);
+        }
+        let seen = e.calls();
+        assert!(seen.iter().any(|c| c.contains(call)), "{steps:?} -> {seen:?}");
+    }
 }

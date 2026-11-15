@@ -1,16 +1,19 @@
 //! Publish one clip through Tebar: pick accounts (one workspace per post), let the engine write
 //! copy per platform (Jev checks it), make the choices only you can, then post. Posting is never
 //! automatic (constitution VI): the choices start empty and `core::publish_gate` keeps Post off
-//! until they are made.
+//! until they are made. The accounts picked last time come back selected, a post can be refreshed
+//! and its links opened, and a time to send it can be picked in date and time boxes.
 
 use rune::tok::type_;
 use rune::{El, TextEdit, col, edit_access, row, text};
 use serde_json::{Map, Value, json};
-use sorot_desktop_core::publish_gate::{Choices, Platform, Target, can_post};
+use sorot_desktop_core::publish_gate::{Choices, Listed, Platform, Target, can_post, preselect};
 
 use crate::engine::types::{DraftTarget, PublishDraft, SocialAccount, SocialPost};
+use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
-use crate::ui::form::{Tone, area, btn, card, choice, field, heading, note, toggle};
+use crate::ui::datetime::{DateBoxes, picker};
+use crate::ui::form::{Tone, area, btn, card, choice, field, heading, note, page, toggle};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 
@@ -24,6 +27,15 @@ pub struct TargetEdit {
     pub choices: Choices,
 }
 
+/// What stops or fails a post, in words the view chooses the language for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Problem {
+    /// The send time boxes are not a real date and time.
+    Schedule,
+    /// The engine's own words.
+    Engine(String),
+}
+
 #[derive(Default)]
 pub struct Publish {
     pub clip_id: String,
@@ -35,12 +47,14 @@ pub struct Publish {
     pub selected: Vec<String>,
     pub draft: Option<PublishDraft>,
     pub edits: Vec<TargetEdit>,
+    /// The platform tab open (an index into the draft's targets).
+    pub tab: usize,
     pub confirmed: bool,
     pub posts: Vec<SocialPost>,
     pub busy: bool,
-    pub error: Option<String>,
-    /// Optional send time (UTC, like 2026-11-14 19:00); empty posts now.
-    pub schedule: TextEdit,
+    pub error: Option<Problem>,
+    /// Optional send time (UTC); empty posts now.
+    pub schedule: DateBoxes,
 }
 
 fn platform_of(name: &str) -> Platform {
@@ -122,16 +136,20 @@ impl TargetEdit {
     }
 }
 
-/// Opens the panel for a clip: its accounts and earlier posts.
+/// Opens the panel for a clip: its accounts and earlier posts. The accounts picked last time come
+/// back selected when they are still listed and can post.
 pub fn open<H: Host>(h: &mut H, clip_id: &str, clip_title: &str) {
     let id = clip_id.to_string();
+    let saved = h.remembered();
     h.panels_mut().publish = Publish { clip_id: id.clone(), clip_title: clip_title.into(), load: Load::Loading, ..Publish::default() };
     go(h, move |e| {
         let both = e.social_accounts().and_then(|a| Ok((a, e.clip_posts(&id)?)));
-        answer(both, |p, r| {
+        answer(both, move |p, r| {
             let s = &mut p.publish;
             s.load = Load::of(&r);
             if let Ok((a, posts)) = r {
+                let listed: Vec<Listed> = a.accounts.iter().map(|x| Listed { id: &x.id, supported: x.supported, workspace: workspace(x) }).collect();
+                s.selected = preselect(&saved, &listed);
                 (s.enabled, s.accounts, s.posts) = (a.enabled, a.accounts, posts);
             }
         })
@@ -148,6 +166,8 @@ pub fn select_account<H: Host>(h: &mut H, id: &str) {
             s.selected.push(id.to_string());
         }
     }
+    let now = s.selected.clone();
+    h.remember(&now);
 }
 
 pub fn write_copy<H: Host>(h: &mut H) {
@@ -161,9 +181,9 @@ pub fn write_copy<H: Host>(h: &mut H) {
             match r {
                 Ok(d) => {
                     s.edits = d.targets.iter().map(TargetEdit::new).collect();
-                    (s.draft, s.confirmed) = (Some(d), false);
+                    (s.draft, s.confirmed, s.tab) = (Some(d), false, 0);
                 }
-                Err(e) => s.error = Some(e),
+                Err(e) => s.error = Some(Problem::Engine(e)),
             }
         })
     });
@@ -175,10 +195,10 @@ pub fn post<H: Host>(h: &mut H) {
     }
     let s = &mut h.panels_mut().publish;
     let mut body = s.body();
-    if !s.schedule.text.trim().is_empty() {
-        match crate::screens::feedback::iso_utc(&s.schedule.text) {
-            Some(at) => body["scheduledAt"] = serde_json::json!(at),
-            None => return s.error = Some("Write the schedule as 2026-11-14 19:00 (UTC), or leave it empty to post now.".into()),
+    if !s.schedule.is_blank() {
+        match s.schedule.parse() {
+            Ok(at) => body["scheduledAt"] = json!(at.iso()),
+            Err(_) => return s.error = Some(Problem::Schedule),
         }
     }
     (s.busy, s.error) = (true, None);
@@ -192,7 +212,7 @@ pub fn post<H: Host>(h: &mut H) {
                     s.posts.insert(0, post);
                     (s.draft, s.edits) = (None, vec![]);
                 }
-                Err(e) => s.error = Some(e),
+                Err(e) => s.error = Some(Problem::Engine(e)),
             }
         })
     });
@@ -207,8 +227,15 @@ fn replace_post(p: &mut Panels, r: Result<SocialPost, String>) {
                 *slot = post;
             }
         }
-        Err(e) => s.error = Some(e),
+        Err(e) => s.error = Some(Problem::Engine(e)),
     }
+}
+
+/// Asks Tebar again how the post stands.
+pub fn refresh<H: Host>(h: &mut H, id: &str) {
+    let id = id.to_string();
+    h.panels_mut().publish.busy = true;
+    go(h, move |e| answer(e.refresh_post(&id), replace_post));
 }
 
 pub fn retry<H: Host>(h: &mut H, id: &str) {
@@ -223,161 +250,209 @@ pub fn cancel<H: Host>(h: &mut H, id: &str) {
     go(h, move |e| answer(e.cancel_post(&id), replace_post));
 }
 
+/// Opens a posted video's link in the browser.
+pub fn open_link<H: Host>(h: &mut H, url: &str) {
+    if let Err(why) = h.open_url(url) {
+        h.panels_mut().publish.error = Some(Problem::Engine(why));
+    }
+}
+
 fn edit_mut<H: Host>(h: &mut H, i: usize) -> &mut TargetEdit {
     &mut h.panels_mut().publish.edits[i]
 }
 
-fn accounts_card<H: Host>(dark: bool, s: &Publish) -> El {
+fn schedule_of<H: Host>(h: &mut H) -> &mut DateBoxes {
+    &mut h.panels_mut().publish.schedule
+}
+
+/// A platform's display name: the translation when there is one, else the engine's word.
+fn platform_name(l: Lang, platform: &str) -> String {
+    let key = format!("publish.platform.{platform}");
+    let t = tr(l, &key);
+    if t == key { platform.to_string() } else { t }
+}
+
+fn accounts_card<H: Host>(dark: bool, l: Lang, s: &Publish) -> El {
     let p = pal(dark);
-    let mut c = card(dark, "publish/accounts", "Connected accounts");
+    let mut c = card(dark, "publish/accounts", &tr(l, "publish.accounts.title"));
     if !s.enabled {
-        return c.child(note(dark, "publish/off", Tone::Plain, "Tebar is not connected. Connect it in Settings, Connections, or download the clip and post it yourself."));
+        return c.child(note(dark, "publish/off", Tone::Plain, &tr(l, "publish.off")));
     }
     if s.accounts.is_empty() {
-        return c.child(note(dark, "publish/no-accounts", Tone::Plain, "No accounts yet. Connect TikTok, Instagram or YouTube at tebar.app, then open this again."));
+        return c.child(note(dark, "publish/no-accounts", Tone::Plain, &tr(l, "publish.no-accounts")));
     }
     let active = s.active_workspace();
-    c = c.child(text("A post goes to one Tebar workspace. Once you pick an account, the others in other workspaces are off.").font(type_::LABEL).color(p.muted).wrap());
+    c = c.child(text(tr(l, "publish.accounts.about")).font(type_::LABEL).color(p.muted).wrap());
     for a in &s.accounts {
         let locked = active.as_deref().is_some_and(|w| w != workspace(a)) && !s.selected.contains(&a.id);
-        let place = a.profile_name.as_deref().map(|n| format!(", workspace {n}")).unwrap_or_default();
-        let words = format!("{} ({}{place}){}", a.name, a.platform, if a.supported { "" } else { ", cannot post a video here" });
+        let place = a.profile_name.as_deref().map(|n| trf(l, "publish.workspace", &[("name", n)])).unwrap_or_default();
+        let mut words = format!("{} ({}{place})", a.name, platform_name(l, &a.platform));
+        if !a.supported {
+            words.push_str(&format!(", {}", tr(l, "publish.cannot-video")));
+        }
         let id = a.id.clone();
-        let mut line = toggle(dark, &format!("publish/account/{}", a.id), &words, s.selected.contains(&a.id), move |h: &mut H| select_account(h, &id));
+        let mut line = toggle(dark, l, &format!("publish/account/{}", a.id), &words, s.selected.contains(&a.id), move |h: &mut H| select_account(h, &id));
         if !a.supported || locked {
             line = line.disabled(true);
         }
         c = c.child(line);
     }
-    c.child(btn(dark, "publish/write", if s.draft.is_some() { "Rewrite the copy" } else { "Write the copy" }, false, !s.busy && !s.selected.is_empty(), write_copy::<H>))
+    c.child(btn(dark, "publish/write", &tr(l, if s.draft.is_some() { "publish.rewrite" } else { "publish.write" }), false, !s.busy && !s.selected.is_empty(), write_copy::<H>))
 }
 
-fn choices_block<H: Host>(dark: bool, i: usize, t: &DraftTarget, e: &TargetEdit) -> El {
+fn choices_block<H: Host>(dark: bool, l: Lang, i: usize, t: &DraftTarget, e: &TargetEdit) -> El {
     let p = pal(dark);
     let k = |n: &str| format!("publish/{i}/{n}");
-    let mut b = col().key(k("choices")).role("group").label("Your choices").gap(10.0).padding(16.0).w_full().fill(p.surface).border(1.0, p.beam).radius(10.0)
-        .child(text("Your choices").font(type_::TITLE).color(p.text))
-        .child(text("These stay empty until you fill them. Sorot picks nothing for you.").font(type_::BODY).color(p.muted).wrap());
+    let mut b = col().key(k("choices")).role("group").label(tr(l, "publish.choices.title")).gap(10.0).padding(16.0).w_full().fill(p.surface).border(1.0, p.beam).radius(10.0)
+        .child(text(tr(l, "publish.choices.title")).font(type_::TITLE).color(p.text))
+        .child(text(tr(l, "publish.choices.about")).font(type_::BODY).color(p.muted).wrap());
     if t.platform == "tiktok" {
         let mode = row().gap(8.0)
-            .child(choice(dark, &k("direct"), "Post directly", !e.choices.tiktok_draft_mode, move |h: &mut H| edit_mut(h, i).choices.tiktok_draft_mode = false))
-            .child(choice(dark, &k("draft"), "Send as a draft to the TikTok app", e.choices.tiktok_draft_mode, move |h: &mut H| edit_mut(h, i).choices.tiktok_draft_mode = true));
-        b = b.child(text("How to send it to TikTok").font(type_::LABEL).color(p.muted)).child(mode);
+            .child(choice(dark, &k("direct"), &tr(l, "publish.tiktok.direct"), !e.choices.tiktok_draft_mode, move |h: &mut H| edit_mut(h, i).choices.tiktok_draft_mode = false))
+            .child(choice(dark, &k("draft"), &tr(l, "publish.tiktok.draft"), e.choices.tiktok_draft_mode, move |h: &mut H| edit_mut(h, i).choices.tiktok_draft_mode = true));
+        b = b.child(text(tr(l, "publish.tiktok.how")).font(type_::LABEL).color(p.muted)).child(mode);
         if let (Some(levels), false) = (&t.needs.tiktok_privacy, e.choices.tiktok_draft_mode) {
             let mut r = row().gap(8.0);
             for (n, level) in levels.iter().enumerate() {
-                let l = level.clone();
-                r = r.child(choice(dark, &k(&format!("privacy/{n}")), level, e.choices.tiktok_privacy.as_deref() == Some(level), move |h: &mut H| edit_mut(h, i).choices.tiktok_privacy = Some(l.clone())));
+                let lv = level.clone();
+                r = r.child(choice(dark, &k(&format!("privacy/{n}")), level, e.choices.tiktok_privacy.as_deref() == Some(level), move |h: &mut H| edit_mut(h, i).choices.tiktok_privacy = Some(lv.clone())));
             }
-            let status = if e.choices.tiktok_privacy.is_some() { "Chosen." } else { "Not chosen yet: pick who can see it, or send it as a draft." };
-            b = b.child(text("Who can see it on TikTok").font(type_::LABEL).color(p.muted)).child(r).child(text(status).key(k("privacy-status")).font(type_::LABEL).color(p.muted).wrap());
+            let status = tr(l, if e.choices.tiktok_privacy.is_some() { "publish.chosen" } else { "publish.privacy-unchosen" });
+            b = b.child(text(tr(l, "publish.tiktok.who")).font(type_::LABEL).color(p.muted)).child(r).child(text(status).key(k("privacy-status")).font(type_::LABEL).color(p.muted).wrap());
         }
     }
     if t.platform == "youtube" {
-        b = b.child(field(dark, &k("title"), "YouTube title (required, 100 characters at most)", &e.title, t.title.as_deref().unwrap_or("Write a title"), false, edit_access(move |h: &mut H| &mut edit_mut(h, i).title)));
+        b = b.child(field(dark, &k("title"), &tr(l, "publish.youtube.title"), &e.title, t.title.as_deref().unwrap_or(&tr(l, "publish.youtube.title-hint")), false, edit_access(move |h: &mut H| &mut edit_mut(h, i).title)))
+            .child(text(tr(l, "publish.youtube.title-rule")).font(type_::LABEL).color(p.muted).wrap());
     }
     if t.needs.made_for_kids.is_some() {
         let kids = row().gap(8.0)
-            .child(choice(dark, &k("kids-no"), "No", e.choices.made_for_kids == Some(false), move |h: &mut H| edit_mut(h, i).choices.made_for_kids = Some(false)))
-            .child(choice(dark, &k("kids-yes"), "Yes", e.choices.made_for_kids == Some(true), move |h: &mut H| edit_mut(h, i).choices.made_for_kids = Some(true)));
-        let status = if e.choices.made_for_kids.is_some() { "Answered." } else { "Not answered yet: YouTube asks this for every upload." };
-        b = b.child(text("Made for kids (YouTube)").font(type_::LABEL).color(p.muted)).child(kids).child(text(status).key(k("kids-status")).font(type_::LABEL).color(p.muted).wrap());
+            .child(choice(dark, &k("kids-no"), &tr(l, "publish.no"), e.choices.made_for_kids == Some(false), move |h: &mut H| edit_mut(h, i).choices.made_for_kids = Some(false)))
+            .child(choice(dark, &k("kids-yes"), &tr(l, "publish.yes"), e.choices.made_for_kids == Some(true), move |h: &mut H| edit_mut(h, i).choices.made_for_kids = Some(true)));
+        let status = tr(l, if e.choices.made_for_kids.is_some() { "publish.answered" } else { "publish.kids-unanswered" });
+        b = b.child(text(tr(l, "publish.kids")).font(type_::LABEL).color(p.muted)).child(kids).child(text(status).key(k("kids-status")).font(type_::LABEL).color(p.muted).wrap());
     }
     b
 }
 
-fn target_block<H: Host>(dark: bool, i: usize, t: &DraftTarget, e: &TargetEdit) -> El {
+fn target_block<H: Host>(dark: bool, l: Lang, i: usize, t: &DraftTarget, e: &TargetEdit) -> El {
     let p = pal(dark);
     let k = |n: &str| format!("publish/{i}/{n}");
-    let by = if t.copy_by == "llm" { "the LLM" } else { "a template" };
-    let mut b = card(dark, &k("target"), &format!("{} ({})", t.name, t.platform))
-        .child(text(format!("Copy by {by}.")).font(type_::LABEL).color(p.muted))
-        .child(area(dark, &k("text"), &format!("Post text for {}", t.name), &e.content, edit_access(move |h: &mut H| &mut edit_mut(h, i).content)))
-        .child(text(format!("{} characters. The engine cuts anything over the platform limit.", e.content.text.chars().count())).key(k("count")).font(type_::LABEL).color(p.muted).wrap());
+    let by = tr(l, if t.copy_by == "llm" { "publish.by-llm" } else { "publish.by-template" });
+    let mut b = col().key(k("target")).gap(12.0).w_full()
+        .child(text(trf(l, "publish.copy-by", &[("by", &by)])).font(type_::LABEL).color(p.muted))
+        .child(area(dark, &k("text"), &trf(l, "publish.text-for", &[("name", &t.name)]), &e.content, edit_access(move |h: &mut H| &mut edit_mut(h, i).content)))
+        .child(text(trf(l, "publish.count", &[("n", &e.content.text.chars().count().to_string())])).key(k("count")).font(type_::LABEL).color(p.muted).wrap());
     for (n, w) in t.warnings.iter().enumerate() {
-        b = b.child(note(dark, &k(&format!("warning/{n}")), Tone::Plain, &format!("Note: {w}")));
+        b = b.child(note(dark, &k(&format!("warning/{n}")), Tone::Plain, &trf(l, "publish.note", &[("w", w)])));
     }
     for (n, w) in t.blockers.iter().filter(|b| !b.starts_with(GATE_BLOCK)).enumerate() {
-        b = b.child(note(dark, &k(&format!("blocker/{n}")), Tone::Bad, &format!("Cannot post: {w}")));
+        b = b.child(note(dark, &k(&format!("blocker/{n}")), Tone::Bad, &trf(l, "publish.blocker", &[("w", w)])));
     }
-    b.child(choices_block::<H>(dark, i, t, e))
+    b.child(choices_block::<H>(dark, l, i, t, e))
 }
 
-fn draft_view<H: Host>(dark: bool, s: &Publish, d: &PublishDraft) -> El {
+fn draft_view<H: Host>(dark: bool, l: Lang, s: &Publish, d: &PublishDraft) -> El {
     let p = pal(dark);
     let mut c = col().gap(16.0).w_full();
     if let Some(by) = &d.copy_checked_by {
-        c = c.child(text(format!("Copy checked by {by}.")).key("publish/checked").font(type_::BODY).color(p.muted));
+        c = c.child(text(trf(l, "publish.checked-by", &[("by", by)])).key("publish/checked").font(type_::BODY).color(p.muted));
     }
-    for (i, (t, e)) in d.targets.iter().zip(&s.edits).enumerate() {
-        c = c.child(target_block::<H>(dark, i, t, e));
+    let mut tabs = row().gap(8.0);
+    for (i, t) in d.targets.iter().enumerate() {
+        tabs = tabs.child(choice(dark, &format!("publish/tab/{i}"), &platform_name(l, &t.platform), s.tab == i, move |h: &mut H| h.panels_mut().publish.tab = i));
+    }
+    c = c.child(tabs);
+    let at = s.tab.min(d.targets.len().saturating_sub(1));
+    if let (Some(t), Some(e)) = (d.targets.get(at), s.edits.get(at)) {
+        c = c.child(target_block::<H>(dark, l, at, t, e));
     }
     if let Some(v @ ("REVIEW" | "FAIL")) = s.gate() {
-        let lead = if v == "FAIL" { "Post anyway: the quality gate held this clip back" } else { "I checked it: the quality gate asks for a review" };
-        let why = if d.clip.gate_reasons.is_empty() { "no reason given".to_string() } else { d.clip.gate_reasons.join("; ") };
-        c = c.child(toggle(dark, "publish/confirm", &format!("{lead}. {why}"), s.confirmed, |h: &mut H| {
+        let lead = tr(l, if v == "FAIL" { "publish.gate.fail" } else { "publish.gate.review" });
+        let why = if d.clip.gate_reasons.is_empty() { tr(l, "conn.no-reason") } else { d.clip.gate_reasons.join("; ") };
+        c = c.child(toggle(dark, l, "publish/confirm", &format!("{lead}. {why}"), s.confirmed, |h: &mut H| {
             let s = &mut h.panels_mut().publish;
             s.confirmed = !s.confirmed;
         }));
     }
-    let hint = if s.post_enabled() { "Ready. Nothing is sent until you press Post." } else { "Post stays off until every choice above is made." };
-    let label = if s.schedule.text.trim().is_empty() { "Post" } else { "Schedule" };
-    c.child(field(dark, "publish/schedule", "Schedule (optional, UTC, like 2026-11-14 19:00)", &s.schedule, "Empty posts now", false, edit_access(|h: &mut H| &mut h.panels_mut().publish.schedule)))
-        .child(btn(dark, "publish/post", label, true, s.post_enabled(), post::<H>)).child(text(hint).key("publish/post-hint").font(type_::LABEL).color(p.muted).wrap())
+    let hint = tr(l, if s.post_enabled() { "publish.ready" } else { "publish.stays-off" });
+    let label = tr(l, if s.schedule.is_blank() { "publish.post" } else { "publish.schedule" });
+    c.child(picker::<H>(dark, l, "publish/schedule", &tr(l, "publish.schedule-label"), &s.schedule, schedule_of::<H>))
+        .child(btn(dark, "publish/post", &label, true, s.post_enabled(), post::<H>)).child(text(hint).key("publish/post-hint").font(type_::LABEL).color(p.muted).wrap())
 }
 
-fn post_row<H: Host>(dark: bool, post: &SocialPost, busy: bool) -> El {
+fn post_row<H: Host>(dark: bool, l: Lang, post: &SocialPost, busy: bool) -> El {
     let p = pal(dark);
     let k = |n: &str| format!("publish/post/{}/{n}", post.id);
-    let when = post.scheduled_at.as_deref().map(|w| format!(", scheduled {w}")).unwrap_or_default();
-    let mut r = col().key(k("row")).role("listitem").label(format!("{}{when}", post.status)).gap(4.0).padding(10.0).w_full().fill(p.raised).radius(6.0)
-        .child(text(format!("{}{when}", post.status)).font(type_::TITLE).color(p.text));
+    let when = post.scheduled_at.as_deref().map(|w| trf(l, "publish.scheduled", &[("at", w)])).unwrap_or_default();
+    let head = format!("{}{when}", post.status);
+    let mut r = col().key(k("row")).role("listitem").label(head.as_str()).gap(4.0).padding(10.0).w_full().fill(p.raised).radius(6.0)
+        .child(text(head).font(type_::TITLE).color(p.text));
     let targets: Vec<Value> = post.targets.as_deref().and_then(|t| serde_json::from_str(t).ok()).unwrap_or_default();
     for (n, t) in targets.iter().enumerate() {
         let line = format!("{}: {}{}", t["platform"].as_str().unwrap_or("account"), t["status"].as_str().unwrap_or("unknown"), t["errorCode"].as_str().map(|c| format!(" ({c})")).unwrap_or_default());
-        r = r.child(text(line).key(k(&format!("target/{n}"))).font(type_::BODY).color(p.muted).wrap());
+        let mut item = row().gap(8.0).items_center().child(text(line).key(k(&format!("target/{n}"))).font(type_::BODY).color(p.muted).wrap());
+        if let Some(url) = t["permalink"].as_str().filter(|u| !u.is_empty()) {
+            let url = url.to_string();
+            item = item.child(btn(dark, k(&format!("target/{n}/open")), &tr(l, "publish.open"), false, true, move |h: &mut H| open_link(h, &url)));
+        }
+        r = r.child(item);
     }
     if let Some(why) = &post.error_message {
         r = r.child(note(dark, &k("error"), Tone::Bad, why));
     }
     let id = post.id.clone();
-    let mut actions = row().gap(8.0);
+    let mut actions = row().gap(8.0).child({
+        let id = id.clone();
+        btn(dark, k("refresh"), &tr(l, "publish.refresh"), false, !busy, move |h: &mut H| refresh(h, &id))
+    });
     if matches!(post.status.as_str(), "FAILED" | "PARTIAL") {
         let id = id.clone();
-        actions = actions.child(btn(dark, k("retry"), "Retry", false, !busy, move |h: &mut H| retry(h, &id)));
+        actions = actions.child(btn(dark, k("retry"), &tr(l, "publish.retry"), false, !busy, move |h: &mut H| retry(h, &id)));
     }
     if post.status == "SCHEDULED" {
-        actions = actions.child(btn(dark, k("cancel"), "Cancel", false, !busy, move |h: &mut H| cancel(h, &id)));
+        actions = actions.child(btn(dark, k("cancel"), &tr(l, "publish.cancel"), false, !busy, move |h: &mut H| cancel(h, &id)));
     }
     r.child(actions)
 }
 
+fn problem_words(l: Lang, p: &Problem) -> String {
+    match p {
+        Problem::Schedule => tr(l, "publish.schedule-invalid"),
+        Problem::Engine(why) => trf(l, "publish.error-next", &[("why", why)]),
+    }
+}
+
 pub fn view<H: Host>(h: &H) -> El {
-    let dark = h.dark();
+    let (dark, l) = (h.dark(), h.lang());
     let s = &h.panels().publish;
     let p = pal(dark);
-    let head = heading(dark, "publish/title", &format!("Publish: {}", if s.clip_title.is_empty() { "this clip" } else { &s.clip_title }), "Write the copy, make your choices, then post. Nothing is sent automatically.");
+    let name = if s.clip_title.is_empty() { tr(l, "publish.this-clip") } else { s.clip_title.clone() };
+    let head = heading(dark, "publish/title", &trf(l, "publish.title", &[("clip", &name)]), &tr(l, "publish.sub"));
     let body = match &s.load {
-        Load::Failed(why) => return col().gap(20.0).padding(40.0).w_full().max_w(960.0).child(head)
-            .child(state_block::<H>(dark, "publish/failed", Kind::Error, "Could not read your accounts.", &format!("{why}. Close this and open it again."), None)),
+        Load::Failed(why) => return page().child(head)
+            .child(state_block::<H>(dark, "publish/failed", Kind::Error, &tr(l, "publish.read-failed"), &trf(l, "publish.close-reopen", &[("why", why)]), None)),
         Load::Ready => {
-            let mut page = col().gap(16.0).w_full().child(accounts_card::<H>(dark, s));
+            let mut main = col().gap(16.0).grow(1.0);
             if let Some(d) = &s.draft {
-                page = page.child(draft_view::<H>(dark, s, d));
+                main = main.child(draft_view::<H>(dark, l, s, d));
             }
             if let Some(why) = &s.error {
-                page = page.child(note(dark, "publish/error", Tone::Bad, &format!("{why}. Check it and try again.")));
+                main = main.child(note(dark, "publish/error", Tone::Bad, &problem_words(l, why)));
             }
-            let mut posts = card(dark, "publish/posts", "Posts of this clip");
+            let mut posts = card(dark, "publish/posts", &tr(l, "publish.posts.title"));
             if s.posts.is_empty() {
-                posts = posts.child(text("No posts yet. They appear here after you post.").key("publish/posts/empty").font(type_::BODY).color(p.muted).wrap());
+                posts = posts.child(text(tr(l, "publish.posts.empty")).key("publish/posts/empty").font(type_::BODY).color(p.muted).wrap());
             }
             for post in &s.posts {
-                posts = posts.child(post_row::<H>(dark, post, s.busy));
+                posts = posts.child(post_row::<H>(dark, l, post, s.busy));
             }
-            page.child(posts)
+            let generated = card(dark, "publish/generated", &tr(l, "publish.generated.title"))
+                .child(text(tr(l, "publish.generated.soon")).key("publish/generated/soon").font(type_::BODY).color(p.muted).wrap());
+            let side = col().gap(16.0).w(360.0).child(accounts_card::<H>(dark, l, s)).child(posts).child(generated);
+            row().gap(24.0).w_full().child(main).child(side)
         }
-        _ => state_block::<H>(dark, "publish/loading", Kind::Loading, "Reading your accounts.", "This takes a moment.", None),
+        _ => state_block::<H>(dark, "publish/loading", Kind::Loading, &tr(l, "publish.reading"), &tr(l, "state.moment"), None),
     };
-    col().gap(20.0).padding(40.0).w_full().max_w(960.0).child(head).child(body)
+    page().child(head).child(body)
 }

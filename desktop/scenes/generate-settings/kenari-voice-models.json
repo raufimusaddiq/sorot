@@ -1,0 +1,22 @@
+{
+  "status": "ok",
+  "data": {
+    "models": [
+      {
+        "id": "kenari-tts",
+        "voices": [
+          "sari",
+          "budi",
+          "ava",
+          "noah"
+        ]
+      },
+      {
+        "id": "kenari-tts-fast",
+        "voices": [
+          "sari"
+        ]
+      }
+    ]
+  }
+}

@@ -7,7 +7,8 @@ use rune::{El, col, row, text};
 use crate::engine::types::{LoggedResult, Weights};
 use crate::screens::feedback;
 use crate::screens::panels::{Host, Load, answer, go};
-use crate::ui::form::{Tone, btn, card, heading, note};
+use crate::i18n::{Lang, tr, trf};
+use crate::ui::form::{Tone, btn, card, heading, note, page};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 
@@ -95,72 +96,89 @@ fn count(n: u64) -> String {
     out
 }
 
-fn teach_card<H: Host>(dark: bool, l: &Learning) -> El {
+/// The day of an ISO time (`2026-11-14T19:00:00Z`), or a dash.
+pub fn day(iso: Option<&str>) -> String {
+    iso.and_then(|s| s.get(..10)).filter(|d| d.as_bytes().get(4) == Some(&b'-')).map_or("-".into(), String::from)
+}
+
+fn teach_card<H: Host>(dark: bool, l: Lang, s: &Learning) -> El {
     let p = pal(dark);
-    let have = l.weights.as_ref().map_or(0, |w| w.with_actual_scores);
+    let have = s.weights.as_ref().map_or(0, |w| w.with_actual_scores);
     let ready = have >= RESULTS_TO_TRAIN;
-    let mut c = card(dark, "learning/teach", "Teach Sorot what works")
-        .child(text(format!("Log how a posted clip did. With {RESULTS_TO_TRAIN} results Sorot can retrain its scoring on what your audience watches.")).font(type_::BODY).color(p.muted).wrap())
-        .child(text(format!("{have} of {RESULTS_TO_TRAIN} results logged{}", if ready { ", ready to retrain" } else { "" })).key("learning/progress").role("status").font(type_::TITLE).color(p.text));
-    if let Some(w) = &l.weights {
-        let words = if w.trained_on > 0 { format!("Scoring version {}, last retrained on {} results.", w.version, w.trained_on) } else { format!("Scoring version {}, not retrained yet.", w.version) };
+    let need = RESULTS_TO_TRAIN.to_string();
+    let mut c = card(dark, "learning/teach", &tr(l, "learning.teach.title"))
+        .child(text(trf(l, "learning.teach.about", &[("n", &need)])).font(type_::BODY).color(p.muted).wrap())
+        .child(text(trf(l, if ready { "learning.progress-ready" } else { "learning.progress" }, &[("have", &have.to_string()), ("n", &need)])).key("learning/progress").role("status").font(type_::TITLE).color(p.text));
+    if let Some(w) = &s.weights {
+        let words = if w.trained_on > 0 { trf(l, "learning.version-trained", &[("v", &w.version.to_string()), ("n", &w.trained_on.to_string())]) } else { trf(l, "learning.version-new", &[("v", &w.version.to_string())]) };
         c = c.child(text(words).key("learning/version").font(type_::BODY).color(p.muted).wrap());
     }
-    let mut actions = row().gap(10.0).items_center().child(btn(dark, "learning/train", if l.training { "Retraining" } else { "Retrain scoring" }, true, ready && !l.training, train::<H>));
+    let mut actions = row().gap(10.0).items_center().child(btn(dark, "learning/train", &tr(l, if s.training { "learning.retraining" } else { "learning.retrain" }), true, ready && !s.training, train::<H>));
     if !ready {
-        actions = actions.child(text(format!("Log {} more to retrain.", RESULTS_TO_TRAIN - have)).key("learning/more").font(type_::LABEL).color(p.muted));
+        actions = actions.child(text(trf(l, "learning.more", &[("n", &(RESULTS_TO_TRAIN - have).to_string())])).key("learning/more").font(type_::LABEL).color(p.muted));
     }
     c = c.child(actions);
-    if l.trained {
-        c = c.child(note(dark, "learning/trained", Tone::Ok, "Scoring retrained on your results."));
+    if s.trained {
+        c = c.child(note(dark, "learning/trained", Tone::Ok, &tr(l, "learning.trained")));
     }
-    if let Some(why) = &l.error {
-        c = c.child(note(dark, "learning/error", Tone::Bad, &format!("Retraining failed: {why}. Try again, or log more results first.")));
+    if let Some(why) = &s.error {
+        c = c.child(note(dark, "learning/error", Tone::Bad, &trf(l, "learning.train-failed", &[("why", why)])));
     }
     c
 }
 
-fn results_card(dark: bool, l: &Learning) -> El {
+fn results_card(dark: bool, l: Lang, s: &Learning) -> El {
     let p = pal(dark);
-    let mut c = card(dark, "learning/results", "Logged results");
-    if l.results.is_empty() {
-        return c.child(text("Nothing logged yet. Post a clip, then log how it did under Waiting for results.").key("learning/results/empty").font(type_::BODY).color(p.muted).wrap());
+    let mut c = card(dark, "learning/results", &tr(l, "learning.results.title"));
+    if s.results.is_empty() {
+        return c.child(text(tr(l, "learning.results.empty")).key("learning/results/empty").font(type_::BODY).color(p.muted).wrap());
     }
-    for r in &l.results {
-        let score = r.viral_score.map_or("no score".to_string(), |s| format!("{:.0}%", s * 100.0));
-        let line = format!("{}: {} views, viral score {score}", r.title.clone().unwrap_or_else(|| r.clip_id.chars().take(8).collect()), count(r.views));
-        c = c.child(text(line).key(format!("learning/result/{}", r.clip_id)).role("listitem").font(type_::BODY).color(p.text).wrap());
+    let cell = |words: String, w: f32, ink: rune::Color| text(words).font(type_::BODY).color(ink).w(w);
+    c = c.child(row().key("learning/results/head").gap(12.0).w_full()
+        .child(text(tr(l, "learning.col.clip")).font(type_::LABEL).color(p.muted).grow(1.0))
+        .child(text(tr(l, "learning.col.posted")).font(type_::LABEL).color(p.muted).w(110.0))
+        .child(text(tr(l, "learning.col.views")).font(type_::LABEL).color(p.muted).w(90.0))
+        .child(text(tr(l, "learning.col.score")).font(type_::LABEL).color(p.muted).w(90.0)));
+    for r in &s.results {
+        let score = r.viral_score.map_or(tr(l, "learning.no-score"), |v| format!("{:.0}%", v * 100.0));
+        let title = r.title.clone().unwrap_or_else(|| r.clip_id.chars().take(8).collect());
+        let k = |n: &str| format!("learning/result/{}/{n}", r.clip_id);
+        c = c.child(row().key(format!("learning/result/{}", r.clip_id)).role("listitem").label(title.as_str()).gap(12.0).w_full()
+            .child(text(&title).font(type_::BODY).color(p.text).wrap().grow(1.0))
+            .child(cell(day(r.posted_at.as_deref()), 110.0, p.muted).key(k("posted")))
+            .child(cell(count(r.views), 90.0, p.text).key(k("views")))
+            .child(cell(score, 90.0, p.text).key(k("score"))));
     }
     c
 }
 
-fn waiting_card<H: Host>(h: &H, l: &Learning) -> El {
+fn waiting_card<H: Host>(h: &H, l: Lang, s: &Learning) -> El {
     let dark = h.dark();
     let p = pal(dark);
-    let mut c = card(dark, "learning/waiting", "Waiting for results");
+    let mut c = card(dark, "learning/waiting", &tr(l, "learning.waiting.title"));
     if h.panels().feedback.clip_id.is_some() {
         c = c.child(feedback::view(h));
     }
-    if l.waiting.is_empty() {
-        return c.child(text("No exported clips are waiting. Export a clip, post it, then come back to log how it did.").key("learning/waiting/empty").font(type_::BODY).color(p.muted).wrap());
+    if s.waiting.is_empty() {
+        return c.child(text(tr(l, "learning.waiting.empty")).key("learning/waiting/empty").font(type_::BODY).color(p.muted).wrap());
     }
-    for w in &l.waiting {
+    for w in &s.waiting {
         let (id, title) = (w.clip_id.clone(), w.title.clone());
         c = c.child(row().key(format!("learning/waiting/{}", w.clip_id)).role("listitem").label(w.title.as_str()).gap(10.0).items_center().w_full()
             .child(col().gap(2.0).grow(1.0).child(text(&w.title).font(type_::TITLE).color(p.text).wrap()).child(text(&w.video).font(type_::LABEL).color(p.muted).wrap()))
-            .child(btn(dark, format!("learning/log/{}", w.clip_id), "Log results", false, true, move |h: &mut H| feedback::open(h, &id, &title))));
+            .child(btn(dark, format!("learning/log/{}", w.clip_id), &tr(l, "learning.log"), false, true, move |h: &mut H| feedback::open(h, &id, &title))));
     }
     c
 }
 
 pub fn view<H: Host>(h: &H) -> El {
-    let dark = h.dark();
-    let l = &h.panels().learning;
-    let head = heading(dark, "learning/title", "Learning", "Tell Sorot how your posts did, and it scores the next clips by what worked.");
-    let body = match &l.load {
-        Load::Failed(why) => state_block::<H>(dark, "learning/failed", Kind::Error, "Could not read your results.", &format!("{why}. Try again."), Some(("learning/retry", "Try again", open::<H>))),
-        Load::Ready => col().gap(16.0).w_full().child(teach_card::<H>(dark, l)).child(results_card(dark, l)).child(waiting_card(h, l)),
-        _ => state_block::<H>(dark, "learning/loading", Kind::Loading, "Reading your results.", "This takes a moment.", None),
+    let (dark, l) = (h.dark(), h.lang());
+    let s = &h.panels().learning;
+    let head = heading(dark, "learning/title", &tr(l, "learning.title"), &tr(l, "learning.sub"));
+    let body = match &s.load {
+        Load::Failed(why) => state_block::<H>(dark, "learning/failed", Kind::Error, &tr(l, "learning.read-failed"), &trf(l, "state.try-again-after", &[("why", why)]), Some(("learning/retry", &tr(l, "state.retry"), open::<H>))),
+        Load::Ready => col().gap(16.0).w_full().child(teach_card::<H>(dark, l, s)).child(results_card(dark, l, s)).child(waiting_card(h, l, s)),
+        _ => state_block::<H>(dark, "learning/loading", Kind::Loading, &tr(l, "learning.reading"), &tr(l, "state.moment"), None),
     };
-    col().gap(20.0).padding(40.0).w_full().max_w(960.0).child(head).child(body)
+    page().child(head).child(body)
 }

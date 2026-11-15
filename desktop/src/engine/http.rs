@@ -245,6 +245,18 @@ impl Engine for HttpEngine {
     fn test_connection(&self, kind: &str) -> Result<ConnTest> {
         self.post(&format!("/api/settings/{kind}/test"), json!({}))
     }
+    fn kenari_models(&self, kind: &str) -> Result<Vec<KenariModel>> {
+        Ok(self.get::<KenariModelList>(&format!("/api/settings/{kind}/kenari-models"))?.models)
+    }
+    fn kenari_voice_models(&self) -> Result<Vec<KenariVoiceModel>> {
+        Ok(self.get::<KenariVoiceList>("/api/settings/voice/kenari-models")?.models)
+    }
+    fn kenari_account(&self) -> Result<Option<KenariAccount>> {
+        Ok(self.get::<KenariAccountOne>("/api/settings/llm/kenari-account")?.account)
+    }
+    fn probe_llm(&self, model: &str, api_key: &str) -> Result<ConnTest> {
+        self.post("/api/settings/llm/probe", json!({ "model": model, "apiKey": api_key }))
+    }
     fn generate_status(&self) -> Result<GenerateStatus> {
         self.get("/api/generate/status")
     }
@@ -268,6 +280,9 @@ impl Engine for HttpEngine {
     }
     fn clip_posts(&self, clip_id: &str) -> Result<Vec<SocialPost>> {
         Ok(self.get::<PostList>(&format!("/api/clips/{clip_id}/posts"))?.posts)
+    }
+    fn refresh_post(&self, id: &str) -> Result<SocialPost> {
+        Ok(self.post::<PostOne>(&format!("/api/social/posts/{id}/refresh"), json!({}))?.post)
     }
     fn retry_post(&self, id: &str) -> Result<SocialPost> {
         Ok(self.post::<PostOne>(&format!("/api/social/posts/{id}/retry"), json!({}))?.post)
@@ -349,6 +364,21 @@ mod tests {
             }
         });
         (base, seen)
+    }
+
+    /// The Kenari, probe and refresh routes: the path, the method and the body each one sends.
+    #[test]
+    fn the_kenari_probe_and_refresh_routes_send_what_the_engine_expects() {
+        let (base, seen) = stub(200, r#"{"status":"ok","data":{"models":[],"account":null,"ok":true,"ms":1,"post":{"id":"p","clipId":"c","status":"X"}}}"#);
+        let api = HttpEngine::new(base, None);
+        assert!(api.kenari_models("image").unwrap().is_empty() && api.kenari_voice_models().unwrap().is_empty() && api.kenari_account().unwrap().is_none());
+        assert!(api.probe_llm("m", "k").unwrap().ok);
+        assert_eq!(api.refresh_post("p").unwrap().id, "p");
+        let sent: Vec<_> = seen.lock().unwrap().iter().map(|(m, p, _)| format!("{m} {p}")).collect();
+        assert_eq!(sent, [
+            "GET /api/settings/image/kenari-models ", "GET /api/settings/voice/kenari-models ", "GET /api/settings/llm/kenari-account ",
+            r#"POST /api/settings/llm/probe {"apiKey":"k","model":"m"}"#, "POST /api/social/posts/p/refresh {}",
+        ]);
     }
 
     #[test]

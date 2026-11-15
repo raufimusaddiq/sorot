@@ -42,9 +42,19 @@ pub trait Host: 'static {
     fn panels(&self) -> &Panels;
     fn panels_mut(&mut self) -> &mut Panels;
     fn dark(&self) -> bool;
+    /// The language of every string on the screen.
+    fn lang(&self) -> crate::i18n::Lang {
+        crate::i18n::Lang::default()
+    }
     fn engine(&self) -> Option<Arc<dyn Engine>>;
     /// Runs `work` against the engine off the UI thread (inline in a test) and applies its answer.
     fn run(&mut self, work: Work);
+    /// The account ids picked in Publish last time.
+    fn remembered(&self) -> Vec<String>;
+    /// Keeps the account ids picked in Publish for next time.
+    fn remember(&mut self, ids: &[String]);
+    /// Opens a web address in the browser.
+    fn open_url(&mut self, url: &str) -> Result<(), String>;
     /// Goes to a page and reads what it shows.
     fn show(&mut self, page: Page);
     /// Shows a file in the system file manager (a host with none does nothing).
