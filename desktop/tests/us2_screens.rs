@@ -1,6 +1,5 @@
 //! L2 for User Story 2: home, job, clips, editor, export and notifications, in process against fakes.
 
-mod support;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,7 +9,7 @@ use sorot_desktop::app::*;
 use sorot_desktop::engine::{EngineError, fake::stage_script};
 use sorot_desktop_core::model::{Job, JobDetail, JobStage};
 use sorot_desktop::i18n::{Lang, tr, trf};
-use support::*;
+use crate::support::*;
 
 fn has(rt: &Runtime<State>, key: &str) -> bool {
     rt.find(key).is_some()

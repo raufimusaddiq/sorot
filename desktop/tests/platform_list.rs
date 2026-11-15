@@ -44,6 +44,21 @@ fn the_platform_folder_matches_the_list() {
 }
 
 #[test]
+fn every_test_file_is_a_module_of_the_suite() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let suite = fs::read_to_string(dir.join("suite.rs")).unwrap();
+    let mut loose = Vec::new();
+    for entry in fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        if path.extension().is_some_and(|x| x == "rs") && name != "suite" && !suite.contains(&format!("mod {name};")) {
+            loose.push(name);
+        }
+    }
+    assert_eq!(loose, Vec::<String>::new(), "add `mod <name>;` to tests/suite.rs, or the file never runs");
+}
+
+#[test]
 fn the_check_catches_each_kind_of_drift() {
     let root = std::env::temp_dir().join(format!("sorot-platform-list-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);

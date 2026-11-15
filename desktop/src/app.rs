@@ -31,7 +31,9 @@ use crate::screens::clips::ClipsScreen;
 use crate::screens::editor::Editor;
 use crate::screens::home::{Home, HomeError};
 use crate::screens::job::JobScreen;
-use crate::screens::panels::{Apply, Host, Page, Panels, Work};
+use crate::screens::panels::{Apply, Host, Panels, Work};
+#[cfg(any(test, feature = "headless", debug_assertions))]
+use crate::screens::panels::Page;
 use crate::screens::settings::{connections, generate};
 use crate::screens::{clips, discover, editor, home, job, learning, publish, readiness, shell, welcome};
 use crate::ui::kit::pal;
@@ -980,6 +982,7 @@ impl State {
 /// holds the list equal to the folders.
 pub type Scene = (&'static str, fn(&mut State));
 
+#[cfg(any(test, feature = "headless", debug_assertions))]
 pub const SCENES: &[Scene] = &[
     ("home-empty", |s| *s = State::scene("home-empty")),
     ("readiness-missing", |s| *s = State::scene("readiness-missing")),
@@ -1029,6 +1032,10 @@ pub const SCENES: &[Scene] = &[
         publish::write_copy(s);
     }),
 ];
+
+/// A release build without `headless` has no scenes (they are played by `FakeEngine`).
+#[cfg(not(any(test, feature = "headless", debug_assertions)))]
+pub const SCENES: &[Scene] = &[];
 
 pub fn spec() -> AppSpec<State> {
     AppSpec {
@@ -1112,9 +1119,12 @@ pub fn run(live: fn() -> Live) {
     }).on_quit(|s: &mut State, _| s.quit()).on_focus(|s: &mut State, focused, _| s.focused = focused);
     let handle = app.handle();
     // Rune knows it is headless only once `run` has started, so the choice is made in `init`.
-    app.init(move || match rune::tooling::headless_run() {
-        Some(_) => State::scene("home-empty"),
-        None => start_live(handle, live()),
+    app.init(move || {
+        #[cfg(any(test, feature = "headless", debug_assertions))]
+        if rune::tooling::headless_run().is_some() {
+            return State::scene("home-empty");
+        }
+        start_live(handle, live())
     })
     .run();
 }

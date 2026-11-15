@@ -2,7 +2,6 @@
 //! the engine reports, a finished stage rings once, selecting and re-ranking clips settle without
 //! snapping, flashing or changing twice.
 
-mod support;
 
 use rune::motion_gate::{self, AllowRow, Job, Run};
 use rune::{Env, Runtime};

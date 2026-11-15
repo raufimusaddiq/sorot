@@ -1,9 +1,8 @@
 //! L2: the rail and the Settings tabs open the panel screens inside the real app state.
 
-mod support;
 
 use sorot_desktop::app::Route;
-use support::*;
+use crate::support::*;
 
 #[test]
 fn the_rail_and_tabs_open_each_panel_screen_and_read_the_engine() {

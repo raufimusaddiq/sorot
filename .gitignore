@@ -69,3 +69,6 @@ $RECYCLE.BIN/
 # === Windows native install (scripts/install.ps1) ===
 .env.native
 .tools/
+
+# rig workers: shared cargo target dir, worktrees, db
+.rig/

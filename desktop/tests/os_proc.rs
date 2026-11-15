@@ -33,7 +33,7 @@ fn helper() {
 fn launch(mode: &str) -> Launch {
     Launch {
         program: std::env::current_exe().unwrap(),
-        args: ["--exact", "helper", "--nocapture", "--test-threads=1"].map(String::from).to_vec(),
+        args: ["--exact", "os_proc::helper", "--nocapture", "--test-threads=1"].map(String::from).to_vec(),
         env: vec![("SOROT_HELPER".into(), mode.into())],
     }
 }

@@ -1,11 +1,10 @@
 //! Accessibility on every screen: each interactive node has a role and a name, verdict marks speak
 //! their word, and focus order follows the reading order.
 
-mod support;
 
 use serde_json::Value;
 use sorot_desktop::app::SCENES;
-use support::*;
+use crate::support::*;
 
 fn interactive<'a>(node: &'a Value, out: &mut Vec<&'a Value>) {
     if node["actions"].as_array().is_some_and(|a| a.iter().any(|x| x == "click" || x == "focus")) {
