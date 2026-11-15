@@ -356,6 +356,8 @@ pub fn spec() -> AppSpec<State> {
     AppSpec {
         scenes: SCENES,
         min_size: Some((720.0, 480.0)),
+        fonts: &[include_bytes!("../assets/fonts/InstrumentSans.ttf")],
+        families: ("Instrument Sans", "monospace"),
         poll: Some(|s: &mut State, t: f64, _: &mut Tx| s.tick(t)),
         ..AppSpec::new("Sorot", (1100.0, 720.0), State::default, view)
     }
@@ -394,4 +396,21 @@ pub fn run(supervisor: fn() -> Supervisor) {
         None => start_live(handle, supervisor()),
     })
     .run();
+}
+
+/// The generated theme (`theme/sorot.json`) in both appearances.
+pub const THEME_JSON: &str = include_str!("../theme/sorot.json");
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+
+    #[test]
+    fn generated_theme_loads_in_both_modes() {
+        for dark in [true, false] {
+            let t = rune::Theme::from_json(THEME_JSON, dark).unwrap();
+            assert_eq!(t.num("space-16"), 16.0);
+            t.color("beam");
+        }
+    }
 }

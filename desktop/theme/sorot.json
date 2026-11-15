@@ -1,0 +1,50 @@
+{
+  "blend": {
+    "mode": "srgb",
+    "over": "bg"
+  },
+  "dark": {
+    "beam": "#f0b44c",
+    "beamText": "#f0b44c",
+    "bg": "#0e0f11",
+    "divider": "#2a2e33",
+    "edge": "#7a818a",
+    "muted": "#a39e95",
+    "pass": "#6fbf8e",
+    "raised": "#1e2125",
+    "review": "#7fa3b8",
+    "skip": "#e07a68",
+    "steel": "#7fa3b8",
+    "surface": "#16181b",
+    "text": "#ece8e1"
+  },
+  "font": "Instrument Sans",
+  "light": {
+    "beam": "#f0b44c",
+    "beamText": "#8a5600",
+    "bg": "#f4f1ea",
+    "divider": "#dad4c8",
+    "edge": "#857e71",
+    "muted": "#5c5850",
+    "pass": "#2e7a4e",
+    "raised": "#ffffff",
+    "review": "#3f6478",
+    "skip": "#b2412f",
+    "steel": "#3f6478",
+    "surface": "#fbf9f4",
+    "text": "#17191c"
+  },
+  "name": "Sorot",
+  "numbers": {
+    "radius-10": 10.0,
+    "radius-2": 2.0,
+    "radius-6": 6.0,
+    "space-12": 12.0,
+    "space-16": 16.0,
+    "space-24": 24.0,
+    "space-4": 4.0,
+    "space-40": 40.0,
+    "space-64": 64.0,
+    "space-8": 8.0
+  }
+}

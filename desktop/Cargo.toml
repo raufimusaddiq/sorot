@@ -9,6 +9,11 @@ edition = "2024"
 license = "MIT"
 publish = false
 
+[package.metadata.packager]
+product-name = "Sorot"
+identifier = "io.github.raufimusaddiq.sorot"
+icons = ["assets/icon/icon.icns", "assets/icon/icon.ico", "assets/icon/icon-512.png"]
+
 [features]
 # Agent tooling (--snap, --tree, --script) in release builds too; debug builds always have it.
 # Release installers build without it.
@@ -36,6 +41,9 @@ parley_engine = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6
 wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
 accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
 accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
+
+[build-dependencies]
+sorot-desktop-core = { path = "core" }
 
 [dev-dependencies]
 tiny_http = "0.12.0"

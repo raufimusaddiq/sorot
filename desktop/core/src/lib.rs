@@ -15,6 +15,7 @@ pub mod clips;
 pub mod cache;
 pub mod av_clock;
 pub mod contrast;
+pub mod theme_gen;
 pub mod prefs;
 pub mod window;
 pub mod palette_search;
