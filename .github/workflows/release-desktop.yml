@@ -1,0 +1,144 @@
+# Builds the desktop installers (the only place they come from). Runs when a GitHub release is
+# published, or by hand (Actions -> Release desktop -> Run workflow). Per OS:
+#   Windows -> NSIS setup .exe | macOS -> .app + .dmg | Linux -> AppImage + .deb
+# Each installer is minisign-signed by cargo-packager, then a final job writes latest.json (what
+# the app's updater reads), signs it too, and attaches everything to the release. A manual run
+# keeps the files as workflow artifacts and attaches nothing.
+# Secrets: CARGO_PACKAGER_SIGN_PRIVATE_KEY (+ _PASSWORD) is the minisign key; the matching public
+# key is the repository variable SOROT_UPDATE_PUBKEY, compiled into the app.
+name: Release desktop
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+env:
+  UV_VERSION: "0.8.22"
+  SOROT_UPDATE_PUBKEY: ${{ vars.SOROT_UPDATE_PUBKEY }}
+
+jobs:
+  installers:
+    name: Installers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x86_64
+            formats: nsis
+            uv: x86_64-pc-windows-msvc
+            exe: ".exe"
+          - os: macos-14
+            target: darwin-aarch64
+            formats: app,dmg
+            uv: aarch64-apple-darwin
+            exe: ""
+          - os: ubuntu-24.04
+            target: linux-x86_64
+            formats: appimage,deb
+            uv: x86_64-unknown-linux-gnu
+            exe: ""
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libxkbcommon-dev libwayland-dev libxkbcommon-x11-0 libfuse2 desktop-file-utils
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Rust toolchain (desktop/rust-toolchain.toml)
+        working-directory: desktop
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-packager
+      - name: Resources (engine, ai-pipeline, generator, uv)
+        run: |
+          mkdir -p desktop/resources
+          bun build --compile backend/src/index.ts --outfile "desktop/resources/sorot-engine${{ matrix.exe }}"
+          rsync -a --exclude '.venv' --exclude '__pycache__' --exclude 'tests' ai-pipeline/ desktop/resources/ai-pipeline/
+          rsync -a --exclude 'node_modules' generator/ desktop/resources/generator/
+          base="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
+          if [ "${{ runner.os }}" = Windows ]; then
+            curl -fsSL "$base/uv-${{ matrix.uv }}.zip" -o uv.zip && unzip -j uv.zip uv.exe -d desktop/resources
+          else
+            curl -fsSL "$base/uv-${{ matrix.uv }}.tar.gz" | tar -xz --strip-components=1 -C desktop/resources "uv-${{ matrix.uv }}/uv"
+          fi
+      - name: Build the app (release, no tooling features)
+        working-directory: desktop
+        run: cargo build --release
+      - name: Package and sign
+        working-directory: desktop
+        env:
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
+        run: cargo packager --release --formats "${{ matrix.formats }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.target }}
+          path: |
+            desktop/target/packager/*
+            !desktop/target/packager/**/*.dir
+          if-no-files-found: error
+
+  manifest:
+    name: latest.json and release upload
+    needs: installers
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: installers-*
+          path: dist
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-packager
+      - name: Write and sign latest.json
+        env:
+          TAG: ${{ github.event.release.tag_name || format('v0.0.0-{0}', github.run_number) }}
+          REPO: ${{ github.repository }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          url() { echo "https://github.com/$REPO/releases/download/$TAG/$(basename "$1")"; }
+          # One installer per platform is the updatable one; its .sig sits next to it.
+          pick() { find dist/installers-"$1" -name "$2" | head -1; }
+          win="$(pick windows-x86_64 '*-setup.exe')"
+          mac="$(pick darwin-aarch64 '*.app.tar.gz')"
+          lin="$(pick linux-x86_64 '*.AppImage')"
+          platform() { jq -n --arg url "$(url "$2")" --arg sig "$(cat "$2.sig")" --arg format "$3" '{url:$url, signature:$sig, format:$format}'; }
+          jq -n --arg version "${TAG#v}" --arg notes "See the release page." --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson win "$(platform windows-x86_64 "$win" nsis)" \
+            --argjson mac "$(platform darwin-aarch64 "$mac" app)" \
+            --argjson lin "$(platform linux-x86_64 "$lin" appimage)" \
+            '{version:$version, notes:$notes, pub_date:$date, platforms:{"windows-x86_64":$win, "macos-aarch64":$mac, "linux-x86_64":$lin}}' > latest.json
+          cargo packager signer sign latest.json
+          cat latest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: latest-json
+          path: |
+            latest.json
+            latest.json.sig
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" latest.json latest.json.sig $(find dist -type f \( -name '*-setup.exe*' -o -name '*.dmg' -o -name '*.app.tar.gz*' -o -name '*.AppImage*' -o -name '*.deb' \)) --clobber

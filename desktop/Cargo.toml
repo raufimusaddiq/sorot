@@ -12,7 +12,36 @@ publish = false
 [package.metadata.packager]
 product-name = "Sorot"
 identifier = "io.github.raufimusaddiq.sorot"
+description = "YouTube and local video to 9:16 clips with subtitles"
+authors = ["Raufi Musaddiq"]
+license-file = "../LICENSE"
+formats = ["nsis", "app", "dmg", "appimage", "deb"]
+out-dir = "target/packager"
+binaries-dir = "target/release"
+binaries = [{ path = "sorot-desktop", main = true }]
 icons = ["assets/icon/icon.icns", "assets/icon/icon.ico", "assets/icon/icon-512.png"]
+# release-desktop.yml puts the compiled engine, ai-pipeline/, generator/ and uv into resources/ first.
+resources = ["resources/sorot-engine*", "resources/ai-pipeline", "resources/generator", "resources/uv*"]
+
+# "Open with": CFBundleDocumentTypes on macOS, file associations on Windows, MimeType on Linux.
+[[package.metadata.packager.file-associations]]
+extensions = ["mp4", "m4v", "mov", "mkv", "webm", "avi"]
+mime-type = "video/*"
+name = "Video"
+role = "viewer"
+
+[package.metadata.packager.nsis]
+installer-icon = "assets/icon/icon.ico"
+install-mode = "currentUser"
+
+[package.metadata.packager.macos]
+minimum-system-version = "12.0"
+
+[package.metadata.packager.deb]
+desktop-template = "packaging/sorot.desktop"
+
+[package.metadata.packager.appimage]
+# AppImage builds its desktop entry from the same template as the deb.
 
 [features]
 # Agent tooling (--snap, --tree, --script) in release builds too; debug builds always have it.
@@ -32,6 +61,10 @@ getrandom = "0.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2"
+minisign-verify = "0.2"
+base64 = "0.22"
+cargo-packager-updater = { version = "0.2", default-features = false, features = ["rustls-tls"] }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 
 # A dependency's [patch] does not apply here, so each crate Rune patches is patched again
 # (same rev as the dependencies above; see RUNE.md).

@@ -2,10 +2,12 @@
 //! the engine's HTTP API says (constitution I, V).
 
 pub mod app;
+pub mod diagnostics;
 pub mod engine;
 pub mod library;
 pub mod screens;
 pub mod ui;
+pub mod update;
 pub mod workspace;
 
 use std::path::PathBuf;
@@ -42,6 +44,10 @@ pub mod platform {
     pub mod open_documents_macos;
     #[path = "gpu_probe.rs"]
     pub mod gpu_probe;
+    #[path = "updater_feed.rs"]
+    pub mod updater_feed;
+    #[path = "save_dialog.rs"]
+    pub mod save_dialog;
 }
 
 /// Where the engine and its tools are, from the environment (`SOROT_ENGINE`, `SOROT_ENGINE_ARGS`,

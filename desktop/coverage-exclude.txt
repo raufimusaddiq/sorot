@@ -7,3 +7,5 @@ src/platform/taskbar_windows.rs
 src/platform/window_state.rs
 src/platform/open_documents_macos.rs
 src/platform/gpu_probe.rs
+src/platform/updater_feed.rs
+src/platform/save_dialog.rs
