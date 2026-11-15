@@ -304,6 +304,26 @@ impl Engine for FakeEngine {
         self.load("test", r#"{"status":"ok","data":{"ok":true,"ms":120,"model":"m","detail":"OK"}}"#)
     }
 
+    fn kenari_models(&self, kind: &str) -> Result<Vec<KenariModel>> {
+        self.enter(format!("kenari_models({kind})"), "kenari_models")?;
+        Ok(self.load::<KenariModelList>(&format!("kenari-{kind}-models"), r#"{"status":"ok","data":{"models":[]}}"#)?.models)
+    }
+
+    fn kenari_voice_models(&self) -> Result<Vec<KenariVoiceModel>> {
+        self.enter("kenari_voice_models".into(), "kenari_voice_models")?;
+        Ok(self.load::<KenariVoiceList>("kenari-voice-models", r#"{"status":"ok","data":{"models":[]}}"#)?.models)
+    }
+
+    fn kenari_account(&self) -> Result<Option<KenariAccount>> {
+        self.enter("kenari_account".into(), "kenari_account")?;
+        Ok(self.load::<KenariAccountOne>("kenari-account", r#"{"status":"ok","data":{"account":null}}"#)?.account)
+    }
+
+    fn probe_llm(&self, model: &str, api_key: &str) -> Result<ConnTest> {
+        self.enter(format!("probe_llm({model}, {api_key})"), "probe_llm")?;
+        self.load("probe", r#"{"status":"ok","data":{"ok":true,"ms":90,"model":"m"}}"#)
+    }
+
     fn generate_status(&self) -> Result<GenerateStatus> {
         self.enter("generate_status".into(), "generate_status")?;
         self.load("generate-status", r#"{"status":"error","error":"no Generate status in this scene"}"#)
@@ -340,6 +360,11 @@ impl Engine for FakeEngine {
     fn clip_posts(&self, clip_id: &str) -> Result<Vec<SocialPost>> {
         self.enter(format!("clip_posts({clip_id})"), "clip_posts")?;
         Ok(self.load::<PostList>("posts", r#"{"status":"ok","data":{"posts":[]}}"#)?.posts)
+    }
+
+    fn refresh_post(&self, id: &str) -> Result<SocialPost> {
+        self.enter(format!("refresh_post({id})"), "refresh_post")?;
+        self.load::<PostOne>("post", r#"{"status":"error","error":"no post in this scene"}"#).map(|p| p.post)
     }
 
     fn retry_post(&self, id: &str) -> Result<SocialPost> {
@@ -517,6 +542,8 @@ pub struct RecordReveal {
     pub shown: Mutex<Vec<PathBuf>>,
     /// Files opened in the video player rather than shown in a folder.
     pub opened: Mutex<Vec<PathBuf>>,
+    /// Web addresses opened in the browser.
+    pub urls: Mutex<Vec<String>>,
 }
 
 impl crate::platform::reveal::Reveal for RecordReveal {
@@ -533,6 +560,11 @@ impl crate::platform::reveal::Reveal for RecordReveal {
 
     fn open(&self, path: &Path) -> std::result::Result<(), String> {
         self.opened.lock().unwrap().push(path.to_path_buf());
+        Ok(())
+    }
+
+    fn open_url(&self, url: &str) -> std::result::Result<(), String> {
+        self.urls.lock().unwrap().push(url.into());
         Ok(())
     }
 }

@@ -1,9 +1,10 @@
 //! The few form controls the panel screens share, generic over the host state so a screen's own
 //! tests can run without the whole app. Every control is keyed and has a role and a name.
 
-use rune::tok::type_;
+use rune::tok::{TextStyle, type_};
 use rune::{Color, El, TextEdit, col, row, text, text_input};
 
+use crate::i18n::{Lang, tr};
 use crate::ui::kit::pal;
 
 /// A labelled button. A disabled one keeps its place and name but does nothing.
@@ -44,9 +45,9 @@ where
 }
 
 /// An on/off choice (role `checkbox`).
-pub fn toggle<H: 'static>(dark: bool, key: &str, label: &str, on: bool, f: impl Fn(&mut H) + 'static) -> El {
+pub fn toggle<H: 'static>(dark: bool, l: Lang, key: &str, label: &str, on: bool, f: impl Fn(&mut H) + 'static) -> El {
     let p = pal(dark);
-    let mark = if on { "On" } else { "Off" };
+    let mark = tr(l, if on { "toggle.on" } else { "toggle.off" });
     row().key(key).role("checkbox").label(label).checked(on).focusable(true).gap(10.0).items_center().on_press(f)
         .child(text(mark).font(type_::LABEL).color(if on { p.beam_text } else { p.muted }))
         .child(text(label).font(type_::BODY).color(p.text).wrap())
@@ -67,9 +68,17 @@ pub fn card(dark: bool, key: &str, title: &str) -> El {
         .child(text(title).font(type_::TITLE).color(p.text))
 }
 
+/// The 28 pt title every frame opens with.
+pub const DISPLAY: TextStyle = TextStyle::new(28.0, 600.0);
+
+/// A screen's column: the frames: 104 pt from the window edge, so 40 pt beside the 64 pt rail.
+pub fn page() -> El {
+    col().gap(20.0).px(40.0).py(40.0).w_full().max_w(1280.0)
+}
+
 pub fn heading(dark: bool, key: &str, title: &str, sub: &str) -> El {
     let p = pal(dark);
-    col().gap(4.0).child(text(title).key(key).role("heading").level(1).font(type_::TITLE).color(p.text))
+    col().gap(4.0).child(text(title).key(key).role("heading").level(1).font(DISPLAY).color(p.text))
         .child(text(sub).font(type_::BODY).color(p.muted).wrap())
 }
 

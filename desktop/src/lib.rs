@@ -7,6 +7,7 @@ pub mod engine;
 pub mod i18n;
 pub mod library;
 pub mod preview;
+pub mod remembered;
 pub mod screens;
 pub mod ui;
 pub mod update;
