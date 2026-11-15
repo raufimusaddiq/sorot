@@ -1,0 +1,5 @@
+{"events": [
+  {"t": 0.2, "type": "tap", "key": "home/choose-file"},
+  {"t": 0.5, "type": "file-dialog", "path": "C:/videos/talk.mkv"},
+  {"t": 1.0, "type": "mark", "name": "end"}
+]}

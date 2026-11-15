@@ -241,11 +241,11 @@ fn the_fake_engine_answers_every_route_from_its_scene() {
     assert_eq!(fake.fix_readiness("gpu").unwrap().task_id, "task-gpu");
     assert!(fake.settings().is_err() && fake.job("j").is_err(), "this scene has no settings or job");
     assert!(fake.videos().unwrap().is_empty() && fake.jobs().unwrap().is_empty() && fake.clips("v").unwrap().is_empty());
-    assert_eq!(fake.import_url("u").unwrap().video_id, "vnew");
-    assert_eq!(fake.process("v").unwrap().status, "QUEUED");
+    let req = sorot_desktop::engine::ImportRequest { source: sorot_desktop::engine::Source::Url("u".into()), direction: String::new(), options: Default::default() };
+    assert_eq!(fake.import(&req).unwrap().job_id, "jnew");
     assert_eq!(fake.cancel_job("j").unwrap().status, "CANCELLED");
     assert_eq!(fake.retry_job("j").unwrap().status, "QUEUED");
-    assert_eq!(fake.calls().len(), 12);
+    assert_eq!(fake.calls().len(), 11);
 
     // Scripted progress: each readiness call answers the next step.
     let step = |pct: u8| {

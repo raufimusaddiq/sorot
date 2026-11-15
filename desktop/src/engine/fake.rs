@@ -12,7 +12,10 @@ use serde::de::DeserializeOwned;
 use sorot_desktop_core::model::*;
 
 use super::sidecar::{Clock, Launch, Out, Proc, Spawn};
-use super::{Engine, EngineError, Result};
+use sorot_desktop_core::clips::Options;
+use sorot_desktop_core::job::STAGE_ORDER;
+
+use super::{EditOptions, Engine, EngineError, ImportRequest, Result, Source, Started};
 
 /// Where the scenes live.
 pub fn scenes_dir() -> PathBuf {
@@ -40,6 +43,41 @@ struct Inner {
     readiness: Option<Readiness>,
     /// Items whose fix was asked for, and how many readiness calls came since.
     fixing: HashMap<String, u8>,
+    /// Each `job` call after an import answers the next step; the last one repeats.
+    job_steps: VecDeque<JobDetail>,
+    job: Option<JobDetail>,
+    imported: bool,
+}
+
+/// What the engine shows while one job walks every stage: each stage reports `PROGRESS` (50%),
+/// then finishes; the last step is the completed job.
+pub fn stage_script(job_id: &str, video_id: &str) -> Vec<JobDetail> {
+    let stage = |i: usize, status: &str, out: Option<String>| JobStage {
+        id: format!("s{i}"), job_id: job_id.into(), stage: STAGE_ORDER[i].into(), status: status.into(),
+        started_at: None, completed_at: None, output_path: out,
+    };
+    let detail = |status: &str, current: Option<usize>, stages: Vec<JobStage>| JobDetail {
+        job: Job {
+            id: job_id.into(), video_id: video_id.into(), status: status.into(), current_stage: current.map(|i| STAGE_ORDER[i].to_string()),
+            error_message: None, created_at: String::new(), updated_at: String::new(),
+        },
+        stages,
+    };
+    let mut steps = vec![detail("QUEUED", None, (0..STAGE_ORDER.len()).map(|i| stage(i, "PENDING", None)).collect())];
+    for active in 0..STAGE_ORDER.len() {
+        for percent in [Some(50), None] {
+            let stages = (0..STAGE_ORDER.len())
+                .map(|i| match i.cmp(&active) {
+                    std::cmp::Ordering::Less => stage(i, "COMPLETED", None),
+                    std::cmp::Ordering::Equal => stage(i, "IN_PROGRESS", percent.map(|p| format!("Working {p}%"))),
+                    std::cmp::Ordering::Greater => stage(i, "PENDING", None),
+                })
+                .collect();
+            steps.push(detail("RUNNING", Some(active), stages));
+        }
+    }
+    steps.push(detail("COMPLETED", None, (0..STAGE_ORDER.len()).map(|i| stage(i, "COMPLETED", None)).collect()));
+    steps
 }
 
 pub struct FakeEngine {
@@ -69,6 +107,12 @@ impl FakeEngine {
     /// The next call of `method` fails with `error`, then the one after succeeds.
     pub fn fail_once(&self, method: &str, error: EngineError) {
         self.inner.lock().unwrap().fail.insert(method.into(), error);
+    }
+
+    /// Each `job` call answers the next step; the last one repeats.
+    pub fn job_steps(&self, steps: Vec<JobDetail>) {
+        let mut i = self.inner.lock().unwrap();
+        (i.job_steps, i.job) = (steps.into(), None);
     }
 
     /// Each readiness call answers the next step; the last one repeats.
@@ -137,16 +181,36 @@ impl Engine for FakeEngine {
 
     fn videos(&self) -> Result<Vec<Video>> {
         self.enter("videos".into(), "videos")?;
-        Ok(self.load::<VideoList>("videos", r#"{"status":"ok","data":{"videos":[]}}"#)?.videos)
+        let mut videos = self.load::<VideoList>("videos", r#"{"status":"ok","data":{"videos":[]}}"#)?.videos;
+        if self.inner.lock().unwrap().imported {
+            videos.push(Video { id: "vnew".into(), source_type: "LOCAL".into(), source_url: None, title: Some("Imported".into()), file_path: None, created_at: String::new() });
+        }
+        Ok(videos)
     }
 
     fn jobs(&self) -> Result<Vec<Job>> {
         self.enter("jobs".into(), "jobs")?;
-        Ok(self.load::<JobList>("jobs", r#"{"status":"ok","data":{"jobs":[]}}"#)?.jobs)
+        let mut jobs = self.load::<JobList>("jobs", r#"{"status":"ok","data":{"jobs":[]}}"#)?.jobs;
+        let i = self.inner.lock().unwrap();
+        if let (true, Some(d)) = (i.imported, i.job.as_ref().or(i.job_steps.front())) {
+            jobs.push(d.job.clone());
+        }
+        Ok(jobs)
     }
 
     fn job(&self, id: &str) -> Result<JobDetail> {
         self.enter(format!("job({id})"), "job")?;
+        {
+            let mut i = self.inner.lock().unwrap();
+            if i.imported {
+                if let Some(next) = i.job_steps.pop_front() {
+                    i.job = Some(next);
+                }
+                if let Some(d) = i.job.clone().filter(|d| d.job.id == id) {
+                    return Ok(d);
+                }
+            }
+        }
         self.load("job", r#"{"status":"error","error":"Job not found"}"#)
     }
 
@@ -155,14 +219,54 @@ impl Engine for FakeEngine {
         Ok(self.load::<ClipList>("clips", r#"{"status":"ok","data":{"clips":[]}}"#)?.clips)
     }
 
-    fn import_url(&self, url: &str) -> Result<Imported> {
-        self.enter(format!("import_url({url})"), "import_url")?;
-        Ok(Imported { video_id: "vnew".into(), source_type: "YOUTUBE".into() })
+    fn import(&self, req: &ImportRequest) -> Result<Started> {
+        let what = match &req.source {
+            Source::Url(u) => u.clone(),
+            Source::File(p) => format!("file:{}", p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+        };
+        let options = if req.options.is_empty() { String::new() } else { format!("|{}", serde_json::Value::Object(req.options.clone())) };
+        self.enter(format!("import({what}|{}{options})", req.direction), "import")?;
+        let mut i = self.inner.lock().unwrap();
+        i.imported = true;
+        if i.job_steps.is_empty() && i.job.is_none() {
+            i.job_steps = stage_script("jnew", "vnew").into();
+        }
+        Ok(Started { video_id: "vnew".into(), job_id: "jnew".into() })
     }
 
-    fn process(&self, video_id: &str) -> Result<JobRef> {
-        self.enter(format!("process({video_id})"), "process")?;
-        Ok(JobRef { job_id: "jnew".into(), status: "QUEUED".into() })
+    fn options(&self) -> Result<EditOptions> {
+        self.enter("options".into(), "options")?;
+        self.load("options", r#"{"status":"ok","data":{"styles":["karaoke","plain"],"reframeModes":["face","center"],"defaults":{"style":"karaoke","reframe":"face","silenceTrim":false,"hookFirst":false,"bgm":""}}}"#)
+    }
+
+    fn music(&self) -> Result<Vec<String>> {
+        self.enter("music".into(), "music")?;
+        #[derive(serde::Deserialize)]
+        struct Tracks {
+            tracks: Vec<String>,
+        }
+        Ok(self.load::<Tracks>("music", r#"{"status":"ok","data":{"tracks":[]}}"#)?.tracks)
+    }
+
+    fn rerender(&self, clip_id: &str, delta: &Options) -> Result<Clip> {
+        self.enter(format!("rerender({clip_id}|{})", serde_json::Value::Object(delta.clone())), "rerender")?;
+        let clips = self.load::<ClipList>("clips", r#"{"status":"ok","data":{"clips":[]}}"#)?.clips;
+        clips.into_iter().find(|c| c.id == clip_id).ok_or(EngineError::Api { status: 404, message: "Clip not found".into() })
+    }
+
+    fn export(&self, clip_id: &str) -> Result<String> {
+        self.enter(format!("export({clip_id})"), "export")?;
+        Ok(format!("/exports/{clip_id}_final.mp4"))
+    }
+
+    fn download_preview(&self, clip_id: &str, dest: &Path) -> Result<u64> {
+        self.enter(format!("download_preview({clip_id})"), "download_preview")?;
+        write_fake(dest)
+    }
+
+    fn download_export(&self, clip_id: &str, dest: &Path) -> Result<u64> {
+        self.enter(format!("download_export({clip_id})"), "download_export")?;
+        write_fake(dest)
     }
 
     fn cancel_job(&self, id: &str) -> Result<JobRef> {
@@ -173,6 +277,14 @@ impl Engine for FakeEngine {
     fn retry_job(&self, id: &str) -> Result<JobRef> {
         self.enter(format!("retry_job({id})"), "retry_job")?;
         Ok(JobRef { job_id: id.into(), status: "QUEUED".into() })
+    }
+}
+
+fn write_fake(dest: &Path) -> Result<u64> {
+    const BYTES: &[u8] = b"fake-mp4";
+    match std::fs::write(dest, BYTES) {
+        Ok(()) => Ok(BYTES.len() as u64),
+        Err(e) => Err(EngineError::Network(e.to_string())),
     }
 }
 
@@ -269,5 +381,42 @@ impl Spawn for FakeSpawn {
             Some(p) => Ok(Box::new(p)),
             None => Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no engine binary")),
         }
+    }
+}
+
+/// Remembers every path it was asked to show; with `SOROT_REVEAL_LOG` set (headless journeys) it
+/// appends each path to that file too, so a binary-only test can see the call.
+#[derive(Default)]
+pub struct RecordReveal {
+    pub shown: Mutex<Vec<PathBuf>>,
+}
+
+impl crate::platform::reveal::Reveal for RecordReveal {
+    fn reveal(&self, path: &Path) -> std::result::Result<(), String> {
+        self.shown.lock().unwrap().push(path.to_path_buf());
+        if let Ok(log) = std::env::var("SOROT_REVEAL_LOG") {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log) {
+                let _ = writeln!(f, "{}", path.display());
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Remembers every notification: `(job id, title, body)`.
+#[derive(Default)]
+pub struct RecordNotifier {
+    pub sent: Mutex<Vec<(String, String, String)>>,
+    pub clicked: Mutex<Option<crate::app::ClickFn>>,
+}
+
+impl crate::app::Notifier for RecordNotifier {
+    fn notify(&self, job_id: &str, title: &str, body: &str) {
+        self.sent.lock().unwrap().push((job_id.into(), title.into(), body.into()));
+    }
+
+    fn on_click(&self, f: crate::app::ClickFn) {
+        *self.clicked.lock().unwrap() = Some(f);
     }
 }

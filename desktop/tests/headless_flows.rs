@@ -45,3 +45,25 @@ fn the_scenes_are_listed_and_render_in_both_themes() {
         let _ = std::fs::remove_file(png);
     }
 }
+
+/// US2 journeys, binary only: the screen reached at each mark, and the one reveal call at the end.
+/// Per-control calls are L2.
+#[test]
+fn the_us2_journeys_reach_their_screens() {
+    let at = |script: &str, mark: &str, log: &std::path::Path| run_at("home-empty", Some(script), mark, &[], &[("SOROT_REVEAL_LOG", log)]);
+    let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
+
+    let log = temp_dir().join("reveal.log");
+    for (mark, shown, absent) in [("job", "job/progress", "home/drop"), ("clips", "clips/list", "job/progress"), ("second", "clips/row/c1", "home/drop"), ("end", "clips/reveal", "job/progress")] {
+        let tree = at("us2-drop-to-export", mark, &log);
+        assert!(has(&tree, shown) && !has(&tree, absent), "{mark}: {shown} shown, {absent} gone");
+        assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{mark}");
+    }
+    assert_text(&at("us2-drop-to-export", "second", &log), "clips/detail/verdict", "Review");
+    let single = temp_dir().join("single.log");
+    at("us2-drop-to-export", "end", &single);
+    assert_eq!(std::fs::read_to_string(&single).unwrap().lines().collect::<Vec<_>>(), ["/exports/c1_final.mp4"]);
+
+    let tree = at("us2-pick-file", "end", &log);
+    assert!(has(&tree, "job/progress") && !has(&tree, "home/choose-file"), "a picked file opens its job");
+}

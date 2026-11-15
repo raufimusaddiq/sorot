@@ -9,3 +9,7 @@ src/platform/open_documents_macos.rs
 src/platform/gpu_probe.rs
 src/platform/updater_feed.rs
 src/platform/save_dialog.rs
+src/platform/notify_rune.rs
+src/platform/ffmpeg_proc.rs
+src/platform/audio_cpal.rs
+src/preview/rune_player.rs

@@ -65,12 +65,17 @@ pub fn run(scene: &str, script: Option<&str>, args: &[&str]) -> Tree {
 
 /// As `run`, with extra environment variables for the binary.
 pub fn run_env(scene: &str, script: Option<&str>, args: &[&str], env: &[(&str, &Path)]) -> Tree {
+    run_at(scene, script, "end", args, env)
+}
+
+/// As `run_env`, with the tree dumped at the script's mark `mark`.
+pub fn run_at(scene: &str, script: Option<&str>, mark: &str, args: &[&str], env: &[(&str, &Path)]) -> Tree {
     let tree = temp("json");
     let mut cmd = binary();
     cmd.envs(env.iter().copied());
     cmd.args(["--scene", scene, "--tree"]).arg(&tree);
     if let Some(name) = script {
-        cmd.arg("--script").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"))).args(["--at", "mark:end"]);
+        cmd.arg("--script").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"))).args(["--at", &format!("mark:{mark}")]);
     }
     let out = finish({ cmd.args(args); cmd });
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));

@@ -5,6 +5,7 @@ pub mod app;
 pub mod diagnostics;
 pub mod engine;
 pub mod library;
+pub mod preview;
 pub mod screens;
 pub mod ui;
 pub mod update;
@@ -13,6 +14,10 @@ pub mod workspace;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(any(windows, target_os = "macos"))]
+use platform::notify_rune::notifier as os_notifier;
+#[cfg(target_os = "linux")]
+use platform::notify_linux::notifier as os_notifier;
 use engine::sidecar::{LaunchConfig, OsSpawn, Sidecar, SystemClock};
 
 /// OS shims, each listed in `coverage-exclude.txt`; `tests/platform_list.rs` guards the list.
@@ -34,6 +39,15 @@ pub mod platform {
     #[cfg(target_os = "linux")]
     #[path = "notify_linux.rs"]
     pub mod notify_linux;
+    #[cfg(any(windows, target_os = "macos"))]
+    #[path = "notify_rune.rs"]
+    pub mod notify_rune;
+    #[cfg(target_os = "linux")]
+    #[path = "ffmpeg_proc.rs"]
+    pub mod ffmpeg_proc;
+    #[cfg(target_os = "linux")]
+    #[path = "audio_cpal.rs"]
+    pub mod audio_cpal;
     #[cfg(windows)]
     #[path = "taskbar_windows.rs"]
     pub mod taskbar_windows;
@@ -89,6 +103,9 @@ pub fn live() -> app::Live {
         saved,
         data_dir,
         tray: Arc::new(platform::tray::OsTray::new(icon)),
+        reveal: Arc::new(platform::reveal::OsReveal),
+        notifier: os_notifier(),
+        preview: preview::os_player,
     }
 }
 

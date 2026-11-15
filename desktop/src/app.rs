@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rune::tok::type_;
-use rune::{AppSpec, Cx, El, Tx, col, row, text};
+use rune::{AppSpec, Cx, El, KeyEvent, Tx, col};
 use sorot_desktop_core::close::{CloseAction, ClosePref, on_close};
 use sorot_desktop_core::engine_conn::{FailReason, State as ConnState};
 use sorot_desktop_core::handshake::Ready;
-use sorot_desktop_core::model::{Job, ReadinessItem, Video};
+use sorot_desktop_core::clips::Options;
+use sorot_desktop_core::model::{Clip, Job, JobDetail, JobPhase, ReadinessItem, Video};
 use sorot_desktop_core::polling::next_poll;
 use sorot_desktop_core::readiness::{Item, ItemId};
 use sorot_desktop_core::toast::{Toast, ToastKind};
@@ -18,12 +18,18 @@ use sorot_desktop_core::workspace::{Candidate, Workspace, rank_candidates};
 
 use crate::engine::http::HttpEngine;
 use crate::engine::sidecar::{Sidecar, StartError};
-use crate::engine::{Engine, EngineError};
+use crate::engine::{EditOptions, Engine, EngineError, ImportRequest, Started};
 use crate::library::Library;
+use crate::platform::reveal::Reveal;
 use crate::platform::tray::{Tray, TrayCmd};
+use crate::preview::{NullPreview, Preview, PreviewCache};
 use crate::screens::shell::CloseAnswer;
 use crate::screens::welcome::{How, Welcome, workspace_for};
-use crate::screens::{readiness, shell, welcome};
+use crate::screens::clips::ClipsScreen;
+use crate::screens::editor::Editor;
+use crate::screens::home::{Home, HomeError};
+use crate::screens::job::JobScreen;
+use crate::screens::{clips, editor, home, job, readiness, shell, welcome};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 use crate::ui::toast::{ToastItem, toast_stack};
@@ -46,6 +52,31 @@ pub enum Screen {
     Welcome,
     Readiness,
     Home,
+    Job,
+    Clips,
+    Editor,
+}
+
+/// Which working screen is open once the engine is ready.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Route {
+    #[default]
+    Home,
+    /// A job id.
+    Job(String),
+    /// A video id.
+    Clips(String),
+    /// A clip id.
+    Editor(String),
+}
+
+/// What the OS tells the app when a person clicks a notification: the job to open.
+pub type ClickFn = Arc<dyn Fn(String) + Send + Sync>;
+
+/// Desktop notifications: `rune-notify` on Windows and macOS, `notify-rust` on Linux.
+pub trait Notifier: Send + Sync {
+    fn notify(&self, job_id: &str, title: &str, body: &str);
+    fn on_click(&self, f: ClickFn);
 }
 
 /// Everything one poll of the engine reads.
@@ -80,10 +111,24 @@ pub enum Msg {
     WelcomeFailed(String),
     /// The choice was made and saved; `skipped` are the files a copy could not read.
     Workspace { ws: Workspace, skipped: Vec<String> },
+    /// An import started this job.
+    Started(Started),
+    ImportFailed(EngineError),
+    JobDetail(JobDetail),
+    Clips { video_id: String, clips: Vec<Clip> },
+    Rerendered(Box<Clip>),
+    RerenderFailed(String),
+    Exported { clip_id: String, path: String },
+    ExportFailed(String),
+    Options { options: EditOptions, music: Vec<String> },
+    /// The local file of a clip's preview, or why there is none.
+    PreviewReady { clip_id: String, path: Result<PathBuf, String> },
+    /// A notification was clicked.
+    OpenJob(String),
 }
 
 /// Work the UI asks for; it runs off the UI thread and answers with messages.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Cmd {
     FixReadiness(String),
     FixAll(Vec<String>),
@@ -92,6 +137,17 @@ pub enum Cmd {
     Find,
     /// The first-run choice; `keys` brings the API keys along.
     Choose { how: How, from: String, keys: bool },
+    Import(ImportRequest),
+    LoadOptions,
+    PollJob(String),
+    CancelJob(String),
+    RetryJob(String),
+    LoadClips(String),
+    Rerender { clip_id: String, delta: Options },
+    Export(String),
+    DownloadExport { clip_id: String, dest: PathBuf },
+    /// Handled by `State::send`, which owns the cache.
+    Preview(Box<Clip>),
 }
 
 pub fn execute(engine: &dyn Engine, cmd: Cmd) -> Vec<Msg> {
@@ -103,7 +159,40 @@ pub fn execute(engine: &dyn Engine, cmd: Cmd) -> Vec<Msg> {
         msgs
     };
     match cmd {
-        Cmd::Refresh | Cmd::Find | Cmd::Choose { .. } => refresh(vec![]),
+        Cmd::Refresh | Cmd::Find | Cmd::Choose { .. } | Cmd::Preview(_) => refresh(vec![]),
+        Cmd::Import(req) => match engine.import(&req) {
+            Ok(started) => refresh(vec![Msg::Started(started)]),
+            Err(e) => vec![Msg::ImportFailed(e)],
+        },
+        Cmd::LoadOptions => match engine.options() {
+            Ok(options) => vec![Msg::Options { options, music: engine.music().unwrap_or_default() }],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not read the options: {e}"))],
+        },
+        Cmd::PollJob(id) => engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default(),
+        Cmd::CancelJob(id) => match engine.cancel_job(&id) {
+            Ok(_) => refresh(engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default()),
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not cancel: {e}"))],
+        },
+        Cmd::RetryJob(id) => match engine.retry_job(&id) {
+            Ok(_) => refresh(engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default()),
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not retry: {e}"))],
+        },
+        Cmd::LoadClips(video_id) => match engine.clips(&video_id) {
+            Ok(clips) => vec![Msg::Clips { video_id, clips }],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not read the clips: {e}"))],
+        },
+        Cmd::Rerender { clip_id, delta } => match engine.rerender(&clip_id, &delta) {
+            Ok(clip) => vec![Msg::Rerendered(Box::new(clip))],
+            Err(e) => vec![Msg::RerenderFailed(format!("Could not render again: {e}"))],
+        },
+        Cmd::Export(clip_id) => match engine.export(&clip_id) {
+            Ok(path) => vec![Msg::Exported { clip_id, path }],
+            Err(e) => vec![Msg::ExportFailed(format!("Could not export: {e}"))],
+        },
+        Cmd::DownloadExport { clip_id, dest } => match engine.download_export(&clip_id, &dest) {
+            Ok(_) => vec![Msg::Toast(ToastKind::Done, format!("Saved to {}", dest.display()))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not save the clip: {e}"))],
+        },
         Cmd::FixAll(ids) => {
             let failed = ids.iter().filter_map(|id| engine.fix_readiness(id).err().map(|e| Msg::Toast(ToastKind::Failed, format!("Could not fix {id}: {e}")))).collect();
             refresh(failed)
@@ -296,7 +385,24 @@ pub struct State {
     pub idle_quit: bool,
     /// Set when the app was asked to quit.
     pub quit_asked: bool,
-    now: f64,
+    pub route: Route,
+    pub home: Home,
+    pub job: JobScreen,
+    pub clips: ClipsScreen,
+    pub editor: Editor,
+    /// The engine's caption styles, framing modes and defaults, and the music it has.
+    pub edit_options: Option<EditOptions>,
+    pub music: Vec<String>,
+    pub preview: Box<dyn Preview>,
+    pub reveal: Option<Arc<dyn Reveal>>,
+    pub notifier: Option<Arc<dyn Notifier>>,
+    /// The window has focus: a finished job is told by the screen, not the OS.
+    pub focused: bool,
+    /// Preferences: notify when a job ends while the window is not in front.
+    pub notifications: bool,
+    /// The engine runs on another machine: its files are downloaded, not shown in a folder.
+    pub remote: bool,
+    pub now: f64,
     last_poll: f64,
     searched: bool,
     data_dir: String,
@@ -305,6 +411,7 @@ pub struct State {
     handle: Option<rune::AppHandle<State>>,
     bus: Option<Arc<dyn Bus>>,
     supervisor: Option<Arc<Mutex<Supervisor>>>,
+    preview_cache: Option<Arc<Mutex<PreviewCache>>>,
 }
 
 impl Default for State {
@@ -312,7 +419,9 @@ impl Default for State {
         State {
             engine: None, conn: Conn::Starting, jobs: vec![], videos: vec![], readiness: vec![], item_states: vec![], toasts: vec![], dark: true,
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
-            now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None,
+            route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(),
+            edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
+            now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
         }
     }
 }
@@ -337,6 +446,12 @@ impl State {
         self
     }
 
+    /// What the OS gives the app: the file manager, notifications, the preview player.
+    pub fn with_platform(mut self, reveal: Arc<dyn Reveal>, notifier: Arc<dyn Notifier>, preview: Box<dyn Preview>) -> Self {
+        (self.reveal, self.notifier, self.preview) = (Some(reveal), Some(notifier), preview);
+        self
+    }
+
     pub fn with_handle(mut self, handle: rune::AppHandle<State>, background_ok: bool) -> Self {
         (self.handle, self.background_ok) = (Some(handle), background_ok);
         self
@@ -354,6 +469,7 @@ impl State {
         }
         let dir = scenes_dir().join(name);
         let mut s = State::with_engine(fake);
+        s.reveal = Some(Arc::new(crate::engine::fake::RecordReveal::default()));
         if dir.join("libraries.json").is_file() {
             let config = std::env::var("SOROT_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir().join(format!("sorot-scene-{name}")));
             s = s.with_library(Arc::new(SceneLibrary::new(dir)), config, "scene-data".into(), None);
@@ -368,7 +484,12 @@ impl State {
             Conn::Failed(_) => Screen::EngineFailed,
             Conn::Ready | Conn::Lost if self.welcome.is_some() => Screen::Welcome,
             Conn::Ready | Conn::Lost if !self.clipping_allowed() => Screen::Readiness,
-            Conn::Ready | Conn::Lost => Screen::Home,
+            Conn::Ready | Conn::Lost => match self.route {
+                Route::Home => Screen::Home,
+                Route::Job(_) => Screen::Job,
+                Route::Clips(_) => Screen::Clips,
+                Route::Editor(_) => Screen::Editor,
+            },
         }
     }
 
@@ -380,6 +501,7 @@ impl State {
                 self.maybe_first_run();
             }
             Msg::Snapshot(snap) => {
+                self.notify_ended(&snap.jobs);
                 (self.jobs, self.videos, self.readiness) = (snap.jobs, snap.videos, snap.readiness);
                 self.track_readiness();
             }
@@ -401,6 +523,71 @@ impl State {
                     self.relaunch_engine(ws.data_dir);
                 }
             }
+            Msg::Started(started) => {
+                self.home = Home::default();
+                self.open_job(&started.job_id);
+            }
+            Msg::ImportFailed(e) => self.home.error = Some(HomeError::Engine(e)),
+            Msg::JobDetail(detail) => self.apply_job(detail),
+            Msg::Clips { video_id, clips } => self.apply_clips(&video_id, clips),
+            Msg::Rerendered(clip) => self.rerendered(*clip),
+            Msg::RerenderFailed(why) => {
+                self.editor.rendering = false;
+                self.apply(Msg::Toast(ToastKind::Failed, why));
+            }
+            Msg::Exported { clip_id, path } => self.exported(&clip_id, &path),
+            Msg::ExportFailed(why) => {
+                self.clips.exporting = None;
+                self.apply(Msg::Toast(ToastKind::Failed, why));
+            }
+            Msg::Options { options, music } => (self.edit_options, self.music) = (Some(options), music),
+            Msg::PreviewReady { clip_id, path } => {
+                if let Some(clip) = self.selected_clip().filter(|c| c.id == clip_id).cloned() {
+                    match path {
+                        Ok(file) => self.preview.open(&file, Some(clip.duration_sec)),
+                        Err(why) => self.clips.preview_error = Some(why),
+                    }
+                }
+            }
+            Msg::OpenJob(id) => {
+                if let Some(h) = &self.handle {
+                    h.show();
+                    h.focus();
+                }
+                self.open_job(&id);
+            }
+        }
+    }
+
+    /// A job that was running and has ended tells the person, when the window is not in front.
+    fn notify_ended(&self, now: &[Job]) {
+        let (Some(notifier), false, true) = (&self.notifier, self.focused, self.notifications) else { return };
+        for j in now.iter().filter(|j| !j.is_running() && self.jobs.iter().any(|o| o.id == j.id && o.is_running())) {
+            match j.phase() {
+                JobPhase::Completed => notifier.notify(&j.id, "Your clips are ready", "Open Sorot to see them ranked."),
+                JobPhase::Failed | JobPhase::Interrupted => notifier.notify(&j.id, "A job stopped", j.error_message.as_deref().unwrap_or("Open Sorot to retry it.")),
+                _ => {}
+            }
+        }
+    }
+
+    fn preview_dir(&self) -> PathBuf {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.config_dir.as_ref().map_or_else(|| std::env::temp_dir().join(format!("sorot-preview-{}-{n}", std::process::id())), |d| d.join("preview"))
+    }
+
+    fn send_preview(&mut self, clip: Clip) {
+        let Some(engine) = self.engine.clone() else { return };
+        let dir = self.preview_dir();
+        let cache = self.preview_cache.get_or_insert_with(|| Arc::new(Mutex::new(PreviewCache::new(dir)))).clone();
+        let work = move || {
+            let path = cache.lock().unwrap().fetch(engine.as_ref(), &clip).map_err(|e| e.to_string());
+            vec![Msg::PreviewReady { clip_id: clip.id, path }]
+        };
+        match self.bus.clone() {
+            Some(bus) => bus.background(Box::new(work)),
+            None => work().into_iter().for_each(|m| self.apply(m)),
         }
     }
 
@@ -440,6 +627,9 @@ impl State {
     pub fn send(&mut self, cmd: Cmd) {
         if matches!(cmd, Cmd::Find | Cmd::Choose { .. }) {
             return self.send_library(cmd);
+        }
+        if let Cmd::Preview(clip) = cmd {
+            return self.send_preview(*clip);
         }
         let Some(engine) = self.engine.clone() else { return };
         match self.bus.clone() {
@@ -594,6 +784,7 @@ impl State {
         for item in &mut self.toasts {
             item.toast.tick(dt_ms, item.hovered);
         }
+        self.preview.pump();
         let before = self.toasts.len();
         self.toasts.retain(|i| !i.toast.expired());
         let mut changed = self.toasts.len() != before;
@@ -602,7 +793,9 @@ impl State {
             self.send(Cmd::Refresh);
             changed = true;
         }
-        changed
+        let watching = matches!(self.route, Route::Job(_)) && self.conn == Conn::Ready;
+        changed |= watching && (self.poll_job(t) || self.job.detail.as_ref().is_some_and(|d| d.job.is_running()));
+        changed || self.preview.state() == crate::preview::PreviewState::Playing
     }
 
     pub fn quit(&mut self) {
@@ -615,7 +808,10 @@ impl State {
 pub fn view(s: &State, _: &mut Cx<State>) -> El {
     let p = pal(s.dark);
     let body = match s.screen() {
-        Screen::Home => shell::with_rail(s, home_view(s)),
+        Screen::Home => shell::with_rail(s, home::view(s)),
+        Screen::Job => shell::with_rail(s, job::view(s)),
+        Screen::Clips => shell::with_rail(s, clips::view(s)),
+        Screen::Editor => shell::with_rail(s, editor::view(s)),
         screen => {
             let content = match screen {
                 Screen::Starting => state_block::<State>(s.dark, "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
@@ -638,21 +834,6 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
     root.child(body).child(toast_stack(s.dark, &s.toasts))
 }
 
-fn home_view(s: &State) -> El {
-    let t = pal(s.dark);
-    if s.jobs.is_empty() && s.videos.is_empty() {
-        return state_block::<State>(s.dark, "home/empty", Kind::Empty, "No videos yet", "Paste a link or choose a file to make your first clips.", None);
-    }
-    let mut list = col().key("home/jobs").role("list").gap(6.0).w(420.0);
-    for j in &s.jobs {
-        list = list.child(
-            row().key(format!("home/job/{}", j.id)).role("listitem").label(format!("{} {}", j.status, j.current_stage.as_deref().unwrap_or(""))).gap(8.0)
-                .child(text(&j.status).font(type_::LABEL).color(t.text)).child(text(j.current_stage.as_deref().unwrap_or("")).font(type_::BODY).color(t.muted)),
-        );
-    }
-    list
-}
-
 /// Scene functions are plain `fn`s; each folder under `desktop/scenes/` has one here, and a test
 /// holds the list equal to the folders.
 pub type Scene = (&'static str, fn(&mut State));
@@ -670,6 +851,7 @@ pub fn spec() -> AppSpec<State> {
         min_size: Some((720.0, 480.0)),
         fonts: &[include_bytes!("../assets/fonts/InstrumentSans.ttf")],
         families: ("Instrument Sans", "monospace"),
+        on_key: Some(|s: &mut State, key: &KeyEvent, _: &mut Tx| s.clips_key(key)),
         poll: Some(|s: &mut State, t: f64, tx: &mut Tx| {
             let changed = s.tick(t);
             if s.idle_quit_due() {
@@ -702,6 +884,9 @@ pub struct Live {
     pub saved: Option<Workspace>,
     pub data_dir: String,
     pub tray: Arc<dyn Tray>,
+    pub reveal: Arc<dyn Reveal>,
+    pub notifier: Arc<dyn Notifier>,
+    pub preview: fn() -> Box<dyn Preview>,
 }
 
 /// Puts the tray up. On macOS the Dock is the way back, so no tray is needed there.
@@ -712,7 +897,7 @@ pub fn install_tray(handle: &rune::AppHandle<State>, tray: &dyn Tray) -> bool {
 
 /// A state for a real engine: boots it on a task thread and keeps polling it.
 pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
-    let Live { supervisor, library, config_dir, saved, data_dir, tray } = live;
+    let Live { supervisor, library, config_dir, saved, data_dir, tray, reveal, notifier, preview } = live;
     let sup = Arc::new(Mutex::new(supervisor));
     let (boot, bus) = (handle.clone(), Arc::new(RuneBus(handle.clone())));
     let worker = sup.clone();
@@ -722,7 +907,9 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
         schedule(boot, worker, Duration::from_secs(1));
     });
     let background_ok = install_tray(&handle, tray.as_ref());
-    State::live(bus, sup).with_library(library, config_dir, data_dir, saved).with_handle(handle, background_ok)
+    let opener = handle.clone();
+    notifier.on_click(Arc::new(move |job| opener.update(move |s: &mut State, _: &mut Tx| s.apply(Msg::OpenJob(job)))));
+    State::live(bus, sup).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_handle(handle, background_ok)
 }
 
 pub fn run(live: fn() -> Live) {
@@ -731,7 +918,7 @@ pub fn run(live: fn() -> Live) {
         if s.closing() {
             tx.quit();
         }
-    }).on_quit(|s: &mut State, _| s.quit());
+    }).on_quit(|s: &mut State, _| s.quit()).on_focus(|s: &mut State, focused, _| s.focused = focused);
     let handle = app.handle();
     // Rune knows it is headless only once `run` has started, so the choice is made in `init`.
     app.init(move || match rune::tooling::headless_run() {

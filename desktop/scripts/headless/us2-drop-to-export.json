@@ -1,0 +1,10 @@
+{"events": [
+  {"t": 0.2, "drop_files": {"paths": ["C:/videos/talk.mp4"], "key": "home/drop"}},
+  {"t": 1.0, "type": "mark", "name": "job"},
+  {"t": 16.0, "type": "mark", "name": "clips"},
+  {"t": 16.2, "type": "key", "name": "j"},
+  {"t": 16.5, "type": "mark", "name": "second"},
+  {"t": 16.7, "type": "tap", "key": "clips/export"},
+  {"t": 17.0, "type": "tap", "key": "clips/reveal"},
+  {"t": 17.5, "type": "mark", "name": "end"}
+]}

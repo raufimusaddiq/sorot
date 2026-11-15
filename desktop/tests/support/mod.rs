@@ -6,7 +6,7 @@ use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use sorot_desktop::app::State;
 
 #[allow(unused_imports)]
-pub use sorot_desktop::engine::fake::{FakeClock, FakeEngine, FakeProc, FakeSpawn};
+pub use sorot_desktop::engine::fake::{FakeClock, FakeEngine, FakeProc, FakeSpawn, RecordNotifier, RecordReveal};
 
 pub mod headless;
 
@@ -89,6 +89,9 @@ pub fn live_of(sup: sorot_desktop::app::Supervisor) -> sorot_desktop::app::Live 
         saved: None,
         data_dir: "data".into(),
         tray: std::sync::Arc::new(FakeTray::default()),
+        reveal: std::sync::Arc::new(RecordReveal::default()),
+        notifier: std::sync::Arc::new(RecordNotifier::default()),
+        preview: || Box::new(sorot_desktop::preview::NullPreview::default()),
     }
 }
 
