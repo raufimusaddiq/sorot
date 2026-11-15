@@ -2,7 +2,11 @@
 //! rendered by the binary headless (`--snap`) and compared with `tests/snapshots/*.png`. A mismatch
 //! writes `<name>.diff.png` beside the approved image (differing pixels in red). The approved
 //! images come from the look-and-fix review (`design/look-and-fix.md`); `SOROT_APPROVE=1` rewrites
-//! them after that review, never otherwise.
+//! them after that review, never otherwise. Fonts and rasterisation differ per OS: the pixels are
+//! compared on the OSes listed in `tests/snapshots/COMPARED_ON` (where they were approved and have
+//! been seen to hold); on any other OS (macOS) each scene still renders and must match the approved
+//! size, and the test says the pixels were not compared. Add the OS to the file once its own images
+//! (or a tolerance) are reviewed.
 
 
 use std::path::{Path, PathBuf};
@@ -32,7 +36,7 @@ fn write(path: &Path, w: u32, h: u32, rgba: &[u8]) {
 }
 
 /// The number of changed pixels, with a diff image written when there are too many.
-fn compare(name: &str, got: &Path, approved: &Path) -> Result<(), String> {
+fn compare(name: &str, got: &Path, approved: &Path, pixels: bool) -> Result<(), String> {
     let (gw, gh, g) = decode(got);
     if std::env::var("SOROT_APPROVE").is_ok_and(|v| v == "1") {
         std::fs::create_dir_all(approved.parent().unwrap()).unwrap();
@@ -45,6 +49,9 @@ fn compare(name: &str, got: &Path, approved: &Path) -> Result<(), String> {
     let (aw, ah, a) = decode(approved);
     if (gw, gh) != (aw, ah) {
         return Err(format!("{name}: size {gw}x{gh}, approved {aw}x{ah}"));
+    }
+    if !pixels {
+        return Ok(());
     }
     let mut diff = a.clone();
     let mut changed = 0;
@@ -61,6 +68,12 @@ fn compare(name: &str, got: &Path, approved: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether this OS's rasterisation is held to the approved pixels (`COMPARED_ON`).
+fn compared_here() -> bool {
+    let list = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots/COMPARED_ON")).unwrap();
+    list.split_whitespace().any(|os| os == std::env::consts::OS)
+}
+
 fn rows() -> Vec<(String, &'static str, &'static str)> {
     let scenes = sorot_desktop::app::SCENES.iter().map(|(n, _)| *n);
     let mut out: Vec<_> = scenes.flat_map(|s| ["dark", "light"].map(move |t| (s.to_string(), t, "1280x800"))).collect();
@@ -73,12 +86,16 @@ fn rows() -> Vec<(String, &'static str, &'static str)> {
 #[test]
 fn every_scene_matches_its_approved_image() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots");
+    if !compared_here() {
+        eprintln!("snapshots: {} is not in tests/snapshots/COMPARED_ON; scenes render and sizes are checked, pixels are not compared", std::env::consts::OS);
+    }
+    let pixels = compared_here();
     let failures: Vec<String> = rows()
         .into_iter()
         .filter_map(|(scene, theme, size)| {
             let name = format!("{scene}-{theme}-{size}");
             let got = crate::support::headless::snap(&scene, theme, size);
-            let result = compare(&name, &got, &dir.join(format!("{name}.png")));
+            let result = compare(&name, &got, &dir.join(format!("{name}.png")), pixels);
             let _ = std::fs::remove_file(got);
             result.err()
         })
@@ -99,7 +116,7 @@ fn the_comparison_tolerates_noise_and_catches_a_changed_region() {
     moved.chunks_mut(4).take(500).for_each(|p| p[0] = 255);
     for (label, img, ok) in [("same", &base, true), ("noise", &noisy, true), ("region", &moved, false)] {
         write(&dir.join("got.png"), w, h, img);
-        assert_eq!(compare(label, &dir.join("got.png"), &dir.join("approved.png")).is_ok(), ok, "{label}");
+        assert_eq!(compare(label, &dir.join("got.png"), &dir.join("approved.png"), true).is_ok(), ok, "{label}");
     }
     assert!(dir.join("approved.diff.png").is_file());
     let _ = std::fs::remove_dir_all(dir);

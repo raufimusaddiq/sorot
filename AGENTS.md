@@ -16,8 +16,8 @@ docker compose --env-file .env.docker build --no-cache backend | up -d | --profi
 bun install                                           # one lockfile (repo root)
 cd backend;  bun test --coverage; bun run typecheck   # 95% line/func gate
 cd frontend; bun run test;  bun run build             # jest; static UI → frontend/out (root `bun run start` serves it on :8080)
-# desktop tests are ONE binary: cargo test --test suite [filter, e.g. snapshots::]; each worktree keeps its own desktop/target (CARGO_TARGET_DIR unset: shared workspace-crate artifacts make worktrees overwrite each other), CARGO_BUILD_JOBS=4 bounds parallel builds
-cd desktop;  cargo clippy --all-targets -- -D warnings; .\scripts\cov.ps1 (Linux/macOS: scripts/cov.sh; the 95% llvm-cov gate, lock only for a CARGO_TARGET_DIR one person deliberately reuses across sequential runs, never shared across worktrees); cargo kani -p sorot-desktop-core
+# desktop budget (owner: ~6 GB RAM, ~35% CPU on 6 cores): desktop/.cargo/config.toml sets build jobs 4 and RUST_TEST_THREADS 2; headless journeys run at most 2 app processes at once (tests/support/headless.rs). Locally run ONLY: cargo clippy --all-targets -- -D warnings; cargo test --test suite [filter, e.g. snapshots::] (one test binary). Coverage (llvm-cov, measured on Linux CI only; Windows and macOS CI run `cargo test --workspace`), Linux, macOS and Kani run in CI: gh workflow run ci.yml --ref <branch>. Each worktree keeps its own desktop/target (CARGO_TARGET_DIR unset: shared workspace-crate artifacts make worktrees overwrite each other); sccache measured and rejected (docs/journal/session-2026-11-15-dev-budget.md)
+cd desktop;  .\scripts\cov.ps1 (Linux/macOS: scripts/cov.sh; the 95% llvm-cov gate, CI's job on Linux; never share its CARGO_TARGET_DIR across worktrees); cargo kani -p sorot-desktop-core   # CI by default
 cd cli;      bun test --coverage; bun run build       # → cli/dist/sorot
 cd ai-pipeline; .venv/bin/python -m pytest tests --cov=.   # Windows: .venv\Scripts\python.exe
 ```
