@@ -549,3 +549,16 @@ fn the_clips_screen_opens_publish_and_the_results_sheet() {
     assert!(has(&rt, "feedback/sheet") && rt.state.panels.feedback.clip_id.as_deref() == Some("c2"));
 }
 
+
+/// A job the last session left running shows on Home with Retry, which starts it over on its own screen.
+#[test]
+fn home_offers_retry_for_an_interrupted_job() {
+    let fake = Arc::new(FakeEngine::scene("home-interrupted"));
+    let mut rt = Runtime::new(State::with_engine(fake.clone()), sorot_desktop::app::view, (1100.0, 900.0), rune::Env { system_dark: true, scale: 1.0 });
+    rt.frame(0.0);
+    assert!(has(&rt, "home/interrupted/ji") && has(&rt, "home/retry/ji"));
+    assert!(!has(&rt, "home/job/ji"), "the recent list does not repeat it");
+    click(&mut rt, "home/retry/ji");
+    assert_eq!(rt.state.screen(), Screen::Job);
+    assert!(fake.calls().contains(&"retry_job(ji)".to_string()));
+}

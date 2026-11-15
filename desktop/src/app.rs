@@ -1066,6 +1066,7 @@ pub const SCENES: &[Scene] = &[
     ("readiness-missing", |s| *s = State::scene("readiness-missing")),
     ("engine-failed", |s| *s = State::scene("engine-failed")),
     ("first-run", |s| *s = State::scene("first-run")),
+    ("home-interrupted", |s| *s = State::scene("home-interrupted")),
     ("job-running", |s| {
         *s = State::scene("job-running");
         s.open_job("j1");

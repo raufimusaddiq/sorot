@@ -106,6 +106,13 @@ impl State {
         self.send(Cmd::CancelJob(id));
     }
 
+    /// Retry on an interrupted job from Home: its screen opens and the engine starts it over.
+    pub fn retry_interrupted(&mut self, id: &str) {
+        self.route = Route::Job(id.to_string());
+        self.job = JobScreen { id: id.to_string(), opened: self.now, last_poll: self.now, ..JobScreen::default() };
+        self.send(Cmd::RetryJob(id.to_string()));
+    }
+
     pub fn retry_shown_job(&mut self) {
         let id = self.job.id.clone();
         self.send(Cmd::RetryJob(id));

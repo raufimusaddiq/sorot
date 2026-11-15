@@ -45,6 +45,8 @@
   "home.recent": "Terakhir dipotong",
   "home.open": "Buka klip",
   "home.open.job": "Lihat proses",
+  "home.interrupted": "Sesi terakhir berhenti saat proses ini masih berjalan",
+  "home.interrupted.retry": "Coba lagi",
   "home.untitled": "Video tanpa judul",
   "home.empty.cause": "Belum ada video",
   "home.empty.next": "Tempel tautan atau pilih berkas untuk membuat klip pertama Anda.",
