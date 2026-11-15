@@ -3,6 +3,7 @@
 //! moments, no blur anywhere else, and no layer animating at rest.
 
 
+use sorot_desktop_core::prefs::Theme;
 use rune::render::{KIND_BACKDROP_BLUR, KIND_EFFECT};
 use sorot_desktop::app::{Msg, SCENES, State};
 use sorot_desktop::engine::Engine;
@@ -12,7 +13,7 @@ use crate::support::*;
 fn rested(name: &str, dark: bool) -> rune::Runtime<State> {
     let mut state = State::default();
     SCENES.iter().find(|(n, _)| *n == name).unwrap().1(&mut state);
-    state.dark = dark;
+    state.theme = if dark { Theme::Dark } else { Theme::Light };
     runtime_of(state)
 }
 

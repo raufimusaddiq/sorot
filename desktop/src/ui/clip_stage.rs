@@ -35,7 +35,7 @@ pub fn stage(s: &State, label: &str, length: f64) -> El {
 }
 
 fn stage_of(s: &State, label: &str, length: f64, size: Option<(f32, f32)>, transport: bool) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let state = s.preview.state();
     let note = match (&state, &s.clips.preview_error) {
         (_, Some(why)) => Some(why.clone()),
@@ -68,7 +68,7 @@ fn stage_of(s: &State, label: &str, length: f64, size: Option<(f32, f32)>, trans
         let controls = row().key("clips/transport").gap(10.0).px(10.0).h(44.0).items_center().w_full().fill(p.surface)
             .child(slot(Moment::TransportGlass, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
             .child(col().key("clips/play").role("button").label(word).focusable(true).padding(6.0).radius(6.0).hover(p.text.alpha(0.08)).press_scale(0.985)
-                .on_press(|s: &mut State| s.toggle_play()).child(transport_icon(s.dark, playing)))
+                .on_press(|s: &mut State| s.toggle_play()).child(transport_icon(s.dark(), playing)))
             .child(text(format!("{} / {}", clock(at), clock(total))).key("clips/time").font(type_::LABEL).color(p.text))
             .child(col().w(110.0).h(3.0).radius(2.0).fill(p.divider).child(col().w(filled).h(3.0).radius(2.0).fill(p.beam)));
         face = face.child(controls);

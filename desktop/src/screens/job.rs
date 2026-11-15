@@ -150,9 +150,9 @@ fn notes(s: &State, jv: &JobView, report: &Option<(String, Option<u8>)>) -> Vec<
 }
 
 pub fn view(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let Some(detail) = &s.job.detail else {
-        return state_block::<State>(s.dark, "job/loading", Kind::Loading, &tr(s.lang, "job.loading.cause"), &tr(s.lang, "job.loading.next"), None);
+        return state_block::<State>(s.dark(), "job/loading", Kind::Loading, &tr(s.lang, "job.loading.cause"), &tr(s.lang, "job.loading.next"), None);
     };
     let jv = JobView::from_detail(detail);
     let report = running_report(&jv, &detail.stages);
@@ -191,19 +191,19 @@ pub fn view(s: &State) -> El {
 
     let mut actions = row().gap(10.0).items_center().justify_end().w_full();
     if jv.retry_offered {
-        actions = actions.child(centered(button(s.dark, "job/retry", &tr(s.lang, "job.retry"), true, |s: &mut State| s.retry_shown_job())));
+        actions = actions.child(centered(button(s.dark(), "job/retry", &tr(s.lang, "job.retry"), true, |s: &mut State| s.retry_shown_job())));
     }
     if running {
-        actions = actions.child(centered(button(s.dark, "job/cancel", &tr(s.lang, "job.cancel"), false, |s: &mut State| s.cancel_shown_job())));
+        actions = actions.child(centered(button(s.dark(), "job/cancel", &tr(s.lang, "job.cancel"), false, |s: &mut State| s.cancel_shown_job())));
     }
     let done = jv.phase == JobPhase::Completed;
     let video = detail.job.video_id.clone();
-    actions = actions.child(btn(s.dark, "job/clips", &tr(s.lang, "job.view"), false, done, move |s: &mut State| s.show_clips(&video)));
+    actions = actions.child(btn(s.dark(), "job/clips", &tr(s.lang, "job.view"), false, done, move |s: &mut State| s.show_clips(&video)));
     let mut page = col().gap(28.0).padding(40.0).w_full().h_full()
-        .child(page_head(s.dark, "job/title", &home::video_name(s, &detail.job.video_id), &tr(s.lang, "job.sub")))
+        .child(page_head(s.dark(), "job/title", &home::video_name(s, &detail.job.video_id), &tr(s.lang, "job.sub")))
         .child(col().h(8.0))
         .child(headline)
-        .child(stage_track::track(s.dark, s.lang, &jv, percent, &s.job.track_fx(s.now)))
+        .child(stage_track::track(s.dark(), s.lang, &jv, percent, &s.job.track_fx(s.now)))
         .child(log)
         .child(actions);
     if !done {
