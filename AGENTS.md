@@ -16,8 +16,8 @@ docker compose --env-file .env.docker build --no-cache backend | up -d | --profi
 bun install                                           # one lockfile (repo root)
 cd backend;  bun test --coverage; bun run typecheck   # 95% line/func gate
 cd frontend; bun run test;  bun run build             # jest; static UI → frontend/out (root `bun run start` serves it on :8080)
-# desktop tests are ONE binary: cargo test --test suite [filter, e.g. snapshots::]; rig workers share CARGO_TARGET_DIR=D:/VibeCoding/ViralVideo/.rig/cargo-target (cargo's lock serialises builds)
-cd desktop;  cargo clippy --all-targets -- -D warnings; .\scripts\cov.ps1 (Linux/macOS: scripts/cov.sh; the 95% llvm-cov gate, lock on a shared CARGO_TARGET_DIR); cargo kani -p sorot-desktop-core
+# desktop tests are ONE binary: cargo test --test suite [filter, e.g. snapshots::]; each worktree keeps its own desktop/target (CARGO_TARGET_DIR unset: shared workspace-crate artifacts make worktrees overwrite each other), CARGO_BUILD_JOBS=4 bounds parallel builds
+cd desktop;  cargo clippy --all-targets -- -D warnings; .\scripts\cov.ps1 (Linux/macOS: scripts/cov.sh; the 95% llvm-cov gate, lock only for a CARGO_TARGET_DIR one person deliberately reuses across sequential runs, never shared across worktrees); cargo kani -p sorot-desktop-core
 cd cli;      bun test --coverage; bun run build       # → cli/dist/sorot
 cd ai-pipeline; .venv/bin/python -m pytest tests --cov=.   # Windows: .venv\Scripts\python.exe
 ```
