@@ -98,6 +98,8 @@ fn both_coverage_scripts_use_the_ignore_script_and_the_gates() {
             assert!(text.contains(needle), "{script} lacks {needle}");
         }
     }
+    let sh = fs::read_to_string(root.join("scripts/cov.sh")).unwrap();
+    assert!(sh.contains("command -v flock"), "cov.sh must run unlocked, not fail, where flock is missing");
 }
 
 /// ci.yml and test-runner.md build the regex with `scripts/cov-ignore.sh`; it must equal `ignore_regex`.

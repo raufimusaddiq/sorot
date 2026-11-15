@@ -3,7 +3,7 @@
 # Extra args pass through to cargo llvm-cov; exit code is llvm-cov's. Runs from any directory.
 # With CARGO_TARGET_DIR set (a target dir shared by several workers) it holds flock on
 # $CARGO_TARGET_DIR/cov.lock first: llvm-cov wipes its llvm-cov-target at the start of every run,
-# which cargo's own lock does not cover. The kernel drops the lock if this process dies.
+# which cargo's own lock does not cover. The kernel drops the lock if this process dies. Without flock (macOS) it runs unlocked, with a warning.
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/.." || exit 1
 run() {
@@ -12,7 +12,12 @@ run() {
 }
 if [ -n "$CARGO_TARGET_DIR" ]; then
   mkdir -p "$CARGO_TARGET_DIR" || exit 1
-  exec 9>"$CARGO_TARGET_DIR/cov.lock"
-  flock 9 || exit 1
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"$CARGO_TARGET_DIR/cov.lock"
+    flock 9 || exit 1
+  else
+    # A mkdir lock would go stale if this process were killed, so run unlocked and say so.
+    echo "cov.sh: flock not found (macOS: brew install flock); running without the shared-target lock" >&2
+  fi
 fi
 run "$@"
