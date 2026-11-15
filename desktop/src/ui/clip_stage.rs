@@ -7,7 +7,9 @@ use sorot_desktop_core::model::Clip;
 use crate::app::State;
 use crate::preview::PreviewState;
 use crate::ui::fx_moments::{Moment, slot};
-use crate::ui::kit::{button, pal};
+use crate::i18n::{Lang, tr, trf};
+use crate::ui::controls::transport_icon;
+use crate::ui::kit::pal;
 
 /// `m:ss`.
 pub fn clock(seconds: f64) -> String {
@@ -16,34 +18,47 @@ pub fn clock(seconds: f64) -> String {
 }
 
 /// What a clip is called: its title, else its words, else a placeholder.
-pub fn title(clip: &Clip) -> String {
-    clip.title.as_deref().or(clip.text_content.as_deref()).unwrap_or("Untitled clip").to_string()
+pub fn title(lang: Lang, clip: &Clip) -> String {
+    clip.title.clone().or_else(|| clip.text_content.clone()).unwrap_or_else(|| tr(lang, "clip.untitled"))
 }
 
-pub fn view(s: &State, clip: &Clip) -> El {
+/// The 9:16 stage: the label, the sample caption while nothing plays, and (on the clips screen) the transport bar.
+pub fn view(s: &State, clip: &Clip, w: f32, h: f32, transport: bool) -> El {
     let p = pal(s.dark);
     let state = s.preview.state();
     let note = match (&state, &s.clips.preview_error) {
         (_, Some(why)) => Some(why.clone()),
-        _ if s.cpu_renderer => Some("Previews open in your video player. Press Play.".to_string()),
-        (PreviewState::Error(why), _) => Some(format!("The preview cannot play: {why}")),
-        (PreviewState::Idle | PreviewState::Loading, _) => Some("Loading the preview".to_string()),
+        _ if s.cpu_renderer => Some(tr(s.lang, "clips.note.cpu")),
+        (PreviewState::Error(why), _) => Some(trf(s.lang, "clips.note.error", &[("why", why)])),
+        (PreviewState::Idle | PreviewState::Loading, _) => Some(tr(s.lang, "clips.note.loading")),
         _ => None,
     };
-    let mut face = col().key("clips/stage").role("img").label(title(clip))
-        .aspect_ratio(9.0 / 16.0).h(340.0).center().fill(p.bg).border(1.0, p.divider).radius(8.0);
-    if let Some(note) = note {
-        face = face.child(text(note).key("clips/stage/note").role("status").font(type_::BODY).color(p.muted).wrap().max_w(220.0));
-    }
-    let face = s.preview.paint(face);
     let playing = state == PreviewState::Playing;
-    let total = s.preview.duration().unwrap_or(clip.duration_sec);
-    // The transport bar: matte graphite on a CPU renderer, reeded glass where the GPU can draw it.
-    let controls = row().key("clips/transport").gap(10.0).padding(8.0).radius(12.0).fill(p.surface).items_center()
-        .child(slot(Moment::TransportGlass, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
-        .child(button(s.dark, "clips/play", if playing { "Pause" } else { "Play" }, true, |s: &mut State| s.toggle_play()))
-        .child(text(format!("{} / {}", clock(s.preview.time()), clock(total))).key("clips/time").font(type_::LABEL).color(p.muted));
-    col().gap(10.0).items_center().child(face).child(controls)
+    let mut middle = col().grow(1.0).w_full().gap(10.0).center();
+    if let Some(note) = note {
+        middle = middle.child(text(note).key("clips/stage/note").role("status").font(type_::BODY).color(p.muted).wrap().max_w(w - 40.0));
+    }
+    if !playing {
+        middle = middle.child(text(tr(s.lang, "clips.sample")).key("clips/stage/sample").font(type_::TITLE).color(p.text).wrap());
+    }
+    let mut face = col().key("clips/stage").role("img").label(title(s.lang, clip)).w(w).h(h).fill(p.bg).border(1.0, p.divider).radius(12.0)
+        .child(col().padding(16.0).w_full().child(text(tr(s.lang, "clips.stage.label")).font(type_::LABEL).color(p.muted)))
+        .child(middle);
+    if transport {
+        let total = s.preview.duration().unwrap_or(clip.duration_sec).max(0.001);
+        let at = s.preview.time();
+        let word = tr(s.lang, if playing { "clips.pause" } else { "clips.play" });
+        let filled = ((at / total).clamp(0.0, 1.0) as f32) * 110.0;
+        // The transport bar: matte graphite on a CPU renderer, reeded glass where the GPU can draw it.
+        let controls = row().key("clips/transport").gap(10.0).px(10.0).h(44.0).items_center().w_full().fill(p.surface)
+            .child(slot(Moment::TransportGlass, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
+            .child(col().key("clips/play").role("button").label(word).focusable(true).padding(6.0).radius(6.0).hover(p.text.alpha(0.08)).press_scale(0.985)
+                .on_press(|s: &mut State| s.toggle_play()).child(transport_icon(s.dark, playing)))
+            .child(text(format!("{} / {}", clock(at), clock(total))).key("clips/time").font(type_::LABEL).color(p.text))
+            .child(col().w(110.0).h(3.0).radius(2.0).fill(p.divider).child(col().w(filled).h(3.0).radius(2.0).fill(p.beam)));
+        face = face.child(controls);
+    }
+    s.preview.paint(face)
 }
 
 #[cfg(test)]

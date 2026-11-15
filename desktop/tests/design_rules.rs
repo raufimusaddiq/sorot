@@ -38,9 +38,9 @@ fn every_screen_keeps_the_limits_and_rests() {
             assert!(rt.instances.iter().filter(|i| i.params[1] == KIND_EFFECT).count() <= 4, "{name}");
         }
     }
-    // The job screen has the one glow, the clips screen the one glass; the editor the hook's glow.
+    // The job screen has the one glow, the clips screen the one glass; the editor has neither (its stage has no transport bar, its hook is a plain marker).
     let counts: Vec<_> = ["job-running", "clips-ranked", "editor-hook", "home-empty"].map(|n| (tally(&rested(n, true)).0, tally(&rested(n, true)).1)).into();
-    assert_eq!(counts, [(0, 1), (1, 0), (1, 1), (0, 0)]);
+    assert_eq!(counts, [(0, 1), (1, 0), (0, 0), (0, 0)]);
 }
 
 /// A finished stage rings once, for its 0.6 s, and the ring is gone after; nothing else moves.

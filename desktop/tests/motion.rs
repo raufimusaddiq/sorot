@@ -11,10 +11,10 @@ use sorot_desktop::engine::Engine;
 use sorot_desktop::engine::fake::FakeEngine;
 
 const ALLOW: &[AllowRow] = &[
-    AllowRow::new("text-swap", "job/progress", "job/stage-done", "the headline names the next stage the moment the engine says so"),
+    AllowRow::new("text-swap", "job/stage-name", "job/stage-done", "the stage name changes the moment the engine names the next stage"),
+    AllowRow::new("text-swap", "job/elapsed", "job/stage-done", "the line under the name says what the new stage does"),
+    AllowRow::new("text-swap", "job/notes/", "job/stage-done", "a finished stage's note replaces its running report"),
     AllowRow::new("text-swap", "stage/", "job/stage-done", "a stage's mark and word change with its state; the ring and the beam carry the motion"),
-    AllowRow::new("text-swap", "clips/title", "clips/select", "the details show the chosen clip's words"),
-    AllowRow::new("text-swap", "detail/verdict", "clips/select", "the verdict word is the chosen clip's"),
 ];
 
 fn start(name: &str) -> Run<State> {

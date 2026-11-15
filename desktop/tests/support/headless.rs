@@ -161,7 +161,8 @@ pub fn overlaps(tree: &Tree) -> Vec<(String, String)> {
     out
 }
 
-/// Text that spills outside the window or its parent's box.
+/// Text that spills outside the window or its parent's box. Content inside a scrolling area (a keyed
+/// `.../scroll`) may run past the window's edge: it scrolls.
 pub fn clipped_text(tree: &Tree) -> Vec<String> {
     let els = elements(tree);
     let (w, h) = (tree.0["viewport"][0].as_f64().unwrap(), tree.0["viewport"][1].as_f64().unwrap());
@@ -173,7 +174,7 @@ pub fn clipped_text(tree: &Tree) -> Vec<String> {
         .filter(|e| {
             let path = e["path"].as_str().unwrap();
             let parent = path.rsplit_once('/').and_then(|(p, _)| els.iter().find(|o| o["path"] == p));
-            outside(rect(e), [0.0, 0.0, w, h]) || parent.is_some_and(|p| outside(rect(e), rect(p)))
+            (!path.contains("/scroll/") && outside(rect(e), [0.0, 0.0, w, h])) || parent.is_some_and(|p| outside(rect(e), rect(p)))
         })
         .map(key_or_path)
         .collect()

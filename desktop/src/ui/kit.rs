@@ -17,6 +17,8 @@ pub struct Pal {
     pub beam_text: Color,
     pub pass: Color,
     pub skip: Color,
+    pub steel: Color,
+    pub edge: Color,
 }
 
 thread_local! {
@@ -28,7 +30,7 @@ pub fn pal(dark: bool) -> Pal {
         let t = &t[usize::from(!dark)];
         Pal {
             bg: t.color("bg"), surface: t.color("surface"), raised: t.color("raised"), divider: t.color("divider"), text: t.color("text"),
-            muted: t.color("muted"), beam: t.color("beam"), beam_text: t.color("beamText"), pass: t.color("pass"), skip: t.color("skip"),
+            muted: t.color("muted"), beam: t.color("beam"), beam_text: t.color("beamText"), pass: t.color("pass"), skip: t.color("skip"), steel: t.color("steel"), edge: t.color("edge"),
         }
     })
 }

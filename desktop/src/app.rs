@@ -430,6 +430,10 @@ pub struct State {
     pub lang: crate::i18n::Lang,
     /// The menu whose list is open under the menu bar.
     pub menu_open: Option<crate::screens::shell::Menu>,
+    /// The key of the dropdown whose list is open (one at a time).
+    pub open_select: Option<String>,
+    /// App clock of the last read of the import options (read while Home shows and none are loaded).
+    pub options_polled: f64,
     /// The one dismissible "no graphics acceleration" notice.
     pub gpu_notice: bool,
     pub now: f64,
@@ -451,7 +455,7 @@ impl Default for State {
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
             route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
-            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
+            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
         }
     }
 }
@@ -857,6 +861,10 @@ impl State {
                 _ => {}
             }
         }
+        if self.conn == Conn::Ready && matches!(self.route, Route::Home) && self.edit_options.is_none() && t - self.options_polled >= 5.0 {
+            self.options_polled = t;
+            self.load_options();
+        }
         let watching = matches!(self.route, Route::Job(_)) && self.conn == Conn::Ready;
         changed |= watching && (self.poll_job(t) || self.job.detail.as_ref().is_some_and(|d| d.job.is_running()));
         let sparkling = self.bursts.is_animating(t as f32, crate::ui::fx_moments::sparkle_params(0.0).burst_life());
@@ -1028,7 +1036,7 @@ pub fn spec() -> AppSpec<State> {
         min_size: Some((720.0, 480.0)),
         fonts: &[include_bytes!("../assets/fonts/InstrumentSans.ttf")],
         families: ("Instrument Sans", "monospace"),
-        on_key: Some(|s: &mut State, key: &KeyEvent, _: &mut Tx| s.clips_key(key)),
+        on_key: Some(|s: &mut State, key: &KeyEvent, tx: &mut Tx| s.keys(key, tx)),
         poll: Some(|s: &mut State, t: f64, tx: &mut Tx| {
             let changed = s.tick(t);
             if s.idle_quit_due() {

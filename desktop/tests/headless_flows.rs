@@ -10,11 +10,11 @@ use support::headless::*;
 type Flow = (&'static str, Option<&'static str>, &'static [(&'static str, &'static str)], &'static [&'static str], Option<&'static str>);
 
 const FLOWS: &[Flow] = &[
-    ("home-empty", None, &[("home/empty/cause", "No videos yet")], &["home/empty"], None),
+    ("home-empty", None, &[("home/empty/cause", "@home.empty.cause")], &["home/empty"], None),
     ("readiness-missing", None, &[("readiness/title", "Sorot needs a few things first"), ("readiness/whisperModel/progress", "Downloading 40%")], &["readiness/title", "readiness/ffmpeg/fix"], None),
     ("engine-failed", None, &[("engine/failed/cause", "The engine stopped before it was ready.")], &["engine/failed", "engine/restart"], None),
     ("engine-failed", Some("restart-engine"), &[("engine/starting/cause", "Starting the engine")], &["engine/starting"], None),
-    ("first-run", Some("us1-first-run"), &[("home/empty/cause", "No videos yet")], &["home/empty", "shell/rail/home"], Some("adopted")),
+    ("first-run", Some("us1-first-run"), &[("home/empty/cause", "@home.empty.cause")], &["home/empty", "shell/rail/home"], Some("adopted")),
 ];
 
 #[test]
@@ -27,7 +27,8 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
             assert_eq!(saved["source"], *source, "{scene}");
         }
         for (key, text) in *texts {
-            assert_text(&tree, key, text);
+            let want = text.strip_prefix('@').map_or_else(|| text.to_string(), |k| sorot_desktop::i18n::tr(sorot_desktop::i18n::Lang::Id, k));
+            assert_text(&tree, key, &want);
         }
         for key in *named {
             assert_role_label(&tree, key);
@@ -59,7 +60,7 @@ fn the_us2_journeys_reach_their_screens() {
         assert!(has(&tree, shown) && !has(&tree, absent), "{mark}: {shown} shown, {absent} gone");
         assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{mark}");
     }
-    assert_text(&at("us2-drop-to-export", "second", &log), "clips/detail/verdict", "Review");
+    assert_text(&at("us2-drop-to-export", "second", &log), "clips/row/c1/verdict", &sorot_desktop::i18n::tr(sorot_desktop::i18n::Lang::Id, "clips.verdict.REVIEW"));
     let single = temp_dir().join("single.log");
     at("us2-drop-to-export", "end", &single);
     assert_eq!(std::fs::read_to_string(&single).unwrap().lines().collect::<Vec<_>>(), ["/exports/c1_final.mp4"]);

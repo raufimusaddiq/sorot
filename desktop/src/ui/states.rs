@@ -14,9 +14,17 @@ pub enum Kind {
 /// A button under the text: `(key, label, handler)`.
 pub type Action<S> = (&'static str, &'static str, fn(&mut S));
 
+/// A button under the text whose label is built at run time: `(key, label, handler)`.
+pub type TextAction<S> = (&'static str, String, fn(&mut S));
+
 /// `key` names the block (`{key}/cause`, `{key}/next` inside). An error is announced at once
 /// (role `alert`); empty and loading are polite (`status`).
 pub fn state_block<S: 'static>(dark: bool, key: &str, kind: Kind, cause: &str, next: &str, action: Option<Action<S>>) -> El {
+    state_block_with(dark, key, kind, cause, next, action.map(|(k, label, f)| (k, label.to_string(), f)))
+}
+
+/// `state_block` with a button label that is built at run time (a translated one).
+pub fn state_block_with<S: 'static>(dark: bool, key: &str, kind: Kind, cause: &str, next: &str, action: Option<TextAction<S>>) -> El {
     let t = tok::theme(dark);
     let role = if kind == Kind::Error { "alert" } else { "status" };
     let mut block = col().key(key).role(role).label(format!("{cause} {next}")).gap(8.0).items_center().max_w(420.0)
@@ -24,7 +32,7 @@ pub fn state_block<S: 'static>(dark: bool, key: &str, kind: Kind, cause: &str, n
         .child(text(next).key(format!("{key}/next")).font(type_::BODY).color(t.text_secondary).wrap());
     if let Some((action_key, label, on_press)) = action {
         block = block.child(
-            col().key(action_key).role("button").label(label).focusable(true).padding(8.0).radius(6.0)
+            col().key(action_key).role("button").label(label.clone()).focusable(true).padding(8.0).radius(6.0)
                 .fill(t.card).border(1.0, t.card_border).on_press(on_press).child(text(label).font(type_::LABEL).color(t.text)),
         );
     }

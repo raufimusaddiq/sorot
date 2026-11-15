@@ -1,14 +1,18 @@
 //! Home: bring a video in (drop a file, choose one, paste a link), say what the clips should be
-//! about, and see the jobs already made.
+//! about, set the import options, and see the jobs already made.
 
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use rune::tok::type_;
-use rune::{El, FileDialogOptions, TextEdit, Tx, col, edit_access, row, text, text_input};
+use rune::{El, FileDialogOptions, Key, KeyEvent, ScrollSpec, TextEdit, Tx, col, edit_access, row, text, text_input};
 use sorot_desktop_core::clips::Options;
+use sorot_desktop_core::model::{Job, JobPhase};
 
-use crate::app::{Cmd, State};
+use crate::app::{Cmd, Route, State};
 use crate::engine::{EngineError, ImportRequest, Source};
+use crate::i18n::{Lang, tr, trf};
+use crate::ui::controls::{DISPLAY_SMALL, Pick, centered, dropdown, option_choices, page_head, pill, switch};
 use crate::ui::kit::{button, pal};
 use crate::ui::states::{Kind, state_block};
 
@@ -25,32 +29,30 @@ pub enum HomeError {
 }
 
 impl HomeError {
-    pub fn words(&self) -> String {
+    pub fn words(&self, lang: Lang) -> String {
         match self {
-            HomeError::Direction(n) => format!("The direction is {n} characters; the limit is {MAX_DIRECTION}."),
-            HomeError::Link => "Paste a link that starts with http:// or https://.".into(),
-            HomeError::File(name) => format!("{name} is not a video Sorot can read (mp4, mov, mkv or webm)."),
+            HomeError::Direction(n) => trf(lang, "home.err.direction", &[("n", &n.to_string()), ("max", &MAX_DIRECTION.to_string())]),
+            HomeError::Link => tr(lang, "home.err.link"),
+            HomeError::File(name) => trf(lang, "home.err.file", &[("name", name)]),
             HomeError::Engine(e) => e.to_string(),
         }
     }
 
-    pub fn next(&self) -> &'static str {
-        match self {
-            HomeError::Direction(_) => "Shorten it, then import again.",
-            HomeError::Link => "Copy the video's address from the browser and paste it here.",
-            HomeError::File(_) => "Drop another file, or paste a link.",
-            HomeError::Engine(EngineError::DiskFull { .. }) => "Free some space on the drive that holds the data folder, then import again.",
-            HomeError::Engine(_) => "Check the engine, then import again.",
-        }
+    pub fn next(&self, lang: Lang) -> String {
+        tr(lang, match self {
+            HomeError::Direction(_) => "home.err.direction.next",
+            HomeError::Link => "home.err.link.next",
+            HomeError::File(_) => "home.err.file.next",
+            HomeError::Engine(EngineError::DiskFull { .. }) => "home.err.disk.next",
+            HomeError::Engine(_) => "home.err.engine.next",
+        })
     }
 }
 
 pub struct Home {
     pub link: TextEdit,
     pub direction: TextEdit,
-    /// The import options sheet is open.
-    pub sheet: bool,
-    /// Options the sheet changed from the engine's defaults.
+    /// Options the card changed from the engine's defaults.
     pub options: Options,
     pub error: Option<HomeError>,
     /// A drag of files is over the drop field.
@@ -59,7 +61,7 @@ pub struct Home {
 
 impl Default for Home {
     fn default() -> Self {
-        Home { link: TextEdit::new(""), direction: TextEdit::new(""), sheet: false, options: Options::new(), error: None, dropping: false }
+        Home { link: TextEdit::new(""), direction: TextEdit::new(""), options: Options::new(), error: None, dropping: false }
     }
 }
 
@@ -97,119 +99,192 @@ impl State {
         }
     }
 
+    /// Sets an option; a value the engine already uses is not an option the person changed, so it is dropped.
     pub fn toggle_option(&mut self, key: &str, value: serde_json::Value) {
-        if self.home.options.get(key) == Some(&value) {
+        let default = self.edit_options.as_ref().and_then(|o| o.defaults.get(key));
+        if self.home.options.get(key) == Some(&value) || default == Some(&value) {
             self.home.options.remove(key);
         } else {
             self.home.options.insert(key.to_string(), value);
         }
     }
+
+    /// Reads the engine's caption styles, framing modes and music once; the options card needs them.
+    pub fn load_options(&mut self) {
+        if self.edit_options.is_none() {
+            self.send(Cmd::LoadOptions);
+        }
+    }
+
+    /// Opens the file dialog for a video (Ctrl+O, or a press on the drop field).
+    pub fn choose_file(&self, tx: &mut Tx) {
+        let options = FileDialogOptions { title: tr(self.lang, "home.dialog"), ..Default::default() }.filter(tr(self.lang, "home.dialog.filter"), &VIDEO_EXTENSIONS);
+        tx.open_file(options, |s: &mut State, picked, _| match picked {
+            Ok(Some(path)) => s.import(Source::File(path)),
+            Ok(None) => {}
+            Err(e) => s.home.error = Some(HomeError::Engine(EngineError::Network(e.to_string()))),
+        });
+    }
+
+    /// Ctrl+O on Home chooses a file, Ctrl+. on a running job cancels it; the clips keys come last.
+    pub fn keys(&mut self, key: &KeyEvent, tx: &mut Tx) -> bool {
+        let running = self.job.detail.as_ref().is_some_and(|d| d.job.is_running());
+        match (&key.key, key.mods.cmd) {
+            (Key::Command('o'), true) if matches!(self.route, Route::Home) => self.choose_file(tx),
+            (Key::Command('.'), true) if matches!(self.route, Route::Job(_)) && running => self.cancel_shown_job(),
+            _ => return self.clips_key(key),
+        }
+        true
+    }
 }
 
-fn field(s: &State, key: &str, label: &str, placeholder: &str, edit: &TextEdit, access: fn(&mut State) -> &mut TextEdit) -> El {
-    let p = pal(s.dark);
-    text_input(edit, type_::BODY).single_line().key(key).label(label).color(p.text).placeholder(placeholder, p.muted)
-        .on_edit(edit_access(access)).w_full().padding(10.0).fill(p.surface).border(1.0, p.divider).radius(6.0)
+fn labelled(s: &State, label: &str, input: El) -> El {
+    col().gap(6.0).w_full().child(text(label.to_string()).font(type_::LABEL).color(pal(s.dark).muted)).child(input)
 }
 
-fn sheet(s: &State) -> El {
+fn input_box(s: &State, key: &str, label: &str, hint: &str, edit: &TextEdit, single: bool, access: fn(&mut State) -> &mut TextEdit) -> El {
     let p = pal(s.dark);
+    let input = text_input(edit, type_::BODY).key(key).label(label).color(p.text).placeholder(hint, p.muted).on_edit(edit_access(access)).w_full().padding(12.0)
+        .fill(p.surface).border(1.0, p.edge).radius(6.0);
+    if single { input.single_line() } else { input.h(88.0) }
+}
+
+/// What the person chose for `name`, else the engine's default, else nothing.
+fn chosen(s: &State, name: &str) -> String {
     let defaults = s.edit_options.as_ref().map(|o| o.defaults.clone()).unwrap_or_default();
-    let chosen = |name: &str, default: &str| s.home.options.get(name).and_then(|v| v.as_str()).or_else(|| defaults.get(name).and_then(|v| v.as_str())).unwrap_or(default).to_string();
-    let mut panel = col().key("home/options-sheet").role("group").label("Import options").gap(12.0).padding(16.0).w_full().fill(p.surface).border(1.0, p.divider).radius(10.0);
+    s.home.options.get(name).and_then(|v| v.as_str()).or_else(|| defaults.get(name).and_then(|v| v.as_str())).unwrap_or_default().to_string()
+}
+
+fn chosen_default(s: &State, name: &str) -> String {
+    s.edit_options.as_ref().and_then(|o| o.defaults.get(name)).and_then(|v| v.as_str()).unwrap_or_default().to_string()
+}
+
+fn flag(s: &State, name: &str) -> bool {
+    let defaults = s.edit_options.as_ref().map(|o| o.defaults.clone()).unwrap_or_default();
+    s.home.options.get(name).and_then(|v| v.as_bool()).or_else(|| defaults.get(name).and_then(|v| v.as_bool())).unwrap_or(false)
+}
+
+fn pick(name: &'static str) -> Pick {
+    Rc::new(move |s: &mut State, v: &str| {
+        // Choosing what the engine already uses is no change, so nothing is sent for it.
+        if chosen_default(s, name) == v {
+            s.home.options.remove(name);
+        } else {
+            s.home.options.insert(name.to_string(), serde_json::Value::from(v));
+        }
+    })
+}
+
+fn flip(name: &'static str) -> impl Fn(&mut State) + 'static {
+    move |s: &mut State| {
+        let on = flag(s, name);
+        s.toggle_option(name, serde_json::Value::Bool(!on));
+    }
+}
+
+/// The right card: the import options for this video.
+fn options_card(s: &State) -> El {
+    let p = pal(s.dark);
+    let title = tr(s.lang, "home.opts.title");
+    let card = col().key("home/options").role("group").label(title.clone()).gap(14.0).padding(24.0).w(340.0).fill(p.surface).border(1.0, p.divider).radius(10.0)
+        .child(col().gap(2.0).child(text(title).font(type_::TITLE).color(p.text)).child(text(tr(s.lang, "home.opts.sub")).font(type_::LABEL).color(p.muted)));
     let Some(opts) = &s.edit_options else {
-        return panel.child(text("Loading the options").font(type_::BODY).color(p.muted));
+        return card.child(text(tr(s.lang, "home.opts.loading")).key("home/options/loading").role("status").font(type_::BODY).color(p.muted));
     };
-    for (name, title, values) in [("style", "Caption style", &opts.styles), ("reframe", "Framing", &opts.reframe_modes)] {
-        let now = chosen(name, "");
-        let mut line = row().gap(8.0).items_center().child(text(title).font(type_::LABEL).color(p.muted).w(110.0));
-        for v in values {
-            let value = serde_json::Value::from(v.as_str());
-            line = line.child(button(s.dark, format!("home/option/{name}/{v}"), v, now == *v, move |s: &mut State| s.toggle_option(name, value.clone())));
-        }
-        panel = panel.child(line);
-    }
-    let trim = s.home.options.get("silenceTrim").and_then(|v| v.as_bool()).or_else(|| defaults.get("silenceTrim").and_then(|v| v.as_bool())).unwrap_or(false);
-    panel = panel.child(button(s.dark, "home/option/silenceTrim", if trim { "Cut silences: on" } else { "Cut silences: off" }, trim, move |s: &mut State| s.toggle_option("silenceTrim", serde_json::Value::Bool(!trim))));
-    if !s.music.is_empty() {
-        let mut line = row().gap(8.0).items_center().child(text("Music").font(type_::LABEL).color(p.muted).w(110.0));
-        let now = s.home.options.get("bgm").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        for track in &s.music {
-            let value = serde_json::Value::from(track.as_str());
-            line = line.child(button(s.dark, format!("home/option/bgm/{track}"), track, now == *track, move |s: &mut State| s.toggle_option("bgm", value.clone())));
-        }
-        panel = panel.child(line);
-    }
-    panel
+    let mut music = vec![(String::new(), tr(s.lang, "home.opts.nomusic"))];
+    music.extend(s.music.iter().map(|m| (m.clone(), m.clone())));
+    card.child(dropdown(s, "home/option/style", &tr(s.lang, "home.opts.style"), &chosen(s, "style"), &option_choices(s.lang, "style", &opts.styles), pick("style")))
+        .child(dropdown(s, "home/option/reframe", &tr(s.lang, "home.opts.reframe"), &chosen(s, "reframe"), &option_choices(s.lang, "reframe", &opts.reframe_modes), pick("reframe")))
+        .child(switch(s.dark, "home/option/silenceTrim", &tr(s.lang, "home.opts.silence"), None, flag(s, "silenceTrim"), flip("silenceTrim")))
+        .child(switch(s.dark, "home/option/youtubeCaptions", &tr(s.lang, "home.opts.captions"), Some(&tr(s.lang, "home.opts.captions.sub")), flag(s, "youtubeCaptions"), flip("youtubeCaptions")))
+        .child(dropdown(s, "home/option/bgm", &tr(s.lang, "home.opts.music"), &chosen(s, "bgm"), &music, pick("bgm")))
+}
+
+fn drop_field(s: &State) -> El {
+    let p = pal(s.dark);
+    let label = tr(s.lang, "home.drop.title");
+    col().key("home/drop").role("group").label(label.clone()).w_full().h(200.0).radius(10.0).fill(if s.home.dropping { p.raised } else { p.bg })
+        .border(1.5, if s.home.dropping { p.beam } else { p.edge }).border_dash(6.0, 5.0)
+        .on_drop_files(|s: &mut State, files: &[PathBuf], _: &mut Tx| s.dropped(files))
+        .accepts_extensions(&VIDEO_EXTENSIONS)
+        .on_drop_hover(|s: &mut State, over, _| s.home.dropping = over)
+        .child(
+            col().key("home/choose-file").role("button").label(label.clone()).focusable(true).w_full().h_full().gap(8.0).center().radius(10.0)
+                .hover(p.text.alpha(0.04))
+                .on_press_tx(|s: &mut State, tx: &mut Tx| s.choose_file(tx))
+                .child(text(label).font(DISPLAY_SMALL).color(p.text))
+                .child(text(tr(s.lang, "home.drop.hint")).font(type_::BODY).color(p.muted).wrap()),
+        )
 }
 
 fn import_card(s: &State) -> El {
     let p = pal(s.dark);
     let n = s.home.direction.text.chars().count();
-    let drop = col().key("home/drop").role("group").label("Drop a video here").gap(10.0).padding(24.0).items_center().w_full()
-        .fill(if s.home.dropping { p.raised } else { p.surface }).border(1.0, if s.home.dropping { p.beam } else { p.divider }).radius(10.0)
-        .on_drop_files(|s: &mut State, files: &[PathBuf], _: &mut Tx| s.dropped(files))
-        .accepts_extensions(&VIDEO_EXTENSIONS)
-        .on_drop_hover(|s: &mut State, over, _| s.home.dropping = over)
-        .child(text("Drop a video here").font(type_::TITLE).color(p.text))
-        .child(text("mp4, mov, mkv or webm").font(type_::LABEL).color(p.muted))
-        .child({
-            let options = FileDialogOptions { title: "Choose a video".into(), ..Default::default() }.filter("Video", &VIDEO_EXTENSIONS);
-            col().key("home/choose-file").role("button").label("Choose file").focusable(true).padding(10.0).radius(6.0).fill(p.raised).border(1.0, p.divider)
-                .on_press_tx(move |_: &mut State, tx: &mut Tx| {
-                    tx.open_file(options.clone(), |s: &mut State, picked, _| match picked {
-                        Ok(Some(path)) => s.import(Source::File(path)),
-                        Ok(None) => {}
-                        Err(e) => s.home.error = Some(HomeError::Engine(EngineError::Network(e.to_string()))),
-                    });
-                })
-                .child(text("Choose file").font(type_::LABEL).color(p.text))
-        });
-    let link = row().gap(10.0).items_center().w_full()
-        .child(field(s, "home/link", "Video link", "Or paste a link", &s.home.link, |s| &mut s.home.link).grow(1.0))
-        .child(button(s.dark, "home/import", "Import link", true, |s: &mut State| s.import_link()));
+    let (link_label, dir_label) = (tr(s.lang, "home.link.label"), tr(s.lang, "home.dir.label"));
+    let link_row = row().gap(12.0).items_end().w_full()
+        .child(labelled(s, &link_label, input_box(s, "home/link", &link_label, &tr(s.lang, "home.link.hint"), &s.home.link, true, |s| &mut s.home.link)).grow(1.0))
+        .child(centered(button(s.dark, "home/import", &tr(s.lang, "home.import"), true, |s: &mut State| s.import_link()).px(18.0).h(41.0)));
     let counter = if n > MAX_DIRECTION { p.skip } else { p.muted };
     let direction = col().gap(6.0).w_full()
-        .child(field(s, "home/direction", "Direction", "What should the clips be about? (optional)", &s.home.direction, |s| &mut s.home.direction))
-        .child(text(format!("{n}/{MAX_DIRECTION}")).key("home/direction-count").font(type_::LABEL).color(counter));
-    let toggle = button(s.dark, "home/options-toggle", if s.home.sheet { "Hide import options" } else { "Import options" }, false, |s: &mut State| s.toggle_sheet());
-    let mut card = col().gap(14.0).w_full().max_w(760.0).child(drop).child(link).child(direction).child(toggle);
-    if s.home.sheet {
-        card = card.child(sheet(s));
-    }
+        .child(labelled(s, &dir_label, input_box(s, "home/direction", &dir_label, &tr(s.lang, "home.dir.hint"), &s.home.direction, false, |s| &mut s.home.direction)))
+        .child(row().gap(12.0).w_full()
+            .child(text(tr(s.lang, "home.dir.note")).font(type_::LABEL).color(p.muted).wrap().grow(1.0))
+            .child(text(format!("{n}/{MAX_DIRECTION}")).key("home/direction-count").font(type_::LABEL).color(counter)));
+    let mut card = col().gap(20.0).grow(1.0).shrink().child(drop_field(s)).child(link_row);
+    // A problem shows right under the field that caused it, where the eye already is.
     if let Some(e) = &s.home.error {
-        card = card.child(col().key("home/error").role("alert").label(format!("{} {}", e.words(), e.next())).gap(2.0)
-            .child(text(e.words()).key("home/error/cause").font(type_::BODY).color(p.skip).wrap())
-            .child(text(e.next()).key("home/error/next").font(type_::BODY).color(p.muted).wrap()));
+        let (cause, next) = (e.words(s.lang), e.next(s.lang));
+        card = card.child(col().key("home/error").role("alert").label(format!("{cause} {next}")).gap(2.0)
+            .child(text(cause).key("home/error/cause").font(type_::BODY).color(p.skip).wrap())
+            .child(text(next).key("home/error/next").font(type_::BODY).color(p.muted).wrap()));
     }
+    card = card.child(direction);
     card
 }
 
-impl State {
-    pub fn toggle_sheet(&mut self) {
-        self.home.sheet = !self.home.sheet;
-        if self.home.sheet && self.edit_options.is_none() {
-            self.send(Cmd::LoadOptions);
-        }
-    }
+/// What a video is called: its title, else its file's name, else a placeholder.
+pub fn video_name(s: &State, video_id: &str) -> String {
+    let v = s.videos.iter().find(|v| v.id == video_id);
+    v.and_then(|v| v.title.clone().or_else(|| v.file_path.as_deref().and_then(|p| p.rsplit(['/', '\\']).next()).map(String::from)))
+        .unwrap_or_else(|| tr(s.lang, "home.untitled"))
+}
+
+fn recent_row(s: &State, j: &Job) -> El {
+    let p = pal(s.dark);
+    let id = j.id.clone();
+    let phase = j.phase();
+    let ink = match phase {
+        JobPhase::Completed => p.pass,
+        JobPhase::Running | JobPhase::Queued => p.beam_text,
+        _ => p.skip,
+    };
+    let name = video_name(s, &j.video_id);
+    let status = tr(s.lang, &format!("status.{}", if phase == JobPhase::Interrupted { "FAILED" } else { j.status.as_str() }));
+    let open = tr(s.lang, if phase == JobPhase::Completed { "home.open" } else { "home.open.job" });
+    row().key(format!("home/job/{}", j.id)).role("listitem").label(format!("{name}, {status}")).focusable(true).gap(12.0).px(16.0).py(14.0).items_center().w_full()
+        .fill(p.surface).border(1.0, p.divider).radius(6.0).hover(p.text.alpha(0.04)).on_press(move |s: &mut State| s.open_job(&id))
+        .child(text(name).font(type_::BODY).color(p.text).truncate().grow(1.0).shrink())
+        .child(pill(format!("home/job/{}/status", j.id), &status, ink))
+        .child(text(open).font(type_::LABEL).color(p.beam_text))
 }
 
 pub fn view(s: &State) -> El {
     let p = pal(s.dark);
+    let head = page_head(s.dark, "home/title", &tr(s.lang, "home.title"), &tr(s.lang, "home.sub"));
+    let top = row().gap(40.0).w_full().items_start().child(import_card(s)).child(options_card(s));
     let below = if s.jobs.is_empty() && s.videos.is_empty() {
-        state_block::<State>(s.dark, "home/empty", Kind::Empty, "No videos yet", "Paste a link or choose a file to make your first clips.", None)
+        state_block::<State>(s.dark, "home/empty", Kind::Empty, &tr(s.lang, "home.empty.cause"), &tr(s.lang, "home.empty.next"), None)
     } else {
-        let mut list = col().key("home/jobs").role("list").label("Jobs").gap(6.0).w_full().max_w(760.0);
-        for j in &s.jobs {
-            let id = j.id.clone();
-            let stage = j.current_stage.clone().unwrap_or_default();
-            list = list.child(
-                row().key(format!("home/job/{}", j.id)).role("listitem").label(format!("{} {}", j.status, stage)).focusable(true).gap(8.0).padding(10.0).w_full()
-                    .fill(p.surface).border(1.0, p.divider).radius(8.0).on_press(move |s: &mut State| s.open_job(&id))
-                    .child(text(&j.status).font(type_::LABEL).color(p.text)).child(text(stage).font(type_::BODY).color(p.muted)),
-            );
+        let mut list = col().key("home/jobs").role("list").label(tr(s.lang, "home.recent")).gap(12.0).w_full().child(text(tr(s.lang, "home.recent")).font(type_::TITLE).color(p.text));
+        let mut jobs = s.jobs.iter().take(4);
+        while let Some(a) = jobs.next() {
+            let second = match jobs.next() {
+                Some(b) => recent_row(s, b).grow(1.0),
+                None => col().grow(1.0),
+            };
+            list = list.child(row().gap(12.0).w_full().child(recent_row(s, a).grow(1.0)).child(second));
         }
         list
     };
-    col().gap(24.0).padding(24.0).w_full().h_full().items_center().child(import_card(s)).child(below)
+    col().key("home/scroll").scroll(ScrollSpec { stick_bottom: false }).gap(28.0).padding(40.0).w_full().h_full().child(head).child(top).child(below)
 }

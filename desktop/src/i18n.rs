@@ -28,6 +28,11 @@ pub fn tr(lang: Lang, key: &str) -> String {
     first.get(key).or_else(|| second.get(key)).cloned().unwrap_or_else(|| key.to_string())
 }
 
+/// `tr` with each `{name}` in the text replaced by its value.
+pub fn trf(lang: Lang, key: &str, args: &[(&str, &str)]) -> String {
+    args.iter().fold(tr(lang, key), |t, (k, v)| t.replace(&format!("{{{k}}}"), v))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

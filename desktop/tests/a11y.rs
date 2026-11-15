@@ -32,7 +32,7 @@ fn every_screen_names_what_a_person_can_press() {
     interactive(&tree, &mut rows);
     let words: Vec<&str> = rows.iter().filter(|n| n["key"].as_str().is_some_and(|k| k.starts_with("clips/row/"))).map(|n| n["name"].as_str().unwrap()).collect();
     assert_eq!(words.len(), 3);
-    assert!(["Pass", "Review", "Skip"].iter().all(|w| words.iter().any(|n| n.ends_with(w))), "{words:?}");
+    assert!(["clips.verdict.PASS", "clips.verdict.REVIEW", "clips.verdict.FAIL"].iter().all(|k| words.iter().any(|n| n.ends_with(&sorot_desktop::i18n::tr(sorot_desktop::i18n::Lang::Id, k)))), "{words:?}");
 }
 
 /// Focus order never jumps back up the page unless it moves on to a column to the right.
