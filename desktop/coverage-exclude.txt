@@ -1,0 +1,9 @@
+src/platform/process_windows.rs
+src/platform/process_unix.rs
+src/platform/tray.rs
+src/platform/reveal.rs
+src/platform/notify_linux.rs
+src/platform/taskbar_windows.rs
+src/platform/window_state.rs
+src/platform/open_documents_macos.rs
+src/platform/gpu_probe.rs

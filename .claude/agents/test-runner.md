@@ -1,6 +1,6 @@
 ---
 name: test-runner
-description: Integration test runner — executes all test suites (AI Pipeline, Backend, CLI, Frontend) and produces a structured gate report. Use after /execute, /review, or any time a full health check is needed. Never writes code, only reports.
+description: Integration test runner — executes all test suites (AI Pipeline, Backend, CLI, Frontend, Desktop) and produces a structured gate report. Use after /execute, /review, or any time a full health check is needed. Never writes code, only reports.
 model: haiku
 tools: Bash, Read, Glob, Grep
 ---
@@ -17,7 +17,7 @@ You are a dedicated integration test runner for the Sorot project. Your ONLY job
 
 Before running tests, detect which environment is available:
 
-All four suites run natively on the host (Python venv + Bun). Backend, CLI and
+All five suites run natively on the host (Python venv + Bun). Backend, CLI and
 frontend share one Bun workspace — run `bun install` at the repo root first if
 `node_modules/` is missing. Commands below run from the repo root.
 
@@ -51,6 +51,14 @@ cd frontend && bun run test 2>&1
 ```
 If `bun` not found: mark Backend, CLI + Frontend as ❌ with reason "bun not available on host"
 
+#### Desktop (Rust, `desktop/`):
+```bash
+cd desktop && cargo clippy --all-targets -- -D warnings 2>&1
+cd desktop && cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95 --ignore-filename-regex "$(tr -d '\r' < coverage-exclude.txt | sed -e 's/\./\\./g' -e 's#/#[/\\]#g' | paste -sd'|')" 2>&1
+wsl -e bash -lc '. ~/.cargo/env; cd /mnt/d/VibeCoding/ViralVideo/<checkout>/desktop && CARGO_TARGET_DIR=~/.cache/sorot-kani-target cargo kani -p sorot-desktop-core' 2>&1
+```
+`<checkout>` is the repo or worktree path relative to `D:\VibeCoding\ViralVideo` (empty for the main checkout). The separate `CARGO_TARGET_DIR` keeps WSL builds out of the Windows `target/`. Capture: tests, coverage %, and Kani "proofs verified / failed". The coverage ignore list is `desktop/coverage-exclude.txt` (thin OS shims only). If `cargo` is not found: mark Desktop ❌ "cargo not available on host". If Kani is unavailable (wsl or cargo-kani missing), report Kani as "not available on host": the gate is BLOCKED, never passed.
+
 ## Report Format
 
 After running ALL suites, produce this exact report:
@@ -64,12 +72,14 @@ After running ALL suites, produce this exact report:
 | Backend | X | X | X | X | X% | ✅/❌ |
 | CLI | X | X | X | X | X% | ✅/❌ |
 | Frontend | X | X | X | X | X% | ✅/❌ |
+| Desktop | X | X | X | X | X% | ✅/❌ |
 | **TOTAL** | **X** | **X** | **X** | **X** | **X%** | ✅/❌ |
 
 ### Gate Criteria
 - [ ] 100% test pass rate (0 failures, 0 skips): PASS/FAIL
 - [ ] ≥95% coverage on all suites: PASS/FAIL
 - [ ] No compiler/type errors: PASS/FAIL
+- [ ] Kani proofs: X verified / X failed (any failed proof, or Kani unavailable: FAIL)
 
 ### Verdict: 🟢 GATE OPEN / 🔴 GATE BLOCKED
 ```
@@ -89,6 +99,7 @@ After running ALL suites, produce this exact report:
 - ANY test failure → GATE BLOCKED
 - ANY suite below 95% coverage → GATE BLOCKED
 - ANY compilation/type error → GATE BLOCKED
+- ANY failed Kani proof, or Kani not available on host → GATE BLOCKED
 
 ## Special Cases
 - If Backend or Frontend suites are unavailable on host, that is NOT a gate block — it means those suites must run in Docker. Note it clearly.

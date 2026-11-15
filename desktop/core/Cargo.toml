@@ -1,0 +1,15 @@
+[package]
+name = "sorot-desktop-core"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Pure logic. No Rune and no OS crates, so Kani can compile it.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[package.metadata.kani]
+flags = { default-unwind = "8" }
