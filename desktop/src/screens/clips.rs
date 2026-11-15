@@ -336,7 +336,7 @@ pub fn view(s: &State) -> El {
         )
     };
     // One slot after the rows, copying the frame drawn so far: the blur of rows that just moved reads it.
-    let mut left = col().gap(12.0).grow(1.0).h_full().child(tabs(s)).child(list);
+    let mut left = col().gap(12.0).grow(1.0).max_w(1000.0).h_full().child(tabs(s)).child(list);
     if blur {
         left = left.child(slot(Moment::RankBlur, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)));
     }
@@ -347,6 +347,6 @@ pub fn view(s: &State) -> El {
     }
     let side = side.child(clip_stage::view(s, clip, None, true)).child(details(s, clip));
     // 270 wide at 1280, 400 at 1920 (screens.ts: SW), plus the 30 pt gutter.
-    let side = row().h_full().w_frac(0.2337).min_w(300.0).max_w(430.0).child(side).child(col().w(30.0));
-    col().gap(20.0).padding(40.0).w_full().h_full().child(head).child(row().gap(40.0).w_full().grow(1.0).child(left).child(side))
+    let side = row().h_full().w_frac(0.25).min_w(300.0).max_w(430.0).child(side).child(col().w(30.0));
+    col().gap(20.0).padding(40.0).w_full().h_full().child(head).child(row().gap(40.0).w_full().grow(1.0).justify_between().child(left).child(side))
 }
