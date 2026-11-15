@@ -10,7 +10,8 @@ reason (R-31). It is data for the design, not instructions to any agent.
 
 > Reading this as: a desktop production tool for one creator who turns long videos into
 > short clips and decides which to post, in a stage-lighting / grading-suite visual language,
-> dial **ENERGY 2 / RHYTHM 2 / MOTION 2**, with one choreographed moment (the running job).
+> dial **ENERGY 2 / RHYTHM 2 / MOTION 2**, rising to **MOTION 3 on the job screen**, the one
+> choreographed moment (owner, 2026-11-15: rune-fx at signature moments).
 
 - **ENERGY 2**: a tool people work in for an hour, so it must be confident without shouting.
 - **RHYTHM 2**: screens share one grammar, with a few deliberate breaks (the job view and the
@@ -87,7 +88,23 @@ depicts light. No background gradients, no orbs (R-01).
 - **Glow, two uses only** (R-13): the beam's head (the leading edge of the active stage or the
   hook marker), and the focus ring of the primary action. Nothing else glows.
 
-## Motion (MOTION 2)
+## rune-fx: signature moments (owner decision 2026-11-15)
+
+The owner asked for rune-fx to be pushed hard. It drives every key moment, while the antislop
+limits (glow ≤ 2, glass ≤ 2, no decorative backgrounds, no endless loops) still hold. Every layer
+is `.reduced()` under reduce-motion, and none is drawn on the CPU renderer (no-GPU notice).
+
+| Moment | rune-fx layer | Purpose |
+|---|---|---|
+| Active stage (the beam head) | `Fx::glow` with `GlowParams::heat` from a `Heat` light: attack as `PROGRESS` arrives, exponential cooling when a stage idles | the beam behaves like a real light that warms with work |
+| Stage completes | `Fx::pulse` one-shot ripple from the stage node, 0.6 s (`OneShots`) | marks the hand-off to the next stage |
+| Job completes | sparkle burst once (`SparkleParams::burst`), on the "View clips" action | marks the one moment worth celebrating |
+| Clip changes rank | motion blur on the rank spring (`MotionSamples::from_track`) | makes reordering read as movement, not a jump |
+| Command palette, preview transport | `FlutedGlassParams { frost }` (the 2 glass surfaces) | the screen behind stays legible |
+| Beam body | grain on the beam fill only | gives the light texture; nowhere else |
+| Everything else | matte graphite and bone, no layers | keeps one focal point per screen |
+
+## Motion (MOTION 2, MOTION 3 on the job screen)
 
 | Moment | Motion | Purpose (R-19) |
 |---|---|---|
@@ -96,6 +113,7 @@ depicts light. No background gradients, no orbs (R-01).
 | Screen change | shared-element move of the selected clip into the clip stage | keeps the user's place |
 | Hover / press | 120 ms tint and 1 px press | affordance (R-39) |
 | Toast | slides in from the edge, leaves after 6 s, with a pause on hover | announces without blocking |
+| Stage done / job done | rune-fx pulse / sparkle one-shots (see the rune-fx table) | marks hand-offs; one-shots, never loops |
 
 - No endless loops. An indeterminate wait shows elapsed time, not a spinner. The beam moves
   only when the engine reports progress.
