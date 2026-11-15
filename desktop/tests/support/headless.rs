@@ -132,14 +132,12 @@ pub fn run_at(scene: &str, script: Option<&str>, mark: &str, args: &[&str], env:
     cmd.envs(env.iter().copied());
     cmd.args(["--scene", scene, "--tree"]).arg(&tree);
     if let Some(name) = script {
-        // Rune draws every virtual frame, ~90 ms each on a software adapter (a CI runner): a script that waits
-        // 15 s at 60 fps outlasts any deadline. A script with such a wait (us2, us6) runs at 20 fps; the others
-        // keep 60, since taps 0.1 s apart need the frames to lay out in between.
+        // Rune draws every virtual frame, ~90 ms each on a software adapter (a CI runner): a long script at
+        // 60 fps outlasts any deadline. Scripts longer than 8 s run at 20 fps, so their taps are at least 0.2 s
+        // apart; short ones keep 60 (taps 0.1 s apart need the frames to lay out in between).
         let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"));
-        let mut times: Vec<f64> = serde_json::from_str::<Value>(&std::fs::read_to_string(file).unwrap()).unwrap()["events"].as_array().unwrap().iter().filter_map(|e| e["t"].as_f64()).collect();
-        times.sort_by(f64::total_cmp);
-        let long_wait = times.windows(2).any(|w| w[1] - w[0] >= 10.0);
-        cmd.args(["--fps", if long_wait { "20" } else { "60" }]);
+        let last = serde_json::from_str::<Value>(&std::fs::read_to_string(file).unwrap()).unwrap()["events"].as_array().unwrap().iter().filter_map(|e| e["t"].as_f64()).fold(0.0, f64::max);
+        cmd.args(["--fps", if last > 8.0 { "20" } else { "60" }]);
         cmd.arg("--script").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"))).args(["--at", &format!("mark:{mark}")]);
     }
     if script.is_some() && std::env::var_os("SOROT_HEADLESS_TRACE").is_some() {
