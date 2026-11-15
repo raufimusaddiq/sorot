@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Condvar, Mutex};
 
 use serde_json::Value;
 
@@ -11,12 +12,40 @@ pub struct Tree(pub Value);
 
 static N: AtomicU32 = AtomicU32::new(0);
 
+/// At most this many app processes run at once, whatever the test thread count (the owner's RAM/CPU budget).
+const MAX_APPS: usize = 2;
+
+/// Counting semaphore shared by every headless run in the test binary.
+static RUNNING: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+struct Slot;
+
+impl Slot {
+    fn take() -> Slot {
+        let (lock, cv) = &RUNNING;
+        let mut n = cv.wait_while(lock.lock().unwrap_or_else(|e| e.into_inner()), |n| *n >= MAX_APPS).unwrap_or_else(|e| e.into_inner());
+        *n += 1;
+        Slot
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let (lock, cv) = &RUNNING;
+        *lock.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+        cv.notify_one();
+    }
+}
+
 fn temp(ext: &str) -> PathBuf {
     std::env::temp_dir().join(format!("sorot-headless-{}-{}.{ext}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)))
 }
 
-/// Runs `cmd` to the end, or kills it after 30 s and fails with what it printed.
+/// Runs `cmd` to the end once a slot is free (at most `MAX_APPS` at a time), or kills it after 30 s of
+/// running (the wait for a slot is not counted: two at a time still finish well inside it) and fails
+/// with what it printed.
 fn finish(mut cmd: Command) -> std::process::Output {
+    let _slot = Slot::take();
     use std::io::Read;
     use std::process::Stdio;
     let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
