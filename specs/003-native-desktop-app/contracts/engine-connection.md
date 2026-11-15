@@ -44,7 +44,7 @@ SOROT_READY {"port":54321,"version":"1.9.0","api":1}
 
 - When `SOROT_TOKEN` is set, every `/api/*` request must carry
   `Authorization: Bearer <token>`. Otherwise the engine answers
-  `401 {"success":false,"error":"unauthorized"}`.
+  `401 {"status":"error","error":"unauthorized"}` (the existing `fail()` envelope, `backend/src/http.ts`).
 - `/api/health` is also covered.
 - CORS stays as today; the app sends no `Origin`.
 - With `SOROT_TOKEN` unset (Docker, CLI against a dev server), behaviour is unchanged.
@@ -67,7 +67,7 @@ SOROT_READY {"port":54321,"version":"1.9.0","api":1}
 `GET /api/readiness` returns:
 
 ```json
-{ "success": true, "data": { "items": [
+{ "status": "ok", "data": { "items": [
   { "id": "ffmpeg", "required": true, "ok": false, "fixable": true,
     "detail": "ffmpeg not found at <path>" },
   { "id": "python", "required": true, "ok": true, "fixable": true, "detail": "Python 3.12, packages up to date" },
@@ -102,8 +102,8 @@ machine).
 
 ## 7. Library commands (first run, before the server starts)
 
-The app runs `sorot-engine <command>` with no server env. The engine prints one JSON envelope
-on stdout and exits (0 on success, non-zero on failure). All the logic is TypeScript; the app
+The app runs `sorot-engine <command>` with no server env. The engine prints one JSON envelope (the HTTP one: `{"status":"ok","data"}` or
+`{"status":"error","error"}`) on stdout and exits (0 on success, non-zero on failure). All the logic is TypeScript; the app
 only shows the result.
 
 | Command | `data` | Notes |
@@ -115,7 +115,7 @@ only shows the result.
 ## 8. Disk space
 
 `POST /api/import` and `POST /api/process` answer
-`507 {"success":false,"error":"not enough disk space","data":{"needBytes","freeBytes"}}` before
+`507 {"status":"error","error":"not enough disk space","data":{"needBytes","freeBytes"}}` (`fail()` gains an optional `data`) before
 any work starts when `DATA_DIR` lacks the space the job needs.
 
 ## 9. Errors the app must handle
@@ -124,5 +124,5 @@ any work starts when `DATA_DIR` lacks the space the job needs.
 |---|---|
 | 401 | the connection is broken (token mismatch): restart the engine once, then `Failed` |
 | network error, 3 health checks in a row | `Lost`, then auto-restart (max 2 per session) |
-| `{"success":false,"error":...}` on an action | inline error at that control, naming what failed and the next step (R-27) |
+| `{"status":"error","error":...}` on an action | inline error at that control, naming what failed and the next step (R-27) |
 | engine `api` major version is newer | blocking notice to update the app |
