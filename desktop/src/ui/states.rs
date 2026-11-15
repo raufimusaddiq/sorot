@@ -12,7 +12,7 @@ pub enum Kind {
 }
 
 /// A button under the text: `(key, label, handler)`.
-pub type Action<S> = (&'static str, &'static str, fn(&mut S));
+pub type Action<'a, S> = (&'static str, &'a str, fn(&mut S));
 
 /// A button under the text whose label is built at run time: `(key, label, handler)`.
 pub type TextAction<S> = (&'static str, String, fn(&mut S));

@@ -261,12 +261,85 @@ pub struct Profile {
     pub name: String,
 }
 
+/// The narration voice card of `GET /api/settings` (Generate installs only).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceView {
+    pub active: bool,
+    pub enabled: bool,
+    #[serde(default)]
+    pub saved: Vec<String>,
+    /// The chosen engine; empty when none.
+    #[serde(default)]
+    pub engine: String,
+    #[serde(default)]
+    pub engines: Vec<String>,
+    #[serde(default)]
+    pub local_available: bool,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    pub api_key: String,
+    pub api_key_set: bool,
+    /// Language code to voice id.
+    #[serde(default)]
+    pub voices: std::collections::BTreeMap<String, String>,
+}
+
+/// The scene images card.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageView {
+    pub active: bool,
+    pub enabled: bool,
+    #[serde(default)]
+    pub saved: Vec<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    pub api_key: String,
+    pub api_key_set: bool,
+    #[serde(default)]
+    pub size: Option<String>,
+    #[serde(default)]
+    pub style: Option<String>,
+}
+
+/// One local check a recipe may name.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenCommand {
+    pub name: String,
+    pub cmd: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub timeout_sec: u32,
+}
+
+/// The custom commands card; `allowed` is false when the install keeps them off.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CommandsView {
+    pub active: bool,
+    #[serde(default)]
+    pub allowed: bool,
+    #[serde(default)]
+    pub commands: Vec<GenCommand>,
+}
+
 /// `GET /api/settings`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     pub llm: Connection,
     pub jev: Connection,
     pub tebar: Connection,
+    #[serde(default)]
+    pub voice: Option<VoiceView>,
+    #[serde(default)]
+    pub image: Option<ImageView>,
+    #[serde(default)]
+    pub commands: Option<CommandsView>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

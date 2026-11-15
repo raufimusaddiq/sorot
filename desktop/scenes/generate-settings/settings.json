@@ -9,8 +9,8 @@
       ],
       "apiKey": "••••a1f3",
       "apiKeySet": true,
-      "baseUrl": "https://api.contoh.id/v1",
-      "model": "qwen2.5",
+      "baseUrl": "https://kenari.id/v1",
+      "model": "kenari/auto",
       "director": false,
       "genMaxTokens": 32000,
       "contextTokens": 600000,
@@ -36,6 +36,63 @@
       "apiKey": "",
       "apiKeySet": false,
       "baseUrl": ""
+    },
+    "voice": {
+      "active": true,
+      "enabled": true,
+      "saved": [
+        "engine"
+      ],
+      "engine": "openai",
+      "engines": [
+        "elevenlabs",
+        "fish",
+        "openai",
+        "local"
+      ],
+      "localAvailable": false,
+      "baseUrl": "https://kenari.id/v1",
+      "model": "kenari-tts",
+      "apiKey": "••••77ab",
+      "apiKeySet": true,
+      "voices": {
+        "id": "sari",
+        "en": "ava"
+      }
+    },
+    "image": {
+      "active": true,
+      "enabled": true,
+      "saved": [],
+      "baseUrl": "https://kenari.id/v1",
+      "model": "kenari-img-1",
+      "apiKey": "••••77ab",
+      "apiKeySet": true,
+      "size": "1024x1024",
+      "style": "flat"
+    },
+    "commands": {
+      "active": true,
+      "allowed": true,
+      "commands": [
+        {
+          "name": "lint-svg",
+          "cmd": "svgo",
+          "args": [
+            "--check",
+            "--project-dir"
+          ],
+          "timeoutSec": 60
+        },
+        {
+          "name": "contrast",
+          "cmd": "python",
+          "args": [
+            "check_contrast.py"
+          ],
+          "timeoutSec": 120
+        }
+      ]
     }
   }
 }

@@ -7,6 +7,10 @@ pub trait Reveal: Send + Sync {
     fn reveal(&self, path: &Path) -> Result<(), String>;
     /// Opens the file itself in the system's video player.
     fn open(&self, path: &Path) -> Result<(), String>;
+    /// Opens a web address in the default browser.
+    fn open_url(&self, _url: &str) -> Result<(), String> {
+        Err("no browser to open it in".into())
+    }
 }
 
 pub struct OsReveal;
@@ -39,6 +43,22 @@ impl Reveal for OsReveal {
             "org.freedesktop.FileManager1.ShowItems", &format!("array:string:{uri}"), "string:",
         ]));
         shown.or_else(|_| run(Command::new("xdg-open").arg(path.parent().unwrap_or(path))))
+    }
+
+    #[cfg(windows)]
+    fn open_url(&self, url: &str) -> Result<(), String> {
+        // `start` would read an & in the address as a second command.
+        run(Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn open_url(&self, url: &str) -> Result<(), String> {
+        run(Command::new("open").arg(url))
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn open_url(&self, url: &str) -> Result<(), String> {
+        run(Command::new("xdg-open").arg(url))
     }
 
     #[cfg(windows)]
