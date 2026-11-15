@@ -38,12 +38,12 @@ fn state_of(s: &State, item: &ReadinessItem) -> ItemState {
 }
 
 fn tail(s: &State, item: &ReadinessItem) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let id = item.id.clone();
     let status = |key: &str, words: String, color| text(words).key(format!("readiness/{id}/{key}")).font(type_::LABEL).color(color).wrap();
     let act = |key: &str, label: &str, primary: bool| {
         let id = id.clone();
-        button(s.dark, format!("readiness/{id}/{key}"), label, primary, move |s: &mut State| s.send(Cmd::FixReadiness(id.clone())))
+        button(s.dark(), format!("readiness/{id}/{key}"), label, primary, move |s: &mut State| s.send(Cmd::FixReadiness(id.clone())))
     };
     match state_of(s, item) {
         ItemState::Ok => status("status", "Ready".into(), p.pass),
@@ -58,7 +58,7 @@ fn tail(s: &State, item: &ReadinessItem) -> El {
 }
 
 pub fn view(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let pending = s.readiness.iter().filter(|i| i.required && !i.ok).count();
     let mut card = col().key("readiness/items").w_full().fill(p.surface).border(1.0, p.divider).radius(10.0);
     for item in &s.readiness {
@@ -79,7 +79,7 @@ pub fn view(s: &State) -> El {
             .child(text(format!("Sorot checks this machine before it clips. {pending} required item(s) are not ready.")).key("readiness/summary").font(type_::BODY).color(p.muted).wrap()),
     );
     if !fixable(s).is_empty() {
-        head = head.child(button(s.dark, "readiness/fix-all", "Fix all", true, |s: &mut State| {
+        head = head.child(button(s.dark(), "readiness/fix-all", "Fix all", true, |s: &mut State| {
             let ids = fixable(s);
             s.send(Cmd::FixAll(ids));
         }));

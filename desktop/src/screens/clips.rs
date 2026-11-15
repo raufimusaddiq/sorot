@@ -243,7 +243,7 @@ impl ClipsScreen {
 }
 
 fn row_of(s: &State, i: usize) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let clip = &s.clips.clips[i];
     let chosen = i == s.clips.selected;
     let verdict = clip.gate_verdict.as_deref();
@@ -263,7 +263,7 @@ fn row_of(s: &State, i: usize) -> El {
             .child(text(title.clone()).key(format!("clips/row/{}/title", clip.id)).font(type_::TITLE).color(ink).truncate())
             .child(text(when).font(type_::LABEL).color(p.muted)))
         .child(pill(format!("clips/row/{}/verdict", clip.id), &word, score::verdict_ink(&p, verdict)))
-        .child(score_bar(s.dark, clip.score.unwrap_or(0.0)))
+        .child(score_bar(s.dark(), clip.score.unwrap_or(0.0)))
         .child(text(score::score_text(s.lang, clip.score)).key(format!("clips/row/{}/score", clip.id)).font(type_::BODY).color(ink).w(36.0));
     // The chosen row carries a beam line along its top edge, fading to the right.
     let top = if chosen {
@@ -277,7 +277,7 @@ fn row_of(s: &State, i: usize) -> El {
 }
 
 fn tabs(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let mut bar = row().key("clips/tabs").role("tablist").label(tr(s.lang, "clips.list")).gap(8.0).items_center();
     for f in Filter::ALL {
         let on = s.clips.filter == f;
@@ -298,34 +298,34 @@ fn details(s: &State, clip: &Clip) -> El {
     let title = clip_stage::title(s.lang, clip);
     let (publish_title, feedback_title) = (title.clone(), title);
     let mut export = row().gap(10.0).items_center().w_full()
-        .child(centered(button(s.dark, "clips/edit", &tr(s.lang, "clips.edit"), false, move |s: &mut State| s.open_editor(&edit_id))).grow(1.0))
-        .child(centered(button(s.dark, "clips/export", &tr(s.lang, if busy { "clips.exporting" } else { "clips.export" }), !exported, |s: &mut State| s.export_selected())).grow(1.0));
+        .child(centered(button(s.dark(), "clips/edit", &tr(s.lang, "clips.edit"), false, move |s: &mut State| s.open_editor(&edit_id))).grow(1.0))
+        .child(centered(button(s.dark(), "clips/export", &tr(s.lang, if busy { "clips.exporting" } else { "clips.export" }), !exported, |s: &mut State| s.export_selected())).grow(1.0));
     for (_, t0, k, seed) in s.bursts.live(s.now as f32, burst_life()).map(|(b, k)| ((), b.t0, k, b.seed)) {
         export = export.child(slot(Moment::JobSparkle, [t0, k, seed as f32, 0.0]).w(90.0).h(36.0).absolute(0.0, 0.0));
     }
     let mut more = row().gap(10.0).items_center().w_full()
-        .child(centered(button(s.dark, "clips/publish", &tr(s.lang, "clips.publish"), false, move |s: &mut State| s.open_publish(&publish_id, &publish_title))).grow(1.0));
+        .child(centered(button(s.dark(), "clips/publish", &tr(s.lang, "clips.publish"), false, move |s: &mut State| s.open_publish(&publish_id, &publish_title))).grow(1.0));
     if exported {
         let label = tr(s.lang, if s.remote { "clips.save" } else { "clips.reveal" });
-        more = more.child(link_tx(s.dark, "clips/reveal", &label, false, move |s: &mut State, tx: &mut Tx| s.reveal_or_save(&id, tx)).grow(1.0));
+        more = more.child(link_tx(s.dark(), "clips/reveal", &label, false, move |s: &mut State, tx: &mut Tx| s.reveal_or_save(&id, tx)).grow(1.0));
     } else {
         more = more.child(col().grow(1.0));
     }
-    let log = link(s.dark, "clips/feedback", &tr(s.lang, "clips.feedback"), true, move |s: &mut State| feedback::open(s, &feedback_id, &feedback_title));
+    let log = link(s.dark(), "clips/feedback", &tr(s.lang, "clips.feedback"), true, move |s: &mut State| feedback::open(s, &feedback_id, &feedback_title));
     col().gap(10.0).w_full().child(export).child(more).child(row().w_full().child(log))
 }
 
 pub fn view(s: &State) -> El {
     let video = s.clips.video_id.as_deref().map(|v| home::video_name(s, v)).unwrap_or_else(|| tr(s.lang, "clips.video.fallback"));
-    let head = page_head(s.dark, "clips/heading", &trf(s.lang, "clips.title", &[("video", &video)]), &tr(s.lang, "clips.sub"));
+    let head = page_head(s.dark(), "clips/heading", &trf(s.lang, "clips.title", &[("video", &video)]), &tr(s.lang, "clips.sub"));
     let Some(clip) = s.selected_clip() else {
-        let body = state_block_with::<State>(s.dark, "clips/empty", Kind::Empty, &tr(s.lang, "clips.empty.cause"), &tr(s.lang, "clips.empty.next"), Some(("clips/empty/home", tr(s.lang, "clips.empty.home"), |s: &mut State| s.go_home())));
+        let body = state_block_with::<State>(s.dark(), "clips/empty", Kind::Empty, &tr(s.lang, "clips.empty.cause"), &tr(s.lang, "clips.empty.next"), Some(("clips/empty/home", tr(s.lang, "clips.empty.home"), |s: &mut State| s.go_home())));
         return col().gap(24.0).padding(40.0).w_full().h_full().child(head).child(col().grow(1.0).w_full().center().child(body));
     };
     let visible = s.clips.visible();
     let blur = s.clips.moving(s.now as f32);
     let list: El = if visible.is_empty() {
-        col().grow(1.0).w_full().center().child(state_block::<State>(s.dark, "clips/filtered", Kind::Empty, &tr(s.lang, "clips.filtered.cause"), &tr(s.lang, "clips.filtered.next"), None))
+        col().grow(1.0).w_full().center().child(state_block::<State>(s.dark(), "clips/filtered", Kind::Empty, &tr(s.lang, "clips.filtered.cause"), &tr(s.lang, "clips.filtered.next"), None))
     } else {
         col().key("clips/scroll").scroll(ScrollSpec { stick_bottom: false }).w_full().grow(1.0).child(
             col().key("clips/list").role("list").label(tr(s.lang, "clips.list")).growth(GrowthSpec::default()).gap(8.0).virtual_rows(

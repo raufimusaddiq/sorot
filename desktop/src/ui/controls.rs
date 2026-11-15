@@ -65,7 +65,7 @@ pub fn switch(dark: bool, key: &str, label: &str, sub: Option<&str>, on: bool, f
     if let Some(sub) = sub {
         words = words.child(text(sub).font(type_::LABEL).color(p.muted).wrap());
     }
-    let (fill, knob_x, knob) = if on { (p.beam, 18.0, p.bg) } else { (p.divider, 2.0, p.muted) };
+    let (fill, knob_x, knob) = if on { (p.beam, 18.0, p.on_beam) } else { (p.divider, 2.0, p.muted) };
     let track = col().w(36.0).h(20.0).radius(10.0).fill(fill).child(col().w(16.0).h(16.0).radius(8.0).fill(knob).absolute(knob_x, 2.0));
     row().key(key).role("checkbox").label(label).checked(on).focusable(true).gap(12.0).items_center().w_full().on_press(f)
         .child(words).child(track)
@@ -79,14 +79,14 @@ fn chevron(dark: bool) -> El {
 /// A labelled dropdown: the trigger shows the chosen word, and the list opens under it. `choices`
 /// are `(value, words)`; the trigger is `{key}`, a choice `{key}/{value}`. Only one list is open.
 pub fn dropdown(s: &State, key: &str, label: &str, chosen: &str, choices: &[(String, String)], pick: Pick) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let open = s.open_select.as_deref() == Some(key);
     let shown = choices.iter().find(|(v, _)| v == chosen).map_or(chosen, |(_, w)| w.as_str());
     let owned = key.to_string();
     let trigger = row().key(key).role("button").label(format!("{label}: {shown}")).focusable(true).gap(8.0).px(12.0).py(9.0).items_center().w_full().radius(6.0)
         .fill(p.surface).border(1.0, if open { p.beam } else { p.edge }).hover(p.text.alpha(0.06))
         .on_press(move |s: &mut State| s.open_select = if s.open_select.as_deref() == Some(owned.as_str()) { None } else { Some(owned.clone()) })
-        .child(text(shown).font(type_::BODY).color(p.text).truncate().grow(1.0)).child(chevron(s.dark));
+        .child(text(shown).font(type_::BODY).color(p.text).truncate().grow(1.0)).child(chevron(s.dark()));
     let mut field = col().gap(6.0).w_full().child(text(label).font(type_::LABEL).color(p.muted)).child(trigger);
     if open {
         let mut list = col().key(format!("{key}/list")).role("listbox").label(label).gap(2.0).padding(4.0).w_full().fill(p.raised).border(1.0, p.divider).radius(6.0);

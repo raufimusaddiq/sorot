@@ -100,7 +100,7 @@ fn the_menus_open_run_and_close() {
     assert_eq!(rt.state.screen(), sorot_desktop::app::Screen::Connections);
     click(&mut rt, "shell/menu/view");
     click(&mut rt, "shell/menu/view/theme");
-    assert!(!rt.state.dark);
+    assert!(!rt.state.dark());
     click(&mut rt, "shell/menu/file");
     click(&mut rt, "shell/menu/file/new");
     assert_eq!(rt.state.screen(), sorot_desktop::app::Screen::Home);
@@ -112,4 +112,20 @@ fn the_menus_open_run_and_close() {
     click(&mut rt, "shell/menu/help");
     click(&mut rt, "shell/menu/help");
     assert!(rt.find("shell/menu-list").is_none());
+}
+
+/// The theme preference picks the palette: System follows the OS, Dark and Light override it.
+#[test]
+fn the_theme_preference_picks_the_palette() {
+    use sorot_desktop_core::prefs::Theme;
+    for (theme, os_dark, dark) in [(Theme::System, true, true), (Theme::System, false, false), (Theme::Dark, false, true), (Theme::Light, true, false)] {
+        let mut state = sorot_desktop::app::State::default();
+        state.theme = theme;
+        let mut rt = rune::Runtime::new(state, sorot_desktop::app::view, (1100.0, 720.0), rune::Env { system_dark: os_dark, scale: 1.0 });
+        rt.frame(0.0);
+        assert_eq!(rt.state.dark(), dark, "{theme:?} on an OS that is dark={os_dark}");
+        let p = sorot_desktop::ui::kit::pal(rt.state.dark());
+        assert_eq!(p.bg, sorot_desktop::ui::kit::pal(dark).bg);
+    }
+    assert_ne!(sorot_desktop::ui::kit::pal(true).bg, sorot_desktop::ui::kit::pal(false).bg);
 }
