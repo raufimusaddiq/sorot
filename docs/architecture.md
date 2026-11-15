@@ -7,7 +7,8 @@ statically-exported UI on :8080, and runs the pipeline in-process (bounded
 async queue), shelling out to Python / ffmpeg / yt-dlp.
 
 ```
-[Static Next.js UI] ─┐
+[Desktop app (Rune)]─┐
+[Static Next.js UI] ─┤  (web UI: until desktop parity)
 [sorot CLI]  ────────┼─ HTTP ─→  [Bun API :8080]  →  [SQLite (bun:sqlite)]
 [scripts / other apps]┘
                         |
@@ -81,7 +82,16 @@ the pipeline falls back to rules and clips are posted by hand. Design:
 
 What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 
-### Next.js Frontend (`frontend/`)
+### Desktop app (`desktop/`, planned, in progress)
+- The native UI for Windows, macOS and Linux, written in Rust on Rune (pinned to commit `73b7dec`). It replaces the
+  web UI and reaches the engine only over the HTTP API and the files the API names, so the same app drives a local
+  or a remote engine. Locally it starts the engine as a child process on loopback with a per-launch token.
+- Own Cargo workspace: `desktop/core` (pure logic, no Rune or OS dependencies, Kani-proved) and the app crate (screens,
+  theme, thin OS shims). No pipeline, scoring, publishing or Generate decisions live in Rust.
+- Spec and plan: `specs/003-native-desktop-app/`. Principles: constitution v3.0.0.
+
+### Next.js Frontend (`frontend/`, until the first desktop release)
+- Removed, with its tests, when the desktop app reaches parity; fixes only until then.
 - `output: 'export'` → plain HTML/JS in `frontend/out`, served by the backend
   (same origin, no CORS). `next dev` on :3000 is optional for hot reload.
 - `/` is the landing page (what Sorot is, a live caption demo, install facts);
@@ -150,7 +160,8 @@ See [linux-install.md](linux-install.md).
 | DB | SQLite | Zero config, local-only, file-based |
 | GPU | CUDA | Available; significantly speeds up transcription |
 | Transcription | faster-whisper | Best local Whisper implementation, CUDA support |
-| Frontend | Next.js | User preference, good DX for interactive UIs |
+| Frontend | Next.js (web UI, until the desktop app reaches parity) | User preference, good DX for interactive UIs |
+| Desktop UI | Rust on Rune, own Cargo workspace (`desktop/`) | One native app on three OSes for a local or remote engine; Rune is pinned to an exact commit |
 | Video download | yt-dlp | Standard tool, handles all YouTube formats |
 | Video processing | FFmpeg + OpenCV | FFmpeg for codec/crop, OpenCV for face detection/crop |
 | Subtitle burn-in | ASS + libass (`ffmpeg -vf ass=`) | Real per-word timing from Whisper, active-word highlight, editable `.ass` kept next to each export |

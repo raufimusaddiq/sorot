@@ -5,6 +5,10 @@ A release is a GitHub release tagged `vX.Y.Z` on `master`. Publishing it runs
 `ghcr.io/raufimusaddiq/sorot`. The installers and `docker-compose.yml` pull `:latest` / `:latest-cuda` unless
 `SOROT_VERSION` pins a version, so **publishing a release is what updates existing installs**.
 
+The desktop app (`desktop/`, planned, in progress) is released alongside the images: `release-desktop.yml` builds the
+Windows, macOS and Linux installers and a signed `latest.json` on the same published release or manual run. It is not
+active until the first desktop release; this checklist then gains its own check step.
+
 What a release does *not* version:
 - The installers. Windows runs `scripts/install.ps1` straight from `master`, and Linux runs it from a clone. A change to
   them reaches users as soon as it is merged.
@@ -31,7 +35,7 @@ Where the version lives. Keep these in step in the release PR:
 | `cli/src/main.ts` → `VERSION` | `sorot --version` |
 | `backend/package.json`, `cli/package.json` → `version` | `bun.lock` records them: run `bun install` after a bump |
 
-`frontend/package.json` is private and not versioned (it stays `0.1.0`).
+`frontend/package.json` is private and not versioned (it stays `0.1.0`). The desktop crate's version will join this table with the first desktop release.
 
 ## Checklist
 

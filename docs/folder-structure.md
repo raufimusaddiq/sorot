@@ -70,7 +70,12 @@ sorot/
 │   ├── install.sh                   # Linux installer: Docker or native (systemd), --uninstall
 │   └── *.ps1                        # Windows: install / start / stop / compose-override / verify-env / e2e-test
 │
-├── frontend/                        # Next.js static export (out/ served by backend)
+├── desktop/                         # Native desktop app (planned, in progress): Rust on Rune, own Cargo workspace + Cargo.lock
+│   ├── core/                        #   sorot-desktop-core: pure logic, no Rune or OS deps, Kani proofs
+│   ├── src/                         #   screens, theme, FakeEngine, platform/ (thin OS shims, listed in coverage-exclude.txt)
+│   └── DESIGN.md · RUNE.md          #   design direction; Rune pin, patches, bump log
+│
+├── frontend/                        # Next.js static export (out/ served by backend); removed at the first desktop release
 │   ├── package.json
 │   ├── next.config.js
 │   ├── src/
@@ -110,12 +115,13 @@ sorot/
 │   └── journal/                     # Session history and decisions
 │
 ├── specs/001-2d-video-generator/    # Spec kit for Generate: spec, plan, research, data model, tasks, contracts
+├── specs/003-native-desktop-app/    # Spec kit for the desktop app
 ├── AGENTS.md                        # Agent instructions (CLAUDE.md imports it)
 ├── README.md                        # Project overview
 ├── CHANGELOG.md                     # What each release changed
 ├── .env.example · .env.docker       # Environment templates (secrets: .env.llm, gitignored; see .env.llm.example)
 ├── docker-compose.yml               # The app container (CPU image; GPU via the gitignored docker-compose.override.yml)
-├── .github/workflows/               # ci.yml (tests + image smoke test), release-image.yml (ghcr.io images)
+├── .github/workflows/               # ci.yml (tests + image smoke test), release-image.yml (ghcr.io images), release-desktop.yml (installers; planned)
 └── .gitignore
 ```
 

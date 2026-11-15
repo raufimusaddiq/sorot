@@ -1,23 +1,3 @@
-<!--
-Sync Impact Report (remove before committing)
-- Version: 2.2.0 -> 3.0.0 (MAJOR: Principle V's frontend rule and Principle I's same-origin
-  rule are redefined; owner decision 2026-11-15, spec 003-native-desktop-app Q1=C, Q2=A)
-- Modified principles:
-  - I. Local-First, Host-Ready: "UI stays same-origin" -> the UI reaches the engine over a
-    defined, authenticated connection; local mode is the native desktop app
-  - II. Language Boundaries: adds Rust (`desktop/`) as UI-only
-  - III. Test Gate: adds the `desktop` package (cargo test, coverage, clippy) and the rule for
-    thin OS shims
-  - V. Stable Contracts: Next.js static-export rule replaced by the native-app rule, with a
-    transition clause for `frontend/` until the first native release
-- Added sections: none (Platform & Stack Constraints expanded: desktop app, Rune pin, installers,
-  macOS)
-- Removed sections: none
-- Follow-up TODOs (same change, per Governance): update AGENTS.md (Rules: API/UI/DB, Docker,
-  release, scripts; Commands; Gate), CLAUDE.md test gate wording, docs/architecture.md,
-  docs/folder-structure.md, docs/release.md, README.md, CHANGELOG.md [Unreleased]
-- Templates: .specify/templates read the constitution at runtime; no template changes needed
--->
 # Sorot Constitution
 
 ## Core Principles

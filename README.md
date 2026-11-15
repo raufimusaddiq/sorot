@@ -240,7 +240,7 @@ YouTube URL / file ──► Bun API ──► 9-stage pipeline
                      7. 💬 Captions      (re-burns only clips rendered the old way)
                      8. 🔁 Variations    zoom presets (off unless VARIATIONS=true)
                      9. 📊 Analytics     distribution + recommendations
-              Web UI · sorot · scripts ◄── HTTP API (port 8080)
+              Desktop app (soon) · web UI · sorot · scripts ◄── HTTP API (port 8080)
 ```
 
 ### 🏅 Scoring
@@ -345,7 +345,8 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 | 🟨 Backend | Bun + TypeScript (`bun:sqlite`, zero runtime deps): API, scoring, discovery, LLM agent, serves the UI |
 | 🐍 Media | Python 3 · faster-whisper · OpenCV · NumPy · ffmpeg / libass · yt-dlp |
 | 🤖 LLM | Any OpenAI-compatible endpoint (optional) |
-| ⚛️ Frontend | Next.js 14, static export |
+| 🖥️ Desktop | Rust on Rune: native app for Windows, macOS and Linux (planned, in progress) |
+| ⚛️ Frontend | Next.js 14, static export (the web UI, until the desktop app replaces it) |
 | 🗄️ Database | SQLite |
 | ⌨️ CLI | `sorot`, one compiled Bun binary |
 | 🐳 Runs on | Docker (GHCR images, CPU or CUDA) · native Linux · native Windows · macOS via Homebrew |
@@ -356,7 +357,8 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 ├── backend/        🟨 Bun/TS API, orchestrator, scoring, discovery, UI host (+ Dockerfile)
 ├── ai-pipeline/    🐍 Python media scripts (transcribe, render, reframe, subtitle, …)
 ├── generator/      🎞️ Generate's tool bundle: HyperFrames, prompts, fonts, recipes, kit parts
-├── frontend/       ⚛️ Next.js UI (static export → frontend/out)
+├── desktop/        🖥️ native desktop app (Rust on Rune; planned, in progress)
+├── frontend/       ⚛️ Next.js UI (static export → frontend/out; removed at the first desktop release)
 ├── cli/            ⌨️ sorot client
 ├── scripts/        🛠️ install.sh (Linux) · install/start/stop/verify/e2e .ps1 (Windows)
 ├── docs/           📚 specs and guides
@@ -371,6 +373,7 @@ bun run build && bun run start     # UI → frontend/out, backend on :8080
 cd backend && bun test --coverage  # 🧪 backend
 cd cli && bun test --coverage      # 🧪 CLI
 cd frontend && bun run test        # 🧪 UI (jest)
+cd desktop && cargo llvm-cov --workspace --fail-under-lines 95   # 🧪 desktop (also clippy, Kani)
 cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~200 pipeline tests
 ```
 

@@ -2,7 +2,7 @@
 
 **Sorot**: YouTube/local video → 9:16 short clips with auto-subtitles. Indonesian. Local-first, personal-use simple; host-ready (hosting planned once clipping hardware allows; principles in `.specify/memory/constitution.md`).
 
-**Stack**: Bun workspace: `backend/` Bun/TS (API, orchestration, scoring, discovery, LLM/Jev/Tebar; serves the UI) · `cli/` `sorot` (Bun) · `ai-pipeline/` Python 3, media/ML only · `frontend/` Next.js 14 static export · SQLite · Docker. Specs in `docs/` (design of the creative loop: `docs/creative-loop.md`; API: `docs/api-spec.md`); history in `docs/journal/`.
+**Stack**: Bun workspace: `backend/` Bun/TS (API, orchestration, scoring, discovery, LLM/Jev/Tebar; serves the UI) · `cli/` `sorot` (Bun) · `ai-pipeline/` Python 3, media/ML only · `desktop/` Rust, native UI on Rune (pinned `73b7dec`; own Cargo workspace with `desktop/core`; planned, in progress, spec `specs/003-native-desktop-app/`) · `frontend/` Next.js 14 static export (web UI, removed at the first desktop release) · SQLite · Docker. Specs in `docs/` (design of the creative loop: `docs/creative-loop.md`; API: `docs/api-spec.md`); history in `docs/journal/`.
 
 **Build order (strict, clipping)**: 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
 
@@ -16,14 +16,15 @@ docker compose --env-file .env.docker build --no-cache backend | up -d | --profi
 bun install                                           # one lockfile (repo root)
 cd backend;  bun test --coverage; bun run typecheck   # 95% line/func gate
 cd frontend; bun run test;  bun run build             # jest; static UI → frontend/out (root `bun run start` serves it on :8080)
+cd desktop;  cargo clippy --all-targets -- -D warnings; cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95; cargo kani -p sorot-desktop-core
 cd cli;      bun test --coverage; bun run build       # → cli/dist/sorot
 cd ai-pipeline; .venv/bin/python -m pytest tests --cov=.   # Windows: .venv\Scripts\python.exe
 ```
 Slash commands: `/research` `/plan` `/execute` `/review` `/verify` `/test`.
 
 ## Gate
-100% pass, ≥ 95% coverage, zero type errors; `/test` → test-runner subagent, verdict OPEN or BLOCKED.
-Tests are on point and compressed (the owner dislikes test bloat): one test per behaviour, asserting only what proves it; a new case is a table row (`test.each` / `it.each` / `parametrize`) or a line in the test that already covers that behaviour before it is a new test; shared fakes (`backend/tests/helpers.ts`: `fakeJev`, `clipAnswer`, `jevReply`, `unknownFields`; `frontend/test/fakeApi.ts`); no assertion that re-proves another.
+100% pass, ≥ 95% coverage, zero type errors (desktop: clippy clean, Kani proofs pass); `/test` → test-runner subagent, verdict OPEN or BLOCKED.
+Tests are on point and compressed (the owner dislikes test bloat): one test per behaviour, asserting only what proves it; a new case is a table row (`test.each` / `it.each` / `parametrize`) or a line in the test that already covers that behaviour before it is a new test; desktop tests at three levels: L1 `desktop/core` Kani proofs + unit, L2 in-process screen tests on Rune's headless runtime against `FakeEngine`, L3 headless binary journeys; OS shims are thin, listed in `desktop/coverage-exclude.txt`, the only code outside coverage; shared fakes (`backend/tests/helpers.ts`: `fakeJev`, `clipAnswer`, `jevReply`, `unknownFields`; `frontend/test/fakeApi.ts`); no assertion that re-proves another.
 
 ## Rules
 **Boundaries**
@@ -65,8 +66,9 @@ Tests are on point and compressed (the owner dislikes test bloat): one test per 
 - Editing options layer config ← job options ← clip options (`options.ts`).
 
 **API, UI, DB**
-- API JSON keys = camelCase of SQLite columns (`store.ts`); the frontend depends on them. Schema auto-creates/migrates in `db.ts` (old databases open unchanged); UUIDs as TEXT.
-- UI is same-origin in prod (backend serves `frontend/out`); CORS allows only `localhost:3000` / `127.0.0.1:3000` (`next dev`) and `FRONTEND_URL`. `frontend` stays static-exportable: no API routes, rewrites, server actions, `next/image` optimization.
+- API JSON keys = camelCase of SQLite columns (`store.ts`); the desktop app, CLI and frontend depend on them. Schema auto-creates/migrates in `db.ts` (old databases open unchanged); UUIDs as TEXT.
+- UI = the native desktop app (`desktop/`, Rust on Rune pinned to an exact commit, `[patch]` entries copied; a bump is its own change on all three OSes). It uses only the engine's HTTP API and the files the API names, local or remote engine; the engine binds loopback with a per-launch token locally and refuses tokenless requests when a token is set. Rust holds no pipeline, scoring, publishing or Generate logic. Rune gaps per OS are filled by thin listed modules, never dropped on one OS. Installers come only from `release-desktop.yml`.
+- Transition: until the first desktop release reaches parity, `frontend/` stays a static export (no API routes, rewrites, server actions, `next/image` optimization), served same-origin by the backend (`frontend/out`; CORS allows only `localhost:3000` / `127.0.0.1:3000` and `FRONTEND_URL`), fixes only; that release removes it and its tests.
 
 **Docker, release, scripts**
 - Always `--env-file .env.docker`. `docker-compose.yml` is CPU-only; GPU settings live in the gitignored `docker-compose.override.yml` (written by `install.sh` / `install.ps1` / `start.ps1`). Linux machine settings: override file or `/etc/sorot/`, never tracked files.
