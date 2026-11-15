@@ -310,8 +310,10 @@ fn kenari_body<H: Host>(h: &H, l: Lang, c: &Connection) -> El {
     if let Some(t) = &st.probe {
         b = b.child(note(dark, "conn/llm/kenari/result", if t.ok { Tone::Ok } else { Tone::Bad }, &test_words(l, t)));
     }
-    if let Some(a) = &st.account {
-        b = b.child(account_block(dark, l, a));
+    match &st.account {
+        Some(a) => b = b.child(account_block(dark, l, a)),
+        None if c.active => b = b.child(hint(dark, tr(l, "conn.kenari.no-account")).key("conn/llm/kenari/no-account")),
+        None => {}
     }
     b
 }

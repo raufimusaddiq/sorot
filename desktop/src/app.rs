@@ -1033,6 +1033,7 @@ pub const SCENES: &[Scene] = &[
     ("discover", |s| {
         *s = State::scene("discover");
         s.show(Page::Discover);
+        s.panels.discover.run = s.engine.as_ref().and_then(|e| e.auto_status("run1").ok());
     }),
     ("publish", |s| {
         *s = State::scene("publish");

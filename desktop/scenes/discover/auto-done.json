@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "data": {
+    "id": "run1",
+    "status": "DONE",
+    "count": 2,
+    "mode": "agent",
+    "model": "qwen3-8-27b",
+    "notes": "Topik produktivitas sedang naik di Indonesia.",
+    "steps": [
+      {
+        "tool": "search",
+        "args": {
+          "query": "menunda mulai"
+        },
+        "result": "12 videos"
+      },
+      {
+        "tool": "channel",
+        "args": {
+          "channel": "Ruang Fokus"
+        },
+        "result": "5 videos"
+      },
+      {
+        "tool": "pick",
+        "args": {},
+        "result": "2 picked"
+      }
+    ]
+  }
+}

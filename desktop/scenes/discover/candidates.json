@@ -14,8 +14,14 @@
         "why": [
           "strong moments",
           "speech is clear",
-          "clipped from this channel before"
-        ]
+          "clipped from this channel before",
+          "fresh upload",
+          "matches your direction"
+        ],
+        "sourceMode": "auto",
+        "pickedBy": "qwen3-8-27b",
+        "transcriptScore": 0.8,
+        "predictedScore": 0.88
       },
       {
         "id": "d2",
@@ -28,7 +34,9 @@
         "status": "QUEUED",
         "why": [
           "trending in Indonesia"
-        ]
+        ],
+        "sourceMode": "auto",
+        "pickedBy": "algorithm"
       },
       {
         "id": "d3",
@@ -38,7 +46,9 @@
         "channel": "Santai",
         "relevanceScore": 0.22,
         "status": "SKIPPED",
-        "why": []
+        "why": [],
+        "sourceMode": "auto",
+        "pickedBy": "algorithm"
       }
     ]
   }

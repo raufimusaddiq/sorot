@@ -586,6 +586,11 @@ fn kenari_is_picked_tried_and_only_then_saved_and_its_balance_shows_once_connect
     open(&mut rt, connections::open);
     assert!(has(&rt, "conn/llm/kenari/account") && has(&rt, "conn/llm/kenari/balance"));
     assert_eq!(calls(&e, "kenari_account"), ["kenari_account"]);
+
+    // a key without account rights: the note says so instead of showing nothing
+    let (mut rt, _) = lab(connections::view, &[("settings", &kenari_settings("https://kenari.id/v1", true)), ("kenari-llm-models", &models)]);
+    open(&mut rt, connections::open);
+    assert!(has(&rt, "conn/llm/kenari/no-account") && !has(&rt, "conn/llm/kenari/balance"));
 }
 
 fn generate_cards_settings(voice_base: &str) -> String {
