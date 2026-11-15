@@ -18,7 +18,8 @@ export class HttpError extends Error {
 }
 
 export const ok = (data: unknown, status = 200) => Response.json({ status: "ok", data }, { status });
-export const fail = (status: number, error: string) => Response.json({ status: "error", error }, { status });
+export const fail = (status: number, error: string, data?: unknown) =>
+  Response.json(data === undefined ? { status: "error", error } : { status: "error", error, data }, { status });
 
 async function parseBody(req: Request): Promise<Body> {
   const raw = await req.text();

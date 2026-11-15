@@ -27,6 +27,8 @@ export interface TestEnv {
   fetchHandler: { fn: (url: string, init?: RequestInit) => Promise<Response> | Response };
   req(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<Response>;
   json(method: string, path: string, body?: unknown): Promise<{ status: number; body: any }>;
+  /** The disk preflight's facts: plenty of free space unless a test sets `free`; `sizes` maps a path to its bytes. */
+  disk: { free: number; sizes: Record<string, number> };
   cleanup(): void;
 }
 
@@ -171,10 +173,12 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
   };
 
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => fetchHandler.fn(String(input), init)) as typeof fetch;
+  const disk: TestEnv["disk"] = { free: Number.MAX_SAFE_INTEGER, sizes: {} };
   const db = openDatabase(":memory:");
   // Generate: the model writes its own scenes in these tests (a new model would start at the kit level, R25)
   if (config.llmModel) new Store(db).setSetting(`gen.modelLevel.${config.llmModel}`, "compose");
-  const app = createApp(config, { db, runScript, exec, fetch: fetchFn, retryWaitMs: 0 });
+  const app = createApp(config, { db, runScript, exec, fetch: fetchFn, retryWaitMs: 0,
+    disk: { freeBytes: () => disk.free, fileBytes: (p) => disk.sizes[p] ?? null } });
   // these tests script one forced call per shot: the shipped recipes' tool loop (author.toolSteps) has its own tests.
   // Recipes are seeded when the app starts, so the patch follows it.
   const recipes = new Store(db);
@@ -194,7 +198,7 @@ export function makeEnv(overrides: Partial<AppConfig> = {}): TestEnv {
       body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
     }));
   return {
-    app, config, dir, calls, execCalls, scripts, execHandler, hfHandlers, fetchHandler, req,
+    app, config, dir, calls, execCalls, scripts, execHandler, hfHandlers, fetchHandler, disk, req,
     async json(method, path, body) {
       const res = await req(method, path, body);
       return { status: res.status, body: await res.json() };

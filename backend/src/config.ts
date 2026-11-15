@@ -48,6 +48,8 @@ export interface AppConfig {
   /** Best-scoring clips the pipeline renders (0 = all PRIMARY/BACKUP). GPU: all;
    *  CPU: 10. The rest are listed and render on request (POST /api/clips/{id}/rerender). */
   maxRenderClips: number;
+  /** Disk a job needs per byte of source (DISK_FACTOR): the download, audio, frames and transcript beside it. */
+  diskFactor: number;
   orphanSweepMs: number;
   orphanSweepInitialMs: number;
   /** Topic-fit keywords for the clip scorer (NICHE_KEYWORDS, comma-separated). */
@@ -193,6 +195,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     queueCapacity: int(env.PIPELINE_QUEUE_CAPACITY, 50),
     maxParallelRenders: int(env.MAX_PARALLEL_RENDERS, 2),
     maxRenderClips: Math.max(0, int(env.MAX_RENDER_CLIPS, cpu ? 10 : 0)),
+    diskFactor: Number.parseFloat(env.DISK_FACTOR ?? "") > 0 ? Number.parseFloat(env.DISK_FACTOR as string) : 3,
     orphanSweepMs: int(env.ORPHAN_SWEEP_MS, 300_000),
     orphanSweepInitialMs: int(env.ORPHAN_SWEEP_INITIAL_MS, 300_000),
     nicheKeywords: (env.NICHE_KEYWORDS ?? "").split(",").map((k) => k.trim().toLowerCase()).filter(Boolean),

@@ -30,6 +30,9 @@ import { ClipService, VideoService } from "./services";
 import { ConnectionSettings } from "./settings";
 import { Store } from "./store";
 import { Tebar } from "./tebar";
+import { defaultReadinessDeps, type ReadinessDeps } from "./readiness/checks";
+import { defaultDiskDeps, jobBytes, type DiskDeps } from "./readiness/disk";
+import { FixRunning, NotFixable, ReadinessService, UnknownItem } from "./readiness/fix";
 
 export interface AppDeps {
   db?: Database;
@@ -39,6 +42,10 @@ export interface AppDeps {
   fetch?: typeof fetch;
   /** Wait before retrying a transient LLM / Jev failure (tests: 0). */
   retryWaitMs?: number;
+  /** Readiness checks and fixes (tests: fakes; nothing real is downloaded). */
+  readiness?: ReadinessDeps;
+  /** Free space and file sizes for the disk preflight. */
+  disk?: DiskDeps;
 }
 
 const strArg = (body: Body, key: string): string => {
@@ -84,9 +91,32 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
   const publisher = new Publisher(config, store, tebar, llm, jev, feedback);
   const generate = new GenerateService(config, store, new Hyperframes(config, exec), llm, jev, exec, narrator, runScript, new ImageClient(config, httpFetch), factWeb);
 
+  const readiness = new ReadinessService(config, deps.readiness ?? defaultReadinessDeps(exec, httpFetch),
+    { get: (k) => store.settings()[k], set: (k, v) => store.setSetting(k, v) });
+  const disk = deps.disk ?? defaultDiskDeps;
+  /** 507 before any work when DATA_DIR lacks the room a job needs. */
+  const diskShort = (sourceBytes: number | null): Response | null => {
+    const needBytes = jobBytes(config, sourceBytes);
+    const freeBytes = disk.freeBytes(config.dataDir);
+    return freeBytes < needBytes ? fail(507, "not enough disk space", { needBytes, freeBytes }) : null;
+  };
+
   const router = new Router();
 
   router.on("GET", "/api/health", () => ok({ healthy: true }));
+
+  // ---- first-run readiness ----
+  router.on("GET", "/api/readiness", async () => ok({ items: await readiness.items() }));
+  router.on("POST", "/api/readiness/:id/fix", async (c) => {
+    try {
+      return ok({ taskId: await readiness.start(c.params.id as string) }, 202);
+    } catch (e) {
+      if (e instanceof UnknownItem) return fail(404, "Unknown readiness item");
+      if (e instanceof FixRunning) return fail(409, "A fix for this item is already running");
+      if (e instanceof NotFixable) return fail(400, "This item cannot be fixed by the app");
+      throw e;
+    }
+  });
 
   // ---- videos ----
   router.on("POST", "/api/import", async (c) => {
@@ -97,6 +127,9 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     if ((start === null) !== (end === null)) return fail(400, "Give both startTime and endTime, or neither");
     if (start !== null && end !== null && end - start < 10) return fail(400, "The range must be at least 10 s long");
     const section = start !== null && end !== null ? { start, end } : null;
+    const local = strArg(b, "localPath");
+    const short = diskShort(local ? disk.fileBytes(local) : null);
+    if (short) return short;
     const v = videos.importVideo(strArg(b, "url") || null, strArg(b, "localPath") || null, section);
     return ok({ videoId: v.id, sourceType: v.sourceType, sectionStart: v.sectionStart, sectionEnd: v.sectionEnd });
   });
@@ -117,6 +150,9 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
     const videoId = strArg(b, "videoId");
     if (!videoId.trim()) return fail(400, "videoId required");
     const options = parseOptions(b.options);
+    const video = videos.getVideo(videoId);
+    const short = video ? diskShort(disk.fileBytes(video.filePath)) : null;
+    if (short) return short;
     try {
       const job = jobs.createAndStartJob(videoId, options);
       return ok({ jobId: job.id, status: job.status, currentStage: job.currentStage ?? "" });
@@ -541,7 +577,7 @@ export function createApp(config: AppConfig, deps: AppDeps = {}) {
 
   return {
     fetch,
-    store, jobs, discovery, channels, orchestrator, llm, jev, tebar, settings, publisher, youtube, agent, generate,
+    store, jobs, discovery, channels, orchestrator, llm, jev, tebar, settings, publisher, youtube, agent, generate, readiness,
     start() {
       jobs.startMaintenance();
       publisher.start();

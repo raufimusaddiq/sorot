@@ -1,5 +1,8 @@
 import { createApp, type AppDeps } from "./app";
 import { loadConfig, type AppConfig } from "./config";
+import { Store } from "./store";
+import { openDatabase } from "./db";
+import { defaultLibraryDeps, libraryCommand, type LibraryDeps } from "./library";
 import pkg from "../package.json";
 
 /** Version of the contract between the engine and the desktop app (engine-connection.md). */
@@ -51,8 +54,26 @@ export function startServer(config: AppConfig, deps: ServerDeps = {}) {
   return { app, server, stop };
 }
 
+/** The startup commands the desktop app runs before any server: one envelope on stdout, then exit (engine-connection.md section 7). */
+export function runStartupCommand(argv: string[], config: AppConfig, deps: { library?: LibraryDeps; out?: (s: string) => void; err?: (s: string) => void } = {}): number | null {
+  const library = deps.library ?? defaultLibraryDeps((entries) => {
+    const db = openDatabase(config.dbPath);
+    try {
+      const store = new Store(db);
+      for (const [k, v] of Object.entries(entries)) store.setSetting(k, v);
+    } finally { db.close(); }
+  });
+  const envelope = libraryCommand(argv, library, deps.err ?? ((l) => console.error(l)));
+  if (!envelope) return null;
+  (deps.out ?? ((s) => console.log(s)))(JSON.stringify(envelope));
+  return envelope.status === "ok" ? 0 : 1;
+}
+
 if (import.meta.main) {
-  const { stop } = startServer(loadConfig());
+  const config = loadConfig();
+  const code = runStartupCommand(process.argv.slice(2), config);
+  if (code !== null) process.exit(code);
+  const { stop } = startServer(config);
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }

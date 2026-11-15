@@ -12,7 +12,8 @@ import { viralScore } from "../src/learning";
 import { DEFAULT_WEIGHTS } from "../src/ruleConstants";
 import { FEATURE_ORDER } from "../src/scoring";
 import { TRENDING_HASHTAGS, TRENDING_NICHE_QUERIES } from "../src/youtube";
-import { startServer } from "../src/index";
+import { Database } from "bun:sqlite";
+import { runStartupCommand, startServer } from "../src/index";
 import { argAfter, defaultExec, FAKE_VTT, makeEnv, procOk, ytLines, type TestEnv } from "./helpers";
 
 let env: TestEnv;
@@ -751,5 +752,59 @@ describe("static frontend", () => {
     const m = makeEnv({ staticDir: join(env.dir, "nothing") });
     expect((await m.req("GET", "/")).status).toBe(404);
     m.cleanup();
+  });
+});
+
+describe("disk preflight", () => {
+  const GB = 1024 ** 3;
+  // need = source x 3 + 10 clips x 80 MB (CPU config renders 10); an unknown source counts as 2 GB
+  test.each([
+    ["import, local file too big", "/api/import", { localPath: "/big.mp4" }, { "/big.mp4": 10 * GB }, 5 * GB, 507],
+    ["import, url (unknown size) with little room", "/api/import", { url: "https://youtu.be/abcdefghijk" }, {}, GB, 507],
+    ["process, downloaded file too big", "/api/process", { videoId: "v1" }, { "/test.mp4": 10 * GB }, 5 * GB, 507],
+    ["import, enough room", "/api/import", { localPath: "/small.mp4" }, { "/small.mp4": GB }, 100 * GB, 200],
+  ] as const)("%s", async (_name, path, body, sizes, free, status) => {
+    seedVideo("v1");
+    env.disk.free = free;
+    Object.assign(env.disk.sizes, sizes);
+    const r = await env.json("POST", path, body);
+    expect(r.status).toBe(status);
+    if (status === 507) {
+      expect(r.body).toEqual({
+        status: "error", error: "not enough disk space",
+        data: { needBytes: expect.any(Number), freeBytes: free },
+      });
+      expect(r.body.data.needBytes).toBeGreaterThan(free);
+      expect(env.app.store.listVideos()).toHaveLength(1); // nothing was imported
+    }
+  });
+});
+
+describe("startup commands", () => {
+  test.each([
+    [["--find-libraries"], 0, "ok"],
+    [["--copy-library"], 1, "error"],
+    [["--import-keys"], 1, "error"],
+    [["--serve"], null, null],
+  ] as const)("%j", (argv, code, status) => {
+    const out: string[] = [];
+    const library = { env: {}, platform: "linux", cwd: "/nowhere", home: "", exists: () => false, list: () => [], readText: () => "",
+      copyFile() {}, mkdirp() {}, counts: () => ({ videos: 0, clips: 0 }), saveSettings() {} };
+    const got = runStartupCommand([...argv], env.config, { library, out: (s) => out.push(s), err() {} });
+    expect(got).toBe(code);
+    expect(out.map((s) => JSON.parse(s).status)).toEqual(status ? [status] : []);
+  });
+
+  test("the default deps write imported keys into DATA_DIR's database and print them masked", () => {
+    const from = join(env.dir, "old");
+    mkdirSync(from, { recursive: true });
+    writeFileSync(join(from, ".env.llm"), "LLM_API_KEY=sk-secret-1234\n");
+    const config = { ...env.config, dbPath: join(env.dir, "new.db") };
+    const out: string[] = [];
+    expect(runStartupCommand(["--import-keys", from], config, { out: (s) => out.push(s) })).toBe(0);
+    expect(out.join("")).not.toContain("sk-secret");
+    const db = new Database(config.dbPath);
+    expect(db.query("SELECT value FROM setting WHERE key = 'llm.apiKey'").get()).toEqual({ value: '"sk-secret-1234"' });
+    db.close();
   });
 });

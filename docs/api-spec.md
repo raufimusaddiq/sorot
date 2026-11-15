@@ -15,6 +15,7 @@ Every JSON response uses one envelope:
 ```json
 { "status": "ok", "data": { } }
 { "status": "error", "error": "Human-readable message" }
+{ "status": "error", "error": "…", "data": { } }   // only where noted (507)
 ```
 
 | HTTP | Meaning |
@@ -27,6 +28,7 @@ Every JSON response uses one envelope:
 | 405 | Route exists, wrong method |
 | 409 | Conflicts with the current state: can't start a pipeline (video missing, already active, queue full), clip busy or not ready, auto-discover already running, Tebar not connected, gate needs confirmation |
 | 416 | Unsatisfiable Range |
+| 507 | Not enough disk space in `DATA_DIR` for the job (`/api/import`, `/api/process`) |
 | 500 | Pipeline/subprocess failure or unexpected error |
 | 502 | Tebar failed (5xx) or unreachable |
 
@@ -56,8 +58,56 @@ Docker and the CLI are unchanged. The desktop app starts the engine with
   `interrupted`, whatever its heartbeat.
 - **`exportPath`.** Clip export and Generate export responses carry the absolute
   path of the file on the engine's machine.
-- Readiness routes (`/api/readiness`), the 507 disk-space answer and the library
-  startup commands are described in the contract (section 5, 7, 8).
+- **Readiness**, **disk space** and the **startup commands** are described in the
+  sections below ([contract](../specs/003-native-desktop-app/contracts/engine-connection.md), 5, 7, 8).
+
+### First-run readiness
+
+`GET /api/readiness` checks on every call (cheap, always current):
+```json
+{ "status": "ok", "data": { "items": [
+  { "id": "ffmpeg", "required": true, "ok": false, "fixable": true, "detail": "ffmpeg not found at ffmpeg" },
+  { "id": "python", "required": true, "ok": true, "fixable": true, "detail": "Python 3.12, packages up to date" },
+  { "id": "whisperModel", "required": true, "ok": false, "fixable": true, "detail": "large-v3-turbo not downloaded (1.6 GB)",
+    "progress": { "percent": 42, "label": "Downloading model.bin" } },
+  { "id": "gpu", "required": false, "ok": true, "fixable": false, "detail": "NVIDIA RTX 4060" },
+  { "id": "generateBrowser", "required": false, "ok": false, "fixable": true, "detail": "needed for Generate only",
+    "error": "offline" }
+] } }
+```
+`progress` is present while a fix runs; `error` after one failed (`"offline"`,
+`"checksum mismatch"`, or a message) until the next attempt. `fixable` is false
+for `gpu`, and for `ffmpeg` / `python` on a platform with no pinned build.
+
+`POST /api/readiness/{id}/fix` starts the download or install in the background:
+`202 {"taskId":"fix-ffmpeg-1"}`. 404 unknown id · 400 not fixable · 409 a fix for
+that id is running. Downloads are pinned by URL and SHA-256 in
+`backend/src/readiness/manifest.json`; a mismatch deletes the file and fails the fix
+with `checksum mismatch`; a network failure fails it with `offline`. A fix points the
+live config at what it installed (`ffmpegPath`, `pythonPath`, `whisperModel`), so no
+restart is needed. Python is a uv-managed venv in `DATA_DIR/venv` (CUDA wheels added
+when `nvidia-smi` answers); ffmpeg lands beside a configured `FFMPEG_PATH` (else `DATA_DIR/tools`), the model in `DATA_DIR/models`. Results are saved in the `setting` table (`readiness.*`) and restored at startup while the files exist, so a restart keeps them.
+
+### Disk space
+
+`POST /api/import` and `POST /api/process` answer, before any work starts, when
+`DATA_DIR` lacks the room the job needs (source size × `DISK_FACTOR`, default 3, plus the
+render tier; a YouTube source counts as 2 GB until it is downloaded):
+```json
+{ "status": "error", "error": "not enough disk space", "data": { "needBytes": 9100000000, "freeBytes": 4200000000 } }
+```
+with HTTP 507.
+
+### Startup commands
+
+`sorot-engine <command>` (`bun src/index.ts <command>`) prints one envelope on stdout and
+exits, without serving: 0 on `ok`, 1 on `error`.
+
+| Command | `data` |
+|---|---|
+| `--find-libraries` | `{ "candidates": [{ "path", "ok", "videos", "clips", "hasKeys", "problem"? }] }`. Looked for: `%LOCALAPPDATA%\Sorot\data`, `~/Sorot/data`, `~/sorot/data`, the `DATA_DIR` of each `/etc/sorot/*.env`, `./data`, `../data`. A database that will not open is listed with `ok:false` and a `problem`. `hasKeys` = a `.env.llm` in or beside the folder. |
+| `--copy-library <from> <to>` | `{ "copied": 12, "skipped": ["locked.bin"] }`; `PROGRESS <n>` lines on stderr; the source is only read |
+| `--import-keys <from>` | `{ "imported": [{ "key": "LLM_API_KEY", "masked": "••••1234" }] }`; writes `llm.*`, `jev.*`, `tebar.*` settings into the `setting` table of `DATA_DIR`; values are only ever printed masked |
 
 ---
 
@@ -91,7 +141,8 @@ video, downloads it whole (yt-dlp's own downloader is ~10x faster than the
 ffmpeg one sections use) and cuts it locally. Either way it is stream-copied;
 cut exactly, i.e. re-encoded, only with YouTube captions on. A local file is
 cut once. Accepted formats:
-`85`, `85s`, `1:25`, `01:02:03`, `13m25s`. 400 on a bad or one-sided range.
+`85`, `85s`, `1:25`, `01:02:03`, `13m25s`. 400 on a bad or one-sided range;
+507 `not enough disk space` (see Disk space).
 
 ```json
 { "status": "ok", "data": { "videoId": "uuid", "sourceType": "YOUTUBE",
@@ -153,6 +204,7 @@ bare music file name, or a `direction` over 500 characters.
 { "status": "ok", "data": { "jobId": "uuid", "status": "QUEUED", "currentStage": "" } }
 ```
 - 400 `videoId required`
+- 507 `not enough disk space` (with `data.needBytes` / `freeBytes`; see Disk space)
 - 409 `Video not found: {id}` · `Video already has an active job: {jobId}` ·
   `Pipeline queue is full; try again later` (the rejected job is saved as `FAILED`)
 

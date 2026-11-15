@@ -1,0 +1,27 @@
+{
+  "ffmpeg": {
+    "win32-x64": { "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-14-12-37/ffmpeg-n8.1.3-35-gf1acb0a266-win64-gpl-8.1.zip", "sha256": "b713e521551d642cc473470772b1c28c971434097e85d7e1ace0ab5ade362fcc", "dir": "ffmpeg-n8.1.3-35-gf1acb0a266-win64-gpl-8.1/bin", "bins": ["ffmpeg.exe", "ffprobe.exe"] },
+    "linux-x64": { "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-14-12-37/ffmpeg-n8.1.3-35-gf1acb0a266-linux64-gpl-8.1.tar.xz", "sha256": "b8277443ba6332534c1cdb272f7bfa8322905f22d08208f5db0b56bc17b5fb3e", "dir": "ffmpeg-n8.1.3-35-gf1acb0a266-linux64-gpl-8.1/bin", "bins": ["ffmpeg", "ffprobe"] },
+    "linux-arm64": { "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-14-12-37/ffmpeg-n8.1.3-35-gf1acb0a266-linuxarm64-gpl-8.1.tar.xz", "sha256": "48e0630405ea360619cc37da0a9c02d974fb59f65812a694bcab6e6c9b7af545", "dir": "ffmpeg-n8.1.3-35-gf1acb0a266-linuxarm64-gpl-8.1/bin", "bins": ["ffmpeg", "ffprobe"] }
+  },
+  "uv": {
+    "win32-x64": { "url": "https://github.com/astral-sh/uv/releases/download/0.13.8/uv-x86_64-pc-windows-msvc.zip", "sha256": "529e78a9cec6cd7e3e014f7ecd8bda0c113969d4ed0f2efeedb85c30943325b8", "dir": "", "bins": ["uv.exe"] },
+    "linux-x64": { "url": "https://github.com/astral-sh/uv/releases/download/0.13.8/uv-x86_64-unknown-linux-gnu.tar.gz", "sha256": "5acfd9177cfecf0bf87578f059728215ccc884388988f55f7a65041b57387d91", "dir": "uv-x86_64-unknown-linux-gnu", "bins": ["uv"] },
+    "linux-arm64": { "url": "https://github.com/astral-sh/uv/releases/download/0.13.8/uv-aarch64-unknown-linux-gnu.tar.gz", "sha256": "74f2f5c6024d397481db228db8fc25eed420db192243f88438c118e7e013e585", "dir": "uv-aarch64-unknown-linux-gnu", "bins": ["uv"] },
+    "darwin-arm64": { "url": "https://github.com/astral-sh/uv/releases/download/0.13.8/uv-aarch64-apple-darwin.tar.gz", "sha256": "6b71028a6b904f2ae3340ef52e595512de807d06c0a20eaef2f692581b246558", "dir": "uv-aarch64-apple-darwin", "bins": ["uv"] },
+    "darwin-x64": { "url": "https://github.com/astral-sh/uv/releases/download/0.13.8/uv-x86_64-apple-darwin.tar.gz", "sha256": "a04c2ffeac28b2003a2c13caf538ab425fcd7def3e4a41571f4a8fb370a66af3", "dir": "uv-x86_64-apple-darwin", "bins": ["uv"] }
+  },
+  "python": "3.12",
+  "cudaWheels": ["nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"],
+  "whisper": {
+    "name": "large-v3-turbo",
+    "approxBytes": 1600000000,
+    "files": [
+      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/model.bin", "name": "model.bin", "sha256": "" },
+      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/config.json", "name": "config.json", "sha256": "" },
+      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/tokenizer.json", "name": "tokenizer.json", "sha256": "" },
+      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/vocabulary.json", "name": "vocabulary.json", "sha256": "" },
+      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/preprocessor_config.json", "name": "preprocessor_config.json", "sha256": "" }
+    ]
+  }
+}
