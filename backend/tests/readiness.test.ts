@@ -115,11 +115,14 @@ describe("readinessItems", () => {
     expect((await readinessItems(cfg, broken.deps)).filter((i) => i.ok)).toEqual([]);
   });
 
-  test("the shipped manifest pins every ffmpeg and uv build with a 64-hex SHA-256 over https", () => {
-    for (const b of [...Object.values(manifest.ffmpeg), ...Object.values(manifest.uv)]) {
+  test("the shipped manifest pins every download with a 64-hex SHA-256 over https, the model to a commit, and ffmpeg for every desktop OS", () => {
+    const builds = [...Object.values(manifest.ffmpeg), ...Object.values(manifest.uv)];
+    for (const b of [...builds, ...manifest.whisper.files]) {
       expect(b.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(b.url).toStartWith("https://");
     }
+    for (const f of manifest.whisper.files) expect(f.url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
+    expect(Object.keys(manifest.ffmpeg).sort()).toEqual(["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-x64"]);
   });
 });
 
@@ -176,7 +179,7 @@ describe("fixes", () => {
   });
 
   test("a platform without a pinned build is not fixable", async () => {
-    const t = boot(machine({ platform: { os: "darwin", arch: "arm64" }, missing: ["ffmpeg"] }));
+    const t = boot(machine({ platform: { os: "freebsd", arch: "x64" }, missing: ["ffmpeg"] }));
     expect((await t.item("ffmpeg")).fixable).toBe(false);
     expect((await t.call("POST", "/api/readiness/ffmpeg/fix")).status).toBe(400);
   });

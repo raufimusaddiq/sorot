@@ -2,7 +2,9 @@
   "ffmpeg": {
     "win32-x64": { "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-14-12-37/ffmpeg-n8.1.3-35-gf1acb0a266-win64-gpl-8.1.zip", "sha256": "b713e521551d642cc473470772b1c28c971434097e85d7e1ace0ab5ade362fcc", "dir": "ffmpeg-n8.1.3-35-gf1acb0a266-win64-gpl-8.1/bin", "bins": ["ffmpeg.exe", "ffprobe.exe"] },
     "linux-x64": { "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-14-12-37/ffmpeg-n8.1.3-35-gf1acb0a266-linux64-gpl-8.1.tar.xz", "sha256": "b8277443ba6332534c1cdb272f7bfa8322905f22d08208f5db0b56bc17b5fb3e", "dir": "ffmpeg-n8.1.3-35-gf1acb0a266-linux64-gpl-8.1/bin", "bins": ["ffmpeg", "ffprobe"] },
-    "linux-arm64": { "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-14-12-37/ffmpeg-n8.1.3-35-gf1acb0a266-linuxarm64-gpl-8.1.tar.xz", "sha256": "48e0630405ea360619cc37da0a9c02d974fb59f65812a694bcab6e6c9b7af545", "dir": "ffmpeg-n8.1.3-35-gf1acb0a266-linuxarm64-gpl-8.1/bin", "bins": ["ffmpeg", "ffprobe"] }
+    "linux-arm64": { "url": "https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-14-12-37/ffmpeg-n8.1.3-35-gf1acb0a266-linuxarm64-gpl-8.1.tar.xz", "sha256": "48e0630405ea360619cc37da0a9c02d974fb59f65812a694bcab6e6c9b7af545", "dir": "ffmpeg-n8.1.3-35-gf1acb0a266-linuxarm64-gpl-8.1/bin", "bins": ["ffmpeg", "ffprobe"] },
+    "darwin-arm64": { "url": "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-2/jellyfin-ffmpeg_8.1.3-2_portable_macarm64-gpl.tar.xz", "sha256": "d898cc819e7c4e9219d6410ddbdaada0838f14bec6ff89e283639915394cb43f", "dir": "", "bins": ["ffmpeg", "ffprobe"] },
+    "darwin-x64": { "url": "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v8.1.3-2/jellyfin-ffmpeg_8.1.3-2_portable_mac64-gpl.tar.xz", "sha256": "d394180f1155f84857544a48a99869f5741ccc50c5a1f73d2797429a2b326448", "dir": "", "bins": ["ffmpeg", "ffprobe"] }
   },
   "uv": {
     "win32-x64": { "url": "https://github.com/astral-sh/uv/releases/download/0.13.8/uv-x86_64-pc-windows-msvc.zip", "sha256": "529e78a9cec6cd7e3e014f7ecd8bda0c113969d4ed0f2efeedb85c30943325b8", "dir": "", "bins": ["uv.exe"] },
@@ -17,11 +19,11 @@
     "name": "large-v3-turbo",
     "approxBytes": 1600000000,
     "files": [
-      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/model.bin", "name": "model.bin", "sha256": "" },
-      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/config.json", "name": "config.json", "sha256": "" },
-      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/tokenizer.json", "name": "tokenizer.json", "sha256": "" },
-      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/vocabulary.json", "name": "vocabulary.json", "sha256": "" },
-      { "url": "https://huggingface.co/Systran/faster-whisper-large-v3-turbo/resolve/main/preprocessor_config.json", "name": "preprocessor_config.json", "sha256": "" }
+      { "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/model.bin", "name": "model.bin", "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da" },
+      { "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/config.json", "name": "config.json", "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e" },
+      { "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/tokenizer.json", "name": "tokenizer.json", "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd" },
+      { "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/vocabulary.json", "name": "vocabulary.json", "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1" },
+      { "url": "https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/preprocessor_config.json", "name": "preprocessor_config.json", "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711" }
     ]
   }
 }
