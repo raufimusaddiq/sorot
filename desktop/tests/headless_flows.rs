@@ -1,9 +1,7 @@
 //! L3: journeys on the real binary, headless. Each row is a scene, an optional script under
 //! `scripts/headless/`, and what the final tree must show. Stories add their journeys as rows.
 
-mod support;
-
-use support::headless::*;
+use crate::support::headless::*;
 
 /// `(scene, script, texts, named)`: `(key, text)` pairs the tree must show, and keys that must have a
 /// role and a name, and the `source` that `workspace.json` must end up with (the journey chose a library).

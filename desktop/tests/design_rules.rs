@@ -2,13 +2,12 @@
 //! transport bar (two at most), glow only on the beam head (two at most), one-shots only at their
 //! moments, no blur anywhere else, and no layer animating at rest.
 
-mod support;
 
 use rune::render::{KIND_BACKDROP_BLUR, KIND_EFFECT};
 use sorot_desktop::app::{Msg, SCENES, State};
 use sorot_desktop::engine::Engine;
 use sorot_desktop::ui::fx_moments::{Look, Moment, Placed, animating};
-use support::*;
+use crate::support::*;
 
 fn rested(name: &str, dark: bool) -> rune::Runtime<State> {
     let mut state = State::default();

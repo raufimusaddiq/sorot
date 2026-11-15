@@ -1,6 +1,5 @@
 //! L2 for User Story 1: readiness, welcome, shell and the close flow, in process against fakes.
 
-mod support;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,7 +15,7 @@ use sorot_desktop_core::model::Job;
 use sorot_desktop_core::readiness::ItemState;
 use sorot_desktop_core::toast::ToastKind;
 use sorot_desktop_core::workspace::Source;
-use support::*;
+use crate::support::*;
 
 fn has(rt: &Runtime<State>, key: &str) -> bool {
     rt.find(key).is_some()

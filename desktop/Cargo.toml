@@ -8,6 +8,7 @@ version = "0.0.1"
 edition = "2024"
 license = "MIT"
 publish = false
+autotests = false
 
 [package.metadata.packager]
 product-name = "Sorot"
@@ -42,6 +43,10 @@ desktop-template = "packaging/sorot.desktop"
 
 [package.metadata.packager.appimage]
 # AppImage builds its desktop entry from the same template as the deb.
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [features]
 # Agent tooling (--snap, --tree, --script) in release builds too; debug builds always have it.
@@ -92,3 +97,11 @@ libc = "0.2.191"
 
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
+# Debuginfo is what made each test exe carry a ~490 MB PDB: line tables only for our code (panics
+# keep file:line, llvm-cov keeps per-line counts), none for dependencies.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
