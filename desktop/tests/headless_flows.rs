@@ -41,7 +41,7 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
 
 #[test]
 fn the_scenes_are_listed_and_render_in_both_themes() {
-    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "job-running", "clips-ranked", "clips-publish", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
+    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "home-interrupted", "job-running", "clips-ranked", "clips-publish", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
     for theme in ["dark", "light"] {
         let png = snap("readiness-missing", theme, "900x600");
         let _ = std::fs::remove_file(png);
@@ -109,5 +109,16 @@ fn the_main_screens_reflow_without_clipping_or_overlap() {
             let tree = run_at(scene, Some("us3-resize"), mark, &["--size", "1280x800"], &[]);
             assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{scene} at {mark} ({:?})", tree.0["viewport"]);
         }
+    }
+}
+
+/// US6 journey, binary only: an interrupted job on Home, Retry, the job runs, then its clips.
+#[test]
+fn the_us6_journey_retries_an_interrupted_job_to_its_clips() {
+    let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
+    for (mark, shown, absent) in [("home", "home/retry/ji", "job/progress"), ("running", "job/progress", "home/retry/ji"), ("clips", "clips/list", "job/progress")] {
+        let tree = run_at("home-interrupted", Some("us6-retry-interrupted"), mark, &[], &[]);
+        assert!(has(&tree, shown) && !has(&tree, absent), "{mark}: {shown} shown, {absent} gone");
+        assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{mark}");
     }
 }

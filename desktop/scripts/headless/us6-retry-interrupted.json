@@ -1,0 +1,6 @@
+{"events": [
+  {"t": 0.3, "type": "mark", "name": "home"},
+  {"t": 0.5, "type": "tap", "key": "home/retry/ji"},
+  {"t": 1.2, "type": "mark", "name": "running"},
+  {"t": 16.0, "type": "mark", "name": "clips"}
+]}

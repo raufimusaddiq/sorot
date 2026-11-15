@@ -268,15 +268,38 @@ fn recent_row(s: &State, j: &Job) -> El {
         .child(text(open).font(type_::LABEL).color(p.beam_text))
 }
 
+/// Jobs the last session left running, each with its Retry.
+fn interrupted_block(s: &State) -> Option<El> {
+    let p = pal(s.dark());
+    let mut block = col().key("home/interrupted").role("list").label(tr(s.lang, "home.interrupted")).gap(12.0).w_full()
+        .child(text(tr(s.lang, "home.interrupted")).font(type_::TITLE).color(p.text));
+    let mut any = false;
+    for j in s.jobs.iter().filter(|j| j.phase() == JobPhase::Interrupted) {
+        let (id, retry_id) = (j.id.clone(), j.id.clone());
+        let name = video_name(s, &j.video_id);
+        any = true;
+        // The row opens the job (the stage that stopped, the note) before Retry wipes it.
+        block = block.child(row().key(format!("home/interrupted/{}", j.id)).role("listitem").label(name.clone()).focusable(true).gap(12.0).px(16.0).py(14.0).items_center().w_full()
+            .fill(p.surface).border(1.0, p.divider).radius(6.0).hover(p.text.alpha(0.04)).on_press(move |s: &mut State| s.open_job(&id))
+            .child(text(name).font(type_::BODY).color(p.text).truncate().grow(1.0).shrink())
+            .child(text(tr(s.lang, "home.open.job")).font(type_::LABEL).color(p.beam_text))
+            .child(button(s.dark(), format!("home/retry/{}", j.id), &tr(s.lang, "home.interrupted.retry"), true, move |s: &mut State| s.retry_interrupted(&retry_id))));
+    }
+    any.then_some(block)
+}
+
 pub fn view(s: &State) -> El {
     let p = pal(s.dark());
     let head = page_head(s.dark(), "home/title", &tr(s.lang, "home.title"), &tr(s.lang, "home.sub"));
     let top = row().gap(40.0).w_full().items_start().child(import_card(s)).child(options_card(s));
-    let below = if s.jobs.is_empty() && s.videos.is_empty() {
+    let only_interrupted = !s.jobs.is_empty() && s.jobs.iter().all(|j| j.phase() == JobPhase::Interrupted);
+    let below = if only_interrupted {
+        col()
+    } else if s.jobs.is_empty() && s.videos.is_empty() {
         state_block::<State>(s.dark(), "home/empty", Kind::Empty, &tr(s.lang, "home.empty.cause"), &tr(s.lang, "home.empty.next"), None)
     } else {
         let mut list = col().key("home/jobs").role("list").label(tr(s.lang, "home.recent")).gap(12.0).w_full().child(text(tr(s.lang, "home.recent")).font(type_::TITLE).color(p.text));
-        let mut jobs = s.jobs.iter().take(4);
+        let mut jobs = s.jobs.iter().filter(|j| j.phase() != JobPhase::Interrupted).take(4);
         while let Some(a) = jobs.next() {
             let second = match jobs.next() {
                 Some(b) => recent_row(s, b).grow(1.0),
@@ -286,5 +309,5 @@ pub fn view(s: &State) -> El {
         }
         list
     };
-    col().key("home/scroll").scroll(ScrollSpec { stick_bottom: false }).gap(28.0).padding(40.0).w_full().h_full().child(head).child(top).child(below)
+    col().key("home/scroll").scroll(ScrollSpec { stick_bottom: false }).gap(28.0).padding(40.0).w_full().h_full().child(head).child(top).children(interrupted_block(s)).child(below)
 }

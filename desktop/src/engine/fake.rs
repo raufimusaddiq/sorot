@@ -51,6 +51,8 @@ struct Inner {
     job_steps: VecDeque<JobDetail>,
     job: Option<JobDetail>,
     imported: bool,
+    /// A retry started the scene's own job over; `job` walks its stages.
+    retried: bool,
     /// How many answers each `$steps` route has given.
     steps_given: HashMap<String, usize>,
     /// Settings were saved: `settings-saved.json`, when the scene has one, answers from now on.
@@ -242,7 +244,7 @@ impl Engine for FakeEngine {
         self.enter(format!("job({id})"), "job")?;
         {
             let mut i = self.inner.lock().unwrap();
-            if i.imported {
+            if i.imported || i.retried {
                 if let Some(next) = i.job_steps.pop_front() {
                     i.job = Some(next);
                 }
@@ -316,6 +318,12 @@ impl Engine for FakeEngine {
 
     fn retry_job(&self, id: &str) -> Result<JobRef> {
         self.enter(format!("retry_job({id})"), "retry_job")?;
+        if !self.inner.lock().unwrap().imported {
+            let video = self.load::<JobDetail>("job", r#"{"status":"error","error":"Job not found"}"#).map(|d| d.job.video_id).unwrap_or_default();
+            let mut i = self.inner.lock().unwrap();
+            i.retried = true;
+            i.job_steps = stage_script(id, &video).into();
+        }
         Ok(JobRef { job_id: id.into(), status: "QUEUED".into() })
     }
 

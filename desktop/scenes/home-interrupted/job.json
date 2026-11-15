@@ -1,0 +1,115 @@
+{
+  "status": "ok",
+  "data": {
+    "job": {
+      "id": "ji",
+      "videoId": "vnew",
+      "status": "FAILED",
+      "currentStage": "SCORE",
+      "errorMessage": "interrupted",
+      "createdAt": "2026-11-15T09:00:00.000Z",
+      "updatedAt": "2026-11-15T09:05:00.000Z"
+    },
+    "stages": [
+      {
+        "id": "s0",
+        "jobId": "ji",
+        "stage": "IMPORT",
+        "status": "COMPLETED",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s1",
+        "jobId": "ji",
+        "stage": "AUDIO_EXTRACT",
+        "status": "COMPLETED",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s2",
+        "jobId": "ji",
+        "stage": "TRANSCRIBE",
+        "status": "COMPLETED",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s3",
+        "jobId": "ji",
+        "stage": "SEGMENT",
+        "status": "COMPLETED",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s4",
+        "jobId": "ji",
+        "stage": "SCORE",
+        "status": "FAILED",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s5",
+        "jobId": "ji",
+        "stage": "RENDER",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s6",
+        "jobId": "ji",
+        "stage": "SUBTITLE",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s7",
+        "jobId": "ji",
+        "stage": "VARIATION",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s8",
+        "jobId": "ji",
+        "stage": "ANALYTICS",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s9",
+        "jobId": "ji",
+        "stage": "PREVIEW",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      },
+      {
+        "id": "s10",
+        "jobId": "ji",
+        "stage": "EXPORT",
+        "status": "PENDING",
+        "startedAt": null,
+        "completedAt": null,
+        "outputPath": null
+      }
+    ]
+  }
+}
