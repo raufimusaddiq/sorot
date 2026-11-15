@@ -13,6 +13,7 @@ use sorot_desktop_core::toast::ToastKind;
 use crate::app::{Cmd, Msg, Route, State};
 use crate::i18n::{tr, trf};
 use crate::ui::clip_stage;
+use crate::ui::fx_moments::{Moment, slot};
 use crate::ui::controls::{Pick, centered, dropdown, link, link_tx, option_choices, page_head, switch, waveform};
 use crate::ui::kit::{button, pal};
 use crate::ui::states::{Kind, state_block_with};
@@ -108,12 +109,12 @@ fn timeline(s: &State, clip: &Clip) -> El {
         let words = trf(s.lang, "editor.hook", &[("t", &clip_stage::clock(a - clip.start_time))]);
         // The marker sits `frac` of the way along: two stretching spacers whose weights are the two sides.
         let marker = row().key("editor/hook-marker").role("img").label(words.clone()).gap(6.0).items_center()
-            .child(col().w(10.0).h(10.0).radius(5.0).fill(p.beam)).child(text(words).font(type_::LABEL).color(p.beam_text));
+            .child(col().w(10.0).h(10.0).radius(5.0).fill(p.beam).child(slot(Moment::BeamHead, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))).child(text(words).font(type_::LABEL).color(p.beam_text));
         lane = row().w_full().h(24.0).items_center().child(col().grow(frac)).child(marker.shrink()).child(col().grow(1.0 - frac));
-        wave = wave.child(row().w_full().pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).child(col().grow(frac)).child(col().w(2.0).h_full().fill(p.beam)).child(col().grow(1.0 - frac)));
+        wave = wave.child(row().w_full().pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).child(col().grow(frac)).child(col().w(2.0).h_full().fill(p.beam).linear_gradient(std::f32::consts::PI, [(0.0, p.beam), (1.0, p.beam.alpha(0.0))])).child(col().grow(1.0 - frac)));
     }
     let wave = col().w_full().child(lane).child(wave);
-    col().w_full().gap(4.0).child(wave)
+    col().w_full().max_w(900.0).gap(4.0).child(wave)
         .child(row().w_full().justify_between().child(text("0:00").font(type_::LABEL).color(p.muted)).child(text(clip_stage::clock(clip.duration_sec)).font(type_::LABEL).color(p.muted)))
 }
 
@@ -144,7 +145,7 @@ fn options_card(s: &State, clip: &Clip) -> El {
     let now = word_of(s, clip, "bgm");
     let now = if now.is_empty() { "none".to_string() } else { now };
     let (hook_first, silence) = (flag(s, clip, "hookFirst"), flag(s, clip, "silenceTrim"));
-    col().key("editor/options").role("group").label(tr(s.lang, "editor.options")).gap(14.0).padding(24.0).w(340.0).min_h(552.0).fill(p.surface).border(1.0, p.divider).radius(10.0)
+    col().key("editor/options").role("group").label(tr(s.lang, "editor.options")).gap(14.0).padding(24.0).w(340.0).self_stretch().fill(p.surface).border(1.0, p.divider).radius(10.0)
         .child(text(tr(s.lang, "editor.options")).font(type_::TITLE).color(p.text))
         .child(dropdown(s, "editor/style", &tr(s.lang, "editor.style"), &word_of(s, clip, "style"), &option_choices(s.lang, "style", &opts.styles), pick("style")))
         .child(dropdown(s, "editor/reframe", &tr(s.lang, "editor.reframe"), &word_of(s, clip, "reframe"), &option_choices(s.lang, "reframe", &opts.reframe_modes), pick("reframe")))
@@ -171,8 +172,8 @@ pub fn view(s: &State) -> El {
     if clip.export_path.is_some() {
         middle = middle.child(text(tr(s.lang, "editor.note.kept")).key("editor/export-note").font(type_::LABEL).color(p.muted).wrap());
     }
-    let body = row().gap(32.0).w_full().items_start()
-        .child(clip_stage::view(s, &clip, 220.0, 390.0, false))
+    let body = row().gap(32.0).w_full().grow(1.0).items_start()
+        .child(clip_stage::view(s, &clip, Some((220.0, 390.0)), false))
         .child(middle)
         .child(options_card(s, &clip));
     let id = clip.id.clone();

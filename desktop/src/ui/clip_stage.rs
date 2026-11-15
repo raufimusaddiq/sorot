@@ -23,7 +23,8 @@ pub fn title(lang: Lang, clip: &Clip) -> String {
 }
 
 /// The 9:16 stage: the label, the sample caption while nothing plays, and (on the clips screen) the transport bar.
-pub fn view(s: &State, clip: &Clip, w: f32, h: f32, transport: bool) -> El {
+/// `size` is the stage's fixed width and height; `None` fills the width it is given at 9:16.
+pub fn view(s: &State, clip: &Clip, size: Option<(f32, f32)>, transport: bool) -> El {
     let p = pal(s.dark);
     let state = s.preview.state();
     let note = match (&state, &s.clips.preview_error) {
@@ -36,14 +37,18 @@ pub fn view(s: &State, clip: &Clip, w: f32, h: f32, transport: bool) -> El {
     let playing = state == PreviewState::Playing;
     let mut middle = col().grow(1.0).w_full().gap(10.0).center();
     if let Some(note) = note {
-        middle = middle.child(text(note).key("clips/stage/note").role("status").font(type_::BODY).color(p.muted).wrap().max_w(w - 40.0));
+        middle = middle.child(text(note).key("clips/stage/note").role("status").font(type_::BODY).color(p.muted).wrap());
     }
     if !playing {
         middle = middle.child(text(tr(s.lang, "clips.sample")).key("clips/stage/sample").font(type_::TITLE).color(p.text).wrap());
     }
-    let mut face = col().key("clips/stage").role("img").label(title(s.lang, clip)).w(w).h(h).fill(p.bg).border(1.0, p.divider).radius(12.0)
+    let mut face = col().key("clips/stage").role("img").label(title(s.lang, clip)).fill(p.bg).border(1.0, p.divider).radius(12.0)
         .child(col().padding(16.0).w_full().child(text(tr(s.lang, "clips.stage.label")).font(type_::LABEL).color(p.muted)))
         .child(middle);
+    face = match size {
+        Some((w, h)) => face.w(w).h(h),
+        None => face.w_full().aspect_ratio(9.0 / 16.0),
+    };
     if transport {
         let total = s.preview.duration().unwrap_or(clip.duration_sec).max(0.001);
         let at = s.preview.time();

@@ -160,6 +160,8 @@ pub enum Cmd {
     Choose { how: How, from: String, keys: bool },
     Import(ImportRequest),
     LoadOptions,
+    /// The Home screen's own re-read of the options: a failure waits for the next one, with no toast.
+    PollOptions,
     PollJob(String),
     CancelJob(String),
     RetryJob(String),
@@ -189,6 +191,7 @@ pub fn execute(engine: &dyn Engine, cmd: Cmd) -> Vec<Msg> {
             Ok(options) => vec![Msg::Options { options, music: engine.music().unwrap_or_default() }],
             Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not read the options: {e}"))],
         },
+        Cmd::PollOptions => engine.options().map(|options| vec![Msg::Options { options, music: engine.music().unwrap_or_default() }]).unwrap_or_default(),
         Cmd::PollJob(id) => engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default(),
         Cmd::CancelJob(id) => match engine.cancel_job(&id) {
             Ok(_) => refresh(engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default()),
@@ -865,7 +868,7 @@ impl State {
         }
         if self.conn == Conn::Ready && matches!(self.route, Route::Home) && self.edit_options.is_none() && t - self.options_polled >= 5.0 {
             self.options_polled = t;
-            self.load_options();
+            self.send(Cmd::PollOptions);
         }
         let watching = matches!(self.route, Route::Job(_)) && self.conn == Conn::Ready;
         changed |= watching && (self.poll_job(t) || self.job.detail.as_ref().is_some_and(|d| d.job.is_running()));

@@ -142,6 +142,23 @@ fn choose_file_opens_the_dialog_and_imports_the_pick() {
     assert!(import_calls(&fake).is_empty());
 }
 
+/// Home re-reads the options on its own every 5 s while it has none: a failure is silent and the next try loads them.
+#[test]
+fn the_home_options_poll_is_quiet_when_it_fails() {
+    let (mut rt, fake) = home_rt();
+    fake.fail_once("options", EngineError::Network("down".into()));
+    poke(&mut rt, |s| {
+        s.edit_options = None;
+        s.options_polled = -10.0;
+        s.tick(100.0);
+    });
+    assert!(rt.state.toasts.is_empty() && rt.state.edit_options.is_none(), "{:?}", rt.state.toasts.len());
+    poke(&mut rt, |s| {
+        s.tick(106.0);
+    });
+    assert!(rt.state.edit_options.is_some());
+}
+
 /// The options card sends only what it changed: a choice put back to the engine's default is not sent.
 #[test]
 fn the_options_card_sends_only_its_changes() {

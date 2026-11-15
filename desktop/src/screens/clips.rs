@@ -340,12 +340,13 @@ pub fn view(s: &State) -> El {
     if blur {
         left = left.child(slot(Moment::RankBlur, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)));
     }
-    let mut side = col().key("clips/side/scroll").scroll(ScrollSpec { stick_bottom: false }).w(270.0).h_full().gap(16.0);
+    let mut side = col().key("clips/side/scroll").scroll(ScrollSpec { stick_bottom: false }).grow(1.0).h_full().gap(16.0);
     // The results sheet opens above the stage: it is what the person just asked for.
     if s.panels.feedback.clip_id.as_deref() == Some(clip.id.as_str()) {
         side = side.child(feedback::view(s));
     }
-    let side = side.child(clip_stage::view(s, clip, 270.0, 472.0, true)).child(details(s, clip));
-    let side = row().h_full().child(side).child(col().w(30.0));
+    let side = side.child(clip_stage::view(s, clip, None, true)).child(details(s, clip));
+    // 270 wide at 1280, 400 at 1920 (screens.ts: SW), plus the 30 pt gutter.
+    let side = row().h_full().w_frac(0.2337).min_w(300.0).max_w(430.0).child(side).child(col().w(30.0));
     col().gap(20.0).padding(40.0).w_full().h_full().child(head).child(row().gap(40.0).w_full().grow(1.0).child(left).child(side))
 }

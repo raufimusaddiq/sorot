@@ -13,8 +13,8 @@ after this review; the test then holds them). Scene to frame: `job-running` to `
 | Beam on the job (one per screen, grain on the fill only, hot head dot, falloff toward the tail) | matches | `job-running` snapshots; `ui/beam.rs` debug-asserts one per screen |
 | Beam head glow (heat 0 cool to 1 hot: radius 4 to 20 pt, 33% to 80%) | drawn by `rune_fx::Fx::glow`; snapshots are at rest (cool) | `fx_moments` tests; `tests/us3_screens.rs` warms and cools it |
 | Stage-done ring, job-done sparkle | one-shots, gone after 0.6 s / the burst life; not in the at-rest snapshots by design | `design_rules.rs` |
-| Transport bar glass | on the clips and editor stage only; matte `surface` fill under it (CPU fallback) | `design_rules.rs` counts glass 1 on clips and editor, 0 elsewhere |
-| Hook marker on the editor timeline (a vertical line, its dot and "Hook m:ss") | matches | `editor-hook` snapshots; the editor has no transport bar or beam, so `design_rules.rs` counts glass 0 and glow 0 there |
+| Transport bar glass | on the clips stage only; matte `surface` fill under it (CPU fallback) | `design_rules.rs` counts glass 1 on clips, 0 elsewhere |
+| Hook marker on the editor timeline (a vertical line, its dot and "Hook m:ss") | matches | `editor-hook` snapshots; the hook is the editor's beam: a line fading from amber to clear and a head dot with the glow; no transport bar, so `design_rules.rs` counts glass 0 and glow 1 there |
 | Tokens (bg, surface, raised, divider, text, beam, pass, skip) | match | the screens read `theme/sorot.json`; `core::contrast` holds the ratios |
 | Hover 120 ms, press 1 px (scale 0.985), rank spring 260/26 | in `ui/kit.rs`, `ui/fx_moments.rs` | `tests/motion.rs` |
 
