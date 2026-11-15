@@ -36,8 +36,9 @@ design.md, data-model.md, contracts/, quickstart.md); constitution v3.0.0.
      **exactly one level**:
      - **L1, `desktop/core`**: invariants are Kani proofs. Unit tables only hold concrete cases a
        proof does not imply (mappings, defaults, exemptions). A Kani proof is never repeated as a
-       unit test. The exception is `contrast.rs`, which uses floating-point `powf` that Kani
-       handles poorly, so it is a unit table only.
+       unit test. Two exceptions: `contrast.rs` (floating-point `powf`, which Kani handles poorly) is a unit
+       table only, and `redact.rs` (heap string building, which exceeded 10 min and 4 GB in Kani)
+       is an exhaustive bounded unit test over the same bound a proof would use.
      - **L2, in-process Rune `Runtime` tests inside each screen task**: that screen's own wiring,
        meaning control → engine call and body, and its empty/loading/error states. They don't
        re-check a rule L1 proved; they check only that the screen shows L1's answer.
