@@ -3,7 +3,10 @@
 
 pub mod app;
 pub mod engine;
+pub mod library;
+pub mod screens;
 pub mod ui;
+pub mod workspace;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -57,13 +60,34 @@ pub fn launch_config(env: impl Fn(&str) -> Option<String>) -> LaunchConfig {
     }
 }
 
-pub fn supervisor() -> app::Supervisor {
-    let sidecar = Sidecar::new(Arc::new(OsSpawn), Arc::new(SystemClock::default()), launch_config(|k| std::env::var(k).ok()));
-    app::Supervisor::new(sidecar, app::http_engine)
+/// The engine, the library commands and the tray for a real launch. A saved `workspace.json`
+/// decides which data folder the engine runs on.
+pub fn live() -> app::Live {
+    let env = |k: &str| std::env::var(k).ok();
+    let config_dir = workspace::config_dir(env);
+    let saved = workspace::load(&config_dir);
+    let mut cfg = launch_config(env);
+    if let Some(ws) = &saved {
+        cfg.data_dir = PathBuf::from(&ws.data_dir);
+    }
+    let data_dir = cfg.data_dir.to_string_lossy().into_owned();
+    let (spawn, clock) = (Arc::new(OsSpawn), Arc::new(SystemClock::default()));
+    let library = Arc::new(library::ProcLibrary { spawn: spawn.clone(), clock: clock.clone(), cfg: cfg.clone() });
+    let icon = env("SOROT_ICON").map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) { "assets/icon/icon.ico" } else { "assets/icon/icon-512.png" })
+    });
+    app::Live {
+        supervisor: app::Supervisor::new(Sidecar::new(spawn, clock, cfg), app::http_engine),
+        library,
+        config_dir,
+        saved,
+        data_dir,
+        tray: Arc::new(platform::tray::OsTray::new(icon)),
+    }
 }
 
 pub fn run() {
-    app::run(supervisor);
+    app::run(live);
 }
 
 #[cfg(test)]

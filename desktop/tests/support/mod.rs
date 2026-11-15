@@ -77,3 +77,33 @@ pub fn advance(rt: &mut Runtime<State>, seconds: f64) {
         t += 1.0 / 60.0;
     }
 }
+
+/// A `Live` launch around `sup`: a library that finds nothing and a tray that is never installed.
+pub fn live_of(sup: sorot_desktop::app::Supervisor) -> sorot_desktop::app::Live {
+    use sorot_desktop::library::SceneLibrary;
+    let dir = sorot_desktop::engine::fake::scenes_dir().join("first-run");
+    sorot_desktop::app::Live {
+        supervisor: sup,
+        library: std::sync::Arc::new(SceneLibrary::new(dir)),
+        config_dir: std::env::temp_dir().join("sorot-test-config"),
+        saved: None,
+        data_dir: "data".into(),
+        tray: std::sync::Arc::new(FakeTray::default()),
+    }
+}
+
+type TrayCallback = std::sync::Arc<dyn Fn(sorot_desktop::platform::tray::TrayCmd) + Send + Sync>;
+
+/// A tray that remembers the callback it was given.
+#[derive(Default)]
+pub struct FakeTray {
+    pub installed: std::sync::Mutex<Option<TrayCallback>>,
+    pub works: bool,
+}
+
+impl sorot_desktop::platform::tray::Tray for FakeTray {
+    fn install(&self, on: TrayCallback) -> bool {
+        *self.installed.lock().unwrap() = Some(on);
+        self.works
+    }
+}

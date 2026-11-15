@@ -1,0 +1,7 @@
+{"events": [
+  {"t": 0.2, "type": "tap", "key": "welcome/use-here"},
+  {"t": 0.5, "type": "mark", "name": "readiness"},
+  {"t": 0.6, "type": "tap", "key": "readiness/fix-all"},
+  {"t": 1.0, "type": "mark", "name": "fixing"},
+  {"t": 2.5, "type": "mark", "name": "end"}
+]}

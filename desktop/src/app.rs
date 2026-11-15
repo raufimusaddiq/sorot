@@ -1,20 +1,30 @@
 //! The app: state, routing between screens, the work that talks to the engine off the UI thread,
 //! and the headless mode (a `FakeEngine` scene, no sidecar, no tray, no notifications, no updates).
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rune::tok::{self, type_};
+use rune::tok::type_;
 use rune::{AppSpec, Cx, El, Tx, col, row, text};
+use sorot_desktop_core::close::{CloseAction, ClosePref, on_close};
 use sorot_desktop_core::engine_conn::{FailReason, State as ConnState};
 use sorot_desktop_core::handshake::Ready;
 use sorot_desktop_core::model::{Job, ReadinessItem, Video};
 use sorot_desktop_core::polling::next_poll;
+use sorot_desktop_core::readiness::{Item, ItemId};
 use sorot_desktop_core::toast::{Toast, ToastKind};
+use sorot_desktop_core::workspace::{Candidate, Workspace, rank_candidates};
 
 use crate::engine::http::HttpEngine;
 use crate::engine::sidecar::{Sidecar, StartError};
 use crate::engine::{Engine, EngineError};
+use crate::library::Library;
+use crate::platform::tray::{Tray, TrayCmd};
+use crate::screens::shell::CloseAnswer;
+use crate::screens::welcome::{How, Welcome, workspace_for};
+use crate::screens::{readiness, shell, welcome};
+use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 use crate::ui::toast::{ToastItem, toast_stack};
 
@@ -23,6 +33,8 @@ use crate::ui::toast::{ToastItem, toast_stack};
 pub enum Conn {
     Starting,
     Ready,
+    /// The engine was up and stopped answering; the app is bringing it back.
+    Lost,
     /// The message to show, already in words a person can act on.
     Failed(String),
 }
@@ -31,6 +43,7 @@ pub enum Conn {
 pub enum Screen {
     Starting,
     EngineFailed,
+    Welcome,
     Readiness,
     Home,
 }
@@ -59,13 +72,26 @@ pub enum Msg {
     Conn(Conn),
     Snapshot(Snapshot),
     Toast(ToastKind, String),
+    /// The libraries `--find-libraries` found, best first.
+    Candidates(Vec<Candidate>),
+    /// Percent of a running library copy.
+    Copying(u8),
+    /// The first-run choice failed; the screen says why and stays.
+    WelcomeFailed(String),
+    /// The choice was made and saved; `skipped` are the files a copy could not read.
+    Workspace { ws: Workspace, skipped: Vec<String> },
 }
 
 /// Work the UI asks for; it runs off the UI thread and answers with messages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Cmd {
     FixReadiness(String),
+    FixAll(Vec<String>),
     Refresh,
+    /// Ask the engine for older libraries (first run).
+    Find,
+    /// The first-run choice; `keys` brings the API keys along.
+    Choose { how: How, from: String, keys: bool },
 }
 
 pub fn execute(engine: &dyn Engine, cmd: Cmd) -> Vec<Msg> {
@@ -77,11 +103,47 @@ pub fn execute(engine: &dyn Engine, cmd: Cmd) -> Vec<Msg> {
         msgs
     };
     match cmd {
-        Cmd::Refresh => refresh(vec![]),
+        Cmd::Refresh | Cmd::Find | Cmd::Choose { .. } => refresh(vec![]),
+        Cmd::FixAll(ids) => {
+            let failed = ids.iter().filter_map(|id| engine.fix_readiness(id).err().map(|e| Msg::Toast(ToastKind::Failed, format!("Could not fix {id}: {e}")))).collect();
+            refresh(failed)
+        }
         Cmd::FixReadiness(id) => match engine.fix_readiness(&id) {
             Ok(_) => refresh(vec![Msg::Toast(ToastKind::Info, format!("Started: {id}"))]),
             Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not fix {id}: {e}"))],
         },
+    }
+}
+
+/// The first-run commands, against the engine's startup commands. `data_dir` is where a new or
+/// copied library lives; `config` is where `workspace.json` is saved.
+pub fn library_work(lib: &dyn Library, config: &Path, data_dir: &str, cmd: Cmd, progress: &mut dyn FnMut(u8)) -> Vec<Msg> {
+    let failed = |m: String| vec![Msg::WelcomeFailed(m)];
+    match cmd {
+        Cmd::Find => match lib.find() {
+            Ok(found) => vec![Msg::Candidates(rank_candidates(&found))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not look for older libraries: {e}"))],
+        },
+        Cmd::Choose { how, from, keys } => {
+            let ws = workspace_for(how, &from, data_dir);
+            let mut msgs = vec![];
+            let skipped = match how {
+                How::Copy => match lib.copy(&from, data_dir, progress) {
+                    Ok(skipped) => skipped,
+                    Err(e) => return failed(format!("Copying failed: {e}")),
+                },
+                How::Use | How::Fresh => vec![],
+            };
+            if keys && let Err(e) = lib.import_keys(&from, &ws.data_dir) {
+                msgs.push(Msg::Toast(ToastKind::Failed, format!("The API keys were not brought over: {e}")));
+            }
+            if let Err(e) = crate::workspace::save(config, &ws) {
+                return failed(format!("Could not save your choice: {e}"));
+            }
+            msgs.push(Msg::Workspace { ws, skipped });
+            msgs
+        }
+        _ => vec![],
     }
 }
 
@@ -94,6 +156,8 @@ pub fn apply_msgs(msgs: Vec<Msg>) -> impl FnOnce(&mut State, &mut Tx) + Send + '
 /// task and `AppHandle::update`; tests and headless runs have none, and apply it inline.
 pub trait Bus: Send + Sync {
     fn background(&self, work: Box<dyn FnOnce() -> Vec<Msg> + Send>);
+    /// Hands messages to the UI thread while a background job still runs (progress).
+    fn post(&self, _msgs: Vec<Msg>) {}
 }
 
 pub struct RuneBus(pub rune::AppHandle<State>);
@@ -105,6 +169,10 @@ impl Bus for RuneBus {
             let msgs = work();
             handle.update(apply_msgs(msgs));
         });
+    }
+
+    fn post(&self, msgs: Vec<Msg>) {
+        self.0.update(apply_msgs(msgs));
     }
 }
 
@@ -159,6 +227,11 @@ impl Supervisor {
 
     /// One look at the engine: its state, the health count, and a restart when it is due.
     pub fn tick(&mut self) -> (Vec<Msg>, Duration) {
+        self.tick_with(&mut |_| {})
+    }
+
+    /// As `tick`; `early` hears `Lost` before the restart it starts, which takes a while.
+    pub fn tick_with(&mut self, early: &mut dyn FnMut(Vec<Msg>)) -> (Vec<Msg>, Duration) {
         let Some(engine) = self.engine.clone() else { return (vec![], next_poll(true)) };
         match fetch_snapshot(engine.as_ref()) {
             Ok(snap) => {
@@ -172,6 +245,9 @@ impl Supervisor {
             }
             Err(_) => {
                 self.sidecar.health(false);
+                if self.sidecar.conn.state == ConnState::Lost {
+                    early(vec![Msg::Conn(Conn::Lost)]);
+                }
                 let started = self.sidecar.recover();
                 (self.after_start(started), next_poll(true))
             }
@@ -181,6 +257,17 @@ impl Supervisor {
     pub fn user_restart(&mut self) -> Vec<Msg> {
         let started = self.sidecar.user_restart();
         self.after_start(started)
+    }
+
+    /// The engine again, on another data folder (the first-run choice).
+    pub fn relaunch_in(&mut self, dir: PathBuf) -> Vec<Msg> {
+        let started = Some(self.sidecar.relaunch_in(dir));
+        self.after_start(started)
+    }
+
+    /// The last engine log lines, secrets removed.
+    pub fn diagnostic(&self) -> String {
+        self.sidecar.diagnostic()
     }
 
     pub fn quit(&mut self) {
@@ -194,16 +281,39 @@ pub struct State {
     pub jobs: Vec<Job>,
     pub videos: Vec<Video>,
     pub readiness: Vec<ReadinessItem>,
+    /// One state machine per readiness row (`core::readiness`), so a failed fix is told from a missing item.
+    pub item_states: Vec<(String, Item)>,
     pub toasts: Vec<ToastItem>,
     pub dark: bool,
+    /// First run: the older libraries on offer.
+    pub welcome: Option<Welcome>,
+    pub workspace: Option<Workspace>,
+    pub close_pref: ClosePref,
+    pub close_dialog: bool,
+    /// A tray (Windows, Linux) or the Dock (macOS) can keep the app alive with its window closed.
+    pub background_ok: bool,
+    /// "Wait for the jobs": quit when none is running.
+    pub idle_quit: bool,
+    /// Set when the app was asked to quit.
+    pub quit_asked: bool,
     now: f64,
+    last_poll: f64,
+    searched: bool,
+    data_dir: String,
+    config_dir: Option<PathBuf>,
+    library: Option<Arc<dyn Library>>,
+    handle: Option<rune::AppHandle<State>>,
     bus: Option<Arc<dyn Bus>>,
     supervisor: Option<Arc<Mutex<Supervisor>>>,
 }
 
 impl Default for State {
     fn default() -> Self {
-        State { engine: None, conn: Conn::Starting, jobs: vec![], videos: vec![], readiness: vec![], toasts: vec![], dark: true, now: 0.0, bus: None, supervisor: None }
+        State {
+            engine: None, conn: Conn::Starting, jobs: vec![], videos: vec![], readiness: vec![], item_states: vec![], toasts: vec![], dark: true,
+            welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
+            now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None,
+        }
     }
 }
 
@@ -220,40 +330,152 @@ impl State {
         State { bus: Some(bus), supervisor: Some(supervisor), ..State::default() }
     }
 
-    /// The scene `name` under `desktop/scenes/`, played by a `FakeEngine`.
+    /// Where first-run looks for older libraries and keeps `workspace.json`. `data_dir` is the
+    /// folder the engine runs on until a choice says otherwise. A saved workspace skips the welcome.
+    pub fn with_library(mut self, library: Arc<dyn Library>, config_dir: PathBuf, data_dir: String, saved: Option<Workspace>) -> Self {
+        (self.library, self.config_dir, self.data_dir, self.workspace) = (Some(library), Some(config_dir), data_dir, saved);
+        self
+    }
+
+    pub fn with_handle(mut self, handle: rune::AppHandle<State>, background_ok: bool) -> Self {
+        (self.handle, self.background_ok) = (Some(handle), background_ok);
+        self
+    }
+
+    /// The scene `name` under `desktop/scenes/`, played by a `FakeEngine`. A scene with
+    /// `libraries.json` is a first run: it never reads or writes the real `workspace.json`.
     #[cfg(any(test, feature = "headless", debug_assertions))]
     pub fn scene(name: &str) -> Self {
-        use crate::engine::fake::FakeEngine;
+        use crate::engine::fake::{FakeEngine, scenes_dir};
+        use crate::library::SceneLibrary;
         let fake = Arc::new(FakeEngine::scene(name));
-        match fake.failure() {
-            Some(message) => State { engine: Some(fake), conn: Conn::Failed(message), ..State::default() },
-            None => State::with_engine(fake),
+        if let Some(message) = fake.failure() {
+            return State { engine: Some(fake), conn: Conn::Failed(message), ..State::default() };
         }
+        let dir = scenes_dir().join(name);
+        let mut s = State::with_engine(fake);
+        if dir.join("libraries.json").is_file() {
+            let config = std::env::var("SOROT_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir().join(format!("sorot-scene-{name}")));
+            s = s.with_library(Arc::new(SceneLibrary::new(dir)), config, "scene-data".into(), None);
+            s.maybe_first_run();
+        }
+        s
     }
 
     pub fn screen(&self) -> Screen {
         match &self.conn {
             Conn::Starting => Screen::Starting,
             Conn::Failed(_) => Screen::EngineFailed,
-            Conn::Ready if self.readiness.iter().any(|i| i.required && !i.ok) => Screen::Readiness,
-            Conn::Ready => Screen::Home,
+            Conn::Ready | Conn::Lost if self.welcome.is_some() => Screen::Welcome,
+            Conn::Ready | Conn::Lost if !self.clipping_allowed() => Screen::Readiness,
+            Conn::Ready | Conn::Lost => Screen::Home,
         }
     }
 
     pub fn apply(&mut self, msg: Msg) {
         match msg {
             Msg::Engine(e) => self.engine = Some(e),
-            Msg::Conn(c) => self.conn = c,
-            Msg::Snapshot(s) => (self.jobs, self.videos, self.readiness) = (s.jobs, s.videos, s.readiness),
+            Msg::Conn(c) => {
+                self.conn = c;
+                self.maybe_first_run();
+            }
+            Msg::Snapshot(snap) => {
+                (self.jobs, self.videos, self.readiness) = (snap.jobs, snap.videos, snap.readiness);
+                self.track_readiness();
+            }
             Msg::Toast(kind, text) => self.toasts.push(ToastItem { toast: Toast::new(kind, text, None), hovered: false }),
+            Msg::Candidates(found) if found.is_empty() => self.send(Cmd::Choose { how: How::Fresh, from: String::new(), keys: false }),
+            Msg::Candidates(found) => self.welcome = Some(Welcome::new(found)),
+            Msg::Copying(n) => self.with_welcome(|w| w.copying = Some(n)),
+            Msg::WelcomeFailed(why) => self.with_welcome(|w| (w.copying, w.error) = (None, Some(why))),
+            Msg::Workspace { ws, skipped } => {
+                let moved = ws.data_dir != self.data_dir;
+                self.workspace = Some(ws.clone());
+                if skipped.is_empty() {
+                    self.welcome = None;
+                } else {
+                    self.with_welcome(|w| (w.copying, w.skipped) = (None, Some(skipped)));
+                }
+                if moved {
+                    self.data_dir = ws.data_dir.clone();
+                    self.relaunch_engine(ws.data_dir);
+                }
+            }
+        }
+    }
+
+    /// `core::readiness`'s gate over the engine's rows (the GPU only picks speed, so it never blocks).
+    pub fn clipping_allowed(&self) -> bool {
+        let items: Vec<Item> = self.item_states.iter().map(|(_, i)| i.clone()).collect();
+        sorot_desktop_core::readiness::clipping_allowed(&items)
+    }
+
+    fn with_welcome(&mut self, f: impl FnOnce(&mut Welcome)) {
+        if let Some(w) = &mut self.welcome {
+            f(w);
+        }
+    }
+
+    fn track_readiness(&mut self) {
+        for row in &self.readiness {
+            match self.item_states.iter_mut().find(|(id, _)| *id == row.id) {
+                Some((_, item)) => item.apply(row),
+                None => {
+                    let mut item = Item::new(ItemId::parse(&row.id), row.required);
+                    item.apply(row);
+                    self.item_states.push((row.id.clone(), item));
+                }
+            }
+        }
+    }
+
+    /// With no saved workspace, asks the engine once for older libraries.
+    pub fn maybe_first_run(&mut self) {
+        if self.workspace.is_none() && self.library.is_some() && !self.searched && self.conn == Conn::Ready {
+            self.searched = true;
+            self.send(Cmd::Find);
         }
     }
 
     pub fn send(&mut self, cmd: Cmd) {
+        if matches!(cmd, Cmd::Find | Cmd::Choose { .. }) {
+            return self.send_library(cmd);
+        }
         let Some(engine) = self.engine.clone() else { return };
         match self.bus.clone() {
             Some(bus) => bus.background(Box::new(move || execute(engine.as_ref(), cmd))),
             None => execute(engine.as_ref(), cmd).into_iter().for_each(|m| self.apply(m)),
+        }
+    }
+
+    fn send_library(&mut self, cmd: Cmd) {
+        let (Some(lib), Some(config)) = (self.library.clone(), self.config_dir.clone()) else { return };
+        if matches!(cmd, Cmd::Choose { how: How::Copy, .. }) {
+            self.with_welcome(|w| (w.copying, w.error) = (Some(0), None));
+        }
+        let data_dir = self.data_dir.clone();
+        match self.bus.clone() {
+            Some(bus) => {
+                let post = bus.clone();
+                bus.background(Box::new(move || library_work(lib.as_ref(), &config, &data_dir, cmd, &mut |n| post.post(vec![Msg::Copying(n)]))));
+            }
+            None => library_work(lib.as_ref(), &config, &data_dir, cmd, &mut |_| {}).into_iter().for_each(|m| self.apply(m)),
+        }
+    }
+
+    pub fn toggle_keys(&mut self) {
+        self.with_welcome(|w| w.keys = !w.keys);
+    }
+
+    /// "Continue" after a copy that skipped files.
+    pub fn finish_welcome(&mut self) {
+        self.welcome = None;
+    }
+
+    fn relaunch_engine(&mut self, dir: String) {
+        if let (Some(sup), Some(bus)) = (self.supervisor.clone(), self.bus.clone()) {
+            self.conn = Conn::Starting;
+            bus.background(Box::new(move || sup.lock().unwrap().relaunch_in(dir.into())));
         }
     }
 
@@ -268,7 +490,104 @@ impl State {
         }
     }
 
-    /// The toast clock: `t` is seconds since the app started.
+    /// "Export diagnostic report": the engine's last log lines, secrets removed, saved beside `workspace.json`.
+    pub fn export_diagnostic(&mut self) {
+        let report = self.supervisor.as_ref().map(|s| s.lock().unwrap().diagnostic());
+        let toast = match (report, &self.config_dir) {
+            (Some(text), Some(dir)) => {
+                let path = dir.join("diagnostic-report.txt");
+                match std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, text)) {
+                    Ok(()) => Msg::Toast(ToastKind::Done, format!("Saved the report to {}", path.display())),
+                    Err(e) => Msg::Toast(ToastKind::Failed, format!("Could not save the report: {e}")),
+                }
+            }
+            _ => Msg::Toast(ToastKind::Failed, "There is no engine log to export yet.".into()),
+        };
+        self.apply(toast);
+    }
+
+    pub fn running_jobs(&self) -> usize {
+        self.jobs.iter().filter(|j| j.is_running()).count()
+    }
+
+    /// Cancels every running job. Failures are ignored: the app is on its way out.
+    pub fn cancel_running(&mut self) {
+        if let Some(engine) = self.engine.clone() {
+            self.jobs.iter().filter(|j| j.is_running()).for_each(|j| drop(engine.cancel_job(&j.id)));
+        }
+    }
+
+    /// What closing the window does now. Without a tray a "background" preference cannot hide the app.
+    pub fn close_action(&self) -> CloseAction {
+        let pref = if self.background_ok || self.close_pref != ClosePref::Background { self.close_pref } else { ClosePref::Ask };
+        on_close(self.running_jobs(), pref)
+    }
+
+    /// The window is closing: true when the app should quit with it.
+    pub fn closing(&mut self) -> bool {
+        if rune::quitting() {
+            return false;
+        }
+        match self.close_action() {
+            CloseAction::Quit => true,
+            CloseAction::QuitCancelJobs => {
+                self.cancel_running();
+                true
+            }
+            CloseAction::HideKeepRunning => false,
+            CloseAction::AskDialog => {
+                self.close_dialog = true;
+                if let Some(h) = &self.handle {
+                    h.show();
+                }
+                false
+            }
+        }
+    }
+
+    /// A press on one of the close dialog's three answers.
+    pub fn answer_close(&mut self, answer: CloseAnswer) {
+        self.close_dialog = false;
+        match answer {
+            CloseAnswer::Background => {
+                if let Some(h) = &self.handle {
+                    h.hide();
+                }
+            }
+            CloseAnswer::Wait => {
+                self.idle_quit = true;
+                self.apply(Msg::Toast(ToastKind::Info, "Sorot will close when the jobs finish.".into()));
+            }
+            CloseAnswer::CancelAndQuit => self.tray(TrayCmd::Quit),
+        }
+    }
+
+    /// True once "Wait for the jobs" has nothing left to wait for.
+    pub fn idle_quit_due(&self) -> bool {
+        self.idle_quit && self.running_jobs() == 0
+    }
+
+    /// The tray's two menu items (and "Cancel the jobs and quit", which is the second one).
+    pub fn tray(&mut self, cmd: TrayCmd) {
+        match cmd {
+            TrayCmd::Open => {
+                if let Some(h) = &self.handle {
+                    h.show();
+                    h.focus();
+                }
+            }
+            TrayCmd::Quit => {
+                self.cancel_running();
+                self.quit_asked = true;
+                if let Some(h) = &self.handle {
+                    h.quit();
+                }
+            }
+        }
+    }
+
+    /// The toast clock: `t` is seconds since the app started. A run with no supervisor (a scene)
+    /// also reads the engine again twice a second while a fix is running.
     pub fn tick(&mut self, t: f64) -> bool {
         let dt_ms = ((t - self.now).max(0.0) * 1000.0) as u32;
         self.now = t;
@@ -277,7 +596,13 @@ impl State {
         }
         let before = self.toasts.len();
         self.toasts.retain(|i| !i.toast.expired());
-        self.toasts.len() != before
+        let mut changed = self.toasts.len() != before;
+        if self.supervisor.is_none() && self.conn == Conn::Ready && self.readiness.iter().any(|i| i.progress.is_some()) && t - self.last_poll >= 0.5 {
+            self.last_poll = t;
+            self.send(Cmd::Refresh);
+            changed = true;
+        }
+        changed
     }
 
     pub fn quit(&mut self) {
@@ -288,22 +613,33 @@ impl State {
 }
 
 pub fn view(s: &State, _: &mut Cx<State>) -> El {
-    let t = tok::theme(s.dark);
-    let screen = match s.screen() {
-        Screen::Starting => state_block::<State>(s.dark, "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
-        Screen::EngineFailed => {
-            let Conn::Failed(why) = &s.conn else { unreachable!("EngineFailed needs Failed") };
-            let (cause, rest) = why.split_once('\n').unwrap_or((why, "Restart it, or export a diagnostic report."));
-            state_block(s.dark, "engine/failed", Kind::Error, cause, rest, Some(("engine/restart", "Restart engine", State::restart_engine)))
+    let p = pal(s.dark);
+    let body = match s.screen() {
+        Screen::Home => shell::with_rail(s, home_view(s)),
+        screen => {
+            let content = match screen {
+                Screen::Starting => state_block::<State>(s.dark, "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
+                Screen::EngineFailed => {
+                    let Conn::Failed(why) = &s.conn else { unreachable!("EngineFailed needs Failed") };
+                    let (cause, rest) = why.split_once('\n').unwrap_or((why, "Restart it, or export a diagnostic report."));
+                    state_block::<State>(s.dark, "engine/failed", Kind::Error, cause, rest, None)
+                }
+                Screen::Welcome => welcome::view(s, s.welcome.as_ref().expect("Welcome needs its state")),
+                _ => readiness::view(s),
+            };
+            col().grow(1.0).w_full().center().child(content)
         }
-        Screen::Readiness => readiness_view(s),
-        Screen::Home => home_view(s),
     };
-    col().w_full().h_full().fill(t.bg).child(col().grow(1.0).w_full().center().child(screen)).child(toast_stack(s.dark, &s.toasts))
+    let body = if s.close_dialog { col().grow(1.0).w_full().center().child(shell::close_dialog(s)) } else { body };
+    let mut root = col().w_full().h_full().fill(p.bg);
+    if let Some(banner) = shell::banner(s) {
+        root = root.child(banner);
+    }
+    root.child(body).child(toast_stack(s.dark, &s.toasts))
 }
 
 fn home_view(s: &State) -> El {
-    let t = tok::theme(s.dark);
+    let t = pal(s.dark);
     if s.jobs.is_empty() && s.videos.is_empty() {
         return state_block::<State>(s.dark, "home/empty", Kind::Empty, "No videos yet", "Paste a link or choose a file to make your first clips.", None);
     }
@@ -311,32 +647,7 @@ fn home_view(s: &State) -> El {
     for j in &s.jobs {
         list = list.child(
             row().key(format!("home/job/{}", j.id)).role("listitem").label(format!("{} {}", j.status, j.current_stage.as_deref().unwrap_or(""))).gap(8.0)
-                .child(text(&j.status).font(type_::LABEL).color(t.text)).child(text(j.current_stage.as_deref().unwrap_or("")).font(type_::BODY).color(t.text_secondary)),
-        );
-    }
-    list
-}
-
-fn readiness_view(s: &State) -> El {
-    let t = tok::theme(s.dark);
-    let mut list = col().key("readiness/items").gap(10.0).w(520.0)
-        .child(text("Sorot needs a few things first").key("readiness/title").role("heading").level(1).font(type_::TITLE).color(t.text));
-    for item in &s.readiness {
-        let id = item.id.clone();
-        let tail = match (&item.progress, item.ok, item.fixable) {
-            (Some(p), _, _) => text(format!("{} {}%", p.label, p.percent)).key(format!("readiness/{id}/progress")).font(type_::LABEL).color(t.text),
-            (None, true, _) => text("Ready").font(type_::LABEL).color(t.text_secondary),
-            (None, false, true) => {
-                let fix_id = id.clone();
-                col().key(format!("readiness/{id}/fix")).role("button").label(format!("Fix {id}")).focusable(true).padding(6.0).radius(6.0)
-                    .fill(t.card).border(1.0, t.card_border).on_press(move |s: &mut State| s.send(Cmd::FixReadiness(fix_id.clone())))
-                    .child(text("Fix").font(type_::LABEL).color(t.text))
-            }
-            (None, false, false) => text("Needs attention").font(type_::LABEL).color(t.text_secondary),
-        };
-        list = list.child(
-            row().key(format!("readiness/{id}")).gap(12.0).items_center()
-                .child(text(&item.detail).font(type_::BODY).color(t.text).wrap().grow(1.0)).child(tail),
+                .child(text(&j.status).font(type_::LABEL).color(t.text)).child(text(j.current_stage.as_deref().unwrap_or("")).font(type_::BODY).color(t.muted)),
         );
     }
     list
@@ -350,6 +661,7 @@ pub const SCENES: &[Scene] = &[
     ("home-empty", |s| *s = State::scene("home-empty")),
     ("readiness-missing", |s| *s = State::scene("readiness-missing")),
     ("engine-failed", |s| *s = State::scene("engine-failed")),
+    ("first-run", |s| *s = State::scene("first-run")),
 ];
 
 pub fn spec() -> AppSpec<State> {
@@ -358,7 +670,13 @@ pub fn spec() -> AppSpec<State> {
         min_size: Some((720.0, 480.0)),
         fonts: &[include_bytes!("../assets/fonts/InstrumentSans.ttf")],
         families: ("Instrument Sans", "monospace"),
-        poll: Some(|s: &mut State, t: f64, _: &mut Tx| s.tick(t)),
+        poll: Some(|s: &mut State, t: f64, tx: &mut Tx| {
+            let changed = s.tick(t);
+            if s.idle_quit_due() {
+                tx.quit();
+            }
+            changed
+        }),
         ..AppSpec::new("Sorot", (1100.0, 720.0), State::default, view)
     }
 }
@@ -366,7 +684,7 @@ pub fn spec() -> AppSpec<State> {
 /// Polls the engine again after `wait`, for as long as the app runs.
 pub fn schedule(handle: rune::AppHandle<State>, sup: Arc<Mutex<Supervisor>>, wait: Duration) {
     let _ = rune::task::spawn_after("sorot-poll", wait, move || {
-        let (msgs, next) = sup.lock().unwrap().tick();
+        let (msgs, next) = sup.lock().unwrap().tick_with(&mut |early| handle.update(apply_msgs(early)));
         handle.update(apply_msgs(msgs));
         if !rune::quitting() {
             schedule(handle, sup, next);
@@ -375,25 +693,50 @@ pub fn schedule(handle: rune::AppHandle<State>, sup: Arc<Mutex<Supervisor>>, wai
 }
 
 /// A state for a real engine: boots it on a task thread and keeps polling it.
-pub fn start_live(handle: rune::AppHandle<State>, supervisor: Supervisor) -> State {
+/// Everything a real launch brings besides the engine: where older libraries are found, where
+/// `workspace.json` lives (and what it said), and the tray.
+pub struct Live {
+    pub supervisor: Supervisor,
+    pub library: Arc<dyn Library>,
+    pub config_dir: PathBuf,
+    pub saved: Option<Workspace>,
+    pub data_dir: String,
+    pub tray: Arc<dyn Tray>,
+}
+
+/// Puts the tray up. On macOS the Dock is the way back, so no tray is needed there.
+pub fn install_tray(handle: &rune::AppHandle<State>, tray: &dyn Tray) -> bool {
+    let h = handle.clone();
+    cfg!(target_os = "macos") || tray.install(Arc::new(move |cmd| h.update(move |s: &mut State, _: &mut Tx| s.tray(cmd))))
+}
+
+/// A state for a real engine: boots it on a task thread and keeps polling it.
+pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
+    let Live { supervisor, library, config_dir, saved, data_dir, tray } = live;
     let sup = Arc::new(Mutex::new(supervisor));
-    let (boot, bus) = (handle.clone(), Arc::new(RuneBus(handle)));
+    let (boot, bus) = (handle.clone(), Arc::new(RuneBus(handle.clone())));
     let worker = sup.clone();
     let _ = rune::task::spawn("sorot-boot", move || {
         let msgs = worker.lock().unwrap().boot();
         boot.update(apply_msgs(msgs));
         schedule(boot, worker, Duration::from_secs(1));
     });
-    State::live(bus, sup)
+    let background_ok = install_tray(&handle, tray.as_ref());
+    State::live(bus, sup).with_library(library, config_dir, data_dir, saved).with_handle(handle, background_ok)
 }
 
-pub fn run(supervisor: fn() -> Supervisor) {
-    let app = rune::App::new(spec()).on_quit(|s: &mut State, _| s.quit());
+pub fn run(live: fn() -> Live) {
+    // Closing the window hides it; `State::closing` decides whether the app goes with it.
+    let app = rune::App::new(spec()).keep_running().on_close(|s: &mut State, tx: &mut Tx| {
+        if s.closing() {
+            tx.quit();
+        }
+    }).on_quit(|s: &mut State, _| s.quit());
     let handle = app.handle();
     // Rune knows it is headless only once `run` has started, so the choice is made in `init`.
     app.init(move || match rune::tooling::headless_run() {
         Some(_) => State::scene("home-empty"),
-        None => start_live(handle, supervisor()),
+        None => start_live(handle, live()),
     })
     .run();
 }

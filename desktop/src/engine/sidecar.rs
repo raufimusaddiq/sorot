@@ -255,6 +255,14 @@ impl Sidecar {
         self
     }
 
+    /// Stops the engine (as a quit does) and starts it again on another data folder.
+    pub fn relaunch_in(&mut self, dir: PathBuf) -> std::result::Result<Ready, StartError> {
+        self.quit();
+        self.conn = EngineConn::default();
+        self.cfg.data_dir = dir;
+        self.start()
+    }
+
     /// The token of the current launch.
     pub fn token(&self) -> &str {
         &self.token
@@ -363,6 +371,11 @@ impl Sidecar {
 /// Runs `sorot-engine <args>` (the startup commands of §7) and returns the one envelope it
 /// printed (the last line that is one). A process that cannot start, never answers or prints no envelope is an error one.
 pub fn run_library_command(spawn: &dyn Spawn, clock: &dyn Clock, cfg: &LaunchConfig, args: &[&str], env: Vec<(String, String)>) -> Envelope<Value> {
+    run_library_command_with(spawn, clock, cfg, args, env, &mut |_| {})
+}
+
+/// As `run_library_command`, and `on_progress` hears every `PROGRESS <n>` line (0..=100).
+pub fn run_library_command_with(spawn: &dyn Spawn, clock: &dyn Clock, cfg: &LaunchConfig, args: &[&str], env: Vec<(String, String)>, on_progress: &mut dyn FnMut(u8)) -> Envelope<Value> {
     let fail = |e: String| Envelope { status: Status::Error, data: None, error: Some(e) };
     let mut a = cfg.args.clone();
     a.extend(args.iter().map(|s| s.to_string()));
@@ -379,7 +392,10 @@ pub fn run_library_command(spawn: &dyn Spawn, clock: &dyn Clock, cfg: &LaunchCon
             return fail("The engine did not answer".into());
         }
         match proc.next(left) {
-            Out::Line(l) => lines.push(l),
+            Out::Line(l) => match l.strip_prefix("PROGRESS ").and_then(|n| n.split_whitespace().next()?.parse::<u8>().ok()) {
+                Some(n) => on_progress(n.min(100)),
+                None => lines.push(l),
+            },
             Out::Exited(c) => break c,
             Out::Idle => {}
         }

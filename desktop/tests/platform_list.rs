@@ -72,3 +72,14 @@ fn the_ignore_regex_matches_both_separators_and_literal_dots() {
         r"src[/\]platform[/\]reveal\.rs|src[/\]platform[/\]tray\.rs"
     );
 }
+
+/// ci.yml and test-runner.md build the regex with `scripts/cov-ignore.sh`; it must equal `ignore_regex`.
+#[test]
+fn the_script_prints_the_same_regex_as_ignore_regex() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let text = fs::read_to_string(root.join("coverage-exclude.txt")).unwrap();
+    let listed: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let out = std::process::Command::new("sh").arg(root.join("scripts/cov-ignore.sh")).output().expect("sh is on PATH (Git Bash on Windows)");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim_end(), ignore_regex(&listed));
+}

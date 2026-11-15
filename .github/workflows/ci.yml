@@ -87,7 +87,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
       - name: Tests and coverage (95% lines and functions, shims in coverage-exclude.txt)
-        run: cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95 --ignore-filename-regex "$(tr -d '\r' < coverage-exclude.txt | sed -e 's/\./\\./g' -e 's#/#[/\\]#g' | paste -sd'|')"
+        run: cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95 --ignore-filename-regex "$(sh scripts/cov-ignore.sh)"
       - name: Kani proofs (desktop/core)
         if: runner.os == 'Linux'
         run: |

@@ -50,7 +50,7 @@ fn a_job_shows_on_home_and_a_fix_asks_the_engine_then_refreshes() {
     assert_eq!(rt.state.toasts[0].toast.text, "Started: ffmpeg");
 
     fake.fail_once("fix_readiness", EngineError::Network("down".into()));
-    click(&mut rt, "readiness/ffmpeg/fix");
+    rt.state.send(Cmd::FixReadiness("ffmpeg".into()));
     assert_eq!(rt.state.toasts[1].toast.kind, ToastKind::Failed);
     assert!(rt.state.toasts[1].toast.text.starts_with("Could not fix ffmpeg"));
 
@@ -123,6 +123,7 @@ fn summary(msgs: &[Msg]) -> Vec<String> {
             Msg::Conn(c) => format!("{c:?}"),
             Msg::Snapshot(_) => "snapshot".into(),
             Msg::Toast(..) => "toast".into(),
+            _ => "first-run".into(),
         })
         .collect()
 }
@@ -218,6 +219,7 @@ fn rune_runs_background_work_and_polling_on_task_threads() {
         vec![]
     }));
     rx.recv_timeout(Duration::from_secs(5)).expect("the work ran");
+    bus.post(vec![]);
 
     let (clock, spawn) = (Arc::new(FakeClock::default()), Arc::new(FakeSpawn::default()));
     let mut sup = supervisor(spawn, clock);
@@ -236,7 +238,7 @@ fn the_fake_engine_answers_every_route_from_its_scene() {
     let fake = FakeEngine::scene("readiness-missing");
     assert!(fake.health().unwrap().healthy);
     assert_eq!(fake.readiness().unwrap().items.len(), 4);
-    assert_eq!(fake.fix_readiness("ffmpeg").unwrap().task_id, "task-ffmpeg");
+    assert_eq!(fake.fix_readiness("gpu").unwrap().task_id, "task-gpu");
     assert!(fake.settings().is_err() && fake.job("j").is_err(), "this scene has no settings or job");
     assert!(fake.videos().unwrap().is_empty() && fake.jobs().unwrap().is_empty() && fake.clips("v").unwrap().is_empty());
     assert_eq!(fake.import_url("u").unwrap().video_id, "vnew");
@@ -283,7 +285,7 @@ impl Bus for NoBus {
 
 #[test]
 fn the_real_supervisor_is_built_from_the_environment() {
-    assert_eq!(sorot_desktop::supervisor().sidecar.conn.restarts, 0);
+    assert_eq!(sorot_desktop::live().supervisor.sidecar.conn.restarts, 0);
 }
 
 #[test]
@@ -291,7 +293,7 @@ fn a_live_state_boots_the_engine_on_a_task_thread() {
     let (clock, spawn) = (Arc::new(FakeClock::default()), Arc::new(FakeSpawn::default()));
     spawn.queue(engine_script(&clock));
     let sup = supervisor(spawn.clone(), clock);
-    let state = start_live(rune::App::new(spec()).handle(), sup);
+    let state = start_live(rune::App::new(spec()).handle(), live_of(sup));
     assert_eq!(state.screen(), Screen::Starting);
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while spawn.launches.lock().unwrap().is_empty() && std::time::Instant::now() < deadline {

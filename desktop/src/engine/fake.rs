@@ -38,6 +38,8 @@ struct Inner {
     fail: HashMap<String, EngineError>,
     readiness_steps: VecDeque<Readiness>,
     readiness: Option<Readiness>,
+    /// Items whose fix was asked for, and how many readiness calls came since.
+    fixing: HashMap<String, u8>,
 }
 
 pub struct FakeEngine {
@@ -106,14 +108,25 @@ impl Engine for FakeEngine {
             }
             i.readiness.clone()
         };
-        match step {
-            Some(r) => Ok(r),
-            None => self.load("readiness", r#"{"status":"ok","data":{"items":[]}}"#),
+        let mut r = match step {
+            Some(r) => r,
+            None => self.load("readiness", r#"{"status":"ok","data":{"items":[]}}"#)?,
+        };
+        // A fix that was asked for shows progress once, then is done.
+        let mut i = self.inner.lock().unwrap();
+        for item in &mut r.items {
+            if let Some(n) = i.fixing.get_mut(&item.id) {
+                *n = n.saturating_add(1);
+                item.ok = *n > 1;
+                item.progress = (*n == 1).then(|| Progress { percent: 50, label: "Downloading".into() });
+            }
         }
+        Ok(r)
     }
 
     fn fix_readiness(&self, id: &str) -> Result<FixStarted> {
         self.enter(format!("fix_readiness({id})"), "fix_readiness")?;
+        self.inner.lock().unwrap().fixing.insert(id.into(), 0);
         Ok(FixStarted { task_id: format!("task-{id}") })
     }
 

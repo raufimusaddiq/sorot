@@ -60,8 +60,14 @@ pub fn output(args: &[&str]) -> String {
 /// Runs `scene`, plays `desktop/scripts/headless/{script}.json` if given and dumps the tree at its
 /// last mark.
 pub fn run(scene: &str, script: Option<&str>, args: &[&str]) -> Tree {
+    run_env(scene, script, args, &[])
+}
+
+/// As `run`, with extra environment variables for the binary.
+pub fn run_env(scene: &str, script: Option<&str>, args: &[&str], env: &[(&str, &Path)]) -> Tree {
     let tree = temp("json");
     let mut cmd = binary();
+    cmd.envs(env.iter().copied());
     cmd.args(["--scene", scene, "--tree"]).arg(&tree);
     if let Some(name) = script {
         cmd.arg("--script").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"))).args(["--at", "mark:end"]);
@@ -71,6 +77,13 @@ pub fn run(scene: &str, script: Option<&str>, args: &[&str]) -> Tree {
     let parsed = serde_json::from_str(&std::fs::read_to_string(&tree).unwrap()).unwrap();
     let _ = std::fs::remove_file(&tree);
     Tree(parsed)
+}
+
+/// A fresh folder under the temp dir.
+pub fn temp_dir() -> PathBuf {
+    let dir = temp("d");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
 }
 
 /// A PNG of `scene` in `theme` (`dark` or `light`) at `size` (`1100x720`).

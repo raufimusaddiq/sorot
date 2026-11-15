@@ -1,0 +1,6 @@
+{
+  "candidates": [
+    { "path": "C:\\Users\\Anda\\Sorot\\data", "ok": true, "videos": 4, "clips": 31, "hasKeys": false }
+  ],
+  "skipped": ["exports/old-clip.mp4"]
+}
