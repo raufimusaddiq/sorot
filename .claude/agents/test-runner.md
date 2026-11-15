@@ -54,7 +54,7 @@ If `bun` not found: mark Backend, CLI + Frontend as ❌ with reason "bun not ava
 #### Desktop (Rust, `desktop/`):
 ```bash
 cd desktop && cargo clippy --all-targets -- -D warnings 2>&1
-cd desktop && cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95 --ignore-filename-regex "$(sh scripts/cov-ignore.sh)" 2>&1
+sh desktop/scripts/cov.sh 2>&1   # Windows without sh: powershell -NoProfile -File desktop\scripts\cov.ps1
 wsl -e bash -lc 'ulimit -v 4194304; . ~/.cargo/env; cd /mnt/d/VibeCoding/ViralVideo/<checkout>/desktop && CARGO_TARGET_DIR=~/.cache/sorot-kani-target cargo kani -p sorot-desktop-core' 2>&1
 ```
 `<checkout>` is the repo or worktree path relative to `D:\VibeCoding\ViralVideo` (empty for the main checkout). The separate `CARGO_TARGET_DIR` keeps WSL builds out of the Windows `target/`. A Kani run that exceeds the 4 GB cap (`ulimit -v 4194304`) fails as out-of-memory: report it as BLOCKED. Capture: tests, coverage %, and Kani "proofs verified / failed". The coverage ignore list is `desktop/coverage-exclude.txt` (thin OS shims only). If `cargo` is not found: mark Desktop ❌ "cargo not available on host". If Kani is unavailable (wsl or cargo-kani missing), report Kani as "not available on host": the gate is BLOCKED, never passed.

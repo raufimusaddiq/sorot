@@ -88,6 +88,20 @@ fn the_ignore_regex_matches_both_separators_and_literal_dots() {
     );
 }
 
+/// Both coverage scripts take the regex from `cov-ignore.sh` (checked above) and gate at 95%.
+#[test]
+fn both_coverage_scripts_use_the_ignore_script_and_the_gates() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for script in ["scripts/cov.ps1", "scripts/cov.sh"] {
+        let text = fs::read_to_string(root.join(script)).unwrap();
+        for needle in ["cov-ignore.sh", "--fail-under-lines 95", "--fail-under-functions 95"] {
+            assert!(text.contains(needle), "{script} lacks {needle}");
+        }
+    }
+    let sh = fs::read_to_string(root.join("scripts/cov.sh")).unwrap();
+    assert!(sh.contains("command -v flock"), "cov.sh must run unlocked, not fail, where flock is missing");
+}
+
 /// ci.yml and test-runner.md build the regex with `scripts/cov-ignore.sh`; it must equal `ignore_regex`.
 #[test]
 fn the_script_prints_the_same_regex_as_ignore_regex() {
