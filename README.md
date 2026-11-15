@@ -373,7 +373,7 @@ bun run build && bun run start     # UI → frontend/out, backend on :8080
 cd backend && bun test --coverage  # 🧪 backend
 cd cli && bun test --coverage      # 🧪 CLI
 cd frontend && bun run test        # 🧪 UI (jest)
-cd desktop && cargo llvm-cov --workspace --fail-under-lines 95   # 🧪 desktop (also clippy, Kani)
+cd desktop && scripts/cov.sh   # 🧪 desktop (also clippy, Kani)
 cd ai-pipeline && .venv/bin/python -m pytest tests   # 🧪 ~200 pipeline tests
 ```
 
