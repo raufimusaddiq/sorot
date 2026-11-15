@@ -2,6 +2,8 @@
 //! sends only what differs from what the clip already resolves to (`core::clips::edit_layer`).
 
 use rune::tok::type_;
+use std::rc::Rc;
+
 use rune::{El, Tx, col, row, text};
 use serde_json::Value;
 use sorot_desktop_core::clips::{Options, edit_layer};
@@ -9,10 +11,12 @@ use sorot_desktop_core::model::Clip;
 use sorot_desktop_core::toast::ToastKind;
 
 use crate::app::{Cmd, Msg, Route, State};
-use crate::ui::beam::{Variant, beam};
+use crate::i18n::{tr, trf};
 use crate::ui::clip_stage;
+use crate::ui::fx_moments::{Moment, slot};
+use crate::ui::controls::{Pick, centered, dropdown, link, link_tx, option_choices, page_head, switch, waveform};
 use crate::ui::kit::{button, pal};
-use crate::ui::states::{Kind, state_block};
+use crate::ui::states::{Kind, state_block_with};
 
 #[derive(Default)]
 pub struct Editor {
@@ -61,7 +65,8 @@ impl State {
     pub fn rerender(&mut self) {
         let delta = self.rerender_delta();
         if delta.is_empty() {
-            return self.apply(Msg::Toast(ToastKind::Info, "Nothing changed since the last render.".into()));
+            let words = tr(self.lang, "editor.unchanged");
+            return self.apply(Msg::Toast(ToastKind::Info, words));
         }
         self.editor.rendering = true;
         let clip_id = self.editor.clip_id.clone();
@@ -79,7 +84,8 @@ impl State {
                 (slot.export_path, slot.export_status) = (path, status);
             }
         }
-        self.apply(Msg::Toast(ToastKind::Done, "Rendered again. The earlier export stays until you export again.".into()));
+        let words = tr(self.lang, "editor.rendered");
+        self.apply(Msg::Toast(ToastKind::Done, words));
     }
 
     /// What the clip will be rendered with now: this session's choice, else the clip's, else the default.
@@ -89,75 +95,95 @@ impl State {
     }
 }
 
+/// The timeline: a waveform-shaped bar with the hook's marker (a vertical line, its dot and "Hook m:ss") on it.
 fn timeline(s: &State, clip: &Clip) -> El {
     let p = pal(s.dark);
-    const WIDTH: f32 = 240.0;
     let total = clip.duration_sec.max(0.001);
-    let at = |t: f64| (((t - clip.start_time) / total).clamp(0.0, 1.0) as f32) * WIDTH;
-    let mut bar = row().key("editor/timeline").role("img").label(format!("Timeline, {} long", clip_stage::clock(clip.duration_sec))).w(WIDTH).h(18.0).fill(p.raised).radius(4.0).items_center();
-    if let (Some(a), Some(b)) = (clip.hook_start, clip.hook_end) {
-        let (x0, x1) = (at(a), at(b).max(at(a) + 4.0));
-        bar = bar.child(col().w(x0).h(18.0)).child(beam(s.dark, "editor/hook-marker", Variant::Hook, x1 - x0, 0.0, format!("Hook {} to {}", clip_stage::clock(a - clip.start_time), clip_stage::clock(b - clip.start_time))));
+    let label = trf(s.lang, "editor.timeline.label", &[("t", &clip_stage::clock(clip.duration_sec))]);
+    let seed = clip.id.bytes().fold(7u64, |a, b| a.wrapping_mul(31).wrapping_add(u64::from(b)));
+    let bar = waveform(s.dark, "editor/timeline", &label, seed, 120.0);
+    let mut wave = col().w_full().h(120.0).fill(p.surface).border(1.0, p.divider).radius(6.0).child(bar);
+    let mut lane = col().w_full().h(24.0);
+    if let Some(a) = clip.hook_start {
+        let frac = (((a - clip.start_time) / total).clamp(0.0, 0.92) as f32).max(0.01);
+        let words = trf(s.lang, "editor.hook", &[("t", &clip_stage::clock(a - clip.start_time))]);
+        // The marker sits `frac` of the way along: two stretching spacers whose weights are the two sides.
+        let marker = row().key("editor/hook-marker").role("img").label(words.clone()).gap(6.0).items_center()
+            .child(col().w(10.0).h(10.0).radius(5.0).fill(p.beam).child(slot(Moment::BeamHead, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))).child(text(words).font(type_::LABEL).color(p.beam_text));
+        lane = row().w_full().h(24.0).items_center().child(col().grow(frac)).child(marker.shrink()).child(col().grow(1.0 - frac));
+        wave = wave.child(row().w_full().pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).child(col().grow(frac)).child(col().w(2.0).h_full().fill(p.beam).linear_gradient(std::f32::consts::PI, [(0.0, p.beam), (1.0, p.beam.alpha(0.0))])).child(col().grow(1.0 - frac)));
     }
-    bar
+    let wave = col().w_full().child(lane).child(wave);
+    col().w_full().max_w(900.0).gap(4.0).child(wave)
+        .child(row().w_full().justify_between().child(text("0:00").font(type_::LABEL).color(p.muted)).child(text(clip_stage::clock(clip.duration_sec)).font(type_::LABEL).color(p.muted)))
 }
 
-fn choice(s: &State, clip: &Clip, key: &'static str, title: &str, values: &[String]) -> El {
+/// The value the dropdown shows: this session's choice, else the clip's, else the engine's default.
+fn word_of(s: &State, clip: &Clip, key: &str) -> String {
+    s.current(clip, key).and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+}
+
+fn pick(key: &'static str) -> Pick {
+    Rc::new(move |s: &mut State, v: &str| {
+        let value = Value::from(if v == "none" { "" } else { v });
+        // Choosing again what is already chosen changes nothing (`set_edit` would undo it).
+        if s.editor.edits.get(key) != Some(&value) {
+            s.set_edit(key, value);
+        }
+    })
+}
+
+fn flag(s: &State, clip: &Clip, key: &str) -> bool {
+    s.current(clip, key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+fn options_card(s: &State, clip: &Clip) -> El {
     let p = pal(s.dark);
-    let now = s.current(clip, key).and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let mut line = row().gap(8.0).items_center().child(text(title).font(type_::LABEL).color(p.muted).w(100.0));
-    for v in values {
-        let value = Value::from(v.as_str());
-        line = line.child(button(s.dark, format!("editor/{key}/{v}"), v, now == *v, move |s: &mut State| s.set_edit(key, value.clone())));
-    }
-    line
-}
-
-fn switch(s: &State, clip: &Clip, key: &'static str, ui_key: &str, label: &str) -> El {
-    let on = s.current(clip, key).and_then(|v| v.as_bool()).unwrap_or(false);
-    button(s.dark, ui_key, &format!("{label}: {}", if on { "on" } else { "off" }), on, move |s: &mut State| s.set_edit(key, Value::Bool(!on)))
+    let opts = s.edit_options.clone().unwrap_or_default();
+    let mut music = vec![("none".to_string(), tr(s.lang, "editor.nomusic"))];
+    music.extend(s.music.iter().map(|m| (m.clone(), m.clone())));
+    let now = word_of(s, clip, "bgm");
+    let now = if now.is_empty() { "none".to_string() } else { now };
+    let (hook_first, silence) = (flag(s, clip, "hookFirst"), flag(s, clip, "silenceTrim"));
+    col().key("editor/options").role("group").label(tr(s.lang, "editor.options")).gap(14.0).padding(24.0).w(340.0).self_stretch().fill(p.surface).border(1.0, p.divider).radius(10.0)
+        .child(text(tr(s.lang, "editor.options")).font(type_::TITLE).color(p.text))
+        .child(dropdown(s, "editor/style", &tr(s.lang, "editor.style"), &word_of(s, clip, "style"), &option_choices(s.lang, "style", &opts.styles), pick("style")))
+        .child(dropdown(s, "editor/reframe", &tr(s.lang, "editor.reframe"), &word_of(s, clip, "reframe"), &option_choices(s.lang, "reframe", &opts.reframe_modes), pick("reframe")))
+        .child(switch(s.dark, "editor/hook-first", &tr(s.lang, "editor.hookfirst"), None, hook_first, move |s: &mut State| s.set_edit("hookFirst", Value::Bool(!hook_first))))
+        .child(switch(s.dark, "editor/silence-trim", &tr(s.lang, "editor.silence"), None, silence, move |s: &mut State| s.set_edit("silenceTrim", Value::Bool(!silence))))
+        .child(dropdown(s, "editor/music", &tr(s.lang, "editor.music"), &now, &music, pick("bgm")))
 }
 
 pub fn view(s: &State) -> El {
     let p = pal(s.dark);
     let Some(clip) = s.clip_by_id(&s.editor.clip_id).cloned() else {
-        return col().w_full().h_full().center().child(state_block::<State>(s.dark, "editor/missing", Kind::Empty, "This clip is not loaded", "Go back to the clips and choose one.", Some(("editor/missing/back", "Back to clips", |s: &mut State| s.leave_editor()))));
+        let action = ("editor/missing/back", tr(s.lang, "editor.missing.back"), (|s: &mut State| s.leave_editor()) as fn(&mut State));
+        return col().w_full().h_full().center().child(state_block_with::<State>(s.dark, "editor/missing", Kind::Empty, &tr(s.lang, "editor.missing.cause"), &tr(s.lang, "editor.missing.next"), Some(action)));
     };
-    let opts = s.edit_options.clone().unwrap_or_default();
-    let mut music = vec!["none".to_string()];
-    music.extend(s.music.iter().cloned());
-    let now = s.current(&clip, "bgm").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
-    let mut music_line = row().gap(8.0).items_center().child(text("Music").font(type_::LABEL).color(p.muted).w(100.0));
-    for m in &music {
-        let value = Value::from(if m == "none" { "" } else { m.as_str() });
-        let on = now == value.as_str().unwrap_or_default();
-        music_line = music_line.child(button(s.dark, format!("editor/music/{m}"), m, on, move |s: &mut State| s.set_edit("bgm", value.clone())));
+    let title = trf(s.lang, "editor.title", &[("title", &clip_stage::title(s.lang, &clip))]);
+    let head = page_head(s.dark, "editor/title", &title, &tr(s.lang, "editor.sub"));
+    let mut middle = col().gap(6.0).grow(1.0).shrink()
+        .child(text(tr(s.lang, "editor.timeline")).font(type_::TITLE).color(p.text))
+        .child(text(tr(s.lang, "editor.timeline.sub")).font(type_::LABEL).color(p.muted).wrap())
+        .child(col().h(8.0))
+        .child(timeline(s, &clip))
+        .child(col().h(8.0))
+        .child(text(tr(s.lang, "editor.hook.note")).font(type_::LABEL).color(p.muted).wrap());
+    if clip.export_path.is_some() {
+        middle = middle.child(text(tr(s.lang, "editor.note.kept")).key("editor/export-note").font(type_::LABEL).color(p.muted).wrap());
     }
+    let body = row().gap(32.0).w_full().grow(1.0).items_start()
+        .child(clip_stage::view(s, &clip, Some((220.0, 390.0)), false))
+        .child(middle)
+        .child(options_card(s, &clip));
     let id = clip.id.clone();
-    let export_id = clip.id.clone();
-    let mut actions = row().gap(10.0).items_center()
-        .child(button(s.dark, "editor/rerender", if s.editor.rendering { "Rendering" } else { "Re-render" }, true, |s: &mut State| s.rerender()))
-        .child(button(s.dark, "editor/export", "Export", false, move |s: &mut State| { s.select_id(&export_id); s.export_selected(); }));
+    let mut footer = row().gap(12.0).items_center().justify_end().w_full();
     if clip.export_path.is_some() {
-        let label = if s.remote { "Save a copy" } else { "Show in folder" };
-        actions = actions.child(
-            col().key("editor/reveal").role("button").label(label).focusable(true).padding(10.0).radius(6.0).fill(p.raised).border(1.0, p.divider)
-                .on_press_tx(move |s: &mut State, tx: &mut Tx| s.reveal_or_save(&id, tx)).child(text(label).font(type_::LABEL).color(p.text)),
-        );
+        let label = tr(s.lang, if s.remote { "clips.save" } else { "clips.reveal" });
+        footer = footer.child(link_tx(s.dark, "editor/reveal", &label, false, move |s: &mut State, tx: &mut Tx| s.reveal_or_save(&id, tx)));
     }
-    let mut options = col().gap(12.0).grow(1.0).max_w(520.0)
-        .child(choice(s, &clip, "style", "Captions", &opts.styles))
-        .child(choice(s, &clip, "reframe", "Framing", &opts.reframe_modes))
-        .child(switch(s, &clip, "silenceTrim", "editor/silence-trim", "Cut silences"))
-        .child(switch(s, &clip, "hookFirst", "editor/hook-first", "Hook first"))
-        .child(music_line)
-        .child(actions);
-    if clip.export_path.is_some() {
-        options = options.child(text("The earlier export stays until you export again.").key("editor/export-note").font(type_::BODY).color(p.muted).wrap());
-    }
-    let head = row().gap(12.0).items_center().w_full()
-        .child(text(clip_stage::title(&clip)).role("heading").level(1).font(type_::TITLE).color(p.text).grow(1.0))
-        .child(button(s.dark, "editor/back", "Back to clips", false, |s: &mut State| s.leave_editor()));
-    let stage = col().gap(12.0).items_center().child(clip_stage::view(s, &clip)).child(timeline(s, &clip));
-    col().gap(16.0).padding(24.0).w_full().h_full().child(head).child(row().gap(24.0).w_full().grow(1.0).child(options).child(stage))
+    footer = footer
+        .child(link(s.dark, "editor/back", &tr(s.lang, "editor.cancel"), false, |s: &mut State| s.leave_editor()))
+        .child(centered(button(s.dark, "editor/rerender", &tr(s.lang, if s.editor.rendering { "editor.rendering" } else { "editor.rerender" }), true, |s: &mut State| s.rerender())));
+    col().key("editor/scroll").scroll(rune::ScrollSpec { stick_bottom: false }).gap(24.0).padding(40.0).w_full().h_full().child(head).child(body).child(footer)
 }

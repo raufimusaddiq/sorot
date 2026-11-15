@@ -8,6 +8,7 @@ use rune::{Key, KeyEvent, Mods, Runtime};
 use sorot_desktop::app::*;
 use sorot_desktop::engine::{EngineError, fake::stage_script};
 use sorot_desktop_core::model::{Job, JobDetail, JobStage};
+use sorot_desktop::i18n::{Lang, tr, trf};
 use crate::support::*;
 
 fn has(rt: &Runtime<State>, key: &str) -> bool {
@@ -30,9 +31,37 @@ fn text_of(rt: &Runtime<State>, key: &str) -> String {
     find(&tree, key).unwrap_or_else(|| panic!("no {key}: {tree}"))
 }
 
+/// Opens the dropdown `key` and picks `value` from its list.
+fn choose(rt: &mut Runtime<State>, key: &str, value: &str) {
+    let option = format!("{key}/{value}");
+    settle(rt, key);
+    click(rt, key);
+    settle(rt, &option);
+    click(rt, &option);
+    settle(rt, key);
+}
+
+/// Lets layout animations finish: frames until `key` stops moving.
+fn settle(rt: &mut Runtime<State>, key: &str) {
+    let (mut last, mut same) = (None, 0);
+    for _ in 0..200 {
+        // a worker thread may still be answering (slow under coverage instrumentation)
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        rt.frame(0.25);
+        let now = rt.find(key);
+        same = if now.is_some() && now == last { same + 1 } else { 0 };
+        if same >= 3 {
+            return;
+        }
+        last = now;
+    }
+}
+
 fn home_rt() -> (Runtime<State>, Arc<FakeEngine>) {
     let fake = Arc::new(FakeEngine::scene("home-empty"));
-    (runtime_of(State::with_engine(fake.clone())), fake)
+    let mut rt = Runtime::new(State::with_engine(fake.clone()), sorot_desktop::app::view, (1100.0, 900.0), rune::Env { system_dark: true, scale: 1.0 });
+    rt.frame(0.0);
+    (rt, fake)
 }
 
 fn import_calls(fake: &FakeEngine) -> Vec<String> {
@@ -46,12 +75,14 @@ fn home_import_table() {
     let long = "a".repeat(501);
     let diacritics = "Rangkum bagian paling mengejutkan, ya… élan ü";
     let diacritics_call = format!("import(https://youtu.be/abc|{diacritics})");
+    let too_long = trf(Lang::Id, "home.err.direction", &[("n", "501"), ("max", "500")]);
+    let not_a_link = tr(Lang::Id, "home.err.link");
     let rows: Vec<(&str, &str, Vec<&str>, &str)> = vec![
         ("https://youtu.be/abc", "", vec!["import(https://youtu.be/abc|)"], ""),
         ("https://youtu.be/abc", "Ringkas bagian yang lucu, pakai gaya santai", vec!["import(https://youtu.be/abc|Ringkas bagian yang lucu, pakai gaya santai)"], ""),
         ("https://youtu.be/abc", diacritics, vec![&diacritics_call], ""),
-        ("https://youtu.be/abc", &long, vec![], "The direction is 501 characters; the limit is 500."),
-        ("not a link", "", vec![], "Paste a link that starts with http:// or https://."),
+        ("https://youtu.be/abc", &long, vec![], &too_long),
+        ("not a link", "", vec![], &not_a_link),
     ];
     for (link, direction, calls, error) in rows {
         let (mut rt, fake) = home_rt();
@@ -61,6 +92,7 @@ fn home_import_table() {
             assert_eq!(text_of(&rt, "home/direction-count"), format!("{}/500", direction.chars().count()));
         }
         click(&mut rt, "home/import");
+        rt.frame(1.0);
         assert_eq!(import_calls(&fake), calls, "{link} {}", direction.len());
         if error.is_empty() {
             assert_eq!(rt.state.screen(), Screen::Job, "an import opens its job");
@@ -74,8 +106,9 @@ fn home_import_table() {
     fake.fail_once("import", EngineError::DiskFull { need: 3_000_000_000, free: 1_000_000_000 });
     type_text(&mut rt, "home/link", "https://youtu.be/abc");
     click(&mut rt, "home/import");
+    rt.frame(1.0);
     assert_eq!(text_of(&rt, "home/error/cause"), "Not enough disk space: needs 3.0 GB, 1.0 GB free");
-    assert!(text_of(&rt, "home/error/next").starts_with("Free some space"));
+    assert_eq!(text_of(&rt, "home/error/next"), tr(Lang::Id, "home.err.disk.next"));
     assert_eq!(rt.state.screen(), Screen::Home);
 
     // dropped files: a video starts an import, anything else is not accepted by the field
@@ -89,7 +122,8 @@ fn home_import_table() {
     // the same path through the code the field calls, for a file the field would refuse
     let (mut rt, fake) = home_rt();
     poke(&mut rt, |s| s.dropped(&[PathBuf::from("clip.avi")]));
-    assert_eq!((import_calls(&fake).len(), text_of(&rt, "home/error/cause")), (0, "clip.avi is not a video Sorot can read (mp4, mov, mkv or webm).".to_string()));
+    rt.frame(1.0);
+    assert_eq!((import_calls(&fake).len(), text_of(&rt, "home/error/cause")), (0, trf(Lang::Id, "home.err.file", &[("name", "clip.avi")])));
 }
 
 /// The file dialog is the Wayland path: choosing a file imports it.
@@ -108,20 +142,39 @@ fn choose_file_opens_the_dialog_and_imports_the_pick() {
     assert!(import_calls(&fake).is_empty());
 }
 
-/// The options sheet sends only what it changed.
+/// Home re-reads the options on its own every 5 s while it has none: a failure is silent and the next try loads them.
 #[test]
-fn the_options_sheet_sends_only_its_changes() {
+fn the_home_options_poll_is_quiet_when_it_fails() {
     let (mut rt, fake) = home_rt();
-    click(&mut rt, "home/options-toggle");
-    assert!(has(&rt, "home/option/style/plain"));
-    click(&mut rt, "home/option/style/plain");
-    click(&mut rt, "home/option/bgm/lofi.mp3");
+    fake.fail_once("options", EngineError::Network("down".into()));
+    poke(&mut rt, |s| {
+        s.edit_options = None;
+        s.options_polled = -10.0;
+        s.tick(100.0);
+    });
+    assert!(rt.state.toasts.is_empty() && rt.state.edit_options.is_none(), "{:?}", rt.state.toasts.len());
+    poke(&mut rt, |s| {
+        s.tick(106.0);
+    });
+    assert!(rt.state.edit_options.is_some());
+}
+
+/// The options card sends only what it changed: a choice put back to the engine's default is not sent.
+#[test]
+fn the_options_card_sends_only_its_changes() {
+    let (mut rt, fake) = home_rt();
+    assert!(has(&rt, "home/options/loading"), "the card says it is loading until the engine answers");
+    poke(&mut rt, |s| s.load_options());
+    assert!(has(&rt, "home/option/style") && !has(&rt, "home/option/style/plain"), "a list opens on press");
+    choose(&mut rt, "home/option/style", "plain");
+    choose(&mut rt, "home/option/bgm", "lofi.mp3");
     click(&mut rt, "home/option/silenceTrim");
-    click(&mut rt, "home/option/reframe/center");
-    click(&mut rt, "home/option/reframe/center");
+    click(&mut rt, "home/option/youtubeCaptions");
+    choose(&mut rt, "home/option/reframe", "center");
+    choose(&mut rt, "home/option/reframe", "face");
     type_text(&mut rt, "home/link", "https://youtu.be/abc");
     click(&mut rt, "home/import");
-    assert_eq!(import_calls(&fake), [r#"import(https://youtu.be/abc||{"bgm":"lofi.mp3","silenceTrim":true,"style":"plain"})"#]);
+    assert_eq!(import_calls(&fake), [r#"import(https://youtu.be/abc||{"bgm":"lofi.mp3","silenceTrim":true,"style":"plain","youtubeCaptions":true})"#]);
 }
 
 fn detail(status: &str, err: Option<&str>, stages: &[(&str, &str, Option<&str>)]) -> JobDetail {
@@ -139,12 +192,12 @@ fn the_job_screen_shows_each_state_with_its_buttons() {
     let running = [("IMPORT", "COMPLETED", None), ("TRANSCRIBE", "IN_PROGRESS", Some("Transcribing 37%"))];
     // (detail, headline, cancel, retry, interrupted note)
     let rows = vec![
-        (detail("QUEUED", None, &[("IMPORT", "PENDING", None)]), "Waiting to start", true, false, false),
-        (detail("RUNNING", None, &running), "Transcribing 37%", true, false, false),
-        (detail("RUNNING", None, &[("IMPORT", "IN_PROGRESS", Some("Jev reading moments 10/40"))]), "Jev reading moments 10/40", true, false, false),
-        (detail("FAILED", Some("interrupted"), &[("IMPORT", "FAILED", None)]), "Interrupted", false, true, true),
-        (detail("FAILED", Some("boom"), &[("IMPORT", "FAILED", None)]), "Failed", false, true, false),
-        (detail("CANCELLED", None, &[("IMPORT", "PENDING", None)]), "Cancelled", false, true, false),
+        (detail("QUEUED", None, &[("IMPORT", "PENDING", None)]), "job.head.queued", true, false, false),
+        (detail("RUNNING", None, &running), "37%", true, false, false),
+        (detail("RUNNING", None, &[("IMPORT", "IN_PROGRESS", Some("Jev reading moments 10/40"))]), "0%", true, false, false),
+        (detail("FAILED", Some("interrupted"), &[("IMPORT", "FAILED", None)]), "job.head.interrupted", false, true, true),
+        (detail("FAILED", Some("boom"), &[("IMPORT", "FAILED", None)]), "job.head.failed", false, true, false),
+        (detail("CANCELLED", None, &[("IMPORT", "PENDING", None)]), "job.head.cancelled", false, true, false),
     ];
     for (d, headline, cancel, retry, interrupted) in rows {
         let (mut rt, fake) = home_rt();
@@ -153,7 +206,7 @@ fn the_job_screen_shows_each_state_with_its_buttons() {
         assert!(has(&rt, "job/loading"), "before the engine answers");
         let status = d.job.status.clone();
         poke(&mut rt, |s| s.apply(Msg::JobDetail(d)));
-        assert_eq!(text_of(&rt, "job/progress"), headline, "{status}");
+        assert_eq!(text_of(&rt, "job/progress"), if headline.starts_with("job.") { tr(Lang::Id, headline) } else { headline.to_string() }, "{status}");
         assert_eq!((has(&rt, "job/cancel"), has(&rt, "job/retry"), has(&rt, "job/interrupted")), (cancel, retry, interrupted), "{status}");
         assert!(has(&rt, "job/beam") && has(&rt, "job/elapsed") && !has(&rt, "job/spinner"));
         if cancel {
@@ -170,7 +223,7 @@ fn the_job_screen_shows_each_state_with_its_buttons() {
     poke(&mut rt, |s| s.open_job("j1"));
     poke(&mut rt, |s| s.apply(Msg::JobDetail(detail("RUNNING", None, &[("IMPORT", "IN_PROGRESS", None)]))));
     poke(&mut rt, |s| { s.tick(65.0); });
-    assert_eq!(text_of(&rt, "job/elapsed"), "Elapsed 1:05");
+    assert!(text_of(&rt, "job/elapsed").ends_with(&trf(Lang::Id, "job.elapsed", &[("t", "01:05")])));
 }
 
 /// A job walking every stage ends on the clips, in `rankPos` order.
@@ -188,7 +241,7 @@ fn a_finished_job_opens_its_clips() {
             seen_percent.push(text_of(&rt, "job/progress"));
         }
     }
-    assert!(seen_percent.contains(&"Working 50%".to_string()), "{seen_percent:?}");
+    assert!(seen_percent.contains(&"50%".to_string()), "{seen_percent:?}");
     assert_eq!(rt.state.screen(), Screen::Clips);
     assert!(fake.calls().contains(&"clips(vnew)".to_string()));
     let ids: Vec<_> = rt.state.clips.clips.iter().map(|c| c.id.as_str()).collect();
@@ -201,7 +254,9 @@ fn clips_rt() -> (Runtime<State>, Arc<FakeEngine>, Arc<RecordReveal>, Arc<Record
     let mut s = State::with_engine(fake.clone());
     s.reveal = Some(reveal.clone());
     s.notifier = Some(notifier.clone());
-    let mut rt = runtime_of(s);
+    // a tall window: the editor's footer and the clips actions are on screen to press
+    let mut rt = Runtime::new(s, sorot_desktop::app::view, (1100.0, 900.0), rune::Env { system_dark: true, scale: 1.0 });
+    rt.frame(0.0);
     poke(&mut rt, |s| s.show_clips("vnew"));
     (rt, fake, reveal, notifier)
 }
@@ -220,9 +275,18 @@ fn clips_are_listed_in_rank_order_and_j_k_move_the_selection() {
     let order = sorot_desktop_core::clips::ordered(&rt.state.clips.clips);
     assert_eq!(order.iter().map(|c| &c.id).collect::<Vec<_>>(), rt.state.clips.clips.iter().map(|c| &c.id).collect::<Vec<_>>());
     // verdict words always show
-    for (id, word) in [("c2", "Pass"), ("c1", "Review"), ("c3", "Skip")] {
-        assert_eq!(text_of(&rt, &format!("clips/row/{id}/verdict")), word);
+    for (id, word) in [("c2", "clips.verdict.PASS"), ("c1", "clips.verdict.REVIEW"), ("c3", "clips.verdict.FAIL")] {
+        assert_eq!(text_of(&rt, &format!("clips/row/{id}/verdict")), tr(Lang::Id, word));
     }
+    // a tab shows only its verdict's clips, and the chosen clip moves to the first of them when it is hidden
+    click(&mut rt, "clips/tab/review");
+    assert!(!has(&rt, "clips/row/c2") && has(&rt, "clips/row/c1"));
+    assert_eq!(rt.state.selected_clip().unwrap().id, "c1");
+    click(&mut rt, "clips/tab/skip");
+    assert!(has(&rt, "clips/row/c3") && !has(&rt, "clips/row/c1"));
+    click(&mut rt, "clips/tab/all");
+    assert!(has(&rt, "clips/row/c2") && has(&rt, "clips/row/c3"));
+    click(&mut rt, "clips/row/c2");
     // J and K, stopping at the ends; a clip's preview is fetched the first time it is chosen, then cached
     let moves = [("j", "c1"), ("j", "c3"), ("j", "c3"), ("k", "c1"), ("k", "c2"), ("k", "c2")];
     let mut chosen = vec![];
@@ -239,9 +303,9 @@ fn clips_are_listed_in_rank_order_and_j_k_move_the_selection() {
     poke(&mut rt, |s| assert!(!s.clips_key(&key("x"))));
     // Space plays and pauses
     poke(&mut rt, |s| assert!(s.clips_key(&key(" "))));
-    assert_eq!(text_of(&rt, "clips/play"), "Pause");
+    assert_eq!(text_of(&rt, "clips/play"), tr(Lang::Id, "clips.pause"));
     click(&mut rt, "clips/play");
-    assert_eq!(text_of(&rt, "clips/play"), "Play");
+    assert_eq!(text_of(&rt, "clips/play"), tr(Lang::Id, "clips.play"));
     poke(&mut rt, |s| s.route = Route::Home);
     poke(&mut rt, |s| assert!(!s.clips_key(&key("j"))));
 }
@@ -250,7 +314,7 @@ fn clips_are_listed_in_rank_order_and_j_k_move_the_selection() {
 fn no_clips_says_so_and_offers_the_next_step() {
     let (mut rt, _, _, _) = clips_rt();
     poke(&mut rt, |s| s.apply(Msg::Clips { video_id: "vnew".into(), clips: vec![] }));
-    assert_eq!(text_of(&rt, "clips/empty/cause"), "No clips yet");
+    assert_eq!(text_of(&rt, "clips/empty/cause"), tr(Lang::Id, "clips.empty.cause"));
     click(&mut rt, "clips/empty/home");
     assert_eq!(rt.state.screen(), Screen::Home);
 }
@@ -259,32 +323,38 @@ fn no_clips_says_so_and_offers_the_next_step() {
 #[test]
 fn the_editor_sends_only_the_delta() {
     let rows: Vec<(Vec<&str>, Option<&str>)> = vec![
-        (vec!["editor/style/plain"], Some(r#"{"style":"plain"}"#)),
-        (vec!["editor/style/plain", "editor/style/karaoke"], None),
+        (vec!["editor/style>plain"], Some(r#"{"style":"plain"}"#)),
+        (vec!["editor/style>plain", "editor/style>karaoke"], None),
         (vec!["editor/silence-trim"], Some(r#"{"silenceTrim":true}"#)),
         (vec!["editor/silence-trim", "editor/silence-trim"], None),
-        (vec!["editor/hook-first", "editor/reframe/center"], Some(r#"{"hookFirst":true,"reframe":"center"}"#)),
-        (vec!["editor/music/none"], None),
+        (vec!["editor/hook-first", "editor/reframe>center"], Some(r#"{"hookFirst":true,"reframe":"center"}"#)),
+        (vec!["editor/music>none"], None),
     ];
     for (clicks, body) in rows {
         let (mut rt, fake, _, _) = clips_rt();
         poke(&mut rt, |s| s.open_editor("c2"));
+        settle(&mut rt, "editor/style");
         assert_eq!(rt.state.screen(), Screen::Editor);
         assert!(has(&rt, "editor/timeline") && has(&rt, "editor/hook-marker"));
         for c in &clicks {
-            click(&mut rt, c);
+            match c.split_once('>') {
+                Some((list, value)) => choose(&mut rt, list, value),
+                None => click(&mut rt, c),
+            }
         }
-        click(&mut rt, "editor/rerender");
+        settle(&mut rt, "editor/rerender");
+    click(&mut rt, "editor/rerender");
         let calls: Vec<_> = fake.calls().into_iter().filter(|c| c.starts_with("rerender")).collect();
         assert_eq!(calls, body.map(|b| format!("rerender(c2|{b})")).into_iter().collect::<Vec<_>>(), "{clicks:?}");
         let toast = rt.state.toasts.last().unwrap().toast.text.clone();
-        assert_eq!(toast.starts_with("Nothing changed"), body.is_none(), "{toast}");
+        assert_eq!(toast == tr(Lang::Id, "editor.unchanged"), body.is_none(), "{toast}");
     }
     // a failed render says why and lets the person try again
     let (mut rt, fake, _, _) = clips_rt();
     poke(&mut rt, |s| s.open_editor("c2"));
     fake.fail_once("rerender", EngineError::Api { status: 500, message: "Re-render failed: ffmpeg".into() });
-    click(&mut rt, "editor/style/plain");
+    choose(&mut rt, "editor/style", "plain");
+    settle(&mut rt, "editor/rerender");
     click(&mut rt, "editor/rerender");
     assert!(rt.state.toasts.last().unwrap().toast.text.contains("Re-render failed: ffmpeg") && !rt.state.editor.rendering);
     // the editor of a clip that is not loaded, and the way back
@@ -304,10 +374,12 @@ fn the_previous_export_stays_until_the_next_export() {
     assert!(has(&rt, "editor/export-note") && has(&rt, "editor/reveal"));
     click(&mut rt, "editor/reveal");
     assert_eq!(rt.state.screen(), Screen::Editor);
-    click(&mut rt, "editor/style/plain");
+    choose(&mut rt, "editor/style", "plain");
+    settle(&mut rt, "editor/rerender");
     click(&mut rt, "editor/rerender");
     assert!(fake.calls().iter().any(|c| c.starts_with("rerender(c2")));
     assert_eq!(rt.state.clip_by_id("c2").unwrap().export_path.as_deref(), Some("/exports/c2_final.mp4"));
+    settle(&mut rt, "editor/back");
     click(&mut rt, "editor/back");
     assert_eq!(rt.state.screen(), Screen::Clips);
 }
@@ -321,7 +393,7 @@ fn export_then_reveal_locally_or_download_remotely() {
         assert!(!has(&rt, "clips/reveal"), "nothing to show before an export");
         click(&mut rt, "clips/export");
         assert!(fake.calls().contains(&"export(c2)".to_string()));
-        assert_eq!(text_of(&rt, "clips/reveal"), if remote { "Save a copy" } else { "Show in folder" });
+        assert_eq!(text_of(&rt, "clips/reveal"), tr(Lang::Id, if remote { "clips.save" } else { "clips.reveal" }));
         click(&mut rt, "clips/reveal");
         if remote {
             assert!(rt.file_dialog().is_some(), "the save dialog is open");
@@ -436,7 +508,7 @@ fn navigation_buttons_and_a_cancelled_then_retried_job() {
     assert!(fake.calls().contains(&"cancel_job(jnew)".to_string()));
     click(&mut rt, "job/retry");
     assert!(fake.calls().contains(&"retry_job(jnew)".to_string()));
-    click(&mut rt, "job/home");
+    click(&mut rt, "shell/rail/home");
     assert_eq!(rt.state.screen(), Screen::Home);
     click(&mut rt, "home/job/jnew");
     assert_eq!(rt.state.screen(), Screen::Job);
@@ -444,17 +516,36 @@ fn navigation_buttons_and_a_cancelled_then_retried_job() {
     poke(&mut rt, |s| s.show_clips("vnew"));
     click(&mut rt, "clips/edit");
     assert_eq!(rt.state.screen(), Screen::Editor);
-    click(&mut rt, "editor/export");
-    assert!(fake.calls().contains(&"export(c2)".to_string()));
+    settle(&mut rt, "editor/back");
     click(&mut rt, "editor/back");
-    click(&mut rt, "clips/home");
+    settle(&mut rt, "clips/export");
+    click(&mut rt, "clips/export");
+    assert!(fake.calls().contains(&"export(c2)".to_string()));
+    click(&mut rt, "shell/rail/home");
     assert_eq!(rt.state.screen(), Screen::Home);
     // a failed option read and a failed clip read say so
     poke(&mut rt, |s| s.edit_options = None);
     fake.fail_once("options", EngineError::Network("down".into()));
-    click(&mut rt, "home/options-toggle");
+    poke(&mut rt, |s| s.load_options());
     fake.fail_once("clips", EngineError::Network("down".into()));
     poke(&mut rt, |s| s.show_clips("vnew"));
     let texts: Vec<_> = rt.state.toasts.iter().map(|t| t.toast.text.clone()).collect();
     assert!(texts.iter().any(|t| t.starts_with("Could not read the options")) && texts.iter().any(|t| t.starts_with("Could not read the clips")), "{texts:?}");
 }
+
+/// The clips screen opens the publish panel and the results sheet for the chosen clip.
+#[test]
+fn the_clips_screen_opens_publish_and_the_results_sheet() {
+    let (mut rt, fake, _, _) = clips_rt();
+    settle(&mut rt, "clips/publish");
+    click(&mut rt, "clips/publish");
+    assert_eq!(rt.state.screen(), Screen::Publish);
+    assert!(fake.calls().iter().any(|c| c.starts_with("social_accounts")), "{:?}", fake.calls());
+    // the results sheet opens above the stage, so it is pressed second
+    poke(&mut rt, |s| s.show_clips("vnew"));
+    settle(&mut rt, "clips/feedback");
+    click(&mut rt, "clips/feedback");
+    settle(&mut rt, "feedback/sheet");
+    assert!(has(&rt, "feedback/sheet") && rt.state.panels.feedback.clip_id.as_deref() == Some("c2"));
+}
+

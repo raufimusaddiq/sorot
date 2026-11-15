@@ -3,6 +3,10 @@
 
 use rune::tok::type_;
 use rune::{El, col, row, text};
+use crate::i18n::{tr, trf};
+use crate::screens::home;
+use crate::ui::controls::{DISPLAY_BIG, centered, page_head};
+use crate::ui::form::btn;
 use rune_fx::{Heat, OneShots};
 use sorot_desktop_core::job::JobView;
 use sorot_desktop_core::job::StageState;
@@ -10,7 +14,6 @@ use sorot_desktop_core::model::{JobDetail, JobPhase};
 
 use crate::app::{Cmd, Route, State};
 use crate::ui::beam::heat_light;
-use crate::ui::clip_stage::clock;
 use crate::ui::fx_moments::PULSE_LIFE;
 use crate::ui::kit::{button, pal};
 use crate::ui::stage_track::{self, TrackFx, running_report, stage_name};
@@ -121,48 +124,90 @@ impl State {
     }
 }
 
+fn mmss(seconds: f64) -> String {
+    let n = seconds.max(0.0).round() as u64;
+    format!("{:02}:{:02}", n / 60, n % 60)
+}
+
+/// The last lines the engine gave, newest stage first: what finished and what runs now.
+fn notes(s: &State, jv: &JobView, report: &Option<(String, Option<u8>)>) -> Vec<String> {
+    let mut lines = vec![];
+    for v in jv.stages.iter().rev() {
+        let name = stage_name(s.lang, &v.stage);
+        match v.state {
+            StageState::Done => lines.push(trf(s.lang, "job.note.done", &[("stage", &name)])),
+            StageState::Active => {
+                if let Some((label, pct)) = report {
+                    let report = pct.map_or(label.clone(), |n| format!("{label} {n}%"));
+                    lines.push(trf(s.lang, "job.note.running", &[("stage", &name), ("report", &report)]));
+                }
+            }
+            _ => {}
+        }
+    }
+    lines.truncate(4);
+    lines
+}
+
 pub fn view(s: &State) -> El {
     let p = pal(s.dark);
     let Some(detail) = &s.job.detail else {
-        return state_block::<State>(s.dark, "job/loading", Kind::Loading, "Reading the job", "This takes a moment.", None);
+        return state_block::<State>(s.dark, "job/loading", Kind::Loading, &tr(s.lang, "job.loading.cause"), &tr(s.lang, "job.loading.next"), None);
     };
     let jv = JobView::from_detail(detail);
     let report = running_report(&jv, &detail.stages);
     let percent = report.as_ref().and_then(|r| r.1);
     let elapsed = (s.now - s.job.opened).max(0.0);
-    let active_name = jv.active.and_then(|i| jv.stages.get(i)).map(|v| stage_name(&v.stage)).unwrap_or("Done");
+    let active = jv.active.and_then(|i| jv.stages.get(i)).map(|v| v.stage.clone());
+    let name = active.as_deref().map(|id| stage_name(s.lang, id)).unwrap_or_default();
+    let what = active.as_deref().map(|id| tr(s.lang, &format!("stage.{id}.what"))).unwrap_or_default();
 
-    let headline = match (jv.phase, jv.interrupted) {
-        (_, true) => "Interrupted".to_string(),
-        (JobPhase::Failed, _) => "Failed".to_string(),
-        (JobPhase::Cancelled, _) => "Cancelled".to_string(),
-        (JobPhase::Completed, _) => "Done".to_string(),
-        (JobPhase::Queued, _) => "Waiting to start".to_string(),
-        _ => match &report {
-            Some((label, Some(n))) => format!("{label} {n}%"),
-            Some((label, None)) => label.clone(),
-            None => active_name.to_string(),
-        },
+    let (big, ink) = match (jv.phase, jv.interrupted) {
+        (_, true) => (tr(s.lang, "job.head.interrupted"), p.skip),
+        (JobPhase::Failed, _) => (tr(s.lang, "job.head.failed"), p.skip),
+        (JobPhase::Cancelled, _) => (tr(s.lang, "job.head.cancelled"), p.muted),
+        (JobPhase::Completed, _) => (tr(s.lang, "job.head.done"), p.pass),
+        (JobPhase::Queued, _) => (tr(s.lang, "job.head.queued"), p.muted),
+        _ => (format!("{}%", percent.unwrap_or(jv.percent)), p.beam_text),
     };
-    let mut head = col().gap(6.0)
-        .child(text(headline).key("job/progress").role("status").font(type_::TITLE).color(p.text))
-        .child(text(format!("Elapsed {}", clock(elapsed))).key("job/elapsed").font(type_::LABEL).color(p.muted));
+    let running = detail.job.is_running();
+    let ran = trf(s.lang, "job.elapsed", &[("t", &mmss(elapsed))]);
+    let mut words = col().gap(2.0).child(text(name).key("job/stage-name").font(type_::TITLE).color(p.text))
+        .child(text(format!("{what} {ran}").trim().to_string()).key("job/elapsed").font(type_::BODY).color(p.muted).wrap());
     if jv.interrupted {
-        head = head.child(text("The engine stopped while this job ran. Retry starts it again.").key("job/interrupted").role("alert").font(type_::BODY).color(p.skip).wrap());
+        words = words.child(text(tr(s.lang, "job.interrupted")).key("job/interrupted").role("alert").font(type_::BODY).color(p.skip).wrap());
     } else if let Some(why) = detail.job.error_message.as_deref().filter(|_| jv.phase == JobPhase::Failed) {
-        head = head.child(text(why).key("job/error").role("alert").font(type_::BODY).color(p.skip).wrap());
+        words = words.child(text(why).key("job/error").role("alert").font(type_::BODY).color(p.skip).wrap());
     }
-    let mut actions = row().gap(10.0).items_center();
-    if detail.job.is_running() {
-        actions = actions.child(button(s.dark, "job/cancel", "Cancel", false, |s: &mut State| s.cancel_shown_job()));
+    let headline = row().gap(16.0).items_end()
+        .child(text(big).key("job/progress").role("status").font(DISPLAY_BIG).color(ink))
+        .child(words);
+
+    let mut log = col().key("job/notes").role("group").label(tr(s.lang, "job.notes")).gap(8.0).padding(16.0).w_full().fill(p.surface).border(1.0, p.divider).radius(8.0)
+        .child(text(tr(s.lang, "job.notes")).font(type_::TITLE).color(p.text));
+    for line in notes(s, &jv, &report) {
+        log = log.child(text(line).font(type_::LABEL).color(p.muted).wrap());
     }
+
+    let mut actions = row().gap(10.0).items_center().justify_end().w_full();
     if jv.retry_offered {
-        actions = actions.child(button(s.dark, "job/retry", "Retry", true, |s: &mut State| s.retry_shown_job()));
+        actions = actions.child(centered(button(s.dark, "job/retry", &tr(s.lang, "job.retry"), true, |s: &mut State| s.retry_shown_job())));
     }
-    actions = actions.child(button(s.dark, "job/home", "Back to Home", false, |s: &mut State| s.go_home()));
-    col().gap(24.0).padding(24.0).w_full().h_full()
-        .child(text("Making clips").role("heading").level(1).font(type_::TITLE).color(p.text))
-        .child(head)
-        .child(stage_track::track(s.dark, &jv, percent, &s.job.track_fx(s.now)))
-        .child(actions)
+    if running {
+        actions = actions.child(centered(button(s.dark, "job/cancel", &tr(s.lang, "job.cancel"), false, |s: &mut State| s.cancel_shown_job())));
+    }
+    let done = jv.phase == JobPhase::Completed;
+    let video = detail.job.video_id.clone();
+    actions = actions.child(btn(s.dark, "job/clips", &tr(s.lang, "job.view"), false, done, move |s: &mut State| s.show_clips(&video)));
+    let mut page = col().gap(28.0).padding(40.0).w_full().h_full()
+        .child(page_head(s.dark, "job/title", &home::video_name(s, &detail.job.video_id), &tr(s.lang, "job.sub")))
+        .child(col().h(8.0))
+        .child(headline)
+        .child(stage_track::track(s.dark, s.lang, &jv, percent, &s.job.track_fx(s.now)))
+        .child(log)
+        .child(actions);
+    if !done {
+        page = page.child(text(tr(s.lang, "job.view.note")).key("job/clips-note").font(type_::LABEL).color(p.muted).wrap());
+    }
+    page
 }

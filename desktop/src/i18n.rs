@@ -52,7 +52,7 @@ pub fn tr(lang: Lang, key: &str) -> String {
 
 /// `tr` with each `{name}` in the text replaced by its value.
 pub fn trf(lang: Lang, key: &str, args: &[(&str, &str)]) -> String {
-    args.iter().fold(tr(lang, key), |text, (name, value)| text.replace(&format!("{{{name}}}"), value))
+    args.iter().fold(tr(lang, key), |t, (k, v)| t.replace(&format!("{{{k}}}"), v))
 }
 
 #[cfg(test)]

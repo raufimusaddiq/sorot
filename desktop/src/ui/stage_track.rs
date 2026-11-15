@@ -7,28 +7,18 @@ use rune::{El, col, row, text};
 use sorot_desktop_core::job::{JobView, StageState};
 use sorot_desktop_core::model::JobStage;
 
+use crate::i18n::{Lang, tr};
 use crate::ui::beam::{Variant, beam};
 use crate::ui::fx_moments::{Moment, slot};
 use crate::ui::kit::pal;
 
 pub const CELL: f32 = 72.0;
 
-/// The name a person reads for an engine stage id.
-pub fn stage_name(id: &str) -> &str {
-    match id {
-        "IMPORT" => "Video",
-        "AUDIO_EXTRACT" => "Audio",
-        "TRANSCRIBE" => "Transcribe",
-        "SEGMENT" => "Segment",
-        "SCORE" => "Score",
-        "RENDER" => "Render",
-        "SUBTITLE" => "Subtitle",
-        "VARIATION" => "Variation",
-        "ANALYTICS" => "Analytics",
-        "PREVIEW" => "Preview",
-        "EXPORT" => "Export",
-        other => other,
-    }
+/// The name a person reads for an engine stage id (an unknown id reads as itself).
+pub fn stage_name(lang: Lang, id: &str) -> String {
+    let key = format!("stage.{id}");
+    let words = tr(lang, &key);
+    if words == key { id.to_string() } else { words }
 }
 
 /// What a stage reports while it runs: the words, and the percent when they end in one.
@@ -61,13 +51,13 @@ pub fn beam_position(view: &JobView, percent: Option<u8>) -> f32 {
     }
 }
 
-fn state_word(s: StageState) -> &'static str {
-    match s {
-        StageState::Pending => "waiting",
-        StageState::Active => "running",
-        StageState::Done => "done",
-        StageState::Failed => "failed",
-    }
+fn state_word(lang: Lang, s: StageState) -> String {
+    tr(lang, match s {
+        StageState::Pending => "stage.state.waiting",
+        StageState::Active => "stage.state.running",
+        StageState::Done => "stage.state.done",
+        StageState::Failed => "stage.state.failed",
+    })
 }
 
 /// What the track shows besides the engine's words: the beam head's heat, and the rings of stages
@@ -78,31 +68,42 @@ pub struct TrackFx {
     pub rings: Vec<(usize, f32, f32, u32)>,
 }
 
-pub fn track(dark: bool, view: &JobView, percent: Option<u8>, fx: &TrackFx) -> El {
+/// The rail with a mark on it for each stage (a square for a finished one, the beam's head for the
+/// running one) and the stage names under it; the running stage's percent sits under its name.
+pub fn track(dark: bool, lang: Lang, view: &JobView, percent: Option<u8>, fx: &TrackFx) -> El {
     let p = pal(dark);
-    let mut cells = row().key("job/track").role("list").label("Stages");
+    let n = view.stages.len();
+    let mut cells = row().key("job/track").role("list").label(tr(lang, "stages.label"));
     for (i, s) in view.stages.iter().enumerate() {
-        let (mark, ink) = match s.state {
-            StageState::Done => ("✓", p.pass),
-            StageState::Active => ("●", p.beam),
-            StageState::Failed => ("✕", p.skip),
-            StageState::Pending => ("○", p.muted),
+        let name_ink = match s.state {
+            StageState::Pending => p.muted,
+            StageState::Active => p.beam_text,
+            _ => p.text,
         };
-        let mut cell = col().key(format!("job/stage/{}", s.stage)).role("listitem").label(format!("{}, {}", stage_name(&s.stage), state_word(s.state)))
-            .w(CELL).gap(4.0).items_center();
+        let mut cell = col().key(format!("job/stage/{}", s.stage)).role("listitem").label(format!("{}, {}", stage_name(lang, &s.stage), state_word(lang, s.state)))
+            .w(CELL).gap(6.0).items_center();
         for (_, t0, k, seed) in fx.rings.iter().filter(|r| r.0 == i) {
-            cell = cell.child(slot(Moment::StagePulse, [*t0, *k, *seed as f32, 0.0]).w(20.0).h(20.0).absolute(CELL / 2.0 - 10.0, 0.0));
+            cell = cell.child(slot(Moment::StagePulse, [*t0, *k, *seed as f32, 0.0]).w(20.0).h(20.0).absolute(CELL / 2.0 - 10.0, -3.0));
         }
-        cells = cells.child(
-            cell.child(text(mark).font(type_::TITLE).color(ink))
-                .child(text(stage_name(&s.stage)).font(type_::LABEL).color(if s.state == StageState::Pending { p.muted } else { p.text })),
-        );
+        let mark = match s.state {
+            StageState::Done => col().w(10.0).h(10.0).radius(2.0).fill(p.beam),
+            StageState::Failed => col().w(10.0).h(10.0).radius(2.0).fill(p.skip),
+            // The running stage's mark is the beam's head; a waiting one has none.
+            StageState::Active | StageState::Pending => col().w(10.0).h(10.0),
+        };
+        cell = cell.child(col().h(14.0).items_center().justify_center().child(mark))
+            .child(text(stage_name(lang, &s.stage)).font(type_::LABEL).color(name_ink));
+        if let (StageState::Active, Some(pct)) = (s.state, percent) {
+            cell = cell.child(text(format!("{pct}%")).key("job/stage-percent").font(type_::LABEL).color(p.beam_text));
+        }
+        cells = cells.child(cell);
     }
-    let beam_len = (beam_position(view, percent) * CELL).min(view.stages.len() as f32 * CELL);
-    let full = view.stages.len() as f32 * CELL;
-    let rail = col().w(full + 10.0).h(14.0).child(col().w(full).h(4.0).fill(p.divider).radius(2.0).absolute(0.0, 5.0))
+    let span = n.saturating_sub(1) as f32 * CELL;
+    let beam_len = (beam_position(view, percent) * CELL).min(span);
+    let rail = col().w(span + 10.0).h(14.0).absolute(CELL / 2.0 - 5.0, 0.0)
+        .child(col().w(span).h(4.0).fill(p.divider).radius(2.0).absolute(5.0, 5.0))
         .child(beam(dark, "job/beam", Variant::Stage, beam_len, fx.heat, format!("{}%", view.percent)).absolute(0.0, 0.0));
-    col().gap(8.0).child(cells).child(rail)
+    col().w(n as f32 * CELL).child(rail).child(cells)
 }
 
 #[cfg(test)]
@@ -135,7 +136,6 @@ mod tests {
         let stages = vec![JobStage { id: "s".into(), job_id: "j".into(), stage: "SCORE".into(), status: "IN_PROGRESS".into(), started_at: None, completed_at: None, output_path: Some("Scoring 20%".into()) }];
         assert_eq!(running_report(&v, &stages), Some(("Scoring".into(), Some(20))));
         assert_eq!(running_report(&view(&[StageState::Done, StageState::Done]), &stages), None);
-        assert_eq!(stage_name("AUDIO_EXTRACT"), "Audio");
-        assert_eq!(stage_name("X"), "X");
+        assert_eq!((stage_name(Lang::Id, "TRANSCRIBE"), stage_name(Lang::En, "TRANSCRIBE"), stage_name(Lang::Id, "X")), ("Transkrip".into(), "Transcribe".into(), "X".into()));
     }
 }

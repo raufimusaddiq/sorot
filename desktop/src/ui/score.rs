@@ -1,37 +1,39 @@
 //! A clip's score and verdict. The verdict always shows its word: colour never carries it alone.
 
-use rune::tok::type_;
-use rune::{El, row, text};
+use rune::Color;
 
-use crate::ui::kit::pal;
+use crate::i18n::{Lang, tr};
+use crate::ui::kit::Pal;
 
-/// The engine's gate verdict as the word a person reads (`FAIL` is shown as "Skip": the clip is ranked last).
-pub fn verdict_word(verdict: Option<&str>) -> &'static str {
+/// The catalog key of the word a verdict reads as (`FAIL` is shown as SKIP: the clip is ranked last).
+pub fn verdict_key(verdict: Option<&str>) -> &'static str {
     match verdict {
-        Some("PASS") => "Pass",
-        Some("REVIEW") => "Review",
-        Some("FAIL") => "Skip",
-        _ => "Unchecked",
+        Some("PASS") => "clips.verdict.PASS",
+        Some("REVIEW") => "clips.verdict.REVIEW",
+        Some("FAIL") => "clips.verdict.FAIL",
+        _ => "clips.verdict.none",
     }
 }
 
-/// 0-100 from the engine's 0-1 score; nothing when the clip is not scored.
-pub fn score_text(score: Option<f64>) -> String {
-    score.map_or_else(|| "-".into(), |s| format!("{}", (s.clamp(0.0, 1.0) * 100.0).round()))
+pub fn verdict_word(lang: Lang, verdict: Option<&str>) -> String {
+    tr(lang, verdict_key(verdict))
 }
 
-/// `{key}/score` and `{key}/verdict` side by side.
-pub fn mark(dark: bool, key: &str, score: Option<f64>, verdict: Option<&str>) -> El {
-    let p = pal(dark);
-    let word = verdict_word(verdict);
-    let ink = match verdict {
+/// The outline colour of a verdict pill.
+pub fn verdict_ink(p: &Pal, verdict: Option<&str>) -> Color {
+    match verdict {
         Some("PASS") => p.pass,
+        Some("REVIEW") => p.steel,
         Some("FAIL") => p.skip,
         _ => p.muted,
-    };
-    row().gap(8.0).items_center()
-        .child(text(score_text(score)).key(format!("{key}/score")).font(type_::TITLE).color(p.text))
-        .child(text(word).key(format!("{key}/verdict")).font(type_::LABEL).color(ink))
+    }
+}
+
+/// The engine's 0 to 1 score with two decimals, comma in Indonesian; a dash when the clip is not scored.
+pub fn score_text(lang: Lang, score: Option<f64>) -> String {
+    let Some(s) = score else { return "-".into() };
+    let t = format!("{:.2}", s.clamp(0.0, 1.0));
+    if lang == Lang::Id { t.replace('.', ",") } else { t }
 }
 
 #[cfg(test)]
@@ -40,11 +42,11 @@ mod tests {
 
     #[test]
     fn words_and_scores() {
-        for (v, word) in [(Some("PASS"), "Pass"), (Some("REVIEW"), "Review"), (Some("FAIL"), "Skip"), (None, "Unchecked")] {
-            assert_eq!(verdict_word(v), word);
+        for (v, id, en) in [(Some("PASS"), "PASS", "PASS"), (Some("REVIEW"), "REVIEW", "REVIEW"), (Some("FAIL"), "SKIP", "SKIP"), (None, "BELUM", "UNCHECKED")] {
+            assert_eq!((verdict_word(Lang::Id, v), verdict_word(Lang::En, v)), (id.to_string(), en.to_string()));
         }
-        for (s, want) in [(Some(0.8), "80"), (Some(1.7), "100"), (Some(-1.0), "0"), (None, "-")] {
-            assert_eq!(score_text(s), want);
+        for (s, id, en) in [(Some(0.84), "0,84", "0.84"), (Some(1.7), "1,00", "1.00"), (Some(-1.0), "0,00", "0.00"), (None, "-", "-")] {
+            assert_eq!((score_text(Lang::Id, s), score_text(Lang::En, s)), (id.to_string(), en.to_string()));
         }
     }
 }

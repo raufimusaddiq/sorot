@@ -11,11 +11,11 @@ type Flow = (&'static str, Option<&'static str>, &'static [(&'static str, &'stat
 type Marks = &'static [(&'static str, &'static str, &'static str)];
 
 const FLOWS: &[Flow] = &[
-    ("home-empty", None, &[("home/empty/cause", "No videos yet")], &["home/empty"], None),
+    ("home-empty", None, &[("home/empty/cause", "@home.empty.cause")], &["home/empty"], None),
     ("readiness-missing", None, &[("readiness/title", "Sorot needs a few things first"), ("readiness/whisperModel/progress", "Downloading 40%")], &["readiness/title", "readiness/ffmpeg/fix"], None),
     ("engine-failed", None, &[("engine/failed/cause", "The engine stopped before it was ready.")], &["engine/failed", "engine/restart"], None),
     ("engine-failed", Some("restart-engine"), &[("engine/starting/cause", "Starting the engine")], &["engine/starting"], None),
-    ("first-run", Some("us1-first-run"), &[("home/empty/cause", "No videos yet")], &["home/empty", "shell/rail/home"], Some("adopted")),
+    ("first-run", Some("us1-first-run"), &[("home/empty/cause", "@home.empty.cause")], &["home/empty", "shell/rail/home"], Some("adopted")),
 ];
 
 #[test]
@@ -28,7 +28,8 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
             assert_eq!(saved["source"], *source, "{scene}");
         }
         for (key, text) in *texts {
-            assert_text(&tree, key, text);
+            let want = text.strip_prefix('@').map_or_else(|| text.to_string(), |k| sorot_desktop::i18n::tr(sorot_desktop::i18n::Lang::Id, k));
+            assert_text(&tree, key, &want);
         }
         for key in *named {
             assert_role_label(&tree, key);
@@ -40,7 +41,7 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
 
 #[test]
 fn the_scenes_are_listed_and_render_in_both_themes() {
-    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "job-running", "clips-ranked", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
+    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "job-running", "clips-ranked", "clips-publish", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
     for theme in ["dark", "light"] {
         let png = snap("readiness-missing", theme, "900x600");
         let _ = std::fs::remove_file(png);
@@ -60,7 +61,7 @@ fn the_us2_journeys_reach_their_screens() {
         assert!(has(&tree, shown) && !has(&tree, absent), "{mark}: {shown} shown, {absent} gone");
         assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{mark}");
     }
-    assert_text(&at("us2-drop-to-export", "second", &log), "clips/detail/verdict", "Review");
+    assert_text(&at("us2-drop-to-export", "second", &log), "clips/row/c1/verdict", &sorot_desktop::i18n::tr(sorot_desktop::i18n::Lang::Id, "clips.verdict.REVIEW"));
     let single = temp_dir().join("single.log");
     at("us2-drop-to-export", "end", &single);
     assert_eq!(std::fs::read_to_string(&single).unwrap().lines().collect::<Vec<_>>(), ["/exports/c1_final.mp4"]);
@@ -74,11 +75,11 @@ fn the_us2_journeys_reach_their_screens() {
 #[test]
 fn the_us5_journeys_reach_their_screens() {
     // the publish page (T-15) is taller than the default window, so its journey runs in a tall one
-    let at = |scene: &str, script: &str, mark: &str| run_at(scene, Some(script), mark, if matches!(scene, "publish" | "generate-flow") { &["--size", "1100x2400"] } else { &[] }, &[]);
+    let at = |scene: &str, script: &str, mark: &str| run_at(scene, Some(script), mark, if matches!(scene, "publish" | "generate-flow" | "clips-publish") { &["--size", "1100x2400"] } else { &[] }, &[]);
     let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
 
-    // (scene, script, [(mark, key shown, key absent)]): no AI connection, then one saved, then Generate is open
-    let journeys: [(&str, &str, Marks); 3] = [
+    // (scene, script, [(mark, key shown, key absent)]): no AI connection, then one saved, then Generate is open; clips to a post (item E)
+    let journeys: [(&str, &str, Marks); 4] = [
         ("generate-no-ai", "us5-connect-then-generate", &[("settings", "conn/llm/key", "generate/unavailable"), ("end", "generate/ready", "generate/unavailable")]),
         (
             "generate-flow",
@@ -86,6 +87,7 @@ fn the_us5_journeys_reach_their_screens() {
             &[("stories", "generate/step/stories", "generate/brief/create"), ("plan", "generate/plan/approve", "generate/story/0/pick"), ("approved", "generate/build/start", "generate/build/gate"), ("built", "generate/build/start", "generate/build/cancel"), ("end", "generate/build/accepted", "generate/build/accept")],
         ),
         ("generate-flow", "us5-generate-to-post", &[("exported", "generate/build/publish", "generate/build/export"), ("choices", "publish/post", "publish/post/p9/row"), ("end", "publish/post/p9/row", "publish/post")]),
+        ("clips-publish", "us5-clip-to-post", &[("opened", "publish/account/tt", "publish/post/p9/row"), ("choices", "publish/post", "publish/post/p9/row"), ("end", "publish/post/p9/row", "publish/post")]),
     ];
     for (scene, script, marks) in journeys {
         for (mark, shown, absent) in marks {

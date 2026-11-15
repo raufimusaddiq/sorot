@@ -1,0 +1,44 @@
+{
+  "status": "ok",
+  "data": {
+    "clip": {
+      "id": "c1",
+      "title": "Kenapa orang menunda mulai",
+      "gateVerdict": "PASS",
+      "gateReasons": []
+    },
+    "copyCheckedBy": "Jev",
+    "targets": [
+      {
+        "accountId": "tt",
+        "platform": "tiktok",
+        "name": "@akunanda",
+        "content": "Ternyata bukan malas, tapi takut mulai. Ini yang saya pelajari. #produktif",
+        "copyBy": "llm",
+        "needs": {
+          "tiktokPrivacy": [
+            "PUBLIC_TO_EVERYONE",
+            "SELF_ONLY"
+          ]
+        },
+        "warnings": [],
+        "blockers": []
+      },
+      {
+        "accountId": "yt",
+        "platform": "youtube",
+        "name": "Kanal Anda",
+        "content": "Kenapa orang menunda mulai",
+        "title": "Kenapa orang menunda mulai",
+        "copyBy": "template",
+        "needs": {
+          "madeForKids": true
+        },
+        "warnings": [
+          "shortened to the 5000-character limit"
+        ],
+        "blockers": []
+      }
+    ]
+  }
+}
