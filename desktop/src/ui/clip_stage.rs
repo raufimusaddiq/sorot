@@ -22,9 +22,19 @@ pub fn title(lang: Lang, clip: &Clip) -> String {
     clip.title.clone().or_else(|| clip.text_content.clone()).unwrap_or_else(|| tr(lang, "clip.untitled"))
 }
 
-/// The 9:16 stage: the label, the sample caption while nothing plays, and (on the clips screen) the transport bar.
+/// The 9:16 stage of a clip: the label, the sample caption while nothing plays, and (on the clips screen) the transport bar.
 /// `size` is the stage's fixed width and height; `None` fills the width it is given at 9:16.
 pub fn view(s: &State, clip: &Clip, size: Option<(f32, f32)>, transport: bool) -> El {
+    stage_of(s, &title(s.lang, clip), clip.duration_sec, size, transport)
+}
+
+/// The stage and transport for whatever the player holds, filling its width: `label` names it, `length` is its
+/// length until the player knows its own.
+pub fn stage(s: &State, label: &str, length: f64) -> El {
+    stage_of(s, label, length, None, true)
+}
+
+fn stage_of(s: &State, label: &str, length: f64, size: Option<(f32, f32)>, transport: bool) -> El {
     let p = pal(s.dark);
     let state = s.preview.state();
     let note = match (&state, &s.clips.preview_error) {
@@ -42,7 +52,7 @@ pub fn view(s: &State, clip: &Clip, size: Option<(f32, f32)>, transport: bool) -
     if !playing {
         middle = middle.child(text(tr(s.lang, "clips.sample")).key("clips/stage/sample").font(type_::TITLE).color(p.text).wrap());
     }
-    let mut face = col().key("clips/stage").role("img").label(title(s.lang, clip)).fill(p.bg).border(1.0, p.divider).radius(12.0)
+    let mut face = col().key("clips/stage").role("img").label(label).fill(p.bg).border(1.0, p.divider).radius(12.0)
         .child(col().padding(16.0).w_full().child(text(tr(s.lang, "clips.stage.label")).font(type_::LABEL).color(p.muted)))
         .child(middle);
     face = match size {
@@ -50,7 +60,7 @@ pub fn view(s: &State, clip: &Clip, size: Option<(f32, f32)>, transport: bool) -
         None => face.w_full().aspect_ratio(9.0 / 16.0),
     };
     if transport {
-        let total = s.preview.duration().unwrap_or(clip.duration_sec).max(0.001);
+        let total = s.preview.duration().unwrap_or(length).max(0.001);
         let at = s.preview.time();
         let word = tr(s.lang, if playing { "clips.pause" } else { "clips.play" });
         let filled = ((at / total).clamp(0.0, 1.0) as f32) * 110.0;

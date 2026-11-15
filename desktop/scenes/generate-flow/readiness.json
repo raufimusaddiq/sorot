@@ -1,0 +1,42 @@
+{
+  "status": "ok",
+  "data": {
+    "items": [
+      {
+        "id": "ffmpeg",
+        "required": true,
+        "ok": true,
+        "fixable": false,
+        "detail": "ffmpeg 7.1"
+      },
+      {
+        "id": "python",
+        "required": true,
+        "ok": true,
+        "fixable": false,
+        "detail": "Python 3.12"
+      },
+      {
+        "id": "whisperModel",
+        "required": true,
+        "ok": true,
+        "fixable": false,
+        "detail": "large-v3-turbo ready"
+      },
+      {
+        "id": "gpu",
+        "required": false,
+        "ok": true,
+        "fixable": false,
+        "detail": "none"
+      },
+      {
+        "id": "generateBrowser",
+        "required": false,
+        "ok": true,
+        "fixable": false,
+        "detail": "Chromium ready"
+      }
+    ]
+  }
+}

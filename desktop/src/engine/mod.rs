@@ -1,6 +1,7 @@
 //! The seam to the engine: one method per route the screens use, returning `core::model` types.
 //! The app holds an `Arc<dyn Engine>`; `http` talks to a real engine, `fake` plays a scene.
 
+pub mod generate;
 pub mod http;
 pub mod sidecar;
 pub mod types;
@@ -137,6 +138,13 @@ pub trait Engine: Send + Sync {
     fn drain_queue(&self) -> Result<Drained>;
     fn discover_auto(&self, goal: &str) -> Result<AutoRun>;
     fn auto_status(&self, id: &str) -> Result<AutoRun>;
+    /// Any engine route, answering its `data`: the one seam of the Generate screens (`generate.rs`
+    /// has the typed route wrappers). `method` is GET, POST, PUT, PATCH or DELETE.
+    /// `GET path` into `dest` (a file route: a kit part's zip); the bytes written.
+    fn download(&self, path: &str, dest: &Path) -> Result<u64>;
+    fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value>;
+    /// `POST path` as multipart form data: the file in the field `file`, plus `fields`.
+    fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value>;
 }
 
 #[cfg(test)]

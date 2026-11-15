@@ -1,0 +1,20 @@
+{
+  "status": "ok",
+  "data": {
+    "available": false,
+    "reasons": [
+      "No LLM or Jev is connected."
+    ],
+    "hyperframes": {
+      "ok": true,
+      "version": "0.4"
+    },
+    "llm": {
+      "configured": false
+    },
+    "jev": {
+      "configured": false
+    },
+    "compute": "cpu"
+  }
+}

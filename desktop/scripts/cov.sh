@@ -1,7 +1,7 @@
 #!/bin/sh
 # Desktop coverage gate: cargo llvm-cov with the 95% gates and the ignore regex from cov-ignore.sh.
 # Extra args pass through to cargo llvm-cov; exit code is llvm-cov's. Runs from any directory.
-# With CARGO_TARGET_DIR set (a target dir shared by several workers) it holds flock on
+# With CARGO_TARGET_DIR set (a target dir one person deliberately reuses across sequential runs, never shared across worktrees) it holds flock on
 # $CARGO_TARGET_DIR/cov.lock first: llvm-cov wipes its llvm-cov-target at the start of every run,
 # which cargo's own lock does not cover. The kernel drops the lock if this process dies. Without flock (macOS) it runs unlocked, with a warning.
 here=$(cd "$(dirname "$0")" && pwd)

@@ -6,6 +6,7 @@ mod support;
 mod a11y;
 mod app_screens;
 mod design_rules;
+mod generate_screens;
 mod headless_flows;
 mod headless_run;
 mod motion;

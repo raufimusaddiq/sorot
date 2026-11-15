@@ -1,0 +1,10 @@
+{"events": [
+  {"t": 0.2, "type": "tap", "key": "generate/open-settings"},
+  {"t": 0.6, "type": "mark", "name": "settings"},
+  {"t": 0.8, "type": "tap", "key": "conn/llm/key"},
+  {"t": 1.0, "type": "type", "text": "sk-contoh"},
+  {"t": 1.6, "type": "tap", "key": "conn/llm/save"},
+  {"t": 2.0, "type": "mark", "name": "saved"},
+  {"t": 2.2, "type": "tap", "key": "shell/rail/generate"},
+  {"t": 2.8, "type": "mark", "name": "end"}
+]}

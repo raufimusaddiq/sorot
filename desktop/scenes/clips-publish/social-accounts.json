@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "data": {
+    "enabled": true,
+    "accounts": [
+      {
+        "id": "tt",
+        "platform": "tiktok",
+        "name": "@akunanda",
+        "profileId": "w1",
+        "profileName": "Utama",
+        "supported": true
+      },
+      {
+        "id": "yt",
+        "platform": "youtube",
+        "name": "Kanal Anda",
+        "profileId": "w1",
+        "profileName": "Utama",
+        "supported": true
+      },
+      {
+        "id": "ig",
+        "platform": "instagram",
+        "name": "@toko",
+        "profileId": "w2",
+        "profileName": "Toko",
+        "supported": true
+      }
+    ]
+  }
+}

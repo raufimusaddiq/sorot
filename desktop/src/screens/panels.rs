@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use crate::engine::{Engine, EngineError};
-use crate::screens::{discover, feedback, learning, publish, settings};
+use crate::screens::{discover, feedback, generate, learning, publish, settings};
 
 /// What a worker hands back: a change to the panels, applied on the UI thread.
 pub type Apply = Box<dyn FnOnce(&mut Panels) + Send>;
@@ -22,6 +22,7 @@ pub struct Panels {
     pub learning: learning::Learning,
     pub feedback: feedback::Sheet,
     pub discover: discover::Discover,
+    pub studio: generate::Studio,
     /// App clock of the last look at a running calibration or auto run.
     pub polled: f64,
 }
@@ -33,6 +34,7 @@ pub enum Page {
     GenerateSettings,
     Learning,
     Discover,
+    Generate,
 }
 
 /// What a panel screen needs from the app.
@@ -55,6 +57,16 @@ pub trait Host: 'static {
     fn open_url(&mut self, url: &str) -> Result<(), String>;
     /// Goes to a page and reads what it shows.
     fn show(&mut self, page: Page);
+    /// Shows a file in the system file manager (a host with none does nothing).
+    fn reveal(&mut self, _path: &str) {}
+    /// Opens the publish panel for an exported Generate video (a host with none does nothing).
+    fn publish_export(&mut self, _export_id: &str, _title: &str) {}
+    /// Plays a version's draft video in the app's player (a host with none does nothing).
+    fn watch(&mut self, _version: &str) {}
+    /// The player's stage and transport, when a draft is loaded.
+    fn stage(&self, _label: &str) -> Option<rune::El> {
+        None
+    }
 }
 
 /// Starts `work` through the host.

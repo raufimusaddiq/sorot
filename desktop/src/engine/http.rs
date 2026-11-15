@@ -54,18 +54,26 @@ impl HttpEngine {
     fn raw(&self, method: &str, path: &str, body: Option<Value>) -> Result<(u16, String)> {
         let url = format!("{}{path}", self.base);
         let auth = self.token.as_ref().map(|t| format!("Bearer {t}"));
-        let sent = if method == "GET" {
-            let mut req = self.agent.get(&url);
-            if let Some(a) = &auth {
-                req = req.header("Authorization", a);
+        let sent = match method {
+            "GET" | "DELETE" => {
+                let mut req = if method == "GET" { self.agent.get(&url) } else { self.agent.delete(&url) };
+                if let Some(a) = &auth {
+                    req = req.header("Authorization", a);
+                }
+                req.call()
             }
-            req.call()
-        } else {
-            let mut req = if method == "PUT" { self.agent.put(&url) } else { self.agent.post(&url) }.header("Content-Type", "application/json");
-            if let Some(a) = &auth {
-                req = req.header("Authorization", a);
+            _ => {
+                let mut req = match method {
+                    "PUT" => self.agent.put(&url),
+                    "PATCH" => self.agent.patch(&url),
+                    _ => self.agent.post(&url),
+                }
+                .header("Content-Type", "application/json");
+                if let Some(a) = &auth {
+                    req = req.header("Authorization", a);
+                }
+                req.send(body.unwrap_or(json!({})).to_string())
             }
-            req.send(body.unwrap_or(json!({})).to_string())
         };
         let mut resp = sent.map_err(|e| EngineError::Network(e.to_string()))?;
         let status = resp.status().as_u16();
@@ -97,6 +105,43 @@ impl HttpEngine {
         Ok(n)
     }
 
+    /// Multipart by hand: one file part named `file`, then a text part for each of `fields`.
+    fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value> {
+        let io = |e: std::io::Error| EngineError::Network(e.to_string());
+        let bytes = std::fs::read(file).map_err(io)?;
+        let name = file.file_name().map(|n| n.to_string_lossy().replace('"', "_")).unwrap_or_default();
+        let boundary = format!("sorot-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+        let mut body = Vec::new();
+        for (k, v) in fields {
+            body.extend(format!("--{boundary}
+Content-Disposition: form-data; name=\"{k}\"
+
+{v}
+").into_bytes());
+        }
+        body.extend(format!("--{boundary}
+Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"
+Content-Type: application/octet-stream
+
+").into_bytes());
+        body.extend(bytes);
+        body.extend(format!("
+--{boundary}--
+").into_bytes());
+        let mut req = self.agent.post(format!("{}{path}", self.base)).header("Content-Type", format!("multipart/form-data; boundary={boundary}"));
+        if let Some(t) = &self.token {
+            req = req.header("Authorization", format!("Bearer {t}"));
+        }
+        let mut resp = req.send(&body[..]).map_err(|e| EngineError::Network(e.to_string()))?;
+        let status = resp.status().as_u16();
+        let text = resp.body_mut().read_to_string().map_err(|e| EngineError::Network(e.to_string()))?;
+        if status == 401 {
+            return Err(EngineError::Unauthorized);
+        }
+        let env: Envelope<Value> = serde_json::from_str(&text).map_err(malformed)?;
+        env.into_result().map_err(|message| EngineError::Api { status, message })
+    }
+
     fn call<T: DeserializeOwned>(&self, method: &str, path: &str, body: Option<Value>) -> Result<T> {
         let (status, text) = self.raw(method, path, body)?;
         let env: Envelope<T> = serde_json::from_str(&text).map_err(malformed)?;
@@ -117,7 +162,7 @@ impl HttpEngine {
 }
 
 /// Percent-encodes what a path segment or query value may not hold (model ids carry `/`).
-fn encode(s: &str) -> String {
+pub fn encode(s: &str) -> String {
     s.bytes().fold(String::new(), |mut out, b| {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
@@ -281,6 +326,15 @@ impl Engine for HttpEngine {
     fn discover_auto(&self, goal: &str) -> Result<AutoRun> {
         self.post("/api/discover/auto", json!({ "goal": goal }))
     }
+    fn download(&self, path: &str, dest: &Path) -> Result<u64> {
+        HttpEngine::download(self, path, dest)
+    }
+    fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
+        HttpEngine::call::<Value>(self, method, path, body)
+    }
+    fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value> {
+        HttpEngine::upload(self, path, file, fields)
+    }
     fn auto_status(&self, id: &str) -> Result<AutoRun> {
         self.get(&format!("/api/discover/auto/{id}"))
     }
@@ -420,6 +474,82 @@ mod tests {
             "GET /api/jobs/j1  Bearer tok",
         ];
         assert_eq!(got, want);
+    }
+
+    /// The Generate routes: every method the screens use goes through `call`, with its body.
+    #[test]
+    fn generate_routes_send_their_requests() {
+        use crate::engine::generate as g;
+        let (base, seen) = stub(
+            200,
+            r#"{"status":"ok","data":{"projects":[],"project":{"id":"p","brief":"b","status":"WAITING"},"recipe":{"id":"r"},"facts":[],"events":[],"ideas":[],"recipes":[],"parts":[],"export":{"id":"x","versionId":"v"}}}"#,
+        );
+        let e = HttpEngine::new(base, None);
+        let plan = g::Plan { title: "t".into(), ..g::Plan::default() };
+        let brief = g::Brief { brief: "b".into(), format: "9:16".into(), target_sec: 30, language: "id".into(), ..g::Brief::default() };
+        let _ = (g::projects(&e), g::create_project(&e, &brief), g::project(&e, "p"), g::delete_project(&e, "p"), g::retry_project(&e, "p"), g::more_storylines(&e, "p", "n"), g::pick_storyline(&e, "p", 1, "n"));
+        let _ = (g::save_plan(&e, "p", &plan), g::revise_plan(&e, "p", "r"), g::approve_plan(&e, "p", "pl"), g::estimate(&e, "p"), g::build(&e, "p"), g::version(&e, "v"), g::version_action(&e, "v", "cancel"));
+        let _ = (g::fix(&e, "v", &["f".to_string()], "n", Some("s1")), g::fix(&e, "v", &[], "", None), g::export_version(&e, "v"), g::events(&e, "p"), g::ideas(&e), g::add_idea(&e, "s", "b"), g::delete_idea(&e, "i"));
+        let _ = (g::run_idea(&e, Some("i"), Some("r")), g::run_idea(&e, None, None), g::facts(&e, "p"), g::add_fact(&e, "p", "c", "v", "u"), g::add_fact(&e, "p", "c", "", "u"), g::update_fact(&e, "f", "c", "v", "u"), g::delete_fact(&e, "f"), g::verify_facts(&e, "p"));
+        let r = json!({"id": "r"});
+        let _ = (g::recipes(&e), g::validate_recipe(&e, &r), g::copy_recipe(&e, "a", "b", "n"), g::save_recipe(&e, "r", &r), g::delete_recipe(&e, "r"), g::import_recipe(&e, &r), g::export_recipe(&e, "r"));
+        let _ = (g::kit_parts(&e), g::remove_kit_part(&e, "a b"), g::steps(&e), g::delete_asset(&e, "a1"), g::exports(&e), g::publish_draft(&e, "x", &["a".to_string()]), g::publish(&e, "x", &json!({"targets": []})), g::export_posts(&e, "x"));
+        let file = std::env::temp_dir().join(format!("sorot-up-{}.png", std::process::id()));
+        std::fs::write(&file, b"PNGDATA").unwrap();
+        let _ = g::upload_asset(&e, "p", &file, "logo");
+        let _ = std::fs::remove_file(&file);
+        let got: Vec<_> = seen.lock().unwrap().iter().map(|(m, p, _)| format!("{m} {p}")).collect();
+        let want = [
+            "GET /api/generate/projects ",
+            r#"POST /api/generate/projects {"brief":"b","format":"9:16","language":"id","targetSec":30}"#,
+            "GET /api/generate/projects/p ",
+            "DELETE /api/generate/projects/p ",
+            "POST /api/generate/projects/p/retry {}",
+            r#"POST /api/generate/projects/p/storylines {"note":"n"}"#,
+            r#"POST /api/generate/projects/p/storylines/1/pick {"note":"n"}"#,
+            r#"PUT /api/generate/projects/p/plan {"plan":{"assumptions":[],"message":"","shots":[],"title":"t"}}"#,
+            r#"POST /api/generate/projects/p/plan/revise {"request":"r"}"#,
+            r#"POST /api/generate/projects/p/plan/approve {"planId":"pl"}"#,
+            "GET /api/generate/projects/p/estimate ",
+            "POST /api/generate/projects/p/versions {}",
+            "GET /api/generate/versions/v ",
+            "POST /api/generate/versions/v/cancel {}",
+            r#"POST /api/generate/versions/v/fix {"findingIds":["f"],"note":"n","shotId":"s1"}"#,
+            "POST /api/generate/versions/v/fix {}",
+            "POST /api/generate/versions/v/export {}",
+            "GET /api/generate/projects/p/events?limit=100 ",
+            "GET /api/generate/ideas ",
+            r#"POST /api/generate/ideas {"brief":"b","slug":"s"}"#,
+            "DELETE /api/generate/ideas/i ",
+            r#"POST /api/generate/run {"ideaId":"i","recipeId":"r"}"#,
+            "POST /api/generate/run {}",
+            "GET /api/generate/projects/p/facts ",
+            r#"POST /api/generate/projects/p/facts {"claim":"c","sourceUrl":"u","value":"v"}"#,
+            r#"POST /api/generate/projects/p/facts {"claim":"c","sourceUrl":"u"}"#,
+            r#"PATCH /api/generate/facts/f {"claim":"c","sourceUrl":"u","value":"v"}"#,
+            "DELETE /api/generate/facts/f ",
+            "POST /api/generate/projects/p/facts/verify {}",
+            "GET /api/generate/recipes ",
+            r#"POST /api/generate/recipes/validate {"recipe":{"id":"r"}}"#,
+            r#"POST /api/generate/recipes {"fromId":"a","id":"b","name":"n"}"#,
+            r#"PUT /api/generate/recipes/r {"recipe":{"id":"r"}}"#,
+            "DELETE /api/generate/recipes/r ",
+            r#"POST /api/generate/recipes/import {"recipe":{"id":"r"}}"#,
+            "GET /api/generate/recipes/r/export ",
+            "GET /api/generate/kit ",
+            "DELETE /api/generate/kit/a%20b ",
+            "GET /api/generate/steps ",
+            "DELETE /api/generate/assets/a1 ",
+            "GET /api/generate/exports ",
+            r#"POST /api/generate/exports/x/publish/draft {"accountIds":["a"]}"#,
+            r#"POST /api/generate/exports/x/publish {"targets":[]}"#,
+            "GET /api/generate/exports/x/posts ",
+        ];
+        assert_eq!(&got[..want.len()], want);
+        let up = got.last().unwrap();
+        assert!(up.starts_with("POST /api/generate/projects/p/assets --sorot-") && up.contains("name=\"kind\"
+
+logo") && up.contains("filename=\"sorot-up-") && up.contains("PNGDATA"), "{up}");
     }
 
     /// The settings, publish, learning and discover routes: method, path and body of each.

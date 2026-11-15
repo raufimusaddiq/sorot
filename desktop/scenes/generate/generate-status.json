@@ -1,0 +1,32 @@
+{
+  "status": "ok",
+  "data": {
+    "available": true,
+    "reasons": [],
+    "hyperframes": {
+      "ok": true,
+      "version": "0.4"
+    },
+    "llm": {
+      "configured": true
+    },
+    "jev": {
+      "configured": false
+    },
+    "compute": "cpu",
+    "voice": {
+      "engines": [
+        "openai"
+      ],
+      "localAvailable": false
+    },
+    "presets": [
+      {
+        "id": "explainer-30",
+        "label": "Penjelasan 30 detik",
+        "description": "Satu ide, tiga adegan.",
+        "targetSec": 30
+      }
+    ]
+  }
+}
