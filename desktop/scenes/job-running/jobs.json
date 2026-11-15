@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "data": {
+    "jobs": [
+      {
+        "id": "j1",
+        "videoId": "vnew",
+        "status": "RUNNING",
+        "currentStage": "SCORE",
+        "errorMessage": null,
+        "createdAt": "2026-11-15T09:00:00.000Z",
+        "updatedAt": "2026-11-15T09:00:00.000Z"
+      }
+    ]
+  }
+}

@@ -515,6 +515,8 @@ impl Spawn for FakeSpawn {
 #[derive(Default)]
 pub struct RecordReveal {
     pub shown: Mutex<Vec<PathBuf>>,
+    /// Files opened in the video player rather than shown in a folder.
+    pub opened: Mutex<Vec<PathBuf>>,
 }
 
 impl crate::platform::reveal::Reveal for RecordReveal {
@@ -526,6 +528,11 @@ impl crate::platform::reveal::Reveal for RecordReveal {
                 let _ = writeln!(f, "{}", path.display());
             }
         }
+        Ok(())
+    }
+
+    fn open(&self, path: &Path) -> std::result::Result<(), String> {
+        self.opened.lock().unwrap().push(path.to_path_buf());
         Ok(())
     }
 }

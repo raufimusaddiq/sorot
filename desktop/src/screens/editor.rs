@@ -9,6 +9,7 @@ use sorot_desktop_core::model::Clip;
 use sorot_desktop_core::toast::ToastKind;
 
 use crate::app::{Cmd, Msg, Route, State};
+use crate::ui::beam::{Variant, beam};
 use crate::ui::clip_stage;
 use crate::ui::kit::{button, pal};
 use crate::ui::states::{Kind, state_block};
@@ -96,7 +97,7 @@ fn timeline(s: &State, clip: &Clip) -> El {
     let mut bar = row().key("editor/timeline").role("img").label(format!("Timeline, {} long", clip_stage::clock(clip.duration_sec))).w(WIDTH).h(18.0).fill(p.raised).radius(4.0).items_center();
     if let (Some(a), Some(b)) = (clip.hook_start, clip.hook_end) {
         let (x0, x1) = (at(a), at(b).max(at(a) + 4.0));
-        bar = bar.child(col().w(x0).h(18.0)).child(col().key("editor/hook-marker").role("img").label(format!("Hook {} to {}", clip_stage::clock(a - clip.start_time), clip_stage::clock(b - clip.start_time))).w(x1 - x0).h(18.0).fill(p.beam).radius(4.0));
+        bar = bar.child(col().w(x0).h(18.0)).child(beam(s.dark, "editor/hook-marker", Variant::Hook, x1 - x0, 0.0, format!("Hook {} to {}", clip_stage::clock(a - clip.start_time), clip_stage::clock(b - clip.start_time))));
     }
     bar
 }

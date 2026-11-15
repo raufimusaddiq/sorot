@@ -4020,6 +4020,7 @@ dependencies = [
  "libc",
  "minisign-verify",
  "notify-rust",
+ "png 0.18.1",
  "rfd",
  "rune",
  "rune-fx",
@@ -4033,6 +4034,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tiny_http",
  "ureq",
+ "wgpu",
  "windows-sys 0.61.2",
 ]
 

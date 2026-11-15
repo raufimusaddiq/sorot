@@ -1,6 +1,23 @@
 {
   "app.name": "Sorot",
   "shell.home": "Home",
+  "shell.clips": "Clips",
+  "shell.discover": "Discover",
+  "shell.learning": "Learning",
   "shell.settings": "Settings",
-  "readiness.checking": "Checking readiness"
+  "readiness.checking": "Checking readiness",
+  "menu.file": "File",
+  "menu.edit": "Edit",
+  "menu.view": "View",
+  "menu.window": "Window",
+  "menu.help": "Help",
+  "menu.new": "Clip a new video",
+  "menu.quit": "Quit",
+  "menu.edit-clip": "Edit the chosen clip",
+  "menu.theme": "Switch light or dark theme",
+  "menu.hide": "Hide the window",
+  "menu.diagnostic": "Export diagnostic report",
+  "menu.restart": "Restart the engine",
+  "gpu.notice": "This machine has no graphics acceleration, so effects are reduced and previews open in your video player.",
+  "gpu.dismiss": "Dismiss"
 }

@@ -95,7 +95,7 @@ pub fn temp_dir() -> PathBuf {
 pub fn snap(scene: &str, theme: &str, size: &str) -> PathBuf {
     let png = temp("png");
     let mut cmd = binary();
-    cmd.args(["--scene", scene, "--theme", theme, "--size", size, "--snap"]).arg(&png);
+    cmd.args(["--scene", scene, "--theme", theme, "--size", size, "--scale", "1", "--snap"]).arg(&png);
     let out = finish(cmd);
     assert!(out.status.success() && png.metadata().is_ok_and(|m| m.len() > 0), "{}", String::from_utf8_lossy(&out.stderr));
     png

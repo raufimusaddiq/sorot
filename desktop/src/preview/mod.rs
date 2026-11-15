@@ -10,12 +10,10 @@ use sorot_desktop_core::model::Clip;
 use crate::engine::{Engine, EngineError};
 
 pub mod ffmpeg_player;
-#[cfg(any(windows, target_os = "macos"))]
-pub mod rune_player;
 
 /// The player this OS uses.
 #[cfg(any(windows, target_os = "macos"))]
-pub use rune_player::new as os_player;
+pub use crate::platform::rune_player::new as os_player;
 #[cfg(target_os = "linux")]
 pub use crate::platform::ffmpeg_proc::preview as os_player;
 

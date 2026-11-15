@@ -353,6 +353,9 @@ fn export_then_reveal_locally_or_download_remotely() {
         fn reveal(&self, _: &std::path::Path) -> Result<(), String> {
             Err("no file manager".into())
         }
+        fn open(&self, _: &std::path::Path) -> Result<(), String> {
+            Err("no player".into())
+        }
     }
     poke(&mut rt, |s| s.reveal = Some(Arc::new(Broken)));
     click(&mut rt, "clips/reveal");

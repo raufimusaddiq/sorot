@@ -1,6 +1,23 @@
 {
   "app.name": "Sorot",
   "shell.home": "Beranda",
-  "shell.settings": "Pengaturan",
-  "readiness.checking": "Memeriksa kesiapan"
+  "shell.clips": "Klip",
+  "shell.discover": "Temukan",
+  "shell.learning": "Belajar",
+  "shell.settings": "Setelan",
+  "readiness.checking": "Memeriksa kesiapan",
+  "menu.file": "Berkas",
+  "menu.edit": "Sunting",
+  "menu.view": "Tampilan",
+  "menu.window": "Jendela",
+  "menu.help": "Bantuan",
+  "menu.new": "Potong video baru",
+  "menu.quit": "Keluar",
+  "menu.edit-clip": "Edit klip terpilih",
+  "menu.theme": "Ganti tema terang atau gelap",
+  "menu.hide": "Sembunyikan jendela",
+  "menu.diagnostic": "Ekspor laporan diagnostik",
+  "menu.restart": "Mulai ulang mesin",
+  "gpu.notice": "Komputer ini tidak punya akselerasi grafis, jadi efek dikurangi dan pratinjau dibuka di pemutar video Anda.",
+  "gpu.dismiss": "Tutup"
 }

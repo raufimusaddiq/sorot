@@ -12,4 +12,5 @@ src/platform/save_dialog.rs
 src/platform/notify_rune.rs
 src/platform/ffmpeg_proc.rs
 src/platform/audio_cpal.rs
-src/preview/rune_player.rs
+src/platform/rune_player.rs
+src/platform/fx_compositor.rs
