@@ -87,12 +87,12 @@ jobs:
           workspaces: desktop
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Tests and coverage (Linux: 95% lines and functions, shims in coverage-exclude.txt)
+      - name: "Tests and coverage (Linux, 95% lines and functions, shims in coverage-exclude.txt)"
         if: runner.os == 'Linux'
         env:
           SOROT_HEADLESS_DEADLINE_SECS: "180"
         run: cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95 --ignore-filename-regex "$(sh scripts/cov-ignore.sh)"
-      - name: Tests (Windows, macOS: no coverage; the software renderer is slow under instrumentation)
+      - name: "Tests (Windows, macOS, no coverage; the software renderer is slow under instrumentation)"
         if: runner.os != 'Linux'
         env:
           SOROT_HEADLESS_DEADLINE_SECS: "300"
