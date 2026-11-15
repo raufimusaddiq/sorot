@@ -4,6 +4,7 @@
 pub mod app;
 pub mod diagnostics;
 pub mod engine;
+pub mod i18n;
 pub mod library;
 pub mod preview;
 pub mod screens;
@@ -42,6 +43,9 @@ pub mod platform {
     #[cfg(any(windows, target_os = "macos"))]
     #[path = "notify_rune.rs"]
     pub mod notify_rune;
+    #[cfg(any(windows, target_os = "macos"))]
+    #[path = "rune_player.rs"]
+    pub mod rune_player;
     #[cfg(target_os = "linux")]
     #[path = "ffmpeg_proc.rs"]
     pub mod ffmpeg_proc;
@@ -56,6 +60,8 @@ pub mod platform {
     #[cfg(target_os = "macos")]
     #[path = "open_documents_macos.rs"]
     pub mod open_documents_macos;
+    #[path = "fx_compositor.rs"]
+    pub mod fx_compositor;
     #[path = "gpu_probe.rs"]
     pub mod gpu_probe;
     #[path = "updater_feed.rs"]
@@ -106,6 +112,7 @@ pub fn live() -> app::Live {
         reveal: Arc::new(platform::reveal::OsReveal),
         notifier: os_notifier(),
         preview: preview::os_player,
+        gpu: Arc::new(platform::gpu_probe::OsGpuProbe),
     }
 }
 

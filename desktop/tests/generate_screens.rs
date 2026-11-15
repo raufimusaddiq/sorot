@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sorot_desktop::app::{Screen, State, view};
 use sorot_desktop::engine::fake::{FakeEngine, RecordReveal, scenes_dir};
 use sorot_desktop::engine::EngineError;
-use sorot_desktop::screens::generate::words::{t, tf};
+use sorot_desktop::screens::generate::{t, tf};
 use sorot_desktop::screens::generate;
 use sorot_desktop::screens::panels::{Host, Page};
 
@@ -319,6 +319,8 @@ fn recipes_shipped_are_read_only_and_a_checked_recipe_shows_its_errors_inline() 
     assert_eq!(calls(&e, "POST /api/generate/recipes ").len(), 1);
 
     click(&mut rt, "generate/recipe/mine");
+    assert!(has(&rt, "generate/recipes/step/0") && !has(&rt, "generate/recipes/text"), "your own recipe opens as steps");
+    click(&mut rt, "generate/recipes/tab/json");
     assert!(has(&rt, "generate/recipes/text") && !has(&rt, "generate/recipes/readonly"));
     assert_eq!(name_of(&rt, "generate/recipes/error/0"), "steps: harus ada langkah author");
     assert_eq!(name_of(&rt, "generate/recipes/warning/0"), tf("recipes.warning", &["tidak ada langkah voice"]));
@@ -534,4 +536,99 @@ fn ideas_open_resume_and_empty_and_recipes_say_what_failed() {
     click(&mut rt, "generate/nav/projects");
     click(&mut rt, "generate/nav/recipes");
     assert!(has(&rt, "generate/recipes/empty"));
+}
+
+#[test]
+fn a_brief_sends_its_logo_and_files_with_the_new_video_and_refuses_other_types() {
+    let (mut rt, e) = lab("generate");
+    click(&mut rt, "generate/new");
+    // a logo must be a picture; other files by what they are
+    for (key, file) in [("generate/brief/logo", "D:/a/logo.png"), ("generate/brief/add", "D:/a/song.mp3"), ("generate/brief/add", "D:/a/tool.exe")] {
+        click(&mut rt, key);
+        assert!(rt.file_dialog().is_some(), "{key} asks for a file");
+        rt.resolve_file_dialog(Some(file.into())).unwrap();
+        rt.frame(1.0 / 60.0);
+    }
+    assert_eq!(name_of(&rt, "generate/brief/problem"), t("brief.file_type"));
+    assert_eq!((name_of(&rt, "generate/brief/file/0"), name_of(&rt, "generate/brief/file/1")), (format!("logo.png · {}", t("brief.kind.logo")), format!("song.mp3 · {}", t("brief.kind.music"))));
+    click(&mut rt, "generate/brief/add");
+    rt.resolve_file_dialog(None).unwrap();
+    rt.frame(1.0 / 60.0);
+    // a file can be taken back out before the video is made
+    click(&mut rt, "generate/brief/file/1/remove");
+    assert!(!has(&rt, "generate/brief/file/1"));
+    type_into(&mut rt, "generate/brief/text", "Jelaskan bunga majemuk");
+    click(&mut rt, "generate/brief/create");
+    assert_eq!(calls(&e, "POST /api/generate/projects/").iter().filter(|c| c.contains("/assets")).cloned().collect::<Vec<_>>(), ["POST /api/generate/projects/p1/assets upload(logo.png|kind=logo)"]);
+}
+
+#[test]
+fn a_built_drafts_plays_in_the_app_and_a_file_that_cannot_come_is_said() {
+    let (mut rt, e) = lab("generate");
+    p1(&e, |d| {
+        d["plans"][0]["approvedAt"] = json!("2026-11-14T10:00:00Z");
+        d["versions"] = json!([ver("ver1", 1, "BUILT", json!({ "draftPath": "/drafts/ver1.mp4" }))]);
+    });
+    serve(&e, "GET /api/generate/versions/ver1", json!({ "version": ver("ver1", 1, "BUILT", json!({ "draftPath": "/drafts/ver1.mp4" })), "verdicts": [] }));
+    reread(&mut rt);
+    goto(&mut rt, "verdict");
+    assert!(!has(&rt, "generate/draft"));
+    e.fail_once("download", EngineError::Api { status: 404, message: "no draft".into() });
+    click(&mut rt, "generate/build/watch");
+    assert_eq!(name_of(&rt, "generate/error"), "no draft");
+    click(&mut rt, "generate/build/watch");
+    assert_eq!(calls(&e, "download(/api/generate/versions/ver1/draft)").len(), 2);
+    assert!(has(&rt, "generate/draft") && has(&rt, "clips/play"), "the player shows under the page");
+}
+
+#[test]
+fn a_recipe_is_built_as_steps_and_saved_as_the_json_it_makes() {
+    let (mut rt, e) = lab("generate");
+    click(&mut rt, "generate/nav/recipes");
+    click(&mut rt, "generate/recipe/mine");
+    // add (export stays last), reorder, remove
+    for key in ["generate/recipes/add/storylines", "generate/recipes/add", "generate/recipes/add/export", "generate/recipes/add", "generate/recipes/add/plan", "generate/recipes/add"] {
+        click(&mut rt, key);
+    }
+    assert_eq!(name_of(&rt, "generate/recipes/step/2/title"), "3. plan");
+    click(&mut rt, "generate/recipes/step/2/remove");
+    click(&mut rt, "generate/recipes/step/1/up");
+    // the first step (storylines): its gate and its numbers and switches
+    click(&mut rt, "generate/recipes/step/0/open");
+    for key in ["generate/recipes/step/0/gate/owner", "generate/recipes/step/0/with/count/inc", "generate/recipes/step/0/with/requireBold"] {
+        click(&mut rt, key);
+    }
+    assert_eq!(name_of(&rt, "generate/recipes/step/0/title"), format!("1. storylines · {}", tf("recipes.gate", &["owner"])));
+    // the second (plan): a choice, a condition, text and a list; an object setting says where it is edited
+    click(&mut rt, "generate/recipes/step/1/open");
+    assert!(!has(&rt, "generate/recipes/step/0/gate/owner"), "one step is open at a time: {:?}", rt.state.panels.studio.recipes.open_step);
+    assert!(has(&rt, "generate/recipes/step/1/with/extra"), "{:?}", rt.state.panels.studio.recipes.open_step);
+    for key in ["generate/recipes/step/1/with/mode/long", "generate/recipes/step/1/when/connection:vision"] {
+        click(&mut rt, key);
+    }
+    for (name, words) in [("note", "pendek"), ("tags", "a, b")] {
+        click(&mut rt, &format!("generate/recipes/step/1/with/{name}/edit"));
+        type_into(&mut rt, &format!("generate/recipes/step/1/with/{name}/input"), words);
+        click(&mut rt, &format!("generate/recipes/step/1/with/{name}/set"));
+    }
+    click(&mut rt, "generate/recipes/save");
+    let put = last(&e, "PUT /api/generate/recipes/mine").unwrap();
+    let body: Value = serde_json::from_str(put.splitn(3, ' ').nth(2).unwrap()).unwrap();
+    assert_eq!(
+        body["recipe"]["steps"],
+        json!([
+            { "use": "storylines", "gate": "owner", "with": { "count": 4, "requireBold": true } },
+            { "use": "plan", "when": "connection:vision", "with": { "mode": "long", "note": "pendek", "tags": ["a", "b"] } },
+            { "use": "export" },
+        ])
+    );
+    // JSON that is not a recipe leaves the form saying so; the name is set from its field
+    rt.update(|s, _| s.panels.studio.recipes.text = rune::TextEdit::new("{"));
+    rt.frame(1.0 / 60.0);
+    assert!(has(&rt, "generate/recipes/steps/broken"));
+    rt.update(|s, _| s.panels.studio.recipes.text = rune::TextEdit::new(r#"{"name":"A","steps":[]}"#));
+    rt.frame(1.0 / 60.0);
+    type_into(&mut rt, "generate/recipes/name", "Baru");
+    click(&mut rt, "generate/recipes/name/set");
+    assert!(rt.state.panels.studio.recipes.text.text.contains("\"name\": \"Resep sayaBaru\""));
 }

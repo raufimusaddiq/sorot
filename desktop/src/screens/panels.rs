@@ -49,6 +49,12 @@ pub trait Host: 'static {
     fn show(&mut self, page: Page);
     /// Shows a file in the system file manager (a host with none does nothing).
     fn reveal(&mut self, _path: &str) {}
+    /// Plays a version's draft video in the app's player (a host with none does nothing).
+    fn watch(&mut self, _version: &str) {}
+    /// The player's stage and transport, when a draft is loaded.
+    fn stage(&self, _label: &str) -> Option<rune::El> {
+        None
+    }
 }
 
 /// Starts `work` through the host.

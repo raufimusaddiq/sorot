@@ -7,15 +7,32 @@ use rune::{El, TextEdit, col, edit_access, row, text};
 use serde_json::Value;
 
 use crate::engine::generate as api;
-use crate::engine::generate::{Checked, RecipeItem};
-use crate::screens::generate::Studio;
-use crate::screens::generate::words::{t, tf};
+use crate::engine::generate::{Checked, RecipeItem, StepSpec};
+use crate::screens::generate::{Studio, steps};
+use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
 use crate::ui::form::{Tone, area, btn, card, choice, heading, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 
+/// The two ways to edit a recipe: as steps, or as its JSON.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tab {
+    #[default]
+    Steps,
+    Json,
+}
+
 pub struct Recipes {
+    pub tab: Tab,
+    /// The step library the form adds from.
+    pub specs: Vec<StepSpec>,
+    pub adding: usize,
+    pub open_step: Option<usize>,
+    /// The setting being typed (step, name) and its words.
+    pub typing: Option<(usize, String)>,
+    pub typed: TextEdit,
+    pub name: TextEdit,
     pub load: Load,
     pub items: Vec<RecipeItem>,
     pub selected: Option<String>,
@@ -32,7 +49,7 @@ pub struct Recipes {
 
 impl Default for Recipes {
     fn default() -> Self {
-        Recipes { load: Load::Idle, items: vec![], selected: None, text: TextEdit::new(""), checked: None, import: TextEdit::new(""), shared: None, busy: false, error: None }
+        Recipes { tab: Tab::Steps, specs: vec![], adding: 0, open_step: None, typing: None, typed: TextEdit::new(""), name: TextEdit::new(""), load: Load::Idle, items: vec![], selected: None, text: TextEdit::new(""), checked: None, import: TextEdit::new(""), shared: None, busy: false, error: None }
     }
 }
 
@@ -50,6 +67,8 @@ impl Recipes {
         self.selected = id.or_else(|| self.items.first().map(|r| r.id.clone())).filter(|id| self.items.iter().any(|r| &r.id == id));
         let json = self.current().map(|r| serde_json::to_string_pretty(&r.recipe).unwrap_or_default()).unwrap_or_default();
         (self.text, self.checked, self.shared) = (TextEdit::new(json), None, None);
+        (self.open_step, self.typing) = (None, None);
+        self.name = TextEdit::new(self.current().map(|r| r.name.clone()).unwrap_or_default());
     }
 }
 
@@ -72,6 +91,7 @@ fn listed(keep: Option<String>) -> impl FnOnce(&mut Panels, Result<Vec<RecipeIte
 pub fn load<H: Host>(h: &mut H) {
     h.panels_mut().studio.recipes.load = Load::Loading;
     go(h, |e| answer(api::recipes(e), listed(None)));
+    go(h, |e| answer(api::steps(e), |p, r| p.studio.recipes.specs = r.unwrap_or_default()));
 }
 
 fn choose<H: Host>(h: &mut H, id: &str) {
@@ -193,7 +213,13 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
                 .child(btn(dark, "generate/recipes/copy", &t("recipes.copy_mine"), true, !r.busy, copy::<H>));
         } else {
             detail = detail
-                .child(area(dark, "generate/recipes/text", &t("recipes.text"), &r.text, edit_access(|h: &mut H| &mut h.panels_mut().studio.recipes.text)))
+                .child(row().gap(8.0).child(choice(dark, "generate/recipes/tab/steps", &t("recipes.tab_steps"), r.tab == Tab::Steps, |h: &mut H| h.panels_mut().studio.recipes.tab = Tab::Steps)).child(choice(dark, "generate/recipes/tab/json", &t("recipes.tab_json"), r.tab == Tab::Json, |h: &mut H| h.panels_mut().studio.recipes.tab = Tab::Json)));
+            detail = if r.tab == Tab::Steps {
+                detail.child(steps::view::<H>(dark, r))
+            } else {
+                detail.child(area(dark, "generate/recipes/text", &t("recipes.text"), &r.text, edit_access(|h: &mut H| &mut h.panels_mut().studio.recipes.text)))
+            };
+            detail = detail
                 .child(
                     row().gap(10.0)
                         .child(btn(dark, "generate/recipes/save", &t("recipes.save"), true, !r.busy, save::<H>))
@@ -224,5 +250,5 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     if let Some(why) = &r.error {
         detail = detail.child(note(dark, "generate/recipes/failed", Tone::Bad, why));
     }
-    col().gap(16.0).w_full().child(head).child(row().gap(20.0).w_full().child(col().w(320.0).child(list)).child(col().grow(1.0).child(detail)))
+    col().gap(16.0).w_full().child(head).child(row().gap(20.0).w_full().child(col().w(320.0).child(list)).child(col().grow(1.0).shrink().child(detail)))
 }

@@ -10,8 +10,8 @@ pub mod ideas;
 pub mod kit;
 pub mod plan;
 pub mod recipes;
+pub mod steps;
 pub mod storylines;
-pub mod words;
 pub mod verdict;
 pub mod versions;
 
@@ -28,7 +28,16 @@ use crate::screens::panels::{Host, Load, Page, Panels, answer, go};
 use crate::ui::form::{Tone, btn, card, choice, heading, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
-use words::{t, tf};
+
+/// A Generate word by key (`i18n/{id,en}.json`, keys under `generate.`).
+pub fn t(key: &str) -> String {
+    crate::i18n::t(&format!("generate.{key}"))
+}
+
+/// `t(key)` with `{0}`, `{1}` ... replaced by `args`.
+pub fn tf(key: &str, args: &[&str]) -> String {
+    crate::i18n::tf(&format!("generate.{key}"), args)
+}
 
 /// The seven steps of a video, in order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +96,8 @@ pub struct Studio {
     /// The version whose verdicts show; `None` is the newest.
     pub shown: Option<String>,
     pub built: Option<Built>,
+    /// The version whose draft the app's player holds.
+    pub watching: Option<String>,
     pub busy: bool,
     pub error: Option<String>,
     pub notice: Option<String>,
@@ -472,9 +483,55 @@ pub fn view<H: Host>(h: &H) -> El {
                 View::Kit => col().gap(16.0).w_full().child(nav::<H>(dark, s.view)).child(kit::view::<H>(dark, s)),
                 View::Versions => versions::view::<H>(dark, s),
             };
-            c.child(page)
+            c = c.child(page);
+            let playing = s.watching.as_ref().and_then(|v| s.detail.as_ref()?.versions.iter().find(|x| &x.id == v));
+            if let Some(stage) = playing.and_then(|v| h.stage(&tf("verdict.version", &[&v.number.to_string()]))) {
+                c = c.child(stage.key("generate/draft"));
+            }
+            c
         }
         _ => state_block::<H>(dark, "generate/opening", Kind::Loading, &t("opening.cause"), &t("opening.next"), None),
     };
     col().key("generate/scroll").scroll(ScrollSpec { stick_bottom: false }).gap(20.0).padding(40.0).w_full().h_full().max_w(1100.0).child(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::i18n::{Lang, tr};
+
+    /// Every `t("key")` and `tf("key", ..)` in the Generate sources, and the keys built at run time,
+    /// name an entry in both languages with the same `{n}` slots.
+    #[test]
+    fn every_key_in_use_is_in_both_languages() {
+        let sources = [
+            include_str!("mod.rs").split("#[cfg(test)]").next().unwrap_or_default(), include_str!("brief.rs"), include_str!("build.rs"), include_str!("facts.rs"), include_str!("ideas.rs"), include_str!("kit.rs"),
+            include_str!("plan.rs"), include_str!("recipes.rs"), include_str!("steps.rs"), include_str!("storylines.rs"), include_str!("verdict.rs"), include_str!("versions.rs"),
+        ];
+        let mut used: Vec<String> = vec![];
+        for src in sources {
+            for call in ["t(\"", "tf(\""] {
+                for (at, _) in src.match_indices(call) {
+                    if src[..at].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                        continue;
+                    }
+                    used.push(src[at + call.len()..].split('"').next().unwrap_or_default().to_string());
+                }
+            }
+        }
+        used.extend(["lang.id", "lang.en"].map(String::from));
+        used.extend(["recipes.open_short", "recipes.close_short"].map(String::from));
+        used.extend(["image", "font", "music", "logo"].map(|k| format!("brief.kind.{k}")));
+        let steps = ["brief", "ideas", "facts", "stories", "plan", "build", "verdict"];
+        used.extend(steps.iter().flat_map(|s| [format!("step.{s}"), format!("step.{s}.sub")]));
+        used.extend(["QUEUED", "BUILDING", "BUILT", "FAILED", "CANCELLED"].map(|s| format!("status.{s}")));
+        used.extend(["unverified", "verified", "corrected", "unverifiable"].map(|s| format!("fact.{s}")));
+        used.extend(["technical", "creative"].iter().flat_map(|k| [format!("verdict.{k}"), format!("verdict.{k}.about")]));
+        used.extend(["author", "check", "render", "technical", "creative"].map(|k| format!("build.{k}")));
+        let slots = |s: &str| (0..4).filter(|i| s.contains(&format!("{{{i}}}"))).collect::<Vec<_>>();
+        for key in used.iter().map(|k| format!("generate.{k}")) {
+            let (id, en) = (tr(Lang::Id, &key), tr(Lang::En, &key));
+            assert!(id != key && en != key, "{key} is missing");
+            assert_eq!(slots(&id), slots(&en), "{key}: the slots differ between languages");
+        }
+    }
 }

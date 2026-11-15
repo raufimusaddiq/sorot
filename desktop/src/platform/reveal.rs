@@ -5,6 +5,8 @@ use std::process::{Command, Stdio};
 
 pub trait Reveal: Send + Sync {
     fn reveal(&self, path: &Path) -> Result<(), String>;
+    /// Opens the file itself in the system's video player.
+    fn open(&self, path: &Path) -> Result<(), String>;
 }
 
 pub struct OsReveal;
@@ -37,5 +39,20 @@ impl Reveal for OsReveal {
             "org.freedesktop.FileManager1.ShowItems", &format!("array:string:{uri}"), "string:",
         ]));
         shown.or_else(|_| run(Command::new("xdg-open").arg(path.parent().unwrap_or(path))))
+    }
+
+    #[cfg(windows)]
+    fn open(&self, path: &Path) -> Result<(), String> {
+        run(Command::new("cmd").args(["/C", "start", ""]).arg(path))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn open(&self, path: &Path) -> Result<(), String> {
+        run(Command::new("open").arg(path))
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn open(&self, path: &Path) -> Result<(), String> {
+        run(Command::new("xdg-open").arg(path))
     }
 }

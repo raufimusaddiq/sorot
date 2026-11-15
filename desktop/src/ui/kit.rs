@@ -4,6 +4,7 @@ use rune::tok::type_;
 use rune::{Color, El, Theme, col, text};
 
 use crate::app::State;
+use crate::ui::fx_moments::HOVER_SPRING;
 
 pub struct Pal {
     pub bg: Color,
@@ -37,5 +38,6 @@ pub fn button(dark: bool, key: impl Into<String>, label: &str, primary: bool, on
     let p = pal(dark);
     let (fill, ink) = if primary { (p.beam, p.bg) } else { (p.raised, p.text) };
     col().key(key.into()).role("button").label(label).focusable(true).padding(10.0).radius(6.0).fill(fill).border(1.0, p.divider)
+        .hover(p.text.alpha(0.08)).press(p.text.alpha(0.16)).press_scale(0.985).motion(HOVER_SPRING)
         .on_press(on_press).child(text(label).font(type_::LABEL).color(ink))
 }

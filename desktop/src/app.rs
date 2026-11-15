@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rune::{AppSpec, Cx, El, KeyEvent, Tx, col};
+use rune_fx::OneShots;
 use sorot_desktop_core::close::{CloseAction, ClosePref, on_close};
 use sorot_desktop_core::engine_conn::{FailReason, State as ConnState};
 use sorot_desktop_core::handshake::Ready;
@@ -20,6 +21,7 @@ use crate::engine::http::HttpEngine;
 use crate::engine::sidecar::{Sidecar, StartError};
 use crate::engine::{EditOptions, Engine, EngineError, ImportRequest, Started};
 use crate::library::Library;
+use crate::platform::gpu_probe::GpuProbe;
 use crate::platform::reveal::Reveal;
 use crate::platform::tray::{Tray, TrayCmd};
 use crate::preview::{NullPreview, Preview, PreviewCache};
@@ -138,8 +140,12 @@ pub enum Msg {
     Options { options: EditOptions, music: Vec<String> },
     /// The local file of a clip's preview, or why there is none.
     PreviewReady { clip_id: String, path: Result<PathBuf, String> },
+    /// A Generate version's draft is on this machine, or why it is not.
+    DraftReady { version_id: String, path: Result<PathBuf, String> },
     /// A notification was clicked.
     OpenJob(String),
+    /// What the GPU probe found: Rune draws on a CPU renderer.
+    Gpu { software: bool },
     /// A change to the settings, publish, learning or discover panels.
     Panel(Apply),
 }
@@ -420,6 +426,16 @@ pub struct State {
     pub notifications: bool,
     /// The engine runs on another machine: its files are downloaded, not shown in a folder.
     pub remote: bool,
+    /// Rune draws on a CPU renderer: no blur or glow, and previews open in the video player.
+    /// The job-done sparkle, thrown once when a job completes.
+    pub bursts: OneShots<()>,
+    pub cpu_renderer: bool,
+    /// The language of every string (Indonesian unless the person chose English).
+    pub lang: crate::i18n::Lang,
+    /// The menu whose list is open under the menu bar.
+    pub menu_open: Option<crate::screens::shell::Menu>,
+    /// The one dismissible "no graphics acceleration" notice.
+    pub gpu_notice: bool,
     pub now: f64,
     last_poll: f64,
     searched: bool,
@@ -439,7 +455,7 @@ impl Default for State {
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
             route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
-            now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
+            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
         }
     }
 }
@@ -569,11 +585,25 @@ impl State {
             Msg::PreviewReady { clip_id, path } => {
                 if let Some(clip) = self.selected_clip().filter(|c| c.id == clip_id).cloned() {
                     match path {
+                        Ok(file) if self.cpu_renderer => self.clips.external = Some(file),
                         Ok(file) => self.preview.open(&file, Some(clip.duration_sec)),
                         Err(why) => self.clips.preview_error = Some(why),
                     }
                 }
             }
+            Msg::DraftReady { version_id, path } => match path {
+                Ok(file) => {
+                    self.clips.preview_error = None;
+                    if self.cpu_renderer {
+                        self.clips.external = Some(file);
+                    } else {
+                        self.preview.open(&file, None);
+                    }
+                    self.panels.studio.watching = Some(version_id);
+                }
+                Err(why) => self.panels.studio.error = Some(why),
+            },
+            Msg::Gpu { software } => (self.cpu_renderer, self.gpu_notice) = (software, software),
             Msg::OpenJob(id) => {
                 if let Some(h) = &self.handle {
                     h.show();
@@ -676,6 +706,24 @@ impl State {
             }
             None => library_work(lib.as_ref(), &config, &data_dir, cmd, &mut |_| {}).into_iter().for_each(|m| self.apply(m)),
         }
+    }
+
+    /// A CPU renderer cannot play video well: Play hands the clip to the system's video player.
+    pub fn open_externally(&mut self) {
+        let Some(file) = self.clips.external.clone() else { return };
+        if let Some(Err(e)) = self.reveal.as_ref().map(|r| r.open(&file)) {
+            self.clips.preview_error = Some(format!("Could not open your video player: {e}"));
+        }
+    }
+
+    pub fn hide_window(&mut self) {
+        if let Some(h) = &self.handle {
+            h.hide();
+        }
+    }
+
+    pub fn dismiss_gpu_notice(&mut self) {
+        self.gpu_notice = false;
     }
 
     pub fn toggle_keys(&mut self) {
@@ -829,6 +877,8 @@ impl State {
         }
         let watching = matches!(self.route, Route::Job(_)) && self.conn == Conn::Ready;
         changed |= watching && (self.poll_job(t) || self.job.detail.as_ref().is_some_and(|d| d.job.is_running()));
+        let sparkling = self.bursts.is_animating(t as f32, crate::ui::fx_moments::sparkle_params(0.0).burst_life());
+        changed |= (watching && self.job.moving(t)) || sparkling || (matches!(self.route, Route::Clips(_)) && self.clips.moving(t as f32));
         changed || self.preview.state() == crate::preview::PreviewState::Playing
     }
 
@@ -840,6 +890,8 @@ impl State {
 }
 
 pub fn view(s: &State, _: &mut Cx<State>) -> El {
+    crate::i18n::set_current(s.lang);
+    crate::ui::beam::begin_screen();
     let p = pal(s.dark);
     let body = match s.screen() {
         Screen::Home => shell::with_rail(s, home::view(s)),
@@ -867,11 +919,17 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
         }
     };
     let body = if s.close_dialog { col().grow(1.0).w_full().center().child(shell::close_dialog(s)) } else { body };
-    let mut root = col().w_full().h_full().fill(p.bg);
+    let mut root = col().w_full().h_full().fill(p.bg).child(shell::menu_bar(s));
+    if let Some(list) = shell::menu_list(s) {
+        root = root.child(list);
+    }
     if let Some(banner) = shell::banner(s) {
         root = root.child(banner);
     }
-    root.child(body).child(toast_stack(s.dark, &s.toasts))
+    if let Some(notice) = shell::gpu_notice(s) {
+        root = root.child(notice);
+    }
+    root.child(body).child(toast_stack(s.dark, &s.toasts).pin(Some(0.0), None, Some(0.0), Some(0.0)))
 }
 
 impl Host for State {
@@ -901,6 +959,25 @@ impl Host for State {
 
     fn reveal(&mut self, path: &str) {
         self.reveal_path(std::path::Path::new(path));
+    }
+
+    fn watch(&mut self, version: &str) {
+        let Some(engine) = self.engine.clone() else { return };
+        let dest = self.preview_dir().join(format!("draft-{}.mp4", version.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()));
+        let id = version.to_string();
+        let work = move || {
+            let _ = dest.parent().map(std::fs::create_dir_all);
+            let path = crate::engine::generate::download_draft(engine.as_ref(), &id, &dest).map(|_| dest).map_err(|e| e.to_string());
+            vec![Msg::DraftReady { version_id: id, path }]
+        };
+        match self.bus.clone() {
+            Some(bus) => bus.background(Box::new(work)),
+            None => work().into_iter().for_each(|m| self.apply(m)),
+        }
+    }
+
+    fn stage(&self, label: &str) -> Option<rune::El> {
+        Some(crate::ui::clip_stage::stage(self, label, 0.0))
     }
 
     fn show(&mut self, page: crate::screens::panels::Page) {
@@ -947,6 +1024,26 @@ pub const SCENES: &[Scene] = &[
     ("readiness-missing", |s| *s = State::scene("readiness-missing")),
     ("engine-failed", |s| *s = State::scene("engine-failed")),
     ("first-run", |s| *s = State::scene("first-run")),
+    ("job-running", |s| {
+        *s = State::scene("job-running");
+        s.open_job("j1");
+    }),
+    ("clips-ranked", |s| {
+        *s = State::scene("clips-ranked");
+        s.show_clips("vnew");
+    }),
+    ("clips-reranked", |s| {
+        *s = State::scene("clips-reranked");
+        s.show_clips("vnew");
+        let mut clips = s.clips.clips.clone();
+        (clips[0].rank_pos, clips[1].rank_pos) = (Some(2), Some(1));
+        s.apply(Msg::Clips { video_id: "vnew".into(), clips });
+    }),
+    ("editor-hook", |s| {
+        *s = State::scene("editor-hook");
+        s.show_clips("vnew");
+        s.open_editor("c1");
+    }),
     ("connections", |s| {
         *s = State::scene("connections");
         s.show(Page::Connections);
@@ -1026,6 +1123,7 @@ pub struct Live {
     pub reveal: Arc<dyn Reveal>,
     pub notifier: Arc<dyn Notifier>,
     pub preview: fn() -> Box<dyn Preview>,
+    pub gpu: Arc<dyn GpuProbe>,
 }
 
 /// Puts the tray up. On macOS the Dock is the way back, so no tray is needed there.
@@ -1036,7 +1134,7 @@ pub fn install_tray(handle: &rune::AppHandle<State>, tray: &dyn Tray) -> bool {
 
 /// A state for a real engine: boots it on a task thread and keeps polling it.
 pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
-    let Live { supervisor, library, config_dir, saved, data_dir, tray, reveal, notifier, preview } = live;
+    let Live { supervisor, library, config_dir, saved, data_dir, tray, reveal, notifier, preview, gpu } = live;
     let sup = Arc::new(Mutex::new(supervisor));
     let (boot, bus) = (handle.clone(), Arc::new(RuneBus(handle.clone())));
     let worker = sup.clone();
@@ -1044,6 +1142,11 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
         let msgs = worker.lock().unwrap().boot();
         boot.update(apply_msgs(msgs));
         schedule(boot, worker, Duration::from_secs(1));
+    });
+    let probed = handle.clone();
+    let _ = rune::task::spawn("sorot-gpu", move || {
+        let software = gpu.software();
+        probed.update(apply_msgs(vec![Msg::Gpu { software }]));
     });
     let background_ok = install_tray(&handle, tray.as_ref());
     let opener = handle.clone();
@@ -1053,7 +1156,7 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
 
 pub fn run(live: fn() -> Live) {
     // Closing the window hides it; `State::closing` decides whether the app goes with it.
-    let app = rune::App::new(spec()).keep_running().on_close(|s: &mut State, tx: &mut Tx| {
+    let app = rune::App::new(spec()).compositor(crate::platform::fx_compositor::FxCompositor::default()).keep_running().on_close(|s: &mut State, tx: &mut Tx| {
         if s.closing() {
             tx.quit();
         }

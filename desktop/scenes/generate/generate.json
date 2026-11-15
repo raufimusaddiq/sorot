@@ -660,5 +660,73 @@
         ]
       }
     }
+  },
+  "GET /api/generate/steps": {
+    "steps": [
+      {
+        "type": "storylines",
+        "gates": [
+          "none",
+          "owner",
+          "director"
+        ],
+        "fields": {
+          "count": {
+            "t": "int",
+            "min": 1,
+            "max": 5
+          },
+          "requireBold": {
+            "t": "bool"
+          }
+        },
+        "required": [],
+        "defaults": {
+          "count": 3
+        }
+      },
+      {
+        "type": "plan",
+        "gates": [
+          "none",
+          "owner"
+        ],
+        "fields": {
+          "blocks": {
+            "t": "bool"
+          },
+          "mode": {
+            "t": "enum",
+            "values": [
+              "short",
+              "long"
+            ]
+          },
+          "note": {
+            "t": "str",
+            "max": 80
+          },
+          "tags": {
+            "t": "strs",
+            "maxItems": 5
+          },
+          "extra": {
+            "t": "obj",
+            "fields": {}
+          }
+        },
+        "required": [],
+        "defaults": {}
+      },
+      {
+        "type": "export",
+        "gates": [
+          "none"
+        ],
+        "fields": {},
+        "required": [],
+        "defaults": {}
+      }
+    ]
   }
 }

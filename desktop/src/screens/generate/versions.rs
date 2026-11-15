@@ -5,7 +5,7 @@
 use rune::tok::type_;
 use rune::{El, col, row, text};
 
-use crate::screens::generate::words::{t, tf};
+use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Step, Studio, View, act, go_view, poll};
 use crate::screens::panels::Host;
 use crate::ui::form::{btn, card, heading};

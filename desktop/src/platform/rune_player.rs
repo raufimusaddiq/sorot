@@ -4,7 +4,7 @@ use std::path::Path;
 
 use rune::{El, Player, PlayerState, SurfaceFit};
 
-use super::{Preview, PreviewState};
+use crate::preview::{Preview, PreviewState};
 
 pub fn new() -> Box<dyn Preview> {
     Box::new(RunePlayer::default())

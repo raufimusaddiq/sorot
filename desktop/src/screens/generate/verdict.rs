@@ -7,7 +7,7 @@ use rune::tok::type_;
 use rune::{El, col, edit_access, row, text};
 
 use crate::engine::generate::{Detail, Finding, Verdict};
-use crate::screens::generate::words::{t, tf};
+use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Studio, build};
 use crate::screens::panels::Host;
 use crate::ui::form::{Tone, area, btn, card, note};
@@ -97,9 +97,10 @@ pub fn view<H: Host>(dark: bool, s: &Studio, d: &Detail) -> El {
         .child(area(dark, "generate/build/note", &t("verdict.note"), &s.build.note, edit_access(|h: &mut H| &mut h.panels_mut().studio.build.note)))
         .child(btn(dark, "generate/build/fix-note", &t("verdict.fix_note"), false, !s.busy && !s.build.note.text.trim().is_empty(), move |h: &mut H| build::fix(h, &v2, vec![], true)));
     if let Some(path) = &shown.draft_path {
-        let path = path.clone();
+        let (path, wv) = (path.clone(), shown.id.clone());
         actions = actions
             .child(text(tf("verdict.draft", &[&path])).font(type_::LABEL).color(p.muted).wrap())
+            .child(btn(dark, "generate/build/watch", &t("verdict.watch"), true, !s.busy, move |h: &mut H| h.watch(&wv)))
             .child(btn(dark, "generate/build/reveal-draft", &t("verdict.reveal_draft"), false, true, move |h: &mut H| h.reveal(&path)));
     }
     if accepted {

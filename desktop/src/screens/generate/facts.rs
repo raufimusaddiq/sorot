@@ -8,7 +8,7 @@ use rune::{El, TextEdit, col, edit_access, row, text};
 use crate::engine::generate as api;
 use crate::engine::generate::Fact;
 use crate::screens::generate::Studio;
-use crate::screens::generate::words::{t, tf};
+use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
 use crate::ui::form::{Tone, btn, card, field, note};
 use crate::ui::kit::pal;

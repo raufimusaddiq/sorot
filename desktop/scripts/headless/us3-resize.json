@@ -1,0 +1,7 @@
+{"events": [
+  {"t": 0.2, "type": "mark", "name": "wide"},
+  {"t": 0.3, "type": "resize", "dw": -320, "dh": -160, "dur": 0.5},
+  {"t": 1.2, "type": "mark", "name": "small"},
+  {"t": 1.3, "type": "resize", "dw": 320, "dh": 160, "dur": 0.5},
+  {"t": 2.2, "type": "mark", "name": "end"}
+]}

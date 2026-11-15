@@ -19,6 +19,14 @@ pub fn btn<H: 'static>(dark: bool, key: impl Into<String>, label: &str, primary:
     if enabled { b.focusable(true).on_press(on_press) } else { b.disabled(true) }
 }
 
+/// A button that asks for a file: `on_press` gets the host and the `Tx` to open the dialog with.
+pub fn btn_tx<H: 'static>(dark: bool, key: impl Into<String>, label: &str, enabled: bool, on_press: impl Fn(&mut H, &mut rune::Tx) + 'static) -> El {
+    let p = pal(dark);
+    let (fill, ink) = if enabled { (p.raised, p.text) } else { (p.surface, p.muted) };
+    let b = col().key(key.into()).role("button").label(label).padding(10.0).radius(6.0).fill(fill).border(1.0, p.divider).child(text(label).font(type_::LABEL).color(ink));
+    if enabled { b.focusable(true).on_press_tx(on_press) } else { b.disabled(true) }
+}
+
 /// A one-line field bound to a `TextEdit` in the host. `secure` hides what is typed.
 pub fn field<H: 'static, F>(dark: bool, key: &str, name: &str, edit: &TextEdit, hint: &str, secure: bool, access: F) -> El
 where

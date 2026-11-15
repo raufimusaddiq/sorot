@@ -105,6 +105,43 @@ impl HttpEngine {
         Ok(n)
     }
 
+    /// Multipart by hand: one file part named `file`, then a text part for each of `fields`.
+    fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value> {
+        let io = |e: std::io::Error| EngineError::Network(e.to_string());
+        let bytes = std::fs::read(file).map_err(io)?;
+        let name = file.file_name().map(|n| n.to_string_lossy().replace('"', "_")).unwrap_or_default();
+        let boundary = format!("sorot-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+        let mut body = Vec::new();
+        for (k, v) in fields {
+            body.extend(format!("--{boundary}
+Content-Disposition: form-data; name=\"{k}\"
+
+{v}
+").into_bytes());
+        }
+        body.extend(format!("--{boundary}
+Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"
+Content-Type: application/octet-stream
+
+").into_bytes());
+        body.extend(bytes);
+        body.extend(format!("
+--{boundary}--
+").into_bytes());
+        let mut req = self.agent.post(format!("{}{path}", self.base)).header("Content-Type", format!("multipart/form-data; boundary={boundary}"));
+        if let Some(t) = &self.token {
+            req = req.header("Authorization", format!("Bearer {t}"));
+        }
+        let mut resp = req.send(&body[..]).map_err(|e| EngineError::Network(e.to_string()))?;
+        let status = resp.status().as_u16();
+        let text = resp.body_mut().read_to_string().map_err(|e| EngineError::Network(e.to_string()))?;
+        if status == 401 {
+            return Err(EngineError::Unauthorized);
+        }
+        let env: Envelope<Value> = serde_json::from_str(&text).map_err(malformed)?;
+        env.into_result().map_err(|message| EngineError::Api { status, message })
+    }
+
     fn call<T: DeserializeOwned>(&self, method: &str, path: &str, body: Option<Value>) -> Result<T> {
         let (status, text) = self.raw(method, path, body)?;
         let env: Envelope<T> = serde_json::from_str(&text).map_err(malformed)?;
@@ -280,6 +317,9 @@ impl Engine for HttpEngine {
     fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
         HttpEngine::call::<Value>(self, method, path, body)
     }
+    fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value> {
+        HttpEngine::upload(self, path, file, fields)
+    }
     fn auto_status(&self, id: &str) -> Result<AutoRun> {
         self.get(&format!("/api/discover/auto/{id}"))
     }
@@ -423,7 +463,11 @@ mod tests {
         let _ = (g::run_idea(&e, Some("i")), g::run_idea(&e, None), g::facts(&e, "p"), g::add_fact(&e, "p", "c", "v", "u"), g::add_fact(&e, "p", "c", "", "u"), g::delete_fact(&e, "f"), g::verify_facts(&e, "p"));
         let r = json!({"id": "r"});
         let _ = (g::recipes(&e), g::validate_recipe(&e, &r), g::copy_recipe(&e, "a", "b", "n"), g::save_recipe(&e, "r", &r), g::delete_recipe(&e, "r"), g::import_recipe(&e, &r), g::export_recipe(&e, "r"));
-        let _ = (g::kit_parts(&e), g::remove_kit_part(&e, "a b"));
+        let _ = (g::kit_parts(&e), g::remove_kit_part(&e, "a b"), g::steps(&e), g::delete_asset(&e, "a1"));
+        let file = std::env::temp_dir().join(format!("sorot-up-{}.png", std::process::id()));
+        std::fs::write(&file, b"PNGDATA").unwrap();
+        let _ = g::upload_asset(&e, "p", &file, "logo");
+        let _ = std::fs::remove_file(&file);
         let got: Vec<_> = seen.lock().unwrap().iter().map(|(m, p, _)| format!("{m} {p}")).collect();
         let want = [
             "GET /api/generate/projects ",
@@ -463,8 +507,14 @@ mod tests {
             "GET /api/generate/recipes/r/export ",
             "GET /api/generate/kit ",
             "DELETE /api/generate/kit/a%20b ",
+            "GET /api/generate/steps ",
+            "DELETE /api/generate/assets/a1 ",
         ];
-        assert_eq!(got, want);
+        assert_eq!(&got[..want.len()], want);
+        let up = got.last().unwrap();
+        assert!(up.starts_with("POST /api/generate/projects/p/assets --sorot-") && up.contains("name=\"kind\"
+
+logo") && up.contains("filename=\"sorot-up-") && up.contains("PNGDATA"), "{up}");
     }
 
     /// The settings, publish, learning and discover routes: method, path and body of each.

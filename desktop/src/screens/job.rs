@@ -3,28 +3,77 @@
 
 use rune::tok::type_;
 use rune::{El, col, row, text};
+use rune_fx::{Heat, OneShots};
 use sorot_desktop_core::job::JobView;
+use sorot_desktop_core::job::StageState;
 use sorot_desktop_core::model::{JobDetail, JobPhase};
 
 use crate::app::{Cmd, Route, State};
+use crate::ui::beam::heat_light;
 use crate::ui::clip_stage::clock;
+use crate::ui::fx_moments::PULSE_LIFE;
 use crate::ui::kit::{button, pal};
-use crate::ui::stage_track::{self, running_report, stage_name};
+use crate::ui::stage_track::{self, TrackFx, running_report, stage_name};
 use crate::ui::states::{Kind, state_block};
 
-#[derive(Default)]
 pub struct JobScreen {
     pub id: String,
     pub detail: Option<JobDetail>,
     /// App clock when the screen opened.
     pub opened: f64,
     pub last_poll: f64,
+    /// The beam head's light: warms when the engine reports progress, cools when it stops.
+    pub heat: Heat,
+    /// The active stage and percent of the last report; a change is progress.
+    sig: Option<(Option<usize>, Option<u8>)>,
+    last_progress: f64,
+    /// Stages that just finished, for the one-shot ring (`StagePulse`).
+    pub rings: OneShots<usize>,
+}
+
+impl Default for JobScreen {
+    fn default() -> Self {
+        JobScreen { id: String::new(), detail: None, opened: 0.0, last_poll: 0.0, heat: heat_light(), sig: None, last_progress: 0.0, rings: OneShots::new(4) }
+    }
+}
+
+impl JobScreen {
+    /// A report arrived: warm the light on progress, ring the stages that finished.
+    fn feel(&mut self, now: f64, detail: &JobDetail) {
+        let (t, view) = (now as f32, JobView::from_detail(detail));
+        if let Some(before) = self.detail.as_ref().map(JobView::from_detail) {
+            for (i, (a, b)) in before.stages.iter().zip(&view.stages).enumerate() {
+                if a.state != StageState::Done && b.state == StageState::Done {
+                    self.rings.trigger(t, i);
+                }
+            }
+        }
+        let sig = (view.active, running_report(&view, &detail.stages).and_then(|r| r.1));
+        if self.sig != Some(sig) && detail.job.is_running() {
+            self.heat.set(t, true);
+            self.last_progress = now;
+        }
+        self.sig = Some(sig);
+    }
+
+    /// Cools an idle light, and says whether anything on the track still moves at `now`.
+    pub fn moving(&mut self, now: f64) -> bool {
+        if now - self.last_progress > 1.0 {
+            self.heat.set(now as f32, false);
+        }
+        self.heat.is_active(now as f32) || self.rings.is_animating(now as f32, PULSE_LIFE)
+    }
+
+    pub fn track_fx(&self, now: f64) -> TrackFx {
+        let t = now as f32;
+        TrackFx { heat: self.heat.at(t), rings: self.rings.live(t, PULSE_LIFE).map(|(s, k)| (s.data, s.t0, k, s.seed)).collect() }
+    }
 }
 
 impl State {
     pub fn open_job(&mut self, id: &str) {
         self.route = Route::Job(id.to_string());
-        self.job = JobScreen { id: id.to_string(), detail: None, opened: self.now, last_poll: self.now };
+        self.job = JobScreen { id: id.to_string(), opened: self.now, last_poll: self.now, ..JobScreen::default() };
         self.send(Cmd::PollJob(id.to_string()));
     }
 
@@ -38,6 +87,10 @@ impl State {
             return;
         }
         let done = detail.job.phase() == JobPhase::Completed;
+        self.job.feel(self.now, &detail);
+        if done {
+            self.bursts.trigger(self.now as f32, ());
+        }
         let video = detail.job.video_id.clone();
         self.job.detail = Some(detail);
         if done {
@@ -110,6 +163,6 @@ pub fn view(s: &State) -> El {
     col().gap(24.0).padding(24.0).w_full().h_full()
         .child(text("Making clips").role("heading").level(1).font(type_::TITLE).color(p.text))
         .child(head)
-        .child(stage_track::track(s.dark, &jv, percent))
+        .child(stage_track::track(s.dark, &jv, percent, &s.job.track_fx(s.now)))
         .child(actions)
 }

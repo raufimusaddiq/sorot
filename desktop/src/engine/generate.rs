@@ -3,6 +3,7 @@
 //! do not edit ride along in `rest`, so a plan saved back is the plan that was read.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -546,4 +547,36 @@ pub fn kit_parts(e: &dyn Engine) -> Result<Vec<KitPart>> {
 
 pub fn remove_kit_part(e: &dyn Engine, name: &str) -> Result<()> {
     e.call("DELETE", &format!("{BASE}/kit/{}", super::http::encode(name)), None).map(drop)
+}
+
+/// Adds a file (a logo, an image, a font, music) to a video's brief; `kind` is what it is for.
+pub fn upload_asset(e: &dyn Engine, project: &str, file: &Path, kind: &str) -> Result<()> {
+    e.upload(&format!("{BASE}/projects/{project}/assets"), file, &[("kind", kind)]).map(drop)
+}
+
+pub fn delete_asset(e: &dyn Engine, id: &str) -> Result<()> {
+    e.call("DELETE", &format!("{BASE}/assets/{id}"), None).map(drop)
+}
+
+/// The step library a recipe is made from: each step's gates and the settings it takes.
+pub fn steps(e: &dyn Engine) -> Result<Vec<StepSpec>> {
+    field(e.call("GET", &format!("{BASE}/steps"), None)?, "steps")
+}
+
+/// A version's draft video into `dest`; the bytes written.
+pub fn download_draft(e: &dyn Engine, version: &str, dest: &Path) -> Result<u64> {
+    e.download(&format!("{BASE}/versions/{version}/draft"), dest)
+}
+
+/// One step of the library: `fields` is the schema of its `with` settings.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct StepSpec {
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub gates: Vec<String>,
+    #[serde(default)]
+    pub fields: Map<String, Value>,
+    #[serde(default)]
+    pub defaults: Map<String, Value>,
 }

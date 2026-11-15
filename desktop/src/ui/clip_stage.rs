@@ -6,6 +6,7 @@ use sorot_desktop_core::model::Clip;
 
 use crate::app::State;
 use crate::preview::PreviewState;
+use crate::ui::fx_moments::{Moment, slot};
 use crate::ui::kit::{button, pal};
 
 /// `m:ss`.
@@ -20,23 +21,32 @@ pub fn title(clip: &Clip) -> String {
 }
 
 pub fn view(s: &State, clip: &Clip) -> El {
+    stage(s, &title(clip), clip.duration_sec)
+}
+
+/// The stage and transport for whatever the player holds: `label` names it, `length` is its
+/// length until the player knows its own.
+pub fn stage(s: &State, label: &str, length: f64) -> El {
     let p = pal(s.dark);
     let state = s.preview.state();
     let note = match (&state, &s.clips.preview_error) {
         (_, Some(why)) => Some(why.clone()),
+        _ if s.cpu_renderer => Some("Previews open in your video player. Press Play.".to_string()),
         (PreviewState::Error(why), _) => Some(format!("The preview cannot play: {why}")),
         (PreviewState::Idle | PreviewState::Loading, _) => Some("Loading the preview".to_string()),
         _ => None,
     };
-    let mut face = col().key("clips/stage").role("img").label(title(clip))
+    let mut face = col().key("clips/stage").role("img").label(label)
         .aspect_ratio(9.0 / 16.0).h(340.0).center().fill(p.bg).border(1.0, p.divider).radius(8.0);
     if let Some(note) = note {
         face = face.child(text(note).key("clips/stage/note").role("status").font(type_::BODY).color(p.muted).wrap().max_w(220.0));
     }
     let face = s.preview.paint(face);
     let playing = state == PreviewState::Playing;
-    let total = s.preview.duration().unwrap_or(clip.duration_sec);
-    let controls = row().gap(10.0).items_center()
+    let total = s.preview.duration().unwrap_or(length);
+    // The transport bar: matte graphite on a CPU renderer, reeded glass where the GPU can draw it.
+    let controls = row().key("clips/transport").gap(10.0).padding(8.0).radius(12.0).fill(p.surface).items_center()
+        .child(slot(Moment::TransportGlass, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
         .child(button(s.dark, "clips/play", if playing { "Pause" } else { "Play" }, true, |s: &mut State| s.toggle_play()))
         .child(text(format!("{} / {}", clock(s.preview.time()), clock(total))).key("clips/time").font(type_::LABEL).color(p.muted));
     col().gap(10.0).items_center().child(face).child(controls)

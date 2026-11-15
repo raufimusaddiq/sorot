@@ -135,6 +135,8 @@ pub trait Engine: Send + Sync {
     /// `GET path` into `dest` (a file route: a kit part's zip); the bytes written.
     fn download(&self, path: &str, dest: &Path) -> Result<u64>;
     fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value>;
+    /// `POST path` as multipart form data: the file in the field `file`, plus `fields`.
+    fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value>;
 }
 
 #[cfg(test)]

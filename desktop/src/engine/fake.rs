@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
-use serde_json::Value;
+use serde_json::{Value, json};
 use sorot_desktop_core::model::*;
 
 use super::sidecar::{Clock, Launch, Out, Proc, Spawn};
@@ -419,6 +419,14 @@ impl Engine for FakeEngine {
         write_fake(dest)
     }
 
+    /// An upload is recorded with its file name and fields, and answers like the engine: the asset.
+    fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value> {
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let fields = fields.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("&");
+        self.enter(format!("POST {path} upload({name}|{fields})"), &format!("POST {path}"))?;
+        Ok(json!({ "asset": { "id": "a1", "projectId": "p1", "kind": "image", "origin": "upload", "path": name } }))
+    }
+
     /// A route answers from a test's `serve("METHOD path", envelope)`, else from the scene's
     /// `generate.json` (`{"METHOD path": data}`, or `{"$steps": [..]}` for one answer per call, the
 /// last repeating); a write nobody described answers `{}`.
@@ -557,6 +565,8 @@ impl Spawn for FakeSpawn {
 #[derive(Default)]
 pub struct RecordReveal {
     pub shown: Mutex<Vec<PathBuf>>,
+    /// Files opened in the video player rather than shown in a folder.
+    pub opened: Mutex<Vec<PathBuf>>,
 }
 
 impl crate::platform::reveal::Reveal for RecordReveal {
@@ -568,6 +578,11 @@ impl crate::platform::reveal::Reveal for RecordReveal {
                 let _ = writeln!(f, "{}", path.display());
             }
         }
+        Ok(())
+    }
+
+    fn open(&self, path: &Path) -> std::result::Result<(), String> {
+        self.opened.lock().unwrap().push(path.to_path_buf());
         Ok(())
     }
 }

@@ -92,6 +92,7 @@ pub fn live_of(sup: sorot_desktop::app::Supervisor) -> sorot_desktop::app::Live 
         reveal: std::sync::Arc::new(RecordReveal::default()),
         notifier: std::sync::Arc::new(RecordNotifier::default()),
         preview: || Box::new(sorot_desktop::preview::NullPreview::default()),
+        gpu: std::sync::Arc::new(FakeGpu(false)),
     }
 }
 
@@ -109,4 +110,39 @@ impl sorot_desktop::platform::tray::Tray for FakeTray {
         *self.installed.lock().unwrap() = Some(on);
         self.works
     }
+}
+
+/// A GPU probe with a fixed answer: `true` is a CPU renderer.
+pub struct FakeGpu(pub bool);
+
+impl sorot_desktop::platform::gpu_probe::GpuProbe for FakeGpu {
+    fn software(&self) -> bool {
+        self.0
+    }
+}
+
+/// Every effect slot the frame drew: its moment and payload (what the compositor would be handed).
+pub fn slots(rt: &Runtime<State>) -> Vec<(sorot_desktop::ui::fx_moments::Moment, [f32; 4])> {
+    rt.instances
+        .iter()
+        .filter(|i| i.params[1] == rune::render::KIND_EFFECT)
+        .filter_map(|i| {
+            let mark = (i.border[0] as u32 & 0xFFFF) | (i.border[1] as u32 & 0xFFFF) << 16;
+            sorot_desktop::ui::fx_moments::Moment::from_mark(mark).map(|m| (m, i.uv))
+        })
+        .collect()
+}
+
+/// Runs `f` on the state and frames once.
+pub fn poke(rt: &mut Runtime<State>, f: impl FnOnce(&mut State) + Send + 'static) {
+    rt.update(move |s, _| f(s));
+    rt.frame(1.0 / 60.0);
+}
+
+/// The app's scenes by name, as `Runtime`s on the scene's own screen.
+pub fn scene_rt(name: &str) -> Runtime<State> {
+    let (_, build) = sorot_desktop::app::SCENES.iter().find(|(n, _)| *n == name).unwrap_or_else(|| panic!("no scene {name}"));
+    let mut state = State::default();
+    build(&mut state);
+    runtime_of(state)
 }

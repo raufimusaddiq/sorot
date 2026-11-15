@@ -7,7 +7,7 @@ use rune::{El, TextEdit, col, edit_access, row, text};
 
 use crate::engine::generate as api;
 use crate::engine::generate::Idea;
-use crate::screens::generate::words::{t, tf};
+use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Studio, open_one, opened};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
 use crate::ui::form::{area, btn, card, field};

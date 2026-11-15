@@ -42,7 +42,7 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
 
 #[test]
 fn the_scenes_are_listed_and_render_in_both_themes() {
-    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
+    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "job-running", "clips-ranked", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
     for theme in ["dark", "light"] {
         let png = snap("readiness-missing", theme, "900x600");
         let _ = std::fs::remove_file(png);
@@ -96,6 +96,18 @@ fn the_us5_journeys_reach_their_screens() {
             if shown.starts_with("generate/") {
                 assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{script} at {mark}");
             }
+        }
+    }
+}
+
+/// Reflow: each main screen from 1280x800 down to the 960x640 minimum and back up; at every stop no
+/// text is clipped and no two controls overlap.
+#[test]
+fn the_main_screens_reflow_without_clipping_or_overlap() {
+    for scene in ["home-empty", "job-running", "clips-ranked", "editor-hook"] {
+        for mark in ["wide", "small", "end"] {
+            let tree = run_at(scene, Some("us3-resize"), mark, &["--size", "1280x800"], &[]);
+            assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{scene} at {mark} ({:?})", tree.0["viewport"]);
         }
     }
 }
