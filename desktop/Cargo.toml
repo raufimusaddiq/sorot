@@ -96,7 +96,14 @@ notify-rust = "4"
 libc = "0.2.191"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
+raw-window-handle = "0.6"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = ["NSString", "NSObject"] }
+rune-mac = { git = "https://github.com/anomalyco/rune", rev = "73b7dec296e6c1284ebdf8af53f544444611c0ae" }
 
 # Debuginfo is what made each test exe carry a ~490 MB PDB: line tables only for our code (panics
 # keep file:line, llvm-cov keeps per-line counts), none for dependencies.

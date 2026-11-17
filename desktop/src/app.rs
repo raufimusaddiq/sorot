@@ -152,6 +152,8 @@ pub enum Msg {
     DraftReady { version_id: String, path: Result<PathBuf, String> },
     /// A notification was clicked.
     OpenJob(String),
+    /// A video the OS opened with Sorot.
+    OpenFile(PathBuf),
     /// What the GPU probe found: Rune draws on a CPU renderer.
     Gpu { software: bool },
     /// A change to the settings, publish, learning or discover panels.
@@ -464,12 +466,18 @@ pub struct State {
     /// The one dismissible "no graphics acceleration" notice.
     pub gpu_notice: bool,
     pub now: f64,
+    /// The view saved last time, until the engine first answers.
+    pub(crate) pending_view: Option<crate::session::ViewMemory>,
+    /// App clock of the last look for files other launches left.
+    pub(crate) opened_polled: f64,
+    pub taskbar: Option<Arc<dyn crate::session::Taskbar>>,
+    pub taskbar_shown: crate::session::Progress,
     last_poll: f64,
     searched: bool,
     data_dir: String,
-    config_dir: Option<PathBuf>,
+    pub(crate) config_dir: Option<PathBuf>,
     library: Option<Arc<dyn Library>>,
-    handle: Option<rune::AppHandle<State>>,
+    pub(crate) handle: Option<rune::AppHandle<State>>,
     bus: Option<Arc<dyn Bus>>,
     supervisor: Option<Arc<Mutex<Supervisor>>>,
     preview_cache: Option<Arc<Mutex<PreviewCache>>>,
@@ -496,7 +504,7 @@ impl Default for State {
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
             route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
-            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, native_popups: false, palette: Default::default(), focus_route: Route::Home, focus_clips: false, system_menu_bar: false, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None, prefs_store: None, os_locale: None,
+            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, native_popups: false, palette: Default::default(), focus_route: Route::Home, focus_clips: false, system_menu_bar: false, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, pending_view: None, opened_polled: 0.0, taskbar: None, taskbar_shown: crate::session::Progress::None, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None, prefs_store: None, os_locale: None,
         }
     }
 }
@@ -552,6 +560,11 @@ impl State {
     /// What the OS gives the app: the file manager, notifications, the preview player.
     pub fn with_platform(mut self, reveal: Arc<dyn Reveal>, notifier: Arc<dyn Notifier>, preview: Box<dyn Preview>) -> Self {
         (self.reveal, self.notifier, self.preview) = (Some(reveal), Some(notifier), preview);
+        self
+    }
+
+    pub fn with_taskbar(mut self, taskbar: Arc<dyn crate::session::Taskbar>) -> Self {
+        self.taskbar = Some(taskbar);
         self
     }
 
@@ -614,6 +627,8 @@ impl State {
                 self.notify_ended(&snap.jobs);
                 (self.jobs, self.videos, self.readiness) = (snap.jobs, snap.videos, snap.readiness);
                 self.track_readiness();
+                self.restore_view();
+                self.sync_taskbar();
             }
             Msg::Toast(kind, text) => self.toasts.push(ToastItem { toast: Toast::new(kind, text, None), hovered: false }),
             Msg::Candidates(found) if found.is_empty() => self.send(Cmd::Choose { how: How::Fresh, from: String::new(), keys: false }),
@@ -639,7 +654,10 @@ impl State {
                 self.open_job(&started.job_id);
             }
             Msg::ImportFailed(e) => self.home.error = Some(HomeError::Engine(e)),
-            Msg::JobDetail(detail) => self.apply_job(detail),
+            Msg::JobDetail(detail) => {
+                self.apply_job(detail);
+                self.sync_taskbar();
+            }
             Msg::Clips { video_id, clips } => self.apply_clips(&video_id, clips),
             Msg::Rerendered(clip) => self.rerendered(*clip),
             Msg::RerenderFailed(why) => {
@@ -681,6 +699,7 @@ impl State {
                 }
                 self.open_job(&id);
             }
+            Msg::OpenFile(path) => self.open_file(path),
         }
     }
 
@@ -947,6 +966,9 @@ impl State {
         let before = self.toasts.len();
         self.toasts.retain(|i| !i.toast.expired());
         let mut changed = self.toasts.len() != before;
+        if self.conn == Conn::Ready {
+            changed |= self.take_opened(t);
+        }
         if self.supervisor.is_none() && self.conn == Conn::Ready && self.readiness.iter().any(|i| i.progress.is_some()) && t - self.last_poll >= 0.5 {
             self.last_poll = t;
             self.send(Cmd::Refresh);
@@ -1157,7 +1179,12 @@ pub type Scene = (&'static str, fn(&mut State));
 
 #[cfg(any(test, feature = "headless", debug_assertions))]
 pub const SCENES: &[Scene] = &[
-    ("home-empty", |s| *s = State::scene("home-empty")),
+    // A headless run given video paths was "opened with" them.
+    ("home-empty", |s| {
+        *s = State::scene("home-empty");
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        crate::session::argv_videos(&args).into_iter().for_each(|p| s.open_file(p));
+    }),
     ("readiness-missing", |s| *s = State::scene("readiness-missing")),
     ("engine-failed", |s| *s = State::scene("engine-failed")),
     ("first-run", |s| *s = State::scene("first-run")),
@@ -1279,6 +1306,9 @@ pub struct Live {
     pub notifier: Arc<dyn Notifier>,
     pub preview: fn() -> Box<dyn Preview>,
     pub gpu: Arc<dyn GpuProbe>,
+    pub taskbar: Arc<dyn crate::session::Taskbar>,
+    /// The view the last run closed on.
+    pub view: crate::session::ViewMemory,
 }
 
 /// Puts the tray up. On macOS the Dock is the way back, so no tray is needed there.
@@ -1289,7 +1319,7 @@ pub fn install_tray(handle: &rune::AppHandle<State>, tray: &dyn Tray) -> bool {
 
 /// A state for a real engine: boots it on a task thread and keeps polling it.
 pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
-    let Live { supervisor, library, config_dir, saved, data_dir, tray, reveal, notifier, preview, gpu } = live;
+    let Live { supervisor, library, config_dir, saved, data_dir, tray, reveal, notifier, preview, gpu, taskbar, view } = live;
     let sup = Arc::new(Mutex::new(supervisor));
     let (boot, bus) = (handle.clone(), Arc::new(RuneBus(handle.clone())));
     let worker = sup.clone();
@@ -1307,7 +1337,7 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
     let opener = handle.clone();
     notifier.on_click(Arc::new(move |job| opener.update(move |s: &mut State, _: &mut Tx| s.apply(Msg::OpenJob(job)))));
     let prefs = rune::prefs::Prefs::at(config_dir.join("preferences.json"));
-    let mut state = State::live(bus, sup).with_os_locale(crate::platform::locale::os_locale()).with_preferences(prefs).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_handle(handle, background_ok);
+    let mut state = State::live(bus, sup).with_os_locale(crate::platform::locale::os_locale()).with_preferences(prefs).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_taskbar(taskbar).with_view(view).with_handle(handle, background_ok);
     state.native_popups = rune::popup_menu_supported();
     state.system_menu_bar = cfg!(target_os = "macos");
     state
@@ -1315,12 +1345,25 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
 
 pub fn run(live: fn() -> Live) {
     // Closing the window hides it; `State::closing` decides whether the app goes with it.
-    let app = rune::App::new(spec()).compositor(crate::platform::fx_compositor::FxCompositor::default()).keep_running().on_close(|s: &mut State, tx: &mut Tx| {
+    let app = rune::App::new(spec());
+    let handle = app.handle();
+    #[cfg(target_os = "macos")]
+    let opener = app.handle();
+    let app = app.compositor(crate::platform::fx_compositor::FxCompositor::default()).keep_running().on_close(|s: &mut State, tx: &mut Tx| {
+        crate::platform::window_state::save(&s.view_memory());
         if s.closing() {
             tx.quit();
         }
-    }).on_quit(|s: &mut State, _| s.quit()).on_focus(|s: &mut State, focused, _| s.focused = focused);
-    let handle = app.handle();
+    }).on_quit(|s: &mut State, _| {
+        crate::platform::window_state::save(&s.view_memory());
+        s.quit();
+    }).on_focus(|s: &mut State, focused, _| s.focused = focused)
+    .on_ready(move |w| {
+        crate::platform::window_state::on_ready(w);
+        #[cfg(target_os = "macos")]
+        crate::platform::open_documents_macos::install(opener.clone());
+    })
+    .maximized(crate::platform::window_state::was_maximized());
     // Rune knows it is headless only once `run` has started, so the choice is made in `init`.
     let menus = handle.clone();
     app.init(move || {

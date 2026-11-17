@@ -59,15 +59,17 @@ pub struct Home {
     pub error: Option<HomeError>,
     /// A drag of files is over the drop field.
     pub dropping: bool,
+    /// A video the OS opened with Sorot, waiting for the person to import it.
+    pub opened: Option<PathBuf>,
 }
 
 impl Default for Home {
     fn default() -> Self {
-        Home { link: TextEdit::new(""), direction: TextEdit::new(""), options: Options::new(), error: None, dropping: false }
+        Home { link: TextEdit::new(""), direction: TextEdit::new(""), options: Options::new(), error: None, dropping: false, opened: None }
     }
 }
 
-fn is_video(path: &Path) -> bool {
+pub fn is_video(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(e)))
 }
 
@@ -251,6 +253,19 @@ fn drop_field(s: &State) -> El {
         )
 }
 
+/// A video the OS opened with Sorot: its name and the two ways on, before anything starts.
+fn opened_sheet(s: &State) -> Option<El> {
+    let (p, file) = (pal(s.dark()), s.home.opened.clone()?);
+    let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let title = tr(s.lang, "home.opened.title");
+    Some(col().key("home/opened").role("group").label(format!("{title} {name}")).gap(12.0).padding(20.0).w_full().fill(p.surface).border(1.0, p.beam).radius(10.0)
+        .child(col().gap(2.0).child(text(title).font(type_::TITLE).color(p.text)).child(text(tr(s.lang, "home.opened.sub")).font(type_::LABEL).color(p.muted)))
+        .child(text(name).key("home/opened/name").font(type_::BODY).color(p.text).truncate())
+        .child(row().gap(12.0)
+            .child(button(s.dark(), "home/opened/import", &tr(s.lang, "home.import"), true, move |s: &mut State| s.import(Source::File(file.clone()))).px(18.0).h(41.0))
+            .child(button(s.dark(), "home/opened/dismiss", &tr(s.lang, "home.opened.dismiss"), false, |s: &mut State| s.home.opened = None).px(18.0).h(41.0))))
+}
+
 fn import_card(s: &State) -> El {
     let p = pal(s.dark());
     let n = s.home.direction.text.chars().count();
@@ -264,7 +279,11 @@ fn import_card(s: &State) -> El {
         .child(row().gap(12.0).w_full()
             .child(text(tr(s.lang, "home.dir.note")).font(type_::LABEL).color(p.muted).wrap().grow(1.0))
             .child(text(format!("{n}/{MAX_DIRECTION}")).key("home/direction-count").font(type_::LABEL).color(counter)));
-    let mut card = col().gap(20.0).grow(1.0).shrink().child(drop_field(s)).child(link_row);
+    let mut card = col().gap(20.0).grow(1.0).shrink();
+    if let Some(sheet) = opened_sheet(s) {
+        card = card.child(sheet);
+    }
+    card = card.child(drop_field(s)).child(link_row);
     // A problem shows right under the field that caused it, where the eye already is.
     if let Some(e) = &s.home.error {
         let (cause, next) = (e.words(s.lang), e.next(s.lang));

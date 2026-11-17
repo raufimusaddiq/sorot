@@ -15,3 +15,5 @@ src/platform/ffmpeg_proc.rs
 src/platform/audio_cpal.rs
 src/platform/rune_player.rs
 src/platform/fx_compositor.rs
+src/platform/dock_macos.rs
+src/platform/monitors_windows.rs
