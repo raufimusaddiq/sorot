@@ -41,10 +41,11 @@ fn temp(ext: &str) -> PathBuf {
     std::env::temp_dir().join(format!("sorot-headless-{}-{}.{ext}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)))
 }
 
-/// Per-run deadline: `SOROT_HEADLESS_DEADLINE_SECS`, default 120 (a loaded CI runner is slow; the suite's
-/// own timeout is the real bound).
+/// Per-run deadline: `SOROT_HEADLESS_DEADLINE_SECS`, default 180 (CI sets more for coverage builds).
+/// The slowest journey (us5-generate-to-post's last mark, 388 frames at 1100x2400) takes about 70 s
+/// on a software adapter, so the default leaves room for a slower runner.
 fn deadline_secs() -> u64 {
-    std::env::var("SOROT_HEADLESS_DEADLINE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(120)
+    std::env::var("SOROT_HEADLESS_DEADLINE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180)
 }
 
 /// Runs `cmd` to the end once a slot is free (at most `MAX_APPS` at a time), or kills it after the deadline of
@@ -126,19 +127,32 @@ pub fn run_env(scene: &str, script: Option<&str>, args: &[&str], env: &[(&str, &
     run_at(scene, script, "end", args, env)
 }
 
+/// The frame rate a scripted run uses. Rune draws every virtual frame, ~90 ms each on a software
+/// adapter, so the cost is the script's length times the window's area: past 8 s at the default
+/// window (`--size`, else 1100x720) the run drops to 20 fps, whose taps are still 0.2 s apart. A
+/// tall publish window (1100x2400) is over that budget at 6 s, and at 60 fps its frames alone
+/// outlast the deadline. Short, small scripts keep 60: taps 0.1 s apart need frames to lay out in.
+fn fps_for(last: f64, args: &[&str]) -> &'static str {
+    let size = args.windows(2).find(|w| w[0] == "--size").and_then(|w| {
+        let (a, b) = w[1].split_once('x')?;
+        Some((a.parse::<f64>().ok()?, b.parse::<f64>().ok()?))
+    });
+    let (w, h) = size.unwrap_or((1100.0, 720.0));
+    if last > 8.0 || last * w * h > 8.0 * 1100.0 * 720.0 { "20" } else { "60" }
+}
+
 /// As `run_env`, with the tree dumped at the script's mark `mark`.
 pub fn run_at(scene: &str, script: Option<&str>, mark: &str, args: &[&str], env: &[(&str, &Path)]) -> Tree {
     let tree = temp("json");
     let mut cmd = binary();
     cmd.envs(env.iter().copied());
-    cmd.args(["--scene", scene, "--tree"]).arg(&tree);
+    // A tree run needs no pixels: its rects and viewport are in points, so it draws at `--scale 1`
+    // (a quarter of the raster work of the default 2, which is what a software adapter pays for).
+    cmd.args(["--scene", scene, "--scale", "1", "--tree"]).arg(&tree);
     if let Some(name) = script {
-        // Rune draws every virtual frame, ~90 ms each on a software adapter (a CI runner): a long script at
-        // 60 fps outlasts any deadline. Scripts longer than 8 s run at 20 fps, so their taps are at least 0.2 s
-        // apart; short ones keep 60 (taps 0.1 s apart need the frames to lay out in between).
         let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"));
         let last = serde_json::from_str::<Value>(&std::fs::read_to_string(file).unwrap()).unwrap()["events"].as_array().unwrap().iter().filter_map(|e| e["t"].as_f64()).fold(0.0, f64::max);
-        cmd.args(["--fps", if last > 8.0 { "20" } else { "60" }]);
+        cmd.args(["--fps", fps_for(last, args)]);
         cmd.arg("--script").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"))).args(["--at", &format!("mark:{mark}")]);
     }
     if script.is_some() && std::env::var_os("SOROT_HEADLESS_TRACE").is_some() {
@@ -246,4 +260,19 @@ pub fn clipped_text(tree: &Tree) -> Vec<String> {
         })
         .map(key_or_path)
         .collect()
+}
+
+#[test]
+fn a_scripted_run_drops_to_20_fps_when_its_frames_cost_too_much() {
+    // (last event, args, fps): the two us5 scripts, a long one at the default window, and the
+    // short resize journey that needs 60.
+    for (last, args, want) in [
+        (2.8, &[][..], "60"),
+        (6.8, &["--size", "1100x2400"][..], "20"),
+        (19.4, &["--size", "1100x2400"][..], "20"),
+        (8.5, &[][..], "20"),
+        (2.2, &["--size", "1280x800"][..], "60"),
+    ] {
+        assert_eq!(fps_for(last, args), want, "{last} s at {args:?}");
+    }
 }

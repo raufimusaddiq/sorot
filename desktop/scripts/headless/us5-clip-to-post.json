@@ -5,11 +5,11 @@
   {"t": 1.4, "type": "tap", "key": "publish/account/yt"},
   {"t": 1.6, "type": "tap", "key": "publish/write"},
   {"t": 5.2, "type": "tap", "key": "publish/0/privacy/0"},
-  {"t": 5.3, "type": "tap", "key": "publish/tab/1"},
-  {"t": 5.4, "type": "tap", "key": "publish/1/kids-no"},
-  {"t": 5.6, "type": "tap", "key": "publish/1/title"},
-  {"t": 5.7, "type": "type", "text": "Judul"},
-  {"t": 6.2, "type": "mark", "name": "choices"},
-  {"t": 6.3, "type": "tap", "key": "publish/post"},
-  {"t": 6.8, "type": "mark", "name": "end"}
+  {"t": 5.4, "type": "tap", "key": "publish/tab/1"},
+  {"t": 5.6, "type": "tap", "key": "publish/1/kids-no"},
+  {"t": 5.8, "type": "tap", "key": "publish/1/title"},
+  {"t": 5.9, "type": "type", "text": "Judul"},
+  {"t": 6.4, "type": "mark", "name": "choices"},
+  {"t": 6.5, "type": "tap", "key": "publish/post"},
+  {"t": 7.0, "type": "mark", "name": "end"}
 ]}
