@@ -265,6 +265,14 @@ fn key(c: &str) -> KeyEvent {
     KeyEvent { key: Key::Text(c.into()), mods: Mods::default() }
 }
 
+/// The app's own key handler; a bare `Runtime` calls none, so the test does.
+fn press(rt: &mut Runtime<State>, e: KeyEvent) -> bool {
+    let mut took = false;
+    rt.update(|s, tx| took = s.keys(&e, tx));
+    rt.frame(1.0 / 60.0);
+    took
+}
+
 #[test]
 fn clips_are_listed_in_rank_order_and_j_k_move_the_selection() {
     let (mut rt, fake, _, _) = clips_rt();
@@ -291,7 +299,7 @@ fn clips_are_listed_in_rank_order_and_j_k_move_the_selection() {
     let moves = [("j", "c1"), ("j", "c3"), ("j", "c3"), ("k", "c1"), ("k", "c2"), ("k", "c2")];
     let mut chosen = vec![];
     for (k, want) in moves {
-        poke(&mut rt, move |s| assert!(s.clips_key(&key(k))));
+        assert!(press(&mut rt, key(k)), "{k}");
         assert_eq!(rt.state.selected_clip().unwrap().id, want, "{k}");
         chosen.push(want);
     }
@@ -300,14 +308,14 @@ fn clips_are_listed_in_rank_order_and_j_k_move_the_selection() {
     // a press chooses a row; other keys are not taken; off the clips screen J does nothing
     click(&mut rt, "clips/row/c3");
     assert_eq!(rt.state.selected_clip().unwrap().id, "c3");
-    poke(&mut rt, |s| assert!(!s.clips_key(&key("x"))));
+    assert!(!press(&mut rt, key("x")));
     // Space plays and pauses
-    poke(&mut rt, |s| assert!(s.clips_key(&key(" "))));
+    assert!(press(&mut rt, key(" ")));
     assert_eq!(text_of(&rt, "clips/play"), tr(Lang::Id, "clips.pause"));
     click(&mut rt, "clips/play");
     assert_eq!(text_of(&rt, "clips/play"), tr(Lang::Id, "clips.play"));
     poke(&mut rt, |s| s.route = Route::Home);
-    poke(&mut rt, |s| assert!(!s.clips_key(&key("j"))));
+    assert!(!press(&mut rt, key("j")));
 }
 
 #[test]
@@ -416,7 +424,7 @@ fn export_then_reveal_locally_or_download_remotely() {
     click(&mut rt, "clips/export");
     assert!(rt.state.clips.exporting.is_none() && rt.state.toasts.last().unwrap().toast.text.starts_with("Could not export"));
     let ctrl_e = KeyEvent { key: Key::Command('e'), mods: Mods { cmd: true, ..Mods::default() } };
-    poke(&mut rt, move |s| assert!(s.clips_key(&ctrl_e)));
+    assert!(press(&mut rt, ctrl_e));
     assert!(has(&rt, "clips/reveal"));
     // a file manager that fails is reported
     struct Broken;

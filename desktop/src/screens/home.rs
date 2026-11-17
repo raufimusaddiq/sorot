@@ -128,13 +128,10 @@ impl State {
         });
     }
 
-    /// The stored keyboard map decides the keys: the chord bound to an action runs it. Keys of the
-    /// screen in front that no action took come last.
+    /// The stored keyboard map decides the keys, at the screen each action is meant for; a key no
+    /// action binds is nobody's.
     pub fn keys(&mut self, key: &KeyEvent, tx: &mut Tx) -> bool {
-        match self.chord_action(key) {
-            Some(action) => self.run_shortcut(action, tx),
-            None => self.clips_key(key),
-        }
+        self.chord_action(key).is_some_and(|action| self.run_shortcut(action, tx))
     }
 
     /// The action the keyboard map in the preferences binds this press to, if any.

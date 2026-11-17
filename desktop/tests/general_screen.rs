@@ -94,6 +94,26 @@ fn a_stored_chord_runs_its_action_and_the_chord_it_replaced_does_nothing() {
 }
 
 #[test]
+fn a_rebound_clip_chord_runs_its_action_and_the_chord_it_replaced_does_nothing() {
+    let mut rt = scene_rt("clips-ranked");
+    poke(&mut rt, |s| {
+        s.panels.general.prefs.shortcuts.set(Action::NextClip, Chord::new(true, true, 'j')).expect("Ctrl+Shift+J is free");
+        s.prefs_changed();
+    });
+    let selected = |rt: &rune::Runtime<State>| rt.state.clips.selected;
+    let before = selected(&rt);
+    let press = |rt: &mut rune::Runtime<State>, key, mods| {
+        rt.update(move |s: &mut State, tx: &mut rune::Tx| {
+            s.keys(&rune::KeyEvent { key, mods }, tx);
+        });
+    };
+    press(&mut rt, rune::Key::Text("j".into()), Mods::default());
+    assert_eq!(selected(&rt), before, "plain J no longer moves the selection");
+    press(&mut rt, rune::Key::Text("J".into()), Mods { cmd: true, shift: true, ..Mods::default() });
+    assert_ne!(selected(&rt), before, "Ctrl+Shift+J does");
+}
+
+#[test]
 fn a_shortcut_edit_is_saved_or_refused_inline() {
     let ctrl = Mods { ctrl: true, cmd: true, ..Mods::default() };
     let shift = Mods { shift: true, ..ctrl };
