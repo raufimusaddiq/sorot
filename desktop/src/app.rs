@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use rune::{AppSpec, Cx, El, KeyEvent, Tx, col};
 use rune_fx::OneShots;
+use sorot_desktop_core::prefs::Theme;
+use std::sync::atomic::{AtomicBool, Ordering};
 use sorot_desktop_core::close::{CloseAction, ClosePref, on_close};
 use sorot_desktop_core::engine_conn::{FailReason, State as ConnState};
 use sorot_desktop_core::handshake::Ready;
@@ -403,7 +405,10 @@ pub struct State {
     /// One state machine per readiness row (`core::readiness`), so a failed fix is told from a missing item.
     pub item_states: Vec<(String, Item)>,
     pub toasts: Vec<ToastItem>,
-    pub dark: bool,
+    /// Preferences: the chosen appearance; `System` follows the OS (or `--theme` in a headless run).
+    pub theme: Theme,
+    /// What the window last said the OS wants, written by `view` from Rune's env.
+    system_dark: AtomicBool,
     /// First run: the older libraries on offer.
     pub welcome: Option<Welcome>,
     pub workspace: Option<Workspace>,
@@ -465,10 +470,21 @@ pub struct State {
     preview_cache: Option<Arc<Mutex<PreviewCache>>>,
 }
 
+impl State {
+    /// The palette in use: the chosen theme, or the OS's when it is `System`.
+    pub fn dark(&self) -> bool {
+        match self.theme {
+            Theme::Dark => true,
+            Theme::Light => false,
+            Theme::System => self.system_dark.load(Ordering::Relaxed),
+        }
+    }
+}
+
 impl Default for State {
     fn default() -> Self {
         State {
-            engine: None, conn: Conn::Starting, jobs: vec![], videos: vec![], readiness: vec![], item_states: vec![], toasts: vec![], dark: true,
+            engine: None, conn: Conn::Starting, jobs: vec![], videos: vec![], readiness: vec![], item_states: vec![], toasts: vec![], theme: Theme::System, system_dark: AtomicBool::new(true),
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
             route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
@@ -924,10 +940,11 @@ impl State {
     }
 }
 
-pub fn view(s: &State, _: &mut Cx<State>) -> El {
+pub fn view(s: &State, cx: &mut Cx<State>) -> El {
+    s.system_dark.store(cx.system_dark(), Ordering::Relaxed);
     crate::i18n::set_current(s.lang);
     crate::ui::beam::begin_screen();
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let body = match s.screen() {
         Screen::Home => shell::with_rail(s, home::view(s)),
         Screen::Job => shell::with_rail(s, job::view(s)),
@@ -941,11 +958,11 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
         Screen::Generate => shell::with_rail(s, crate::screens::generate::view(s)),
         screen => {
             let content = match screen {
-                Screen::Starting => state_block::<State>(s.dark, "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
+                Screen::Starting => state_block::<State>(s.dark(), "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
                 Screen::EngineFailed => {
                     let Conn::Failed(why) = &s.conn else { unreachable!("EngineFailed needs Failed") };
                     let (cause, rest) = why.split_once('\n').unwrap_or((why, "Restart it, or export a diagnostic report."));
-                    state_block::<State>(s.dark, "engine/failed", Kind::Error, cause, rest, None)
+                    state_block::<State>(s.dark(), "engine/failed", Kind::Error, cause, rest, None)
                 }
                 Screen::Welcome => welcome::view(s, s.welcome.as_ref().expect("Welcome needs its state")),
                 _ => readiness::view(s),
@@ -964,7 +981,7 @@ pub fn view(s: &State, _: &mut Cx<State>) -> El {
     if let Some(notice) = shell::gpu_notice(s) {
         root = root.child(notice);
     }
-    root.child(body).child(toast_stack(s.dark, &s.toasts).pin(Some(0.0), None, Some(0.0), Some(0.0)))
+    root.child(body).child(toast_stack(s.dark(), &s.toasts).pin(Some(0.0), None, Some(0.0), Some(0.0)))
 }
 
 impl Host for State {
@@ -977,7 +994,7 @@ impl Host for State {
     }
 
     fn dark(&self) -> bool {
-        self.dark
+        State::dark(self)
     }
 
     fn lang(&self) -> crate::i18n::Lang {
@@ -1093,6 +1110,7 @@ pub const SCENES: &[Scene] = &[
     ("readiness-missing", |s| *s = State::scene("readiness-missing")),
     ("engine-failed", |s| *s = State::scene("engine-failed")),
     ("first-run", |s| *s = State::scene("first-run")),
+    ("home-interrupted", |s| *s = State::scene("home-interrupted")),
     ("job-running", |s| {
         *s = State::scene("job-running");
         s.open_job("j1");

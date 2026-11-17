@@ -19,6 +19,8 @@ pub struct Pal {
     pub skip: Color,
     pub steel: Color,
     pub edge: Color,
+    /// Ink on a beam fill: graphite in dark, `text` in light (the beam fill is amber in both).
+    pub on_beam: Color,
 }
 
 thread_local! {
@@ -30,7 +32,7 @@ pub fn pal(dark: bool) -> Pal {
         let t = &t[usize::from(!dark)];
         Pal {
             bg: t.color("bg"), surface: t.color("surface"), raised: t.color("raised"), divider: t.color("divider"), text: t.color("text"),
-            muted: t.color("muted"), beam: t.color("beam"), beam_text: t.color("beamText"), pass: t.color("pass"), skip: t.color("skip"), steel: t.color("steel"), edge: t.color("edge"),
+            muted: t.color("muted"), beam: t.color("beam"), beam_text: t.color("beamText"), pass: t.color("pass"), skip: t.color("skip"), steel: t.color("steel"), edge: t.color("edge"), on_beam: if dark { t.color("bg") } else { t.color("text") },
         }
     })
 }
@@ -38,7 +40,7 @@ pub fn pal(dark: bool) -> Pal {
 /// A labelled button. `primary` is the one beam-coloured action on a screen.
 pub fn button(dark: bool, key: impl Into<String>, label: &str, primary: bool, on_press: impl Fn(&mut State) + 'static) -> El {
     let p = pal(dark);
-    let (fill, ink) = if primary { (p.beam, p.bg) } else { (p.raised, p.text) };
+    let (fill, ink) = if primary { (p.beam, p.on_beam) } else { (p.raised, p.text) };
     col().key(key.into()).role("button").label(label).focusable(true).padding(10.0).radius(6.0).fill(fill).border(1.0, p.divider)
         .hover(p.text.alpha(0.08)).press(p.text.alpha(0.16)).press_scale(0.985).motion(HOVER_SPRING)
         .on_press(on_press).child(text(label).font(type_::LABEL).color(ink))

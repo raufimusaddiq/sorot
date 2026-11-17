@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Condvar, Mutex};
 
 use serde_json::Value;
 
@@ -11,16 +12,46 @@ pub struct Tree(pub Value);
 
 static N: AtomicU32 = AtomicU32::new(0);
 
+/// At most this many app processes run at once, whatever the test thread count (the owner's RAM/CPU budget).
+const MAX_APPS: usize = 2;
+
+/// Counting semaphore shared by every headless run in the test binary.
+static RUNNING: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+struct Slot;
+
+impl Slot {
+    fn take() -> Slot {
+        let (lock, cv) = &RUNNING;
+        let mut n = cv.wait_while(lock.lock().unwrap_or_else(|e| e.into_inner()), |n| *n >= MAX_APPS).unwrap_or_else(|e| e.into_inner());
+        *n += 1;
+        Slot
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let (lock, cv) = &RUNNING;
+        *lock.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+        cv.notify_one();
+    }
+}
+
 fn temp(ext: &str) -> PathBuf {
     std::env::temp_dir().join(format!("sorot-headless-{}-{}.{ext}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)))
 }
 
-/// How long one headless process may run. Generous: a loaded CI runner is slow, and the suite's own
-/// timeout is the real bound.
-const DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+/// Per-run deadline: `SOROT_HEADLESS_DEADLINE_SECS`, default 120 (a loaded CI runner is slow; the suite's
+/// own timeout is the real bound).
+fn deadline_secs() -> u64 {
+    std::env::var("SOROT_HEADLESS_DEADLINE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(120)
+}
 
-/// Runs `cmd` to the end, or kills it after `DEADLINE` and fails with what it printed.
+/// Runs `cmd` to the end once a slot is free (at most `MAX_APPS` at a time), or kills it after the deadline of
+/// running (the wait for a slot is not counted: two at a time still finish well inside it) and fails
+/// with what it printed.
 fn finish(mut cmd: Command) -> std::process::Output {
+    let _slot = Slot::take();
     use std::io::Read;
     use std::process::Stdio;
     let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
@@ -33,19 +64,42 @@ fn finish(mut cmd: Command) -> std::process::Output {
         })
     };
     let (o, e) = (reader(Box::new(out)), reader(Box::new(err)));
-    let deadline = std::time::Instant::now() + DEADLINE;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(deadline_secs());
     let status = loop {
         if let Some(s) = child.try_wait().unwrap() {
             break s;
         }
         if std::time::Instant::now() > deadline {
-            let _ = child.kill();
+            kill_tree(&mut child);
             let _ = child.wait();
-            panic!("the headless binary did not exit in {} s: {}", DEADLINE.as_secs(), String::from_utf8_lossy(&e.join().unwrap()));
+            let tail = |b: Vec<u8>| {
+                let t: Vec<char> = String::from_utf8_lossy(&b).chars().collect();
+                t[t.len().saturating_sub(4000)..].iter().collect::<String>()
+            };
+            panic!(
+                "the headless binary did not exit in {} s
+command: {cmd:?}
+--- stdout (tail) ---
+{}
+--- stderr (tail) ---
+{}",
+                deadline_secs(),
+                tail(o.join().unwrap()),
+                tail(e.join().unwrap())
+            );
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
     std::process::Output { status, stdout: o.join().unwrap(), stderr: e.join().unwrap() }
+}
+
+/// Kills the binary and anything it started (Windows: `taskkill /T`), so no pipe stays open. On a timeout the panic shows both tails; set
+/// `SOROT_HEADLESS_TRACE` to run scripts with `--realtime`, which prints each mark passed.
+fn kill_tree(child: &mut std::process::Child) {
+    if cfg!(windows) {
+        let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &child.id().to_string()]).output();
+    }
+    let _ = child.kill();
 }
 
 fn binary() -> Command {
@@ -79,7 +133,17 @@ pub fn run_at(scene: &str, script: Option<&str>, mark: &str, args: &[&str], env:
     cmd.envs(env.iter().copied());
     cmd.args(["--scene", scene, "--tree"]).arg(&tree);
     if let Some(name) = script {
+        // Rune draws every virtual frame, ~90 ms each on a software adapter (a CI runner): a long script at
+        // 60 fps outlasts any deadline. Scripts longer than 8 s run at 20 fps, so their taps are at least 0.2 s
+        // apart; short ones keep 60 (taps 0.1 s apart need the frames to lay out in between).
+        let file = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"));
+        let last = serde_json::from_str::<Value>(&std::fs::read_to_string(file).unwrap()).unwrap()["events"].as_array().unwrap().iter().filter_map(|e| e["t"].as_f64()).fold(0.0, f64::max);
+        cmd.args(["--fps", if last > 8.0 { "20" } else { "60" }]);
         cmd.arg("--script").arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("scripts/headless/{name}.json"))).args(["--at", &format!("mark:{mark}")]);
+    }
+    if script.is_some() && std::env::var_os("SOROT_HEADLESS_TRACE").is_some() {
+        // the binary prints `rune-mark NAME T` as the script passes each mark: a timeout shows the last one
+        cmd.arg("--realtime");
     }
     let out = finish({ cmd.args(args); cmd });
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));

@@ -267,8 +267,12 @@ fn the_tray_opens_and_quits_and_installs_once() {
     let fake = Arc::new(FakeTray { works: true, ..Default::default() });
     let handle = rune::App::new(spec()).handle();
     assert!(install_tray(&handle, fake.as_ref()));
-    let on = fake.installed.lock().unwrap().clone().unwrap();
-    on(TrayCmd::Open);
+    // macOS has no tray: the Dock is the way back, so nothing is installed and the tray is never asked.
+    let installed = fake.installed.lock().unwrap().clone();
+    assert_eq!(installed.is_some(), !cfg!(target_os = "macos"));
+    if let Some(on) = installed {
+        on(TrayCmd::Open);
+    }
     let mut s = State::with_engine(Arc::new(FakeEngine::scene("home-empty")));
     s.tray(TrayCmd::Open);
     s.tray(TrayCmd::Quit);

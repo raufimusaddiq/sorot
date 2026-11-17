@@ -141,11 +141,11 @@ impl State {
 }
 
 fn labelled(s: &State, label: &str, input: El) -> El {
-    col().gap(6.0).w_full().child(text(label.to_string()).font(type_::LABEL).color(pal(s.dark).muted)).child(input)
+    col().gap(6.0).w_full().child(text(label.to_string()).font(type_::LABEL).color(pal(s.dark()).muted)).child(input)
 }
 
 fn input_box(s: &State, key: &str, label: &str, hint: &str, edit: &TextEdit, single: bool, access: fn(&mut State) -> &mut TextEdit) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let input = text_input(edit, type_::BODY).key(key).label(label).color(p.text).placeholder(hint, p.muted).on_edit(edit_access(access)).w_full().padding(12.0)
         .fill(p.surface).border(1.0, p.edge).radius(6.0);
     if single { input.single_line() } else { input.h(88.0) }
@@ -186,7 +186,7 @@ fn flip(name: &'static str) -> impl Fn(&mut State) + 'static {
 
 /// The right card: the import options for this video.
 fn options_card(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let title = tr(s.lang, "home.opts.title");
     let card = col().key("home/options").role("group").label(title.clone()).gap(14.0).padding(24.0).w(340.0).fill(p.surface).border(1.0, p.divider).radius(10.0)
         .child(col().gap(2.0).child(text(title).font(type_::TITLE).color(p.text)).child(text(tr(s.lang, "home.opts.sub")).font(type_::LABEL).color(p.muted)));
@@ -197,13 +197,13 @@ fn options_card(s: &State) -> El {
     music.extend(s.music.iter().map(|m| (m.clone(), m.clone())));
     card.child(dropdown(s, "home/option/style", &tr(s.lang, "home.opts.style"), &chosen(s, "style"), &option_choices(s.lang, "style", &opts.styles), pick("style")))
         .child(dropdown(s, "home/option/reframe", &tr(s.lang, "home.opts.reframe"), &chosen(s, "reframe"), &option_choices(s.lang, "reframe", &opts.reframe_modes), pick("reframe")))
-        .child(switch(s.dark, "home/option/silenceTrim", &tr(s.lang, "home.opts.silence"), None, flag(s, "silenceTrim"), flip("silenceTrim")))
-        .child(switch(s.dark, "home/option/youtubeCaptions", &tr(s.lang, "home.opts.captions"), Some(&tr(s.lang, "home.opts.captions.sub")), flag(s, "youtubeCaptions"), flip("youtubeCaptions")))
+        .child(switch(s.dark(), "home/option/silenceTrim", &tr(s.lang, "home.opts.silence"), None, flag(s, "silenceTrim"), flip("silenceTrim")))
+        .child(switch(s.dark(), "home/option/youtubeCaptions", &tr(s.lang, "home.opts.captions"), Some(&tr(s.lang, "home.opts.captions.sub")), flag(s, "youtubeCaptions"), flip("youtubeCaptions")))
         .child(dropdown(s, "home/option/bgm", &tr(s.lang, "home.opts.music"), &chosen(s, "bgm"), &music, pick("bgm")))
 }
 
 fn drop_field(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let label = tr(s.lang, "home.drop.title");
     col().key("home/drop").role("group").label(label.clone()).w_full().h(200.0).radius(10.0).fill(if s.home.dropping { p.raised } else { p.bg })
         .border(1.5, if s.home.dropping { p.beam } else { p.edge }).border_dash(6.0, 5.0)
@@ -221,24 +221,24 @@ fn drop_field(s: &State) -> El {
 
 /// A video the OS opened with Sorot: its name and the two ways on, before anything starts.
 fn opened_sheet(s: &State) -> Option<El> {
-    let (p, file) = (pal(s.dark), s.home.opened.clone()?);
+    let (p, file) = (pal(s.dark()), s.home.opened.clone()?);
     let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let title = tr(s.lang, "home.opened.title");
     Some(col().key("home/opened").role("group").label(format!("{title} {name}")).gap(12.0).padding(20.0).w_full().fill(p.surface).border(1.0, p.beam).radius(10.0)
         .child(col().gap(2.0).child(text(title).font(type_::TITLE).color(p.text)).child(text(tr(s.lang, "home.opened.sub")).font(type_::LABEL).color(p.muted)))
         .child(text(name).key("home/opened/name").font(type_::BODY).color(p.text).truncate())
         .child(row().gap(12.0)
-            .child(button(s.dark, "home/opened/import", &tr(s.lang, "home.import"), true, move |s: &mut State| s.import(Source::File(file.clone()))).px(18.0).h(41.0))
-            .child(button(s.dark, "home/opened/dismiss", &tr(s.lang, "home.opened.dismiss"), false, |s: &mut State| s.home.opened = None).px(18.0).h(41.0))))
+            .child(button(s.dark(), "home/opened/import", &tr(s.lang, "home.import"), true, move |s: &mut State| s.import(Source::File(file.clone()))).px(18.0).h(41.0))
+            .child(button(s.dark(), "home/opened/dismiss", &tr(s.lang, "home.opened.dismiss"), false, |s: &mut State| s.home.opened = None).px(18.0).h(41.0))))
 }
 
 fn import_card(s: &State) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let n = s.home.direction.text.chars().count();
     let (link_label, dir_label) = (tr(s.lang, "home.link.label"), tr(s.lang, "home.dir.label"));
     let link_row = row().gap(12.0).items_end().w_full()
         .child(labelled(s, &link_label, input_box(s, "home/link", &link_label, &tr(s.lang, "home.link.hint"), &s.home.link, true, |s| &mut s.home.link)).grow(1.0))
-        .child(centered(button(s.dark, "home/import", &tr(s.lang, "home.import"), true, |s: &mut State| s.import_link()).px(18.0).h(41.0)));
+        .child(centered(button(s.dark(), "home/import", &tr(s.lang, "home.import"), true, |s: &mut State| s.import_link()).px(18.0).h(41.0)));
     let counter = if n > MAX_DIRECTION { p.skip } else { p.muted };
     let direction = col().gap(6.0).w_full()
         .child(labelled(s, &dir_label, input_box(s, "home/direction", &dir_label, &tr(s.lang, "home.dir.hint"), &s.home.direction, false, |s| &mut s.home.direction)))
@@ -269,7 +269,7 @@ pub fn video_name(s: &State, video_id: &str) -> String {
 }
 
 fn recent_row(s: &State, j: &Job) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let id = j.id.clone();
     let phase = j.phase();
     let ink = match phase {
@@ -287,15 +287,38 @@ fn recent_row(s: &State, j: &Job) -> El {
         .child(text(open).font(type_::LABEL).color(p.beam_text))
 }
 
+/// Jobs the last session left running, each with its Retry.
+fn interrupted_block(s: &State) -> Option<El> {
+    let p = pal(s.dark());
+    let mut block = col().key("home/interrupted").role("list").label(tr(s.lang, "home.interrupted")).gap(12.0).w_full()
+        .child(text(tr(s.lang, "home.interrupted")).font(type_::TITLE).color(p.text));
+    let mut any = false;
+    for j in s.jobs.iter().filter(|j| j.phase() == JobPhase::Interrupted) {
+        let (id, retry_id) = (j.id.clone(), j.id.clone());
+        let name = video_name(s, &j.video_id);
+        any = true;
+        // The row opens the job (the stage that stopped, the note) before Retry wipes it.
+        block = block.child(row().key(format!("home/interrupted/{}", j.id)).role("listitem").label(name.clone()).focusable(true).gap(12.0).px(16.0).py(14.0).items_center().w_full()
+            .fill(p.surface).border(1.0, p.divider).radius(6.0).hover(p.text.alpha(0.04)).on_press(move |s: &mut State| s.open_job(&id))
+            .child(text(name).font(type_::BODY).color(p.text).truncate().grow(1.0).shrink())
+            .child(text(tr(s.lang, "home.open.job")).font(type_::LABEL).color(p.beam_text))
+            .child(button(s.dark(), format!("home/retry/{}", j.id), &tr(s.lang, "home.interrupted.retry"), true, move |s: &mut State| s.retry_interrupted(&retry_id))));
+    }
+    any.then_some(block)
+}
+
 pub fn view(s: &State) -> El {
-    let p = pal(s.dark);
-    let head = page_head(s.dark, "home/title", &tr(s.lang, "home.title"), &tr(s.lang, "home.sub"));
+    let p = pal(s.dark());
+    let head = page_head(s.dark(), "home/title", &tr(s.lang, "home.title"), &tr(s.lang, "home.sub"));
     let top = row().gap(40.0).w_full().items_start().child(import_card(s)).child(options_card(s));
-    let below = if s.jobs.is_empty() && s.videos.is_empty() {
-        state_block::<State>(s.dark, "home/empty", Kind::Empty, &tr(s.lang, "home.empty.cause"), &tr(s.lang, "home.empty.next"), None)
+    let only_interrupted = !s.jobs.is_empty() && s.jobs.iter().all(|j| j.phase() == JobPhase::Interrupted);
+    let below = if only_interrupted {
+        col()
+    } else if s.jobs.is_empty() && s.videos.is_empty() {
+        state_block::<State>(s.dark(), "home/empty", Kind::Empty, &tr(s.lang, "home.empty.cause"), &tr(s.lang, "home.empty.next"), None)
     } else {
         let mut list = col().key("home/jobs").role("list").label(tr(s.lang, "home.recent")).gap(12.0).w_full().child(text(tr(s.lang, "home.recent")).font(type_::TITLE).color(p.text));
-        let mut jobs = s.jobs.iter().take(4);
+        let mut jobs = s.jobs.iter().filter(|j| j.phase() != JobPhase::Interrupted).take(4);
         while let Some(a) = jobs.next() {
             let second = match jobs.next() {
                 Some(b) => recent_row(s, b).grow(1.0),
@@ -305,5 +328,5 @@ pub fn view(s: &State) -> El {
         }
         list
     };
-    col().key("home/scroll").scroll(ScrollSpec { stick_bottom: false }).gap(28.0).padding(40.0).w_full().h_full().child(head).child(top).child(below)
+    col().key("home/scroll").scroll(ScrollSpec { stick_bottom: false }).gap(28.0).padding(40.0).w_full().h_full().child(head).child(top).children(interrupted_block(s)).child(below)
 }

@@ -48,6 +48,8 @@
   "home.recent": "Recently clipped",
   "home.open": "Open clips",
   "home.open.job": "See progress",
+  "home.interrupted": "Last session stopped while these were running",
+  "home.interrupted.retry": "Try again",
   "home.untitled": "Untitled video",
   "home.empty.cause": "No videos yet",
   "home.empty.next": "Paste a link or choose a file to make your first clips.",
