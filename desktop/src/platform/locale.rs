@@ -8,12 +8,12 @@ pub fn os_locale() -> Option<String> {
         let mut buf = [0u16; 85];
         // SAFETY: the buffer is LOCALE_NAME_MAX_LENGTH (85) wide, as the call requires.
         let n = unsafe { windows_sys::Win32::Globalization::GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
-        return (n > 1).then(|| String::from_utf16_lossy(&buf[..n as usize - 1]));
+        (n > 1).then(|| String::from_utf16_lossy(&buf[..n as usize - 1]))
     }
     #[cfg(target_os = "macos")]
     {
         let out = std::process::Command::new("defaults").args(["read", "-g", "AppleLocale"]).output().ok()?;
-        return Some(String::from_utf8_lossy(&out.stdout).trim().to_string()).filter(|s| !s.is_empty());
+        Some(String::from_utf8_lossy(&out.stdout).trim().to_string()).filter(|s| !s.is_empty())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {

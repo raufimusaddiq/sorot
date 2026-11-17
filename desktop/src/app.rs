@@ -1097,7 +1097,13 @@ impl Host for State {
     }
 
     fn prefs_changed(&mut self) {
+        let before = self.lang;
         self.apply_prefs();
+        // macOS draws the menu bar itself, in the language it was set in: setting it again moves the
+        // titles (the menu names stay the same, so the system keeps their place).
+        if self.lang != before && self.system_menu_bar && let Some(handle) = &self.handle {
+            let _ = handle.set_menu(crate::screens::menu_bar::native_items(self.lang));
+        }
         if let Some(store) = &mut self.prefs_store {
             let _ = store.set(PREFS_KEY, &self.panels.general.prefs);
         }

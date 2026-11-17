@@ -76,6 +76,24 @@ fn the_system_language_follows_the_os_and_falls_back_to_indonesian() {
 }
 
 #[test]
+fn a_stored_chord_runs_its_action_and_the_chord_it_replaced_does_nothing() {
+    let (ctrl, shift) = (Mods { cmd: true, ..Mods::default() }, Mods { cmd: true, shift: true, ..Mods::default() });
+    let mut s = State::scene("home-empty").with_preferences(Prefs::memory());
+    s.panels.general.prefs.shortcuts.set(Action::Settings, Chord::new(true, true, 'g')).expect("Ctrl+Shift+G is free");
+    s.prefs_changed();
+    let mut rt = runtime_of(s);
+    let press = |rt: &mut rune::Runtime<State>, key, mods| {
+        rt.update(|s: &mut State, tx: &mut rune::Tx| {
+            s.keys(&rune::KeyEvent { key, mods }, tx);
+        });
+    };
+    press(&mut rt, rune::Key::Command(','), ctrl);
+    assert_eq!(rt.state.screen(), sorot_desktop::app::Screen::Home, "Ctrl+, no longer opens Settings");
+    press(&mut rt, rune::Key::Text("G".into()), shift);
+    assert_eq!(rt.state.screen(), sorot_desktop::app::Screen::General, "Ctrl+Shift+G does");
+}
+
+#[test]
 fn a_shortcut_edit_is_saved_or_refused_inline() {
     let ctrl = Mods { ctrl: true, cmd: true, ..Mods::default() };
     let shift = Mods { shift: true, ..ctrl };
