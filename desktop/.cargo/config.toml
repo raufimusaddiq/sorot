@@ -1,2 +1,11 @@
+# Local budget (owner: ~6 GB RAM, ~35% CPU on 6 cores): 4 build jobs, 2 test threads.
+# An environment variable of the same name wins, so CI may set CARGO_BUILD_JOBS / RUST_TEST_THREADS;
+# it does not, because hosted runners have 3-4 cores and these values already match them.
+[build]
+jobs = 4
+
+[env]
+RUST_TEST_THREADS = "2"
+
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld"

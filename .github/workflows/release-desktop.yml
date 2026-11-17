@@ -36,7 +36,7 @@ jobs:
             formats: nsis
             uv: x86_64-pc-windows-msvc
             exe: ".exe"
-          - os: macos-14
+          - os: macos-15
             target: darwin-aarch64
             formats: app,dmg
             uv: aarch64-apple-darwin
