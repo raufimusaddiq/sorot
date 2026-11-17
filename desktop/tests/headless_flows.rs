@@ -41,7 +41,7 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
 
 #[test]
 fn the_scenes_are_listed_and_render_in_both_themes() {
-    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "home-interrupted", "job-running", "clips-ranked", "clips-publish", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
+    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "home-interrupted", "job-running", "clips-ranked", "clips-publish", "palette-open", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
     for theme in ["dark", "light"] {
         let png = snap("readiness-missing", theme, "900x600");
         let _ = std::fs::remove_file(png);
@@ -119,6 +119,38 @@ fn the_main_screens_reflow_without_clipping_or_overlap() {
             assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{scene} at {mark} ({:?})", tree.0["viewport"]);
         }
     }
+}
+
+/// US4 menu journey, binary only: pressing View on the bar opens the pop-up (the tree lists its items), and picking
+/// Settings by id lands on Settings. The palette is L2.
+#[test]
+fn the_us4_menu_journey_picks_settings_from_the_bar() {
+    let at = |mark: &str| run_at("generate-no-ai", Some("us4-menu"), mark, &[], &[]);
+    let open = at("open");
+    let ids: Vec<&str> = open.0["popupMenu"]["items"].as_array().expect("the pop-up is open").iter().filter_map(|i| i["id"].as_str()).collect();
+    assert!(ids.contains(&"settings") && ids.contains(&"discover"), "{ids:?}");
+    let end = at("end");
+    assert!(end.0.get("popupMenu").is_none() && end.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == "conn/llm/key"), "the pick opened Settings");
+}
+
+/// US4 keyboard-only journey: only `key` and `type` events, import to export. After each step the focused element is the
+/// one named and its focus ring shows; focus follows the person from Home into the job and on into the clips. The tree
+/// is dumped at one mark per run (`--tree` has no second dump, `--trace` no focus), so each mark is its own run of the
+/// one script, three at a time.
+#[test]
+fn the_us4_keyboard_only_journey_keeps_focus_visible_at_every_step() {
+    const STEPS: [(&str, &str); 9] = [("link", "home/link"), ("import", "home/import"), ("job", "job/cancel"), ("clips", "clips/row/c2"), ("export-focus", "clips/export"), ("back", "clips/edit"), ("palette", "palette/input"), ("closed", "clips/edit"), ("end", "clips/export")];
+    let at = |mark: &str| run_at("home-empty", Some("us4-keyboard-only"), mark, &[], &[]);
+    let mut trees: Vec<Tree> = vec![];
+    for batch in STEPS.chunks(3) {
+        trees.extend(std::thread::scope(|s| batch.iter().map(|(mark, _)| s.spawn(move || at(mark))).collect::<Vec<_>>().into_iter().map(|r| r.join().unwrap()).collect::<Vec<_>>()));
+    }
+    let elements = |t: &Tree| t.0["elements"].as_array().unwrap().clone();
+    for ((mark, key), tree) in STEPS.iter().zip(&trees) {
+        let focused: Vec<(String, bool)> = elements(tree).iter().filter(|e| e["focused"] == true).map(|e| (e["key"].as_str().unwrap_or_default().to_string(), e["focusVisible"] == true)).collect();
+        assert_eq!(focused, [(key.to_string(), true)], "{mark}");
+    }
+    assert!(elements(&trees[8]).iter().any(|e| e["key"] == "clips/reveal"), "the keys alone exported the clip");
 }
 
 /// US6 journey, binary only: an interrupted job on Home, Retry, the job runs, then its clips.

@@ -776,5 +776,9 @@
   "generate.plan.level.free": "free: gambar apa saja",
   "generate.verdict.shot": "Catatan untuk adegan",
   "generate.verdict.shot_any": "Adegan mana saja",
-  "generate.verdict.publish": "Terbitkan"
+  "generate.verdict.publish": "Terbitkan",
+  "palette.title": "Palet perintah",
+  "palette.hint": "Ketik perintah",
+  "palette.list": "Perintah",
+  "palette.empty": "Tidak ada perintah yang cocok."
 }
