@@ -37,7 +37,7 @@ use crate::screens::panels::{Apply, Host, Panels, Work};
 #[cfg(any(test, feature = "headless", debug_assertions))]
 use crate::screens::panels::Page;
 use crate::screens::settings::{connections, generate};
-use crate::screens::{clips, discover, editor, home, job, learning, publish, readiness, shell, welcome};
+use crate::screens::{clips, discover, editor, home, job, learning, menu_bar, palette, publish, readiness, shell, welcome};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
 use crate::ui::toast::{ToastItem, toast_stack};
@@ -443,7 +443,16 @@ pub struct State {
     /// The language of every string (Indonesian unless the person chose English).
     pub lang: crate::i18n::Lang,
     /// The menu whose list is open under the menu bar.
-    pub menu_open: Option<crate::screens::shell::Menu>,
+    pub menu_open: Option<crate::screens::menu_bar::Menu>,
+    /// Menus drop down as the system's pop-up menus (Windows, macOS), not as the in-window list.
+    pub native_popups: bool,
+    /// The command palette (Ctrl or Cmd+K).
+    pub palette: crate::screens::palette::Palette,
+    /// The route focus was last placed for, and whether the clips list still waits for its first row.
+    focus_route: Route,
+    focus_clips: bool,
+    /// The system draws the menu bar (macOS), so the window draws none.
+    pub system_menu_bar: bool,
     /// The key of the dropdown whose list is open (one at a time).
     pub open_select: Option<String>,
     /// App clock of the last read of the import options (read while Home shows and none are loaded).
@@ -480,7 +489,7 @@ impl Default for State {
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
             route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
-            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
+            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, native_popups: false, palette: Default::default(), focus_route: Route::Home, focus_clips: false, system_menu_bar: false, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
         }
     }
 }
@@ -876,6 +885,22 @@ impl State {
 
     /// The toast clock: `t` is seconds since the app started. A run with no supervisor (a scene)
     /// also reads the engine again twice a second while a fix is running.
+    /// Keyboard users keep their place across screens: opening a job puts focus on its Cancel button, and its clips on
+    /// the first clip, instead of dropping it back on the rail. A pointer user's focus is left alone.
+    pub fn route_focus(&mut self, tx: &mut Tx) {
+        if self.route != self.focus_route {
+            self.focus_route = self.route.clone();
+            self.focus_clips = matches!(self.route, Route::Clips(_)) && tx.focus_visible();
+            if matches!(self.route, Route::Job(_)) && tx.focus_visible() {
+                tx.focus_when_shown("job/cancel", true);
+            }
+        }
+        if self.focus_clips && let Some(c) = self.selected_clip() {
+            tx.focus_when_shown(format!("clips/row/{}", c.id), true);
+            self.focus_clips = false;
+        }
+    }
+
     pub fn tick(&mut self, t: f64) -> bool {
         let dt_ms = ((t - self.now).max(0.0) * 1000.0) as u32;
         self.now = t;
@@ -949,8 +974,8 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         }
     };
     let body = if s.close_dialog { col().grow(1.0).w_full().center().child(shell::close_dialog(s)) } else { body };
-    let mut root = col().w_full().h_full().fill(p.bg).child(shell::menu_bar(s));
-    if let Some(list) = shell::menu_list(s) {
+    let mut root = col().w_full().h_full().fill(p.bg).child(menu_bar::menu_bar(s));
+    if let Some(list) = menu_bar::menu_list(s) {
         root = root.child(list);
     }
     if let Some(banner) = shell::banner(s) {
@@ -959,7 +984,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     if let Some(notice) = shell::gpu_notice(s) {
         root = root.child(notice);
     }
-    root.child(body).child(toast_stack(s.dark(), &s.toasts).pin(Some(0.0), None, Some(0.0), Some(0.0)))
+    let root = root.child(body);
+    let root = if let Some(palette) = palette::overlay(s) { root.child(palette) } else { root };
+    root.child(toast_stack(s.dark(), &s.toasts).pin(Some(0.0), None, Some(0.0), Some(0.0)))
 }
 
 impl Host for State {
@@ -1097,6 +1124,12 @@ pub const SCENES: &[Scene] = &[
         *s = State::scene("clips-publish");
         s.show_clips("vnew");
     }),
+    // The command palette open over the clips: glass surface 1 of 2.
+    ("palette-open", |s| {
+        *s = State::scene("clips-ranked");
+        s.show_clips("vnew");
+        s.open_palette();
+    }),
     ("clips-reranked", |s| {
         *s = State::scene("clips-reranked");
         s.show_clips("vnew");
@@ -1160,6 +1193,7 @@ pub fn spec() -> AppSpec<State> {
         on_key: Some(|s: &mut State, key: &KeyEvent, tx: &mut Tx| s.keys(key, tx)),
         poll: Some(|s: &mut State, t: f64, tx: &mut Tx| {
             let changed = s.tick(t);
+            s.route_focus(tx);
             if s.idle_quit_due() {
                 tx.quit();
             }
@@ -1221,7 +1255,10 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
     let background_ok = install_tray(&handle, tray.as_ref());
     let opener = handle.clone();
     notifier.on_click(Arc::new(move |job| opener.update(move |s: &mut State, _: &mut Tx| s.apply(Msg::OpenJob(job)))));
-    State::live(bus, sup).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_handle(handle, background_ok)
+    let mut state = State::live(bus, sup).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_handle(handle, background_ok);
+    state.native_popups = rune::popup_menu_supported();
+    state.system_menu_bar = cfg!(target_os = "macos");
+    state
 }
 
 pub fn run(live: fn() -> Live) {
@@ -1233,10 +1270,14 @@ pub fn run(live: fn() -> Live) {
     }).on_quit(|s: &mut State, _| s.quit()).on_focus(|s: &mut State, focused, _| s.focused = focused);
     let handle = app.handle();
     // Rune knows it is headless only once `run` has started, so the choice is made in `init`.
+    let menus = handle.clone();
     app.init(move || {
         #[cfg(any(test, feature = "headless", debug_assertions))]
         if rune::tooling::headless_run().is_some() {
             return State::scene("home-empty");
+        }
+        if cfg!(target_os = "macos") {
+            let _ = menus.set_menu(menu_bar::native_items(crate::i18n::Lang::default()));
         }
         start_live(handle, live())
     })

@@ -1,9 +1,8 @@
 //! What surrounds every screen: the left rail, the connection banner and the close dialog.
 
 use rune::tok::type_;
-use rune::{El, Tx, col, row, text};
+use rune::{El, col, row, text};
 
-use sorot_desktop_core::prefs::Theme;
 use crate::app::{Conn, Screen, State};
 use crate::i18n::tr;
 use crate::screens::panels::{Host, Page};
@@ -37,95 +36,6 @@ pub fn gpu_notice(s: &State) -> Option<El> {
             .child(text(words).key("shell/gpu-notice/text").font(type_::BODY).color(p.text).wrap().grow(1.0))
             .child(button(s.dark(), "shell/gpu-notice/dismiss", &tr(s.lang, "gpu.dismiss"), false, |s: &mut State| s.dismiss_gpu_notice())),
     )
-}
-
-/// The menus of the menu bar, left to right.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Menu {
-    File,
-    Edit,
-    View,
-    Window,
-    Help,
-}
-
-impl Menu {
-    pub const ALL: [Menu; 5] = [Menu::File, Menu::Edit, Menu::View, Menu::Window, Menu::Help];
-
-    pub fn id(self) -> &'static str {
-        match self {
-            Menu::File => "file",
-            Menu::Edit => "edit",
-            Menu::View => "view",
-            Menu::Window => "window",
-            Menu::Help => "help",
-        }
-    }
-}
-
-type Act = fn(&mut State, &mut Tx);
-
-/// One list of a menu: `(key, i18n key, what it does)`. The same destinations the rail has, in the
-/// View menu; nothing here exists only in a menu.
-pub fn menu_items(menu: Menu) -> Vec<(&'static str, &'static str, Act)> {
-    match menu {
-        Menu::File => vec![
-            ("new", "menu.new", |s, _| s.go_home()),
-            ("quit", "menu.quit", |s, tx| {
-                if s.closing() {
-                    tx.quit();
-                }
-            }),
-        ],
-        Menu::Edit => vec![("edit-clip", "menu.edit-clip", |s, _| {
-            if let Some(id) = s.selected_clip().map(|c| c.id.clone()) {
-                s.open_editor(&id);
-            }
-        })],
-        Menu::View => vec![
-            ("home", "shell.home", |s, _| s.go_home()),
-            ("discover", "shell.discover", |s, _| s.show(Page::Discover)),
-            ("learning", "shell.learning", |s, _| s.show(Page::Learning)),
-            ("settings", "shell.settings", |s, _| s.show(Page::Connections)),
-            ("theme", "menu.theme", |s, _| s.theme = if s.dark() { Theme::Light } else { Theme::Dark }),
-        ],
-        Menu::Window => vec![("hide", "menu.hide", |s, _| s.hide_window())],
-        Menu::Help => vec![("diagnostic", "menu.diagnostic", |s, _| s.export_diagnostic()), ("restart", "menu.restart", |s, _| s.restart_engine())],
-    }
-}
-
-/// The bar across the top: five menus, and the open one's list under it.
-pub fn menu_bar(s: &State) -> El {
-    let p = pal(s.dark());
-    let mut bar = row().key("shell/menubar").role("menubar").label("Sorot").gap(4.0).padding(4.0).items_center().w_full().h(32.0).fill(p.bg);
-    for m in Menu::ALL {
-        let open = s.menu_open == Some(m);
-        let label = tr(s.lang, &format!("menu.{}", m.id()));
-        bar = bar.child(
-            col().key(format!("shell/menu/{}", m.id())).role("menuitem").label(label.clone()).focusable(true).px(12.0).py(6.0).radius(6.0)
-                .fill(if open { p.raised } else { p.bg }).hover(p.text.alpha(0.08)).on_press(move |s: &mut State| s.menu_open = if open { None } else { Some(m) })
-                .child(text(label).font(type_::LABEL).color(p.text)),
-        );
-    }
-    bar
-}
-
-/// The open menu's list, under the bar; pressing an item runs it and closes the list.
-pub fn menu_list(s: &State) -> Option<El> {
-    let m = s.menu_open?;
-    let p = pal(s.dark());
-    let mut list = col().key("shell/menu-list").role("menu").label(tr(s.lang, &format!("menu.{}", m.id()))).gap(2.0).padding(6.0).w(280.0).fill(p.raised).border(1.0, p.divider).radius(8.0);
-    for (key, words, act) in menu_items(m) {
-        let label = tr(s.lang, words);
-        list = list.child(
-            col().key(format!("shell/menu/{}/{key}", m.id())).role("menuitem").label(label.clone()).focusable(true).px(10.0).py(8.0).radius(6.0)
-                .hover(p.text.alpha(0.08)).on_press_tx(move |s: &mut State, tx: &mut Tx| {
-                    s.menu_open = None;
-                    act(s, tx);
-                }).child(text(label).font(type_::BODY).color(p.text)),
-        );
-    }
-    Some(row().w_full().padding(0.0).child(col().w(8.0).h(1.0)).child(list))
 }
 
 fn rail_item(s: &State, key: &str, words: &str, active: bool, on_press: impl Fn(&mut State) + 'static) -> El {

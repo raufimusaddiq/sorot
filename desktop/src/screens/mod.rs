@@ -4,6 +4,8 @@ pub mod discover;
 pub mod feedback;
 pub mod generate;
 pub mod learning;
+pub mod menu_bar;
+pub mod palette;
 pub mod panels;
 pub mod publish;
 pub mod clips;

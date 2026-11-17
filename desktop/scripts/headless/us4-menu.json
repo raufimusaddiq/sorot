@@ -1,0 +1,6 @@
+{"events": [
+  {"t": 0.2, "type": "tap", "key": "shell/menu/view"},
+  {"t": 0.5, "type": "mark", "name": "open"},
+  {"t": 0.6, "type": "menu-pick", "id": "settings"},
+  {"t": 1.0, "type": "mark", "name": "end"}
+]}
