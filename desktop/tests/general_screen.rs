@@ -6,6 +6,7 @@ use rune::{Env, Mods, Runtime, PhysicalInput, PhysicalKeyCode as K};
 use sorot_desktop::app::State;
 use sorot_desktop::i18n::Lang;
 use sorot_desktop::screens::panels::{Host, Page};
+use sorot_desktop::screens::settings::general::lang_of;
 use sorot_desktop_core::prefs::{Action, Chord, CloseBehaviour, Language, Preferences, Theme};
 
 use crate::support::*;
@@ -51,6 +52,27 @@ fn a_choice_updates_the_app_and_is_saved_and_a_restart_reads_it_back() {
     let restarted = State::scene("home-empty").with_preferences(Prefs::at(&path));
     assert_eq!((restarted.theme, restarted.lang, restarted.notifications), (Theme::Light, Lang::En, false));
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn the_system_language_follows_the_os_and_falls_back_to_indonesian() {
+    let rows = [
+        (Language::System, Some("en-US"), Lang::En),
+        (Language::System, Some("en_GB.UTF-8"), Lang::En),
+        (Language::System, Some("id-ID"), Lang::Id),
+        (Language::System, Some("de-DE"), Lang::Id),
+        (Language::System, None, Lang::Id),
+        (Language::Id, Some("en-US"), Lang::Id),
+        (Language::En, Some("id-ID"), Lang::En),
+    ];
+    for (chosen, os, want) in rows {
+        let s = State::scene("home-empty").with_os_locale(os.map(String::from)).with_preferences(Prefs::memory());
+        assert_eq!(lang_of(chosen, os), want, "{chosen:?} on {os:?}");
+        let mut s = s;
+        s.panels.general.prefs.language = chosen;
+        s.prefs_changed();
+        assert_eq!(s.lang, want, "the app takes it: {chosen:?} on {os:?}");
+    }
 }
 
 #[test]

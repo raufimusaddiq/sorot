@@ -96,7 +96,7 @@ notify-rust = "4"
 libc = "0.2.191"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 # Debuginfo is what made each test exe carry a ~490 MB PDB: line tables only for our code (panics
 # keep file:line, llvm-cov keeps per-line counts), none for dependencies.

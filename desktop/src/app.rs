@@ -465,6 +465,8 @@ pub struct State {
     supervisor: Option<Arc<Mutex<Supervisor>>>,
     preview_cache: Option<Arc<Mutex<PreviewCache>>>,
     prefs_store: Option<rune::prefs::Prefs>,
+    /// The language tag the OS is set to; `Language::System` follows it. Unset in tests.
+    os_locale: Option<String>,
 }
 
 impl State {
@@ -485,7 +487,7 @@ impl Default for State {
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
             route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
-            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None, prefs_store: None,
+            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None, prefs_store: None, os_locale: None,
         }
     }
 }
@@ -520,10 +522,16 @@ impl State {
         self
     }
 
+    /// Tells the app what language the OS is set to.
+    pub fn with_os_locale(mut self, tag: Option<String>) -> Self {
+        self.os_locale = tag;
+        self
+    }
+
     /// Moves the preferences in the General page into the fields the app reads.
     fn apply_prefs(&mut self) {
         let p = &self.panels.general.prefs;
-        (self.theme, self.lang, self.notifications, self.close_pref) = (p.theme, crate::screens::settings::general::lang_of(p.language), p.notifications, p.close_behaviour.into());
+        (self.theme, self.lang, self.notifications, self.close_pref) = (p.theme, crate::screens::settings::general::lang_of(p.language, self.os_locale.as_deref()), p.notifications, p.close_behaviour.into());
     }
 
     /// Picks a theme from outside the General page (the View menu) and saves it.
@@ -1258,7 +1266,7 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
     let opener = handle.clone();
     notifier.on_click(Arc::new(move |job| opener.update(move |s: &mut State, _: &mut Tx| s.apply(Msg::OpenJob(job)))));
     let prefs = rune::prefs::Prefs::at(config_dir.join("preferences.json"));
-    State::live(bus, sup).with_preferences(prefs).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_handle(handle, background_ok)
+    State::live(bus, sup).with_os_locale(crate::platform::locale::os_locale()).with_preferences(prefs).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_handle(handle, background_ok)
 }
 
 pub fn run(live: fn() -> Live) {

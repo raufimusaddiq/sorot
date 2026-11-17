@@ -36,9 +36,15 @@ impl General {
     }
 }
 
-/// `Language::System` follows the app's own default: Indonesian.
-pub fn lang_of(l: Language) -> Lang {
-    if l == Language::En { Lang::En } else { Lang::Id }
+/// `System` follows the OS: English when it is set to English, Indonesian otherwise (FR-018).
+/// `os` is the OS's language tag (`en-US`, `en_GB.UTF-8`, `id-ID`), if it says one.
+pub fn lang_of(l: Language, os: Option<&str>) -> Lang {
+    match l {
+        Language::En => Lang::En,
+        Language::Id => Lang::Id,
+        Language::System if os.is_some_and(|t| t.get(..2).is_some_and(|p| p.eq_ignore_ascii_case("en"))) => Lang::En,
+        Language::System => Lang::Id,
+    }
 }
 
 const ACTION_KEYS: [&str; ACTIONS] = ["palette", "import", "paste", "play", "next", "previous", "export", "reveal", "settings", "cancel"];
