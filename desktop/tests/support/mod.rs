@@ -62,6 +62,8 @@ pub fn press(rt: &mut Runtime<State>, chord: &str) {
         "Enter" => Key::Enter,
         "Escape" => Key::Escape,
         "Tab" => Key::Tab,
+        "Up" => Key::Up,
+        "Down" => Key::Down,
         n if n.chars().count() == 1 && mods.cmd => Key::Command(n.chars().next().unwrap().to_ascii_lowercase()),
         n => Key::Text(n.into()),
     };

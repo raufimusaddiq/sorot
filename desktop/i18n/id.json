@@ -801,5 +801,9 @@
   "general.action.export": "Ekspor klip",
   "general.action.reveal": "Tampilkan di folder",
   "general.action.settings": "Pengaturan",
-  "general.action.cancel": "Batalkan tugas"
+  "general.action.cancel": "Batalkan tugas",
+  "palette.title": "Palet perintah",
+  "palette.hint": "Ketik perintah",
+  "palette.list": "Perintah",
+  "palette.empty": "Tidak ada perintah yang cocok."
 }

@@ -801,5 +801,9 @@
   "general.action.export": "Export the clip",
   "general.action.reveal": "Show in folder",
   "general.action.settings": "Settings",
-  "general.action.cancel": "Cancel the job"
+  "general.action.cancel": "Cancel the job",
+  "palette.title": "Command palette",
+  "palette.hint": "Type a command",
+  "palette.list": "Commands",
+  "palette.empty": "No command matches."
 }
