@@ -15,7 +15,11 @@ fn temp(ext: &str) -> PathBuf {
     std::env::temp_dir().join(format!("sorot-headless-{}-{}.{ext}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)))
 }
 
-/// Runs `cmd` to the end, or kills it after 30 s and fails with what it printed.
+/// How long one headless process may run. Generous: a loaded CI runner is slow, and the suite's own
+/// timeout is the real bound.
+const DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Runs `cmd` to the end, or kills it after `DEADLINE` and fails with what it printed.
 fn finish(mut cmd: Command) -> std::process::Output {
     use std::io::Read;
     use std::process::Stdio;
@@ -29,7 +33,7 @@ fn finish(mut cmd: Command) -> std::process::Output {
         })
     };
     let (o, e) = (reader(Box::new(out)), reader(Box::new(err)));
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let deadline = std::time::Instant::now() + DEADLINE;
     let status = loop {
         if let Some(s) = child.try_wait().unwrap() {
             break s;
@@ -37,7 +41,7 @@ fn finish(mut cmd: Command) -> std::process::Output {
         if std::time::Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("the headless binary did not exit in 30 s: {}", String::from_utf8_lossy(&e.join().unwrap()));
+            panic!("the headless binary did not exit in {} s: {}", DEADLINE.as_secs(), String::from_utf8_lossy(&e.join().unwrap()));
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
