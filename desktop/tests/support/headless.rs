@@ -29,7 +29,7 @@ fn finish(mut cmd: Command) -> std::process::Output {
         })
     };
     let (o, e) = (reader(Box::new(out)), reader(Box::new(err)));
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let status = loop {
         if let Some(s) = child.try_wait().unwrap() {
             break s;
@@ -37,7 +37,7 @@ fn finish(mut cmd: Command) -> std::process::Output {
         if std::time::Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("the headless binary did not exit in 120 s: {}", String::from_utf8_lossy(&e.join().unwrap()));
+            panic!("the headless binary did not exit in 30 s: {}", String::from_utf8_lossy(&e.join().unwrap()));
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
