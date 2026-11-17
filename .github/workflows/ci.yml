@@ -66,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-14, ubuntu-24.04]
+        os: [windows-latest, macos-15, ubuntu-24.04]
     defaults:
       run:
         working-directory: desktop
@@ -79,6 +79,7 @@ jobs:
       - name: Rust toolchain (desktop/rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
       - uses: taiki-e/install-action@v2
+        if: runner.os == 'Linux'
         with:
           tool: cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
@@ -86,8 +87,16 @@ jobs:
           workspaces: desktop
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Tests and coverage (95% lines and functions, shims in coverage-exclude.txt)
+      - name: "Tests and coverage (Linux, 95% lines and functions, shims in coverage-exclude.txt)"
+        if: runner.os == 'Linux'
+        env:
+          SOROT_HEADLESS_DEADLINE_SECS: "180"
         run: cargo llvm-cov --workspace --fail-under-lines 95 --fail-under-functions 95 --ignore-filename-regex "$(sh scripts/cov-ignore.sh)"
+      - name: "Tests (Windows, macOS, no coverage; the software renderer is slow under instrumentation)"
+        if: runner.os != 'Linux'
+        env:
+          SOROT_HEADLESS_DEADLINE_SECS: "300"
+        run: cargo test --workspace
       - name: Kani proofs (desktop/core)
         if: runner.os == 'Linux'
         run: |
