@@ -8,6 +8,7 @@ pub mod i18n;
 pub mod library;
 pub mod preview;
 pub mod remembered;
+pub mod session;
 pub mod screens;
 pub mod ui;
 pub mod update;
@@ -20,6 +21,18 @@ use std::sync::Arc;
 use platform::notify_rune::notifier as os_notifier;
 #[cfg(target_os = "linux")]
 use platform::notify_linux::notifier as os_notifier;
+#[cfg(windows)]
+fn os_taskbar() -> Arc<dyn session::Taskbar> {
+    Arc::new(platform::taskbar_windows::OsTaskbar::start())
+}
+#[cfg(target_os = "macos")]
+fn os_taskbar() -> Arc<dyn session::Taskbar> {
+    Arc::new(platform::dock_macos::OsDock)
+}
+#[cfg(target_os = "linux")]
+fn os_taskbar() -> Arc<dyn session::Taskbar> {
+    Arc::new(session::NoTaskbar)
+}
 use engine::sidecar::{LaunchConfig, OsSpawn, Sidecar, SystemClock};
 
 /// OS shims, each listed in `coverage-exclude.txt`; `tests/platform_list.rs` guards the list.
@@ -61,6 +74,12 @@ pub mod platform {
     #[cfg(target_os = "macos")]
     #[path = "open_documents_macos.rs"]
     pub mod open_documents_macos;
+    #[cfg(target_os = "macos")]
+    #[path = "dock_macos.rs"]
+    pub mod dock_macos;
+    #[cfg(windows)]
+    #[path = "monitors_windows.rs"]
+    pub mod monitors_windows;
     #[path = "fx_compositor.rs"]
     pub mod fx_compositor;
     #[path = "gpu_probe.rs"]
@@ -114,10 +133,23 @@ pub fn live() -> app::Live {
         notifier: os_notifier(),
         preview: preview::os_player,
         gpu: Arc::new(platform::gpu_probe::OsGpuProbe),
+        taskbar: os_taskbar(),
+        view: platform::window_state::load_view(),
     }
 }
 
+/// Hands a launch's videos to the window that is open, or opens this one. A headless run (any
+/// Rune tooling flag) is neither: it never claims the app.
 pub fn run() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(paths) = session::launch_paths(&args) {
+        if !paths.is_empty() {
+            session::leave_open(&workspace::config_dir(|k| std::env::var(k).ok()), &paths);
+        }
+        if !rune::single_instance(session::APP_ID) {
+            return;
+        }
+    }
     app::run(live);
 }
 

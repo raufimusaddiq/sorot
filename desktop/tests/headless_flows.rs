@@ -48,6 +48,15 @@ fn the_scenes_are_listed_and_render_in_both_themes() {
     }
 }
 
+/// "Open with Sorot" on the binary: a video path in argv shows the import sheet with that file.
+#[test]
+fn a_video_path_in_argv_shows_the_import_sheet_with_that_file() {
+    let tree = run("home-empty", None, &["C:/videos/talk.mp4"]);
+    assert_text(&tree, "home/opened/name", "talk.mp4");
+    assert_role_label(&tree, "home/opened/import");
+    assert_eq!(overlaps(&tree), Vec::<(String, String)>::new());
+}
+
 /// US2 journeys, binary only: the screen reached at each mark, and the one reveal call at the end.
 /// Per-control calls are L2.
 #[test]
