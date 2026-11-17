@@ -13,6 +13,7 @@ use sorot_desktop_core::palette_search::{Entry, rank};
 use crate::app::State;
 use crate::i18n::tr;
 use crate::screens::menu_bar::{Act, actions};
+use crate::ui::fx_moments::{Moment, slot};
 use crate::ui::kit::pal;
 
 /// The palette's own state: open or not, what was typed, and the row the arrows chose for that text.
@@ -86,7 +87,7 @@ pub fn overlay(s: &State) -> Option<El> {
     if !s.palette.open {
         return None;
     }
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let (title, hint) = (tr(s.lang, "palette.title"), tr(s.lang, "palette.hint"));
     let hits = s.palette_hits();
     let at = s.palette_row(hits.len());
@@ -115,12 +116,14 @@ pub fn overlay(s: &State) -> Option<El> {
         }
         list = list.child(
             row().key(row_key).role("option").label(words.clone()).checked(i == at).focusable(true).px(10.0).py(9.0).radius(6.0).w_full()
-                .fill(if i == at { p.text.alpha(0.08) } else { p.raised }).hover(p.text.alpha(0.08))
+                .fill(if i == at { p.text.alpha(0.08) } else { p.surface }).hover(p.text.alpha(0.08))
                 .on_press_tx(move |s: &mut State, tx: &mut Tx| s.palette_run(Some(i), tx))
                 .child(text(words.clone()).font(type_::BODY).color(if i == at { p.beam_text } else { p.text })),
         );
     }
-    let panel = col().key("palette").role("dialog").label(title).w(560.0).max_w(560.0).fill(p.raised).border(1.0, p.divider).radius(12.0)
+    let panel = col().key("palette").role("dialog").label(title).w(560.0).max_w(560.0).fill(p.surface).border(1.0, p.divider).radius(12.0)
+        // Reeded glass where the GPU can draw it, matte graphite (the fill) on a CPU renderer.
+        .child(slot(Moment::PaletteGlass, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
         .modal_tx(true, |s: &mut State, _: &mut Tx| s.close_palette())
         .child(field).child(col().w_full().h(1.0).fill(p.divider)).child(list);
     Some(col().key("palette/scrim").w_full().h_full().items_center().padding(96.0).fill(p.bg.alpha(0.6)).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).child(panel))

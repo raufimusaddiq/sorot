@@ -48,7 +48,7 @@ fn key(i: usize, name: &str) -> String {
 }
 
 fn candidate(s: &State, w: &Welcome, i: usize, c: &Candidate) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let broken = !c.ok || c.problem.is_some();
     let facts = format!("{} video(s), {} clip(s){}", c.videos, c.clips, if c.has_keys { ", has API keys" } else { "" });
     let note = match (&c.problem, i) {
@@ -59,7 +59,7 @@ fn candidate(s: &State, w: &Welcome, i: usize, c: &Candidate) -> El {
     let from = c.path.clone();
     let choose = |how: How, label: &str, name: &str, primary: bool| {
         let (from, keys) = (from.clone(), w.keys && c.has_keys);
-        button(s.dark, key(i, name), label, primary, move |s: &mut State| s.send(Cmd::Choose { how, from: from.clone(), keys }))
+        button(s.dark(), key(i, name), label, primary, move |s: &mut State| s.send(Cmd::Choose { how, from: from.clone(), keys }))
     };
     let mut actions = row().gap(10.0).child(choose(How::Copy, "Copy it", "copy", false));
     if !broken {
@@ -76,17 +76,17 @@ fn candidate(s: &State, w: &Welcome, i: usize, c: &Candidate) -> El {
 }
 
 fn done(s: &State, skipped: &[String]) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let mut list = col().key("welcome/skipped").role("list").gap(2.0).label(format!("{} files were not copied", skipped.len()));
     for f in skipped.iter().take(8) {
         list = list.child(text(f).font(type_::BODY).color(p.muted).wrap());
     }
     col().gap(12.0).child(text(format!("Copied, except {} file(s) the engine could not read. The original is untouched.", skipped.len())).key("welcome/skipped/title").font(type_::TITLE).color(p.text).wrap())
-        .child(list).child(button(s.dark, "welcome/continue", "Continue", true, |s: &mut State| s.finish_welcome()))
+        .child(list).child(button(s.dark(), "welcome/continue", "Continue", true, |s: &mut State| s.finish_welcome()))
 }
 
 pub fn view(s: &State, w: &Welcome) -> El {
-    let p = pal(s.dark);
+    let p = pal(s.dark());
     let n = w.candidates.len();
     let mut screen = col().gap(16.0).padding(40.0).w_full().max_w(960.0)
         .child(text("Use your old data, or start fresh?").key("welcome/title").role("heading").level(1).font(type_::TITLE).color(p.text))
@@ -112,8 +112,8 @@ pub fn view(s: &State, w: &Welcome) -> El {
                 .child(col().gap(2.0).grow(1.0)
                     .child(text("Bring the API keys too").font(type_::TITLE).color(p.text))
                     .child(text("Keys are never shown. They are only moved into the new settings.").font(type_::BODY).color(p.muted).wrap()))
-                .child(button(s.dark, "welcome/keys", if on { "Keys: on" } else { "Keys: off" }, on, |s: &mut State| s.toggle_keys())),
+                .child(button(s.dark(), "welcome/keys", if on { "Keys: on" } else { "Keys: off" }, on, |s: &mut State| s.toggle_keys())),
         );
     }
-    screen.child(button(s.dark, "welcome/fresh", "Start with an empty library", false, |s: &mut State| s.send(Cmd::Choose { how: How::Fresh, from: String::new(), keys: false })))
+    screen.child(button(s.dark(), "welcome/fresh", "Start with an empty library", false, |s: &mut State| s.send(Cmd::Choose { how: How::Fresh, from: String::new(), keys: false })))
 }

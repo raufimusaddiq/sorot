@@ -121,31 +121,6 @@
    "name": "Tab"
   },
   {
-   "t": 16.6,
-   "type": "key",
-   "name": "Tab"
-  },
-  {
-   "t": 16.7,
-   "type": "key",
-   "name": "Tab"
-  },
-  {
-   "t": 16.8,
-   "type": "key",
-   "name": "Tab"
-  },
-  {
-   "t": 16.9,
-   "type": "key",
-   "name": "Tab"
-  },
-  {
-   "t": 17.0,
-   "type": "key",
-   "name": "Tab"
-  },
-  {
    "t": 17.1,
    "type": "mark",
    "name": "export-focus"

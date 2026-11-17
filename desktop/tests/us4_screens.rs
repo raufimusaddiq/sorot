@@ -29,7 +29,9 @@ fn the_palette_opens_filters_runs_and_gives_focus_back() {
     ctrl_k(&mut rt);
     assert_eq!(focused(&rt).as_deref(), Some("palette/input"));
     let all = rt.elements().iter().filter(|e| e.role == "option").count();
-    assert!(all >= 8, "every action of the menus is listed");
+    let keys: Vec<String> = rt.elements().iter().filter(|e| e.role == "option").filter_map(|e| e.key.as_deref()?.strip_prefix("palette/item/").map(String::from)).collect();
+    let want: Vec<String> = sorot_desktop::screens::menu_bar::actions(&rt.state).iter().map(|a| a.0.to_string()).collect();
+    assert_eq!((keys, all), (want, 13), "every action of the menus is listed");
 
     press(&mut rt, "Escape");
     assert!(rt.find("palette").is_none());
@@ -42,6 +44,15 @@ fn the_palette_opens_filters_runs_and_gives_focus_back() {
     press(&mut rt, "Enter");
     assert!(rt.find("palette").is_none());
     assert_eq!(rt.state.screen(), Screen::Connections);
+}
+
+/// The palette is glass surface 1 of 2: one palette slot over the screen, two glass slots in all with the transport behind it.
+#[test]
+fn the_open_palette_is_one_glass_surface_of_two() {
+    let rt = scene_rt("palette-open");
+    let glass: Vec<_> = slots(&rt).into_iter().map(|(m, _)| m).filter(|m| m.is_glass()).collect();
+    assert_eq!(glass.iter().filter(|m| **m == sorot_desktop::ui::fx_moments::Moment::PaletteGlass).count(), 1);
+    assert_eq!(glass.len(), 2);
 }
 
 /// The arrows move the highlight (and wrap), a press on a row runs it, and a query nothing matches says so.

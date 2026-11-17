@@ -41,7 +41,7 @@ fn every_flow_ends_where_it_should_without_overlap_or_clipping() {
 
 #[test]
 fn the_scenes_are_listed_and_render_in_both_themes() {
-    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "job-running", "clips-ranked", "clips-publish", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
+    assert_eq!(output(&["--list-scenes"]).lines().collect::<Vec<_>>(), ["home-empty", "readiness-missing", "engine-failed", "first-run", "home-interrupted", "job-running", "clips-ranked", "clips-publish", "palette-open", "clips-reranked", "editor-hook", "connections", "generate-settings", "generate-no-ai", "generate", "generate-flow", "learning", "discover", "publish"]);
     for theme in ["dark", "light"] {
         let png = snap("readiness-missing", theme, "900x600");
         let _ = std::fs::remove_file(png);
@@ -125,21 +125,32 @@ fn the_us4_menu_journey_picks_settings_from_the_bar() {
 }
 
 /// US4 keyboard-only journey: only `key` and `type` events, import to export. After each step the focused element is the
-/// one named and its focus ring shows. The tree is dumped at one mark per run (`--tree` has no second dump, `--trace`
-/// no focus), so each mark is its own run of the one script, all at once.
+/// one named and its focus ring shows; focus follows the person from Home into the job and on into the clips. The tree
+/// is dumped at one mark per run (`--tree` has no second dump, `--trace` no focus), so each mark is its own run of the
+/// one script, three at a time.
 #[test]
 fn the_us4_keyboard_only_journey_keeps_focus_visible_at_every_step() {
-    const STEPS: [(&str, &str); 8] = [("link", "home/link"), ("import", "home/import"), ("clips", "shell/rail/settings"), ("export-focus", "clips/export"), ("back", "clips/edit"), ("palette", "palette/input"), ("closed", "clips/edit"), ("end", "clips/export")];
+    const STEPS: [(&str, &str); 9] = [("link", "home/link"), ("import", "home/import"), ("job", "job/cancel"), ("clips", "clips/row/c2"), ("export-focus", "clips/export"), ("back", "clips/edit"), ("palette", "palette/input"), ("closed", "clips/edit"), ("end", "clips/export")];
     let at = |mark: &str| run_at("home-empty", Some("us4-keyboard-only"), mark, &[], &[]);
-    let trees: Vec<Tree> = std::thread::scope(|s| {
-        let runs: Vec<_> = STEPS.iter().map(|(mark, _)| s.spawn(move || at(mark))).chain(std::iter::once(s.spawn(|| at("job")))).collect();
-        runs.into_iter().map(|r| r.join().unwrap()).collect()
-    });
+    let mut trees: Vec<Tree> = vec![];
+    for batch in STEPS.chunks(3) {
+        trees.extend(std::thread::scope(|s| batch.iter().map(|(mark, _)| s.spawn(move || at(mark))).collect::<Vec<_>>().into_iter().map(|r| r.join().unwrap()).collect::<Vec<_>>()));
+    }
     let elements = |t: &Tree| t.0["elements"].as_array().unwrap().clone();
     for ((mark, key), tree) in STEPS.iter().zip(&trees) {
         let focused: Vec<(String, bool)> = elements(tree).iter().filter(|e| e["focused"] == true).map(|e| (e["key"].as_str().unwrap_or_default().to_string(), e["focusVisible"] == true)).collect();
         assert_eq!(focused, [(key.to_string(), true)], "{mark}");
     }
-    let has = |t: &Tree, key: &str| elements(t).iter().any(|e| e["key"] == key);
-    assert!(has(&trees[8], "job/progress") && has(&trees[7], "clips/reveal"), "the keys alone reached the job and exported the clip");
+    assert!(elements(&trees[8]).iter().any(|e| e["key"] == "clips/reveal"), "the keys alone exported the clip");
+}
+
+/// US6 journey, binary only: an interrupted job on Home, Retry, the job runs, then its clips.
+#[test]
+fn the_us6_journey_retries_an_interrupted_job_to_its_clips() {
+    let has = |t: &Tree, key: &str| t.0["elements"].as_array().unwrap().iter().any(|e| e["key"] == key);
+    for (mark, shown, absent) in [("home", "home/retry/ji", "job/progress"), ("running", "job/progress", "home/retry/ji"), ("clips", "clips/list", "job/progress")] {
+        let tree = run_at("home-interrupted", Some("us6-retry-interrupted"), mark, &[], &[]);
+        assert!(has(&tree, shown) && !has(&tree, absent), "{mark}: {shown} shown, {absent} gone");
+        assert_eq!((overlaps(&tree), clipped_text(&tree)), (vec![], vec![]), "{mark}");
+    }
 }
