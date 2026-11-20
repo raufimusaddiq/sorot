@@ -1,0 +1,4 @@
+rune: wrote design/demo-clip-flow.mp4 (65 frames at 20 fps)
+rune: 65 frames in 2.63 s wall (24.8 frames/s)
+rune: 65 frames at 20 fps, gpu init 296.8 ms, first frame 2392.77 ms, frame cpu mean 0.932 ms p50 0.828 p95 2.703 max 2392.773, 449 instances
+rune: animating frames 43 (cpu p50 0.983 p95 2.703 ms), at-rest frames 21 (the window draws none; forced cpu p50 0.625 p95 0.926 ms), layout nodes 115, glyphs 401

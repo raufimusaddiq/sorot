@@ -1,0 +1,56 @@
+   Compiling syn v3.0.10
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling thiserror v2.0.21
+   Compiling serde v1.0.229
+   Compiling sorot-desktop-core v0.0.1 (D:\VibeCoding\ViralVideo\.rig\wt\T-31\desktop\core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.43s
+     Running unittests src\lib.rs (target\debug\deps\sorot_desktop_core-dce802d13803e999.exe)
+
+running 37 tests
+test availability::tests::availability_table ... ok
+test av_clock::tests::frame_and_seek_table ... ok
+test cache::tests::insert_table ... ok
+test cache::tests::validity_touch_and_oversize ... ok
+test clips::tests::clips_come_in_rank_pos_order ... ok
+test clips::tests::only_the_clip_layer_change_is_sent ... ok
+test close::tests::close_table ... ok
+test contrast::tests::ratios_match_the_measured_design_table ... ok
+test contrast::tests::the_shipped_theme_passes_and_a_weak_one_is_named ... ok
+test datetime::tests::boxes_become_a_calendar_moment_or_say_why_not ... ok
+test datetime::tests::every_valid_day_survives_the_trip_through_seconds ... ok
+test datetime::tests::unix_and_back_agree_across_leap_days_and_the_epoch ... ok
+test engine_conn::tests::event_sequences_end_in_the_expected_state ... ok
+test handshake::tests::lines_parse_or_fail_by_cause ... ok
+test job::tests::rows_to_view ... ok
+test masked::tests::shows_masked_until_typed_and_sends_only_typed ... ok
+test model::tests::errors_and_phases ... ok
+test model::tests::every_engine_payload_deserializes ... ok
+test palette_search::tests::rank_table ... ok
+test prefs::tests::a_hand_edited_file_with_a_double_binding_gets_the_default_map ... ok
+test prefs::tests::a_taken_chord_is_refused_and_a_free_one_binds ... ok
+test prefs::tests::defaults_follow_the_keyboard_map_per_os ... ok
+test publish_gate::tests::exemption_and_draft_mode_stand_in_for_privacy ... ok
+test publish_gate::tests::last_times_accounts_come_back_only_if_listed_postable_and_in_one_workspace ... ok
+test readiness::tests::gates_from_item_lists ... ok
+test readiness::tests::rows_drive_the_state_machine ... ok
+test redact::tests::no_text_up_to_6_bytes_keeps_a_secret_up_to_3_bytes ... ok
+test redact::tests::secrets_and_bearer_tokens_are_masked ... ok
+test theme_gen::tests::broken_tokens_are_errors ... ok
+test theme_gen::tests::each_token_kind_lands_in_its_place ... ok
+test theme_gen::tests::real_tokens_load_in_both_modes_and_the_committed_theme_is_fresh ... ok
+test toast::tests::the_clock_runs_only_while_unhovered ... ok
+test update::tests::decide_table ... ok
+test window::tests::restore_table ... ok
+test workspace::tests::candidates_rank_healthy_then_clips ... ok
+test workspace::tests::workspace_file_round_trips_without_a_token ... ok
+test cache::tests::every_short_insert_sequence_keeps_the_cap_and_the_new_entry ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+   Doc-tests sorot_desktop_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
