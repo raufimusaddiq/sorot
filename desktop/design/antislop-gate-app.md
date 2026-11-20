@@ -22,7 +22,7 @@ fixed.
 67 items across the four Blocks and the UI Skill Checklist: **67 PASS, 0 FAIL**.
 Answers: 45 "no" (Hard Gate, Purpose Gate, Quality Locks) and 22 "yes" (Liveliness, UI Skill Checklist).
 **39 are backed by a run test or a produced artifact; 28 rest on design review or snapshot inspection**
-(named in the "Honest design-scope items" list below; 21 rows are also tagged "design-scope PASS"). We do not claim that
+(named in the "Honest design-scope items" list below; 23 rows are also tagged "design-scope PASS"). We do not claim that
 every PASS is run-backed: rows whose only evidence is "seen in snapshots" or an absence in source are
 design-scope calls, and a few rows (R-18, R-28, R-40) have no dedicated run assertion at all. No behaviour
 defect was found. Verification: clippy exit 0; `cargo test --test suite` 134 passed, 0 failed;
