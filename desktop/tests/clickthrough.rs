@@ -174,7 +174,7 @@ fn state_change(before: &[String], after: &[String]) -> Vec<String> {
 }
 
 /// What changed for the report: engine calls, opened/closed nodes, state flips, toasts, and
-/// platform requests. Copy is whatever the app renders now; T110's rewrite is pending the owner.
+/// platform requests. Copy is whatever the app renders now, after T110's approved copy rewrite.
 fn effect(before: &Snapshot, after: &Snapshot) -> String {
     let mut out: Vec<String> = vec![];
     let new_calls: Vec<&str> = after.calls.iter().skip(before.calls.len()).map(String::as_str).collect();
@@ -234,7 +234,7 @@ fn tall(state: State) -> Runtime<State> {
 fn every_control_responds_to_one_tap() {
     let mut report = String::from("# Click-through (R-26/R-35)\n\nOne tap per interactive control, on Rune's in-process headless runtime against `FakeEngine`.\n\
         `cargo test --test suite clickthrough::` writes this file. Controls come from the same accessibility tree that the binary's `--tree` dumps. A tap counts when it changes a state, opens something or sends a request to the engine or OS; one that changes nothing fails the test (R-26).\n\
-        Focus flags are excluded from the comparison (every focusable control flips them); focus counts only when it moves into a text field. Copy is recorded as the app renders it now (T110's rewrite is pending the owner). Native-only inputs — argv forwarding and resize — stay in the L3 journeys in `headless_flows.rs`; the things a control asks the OS for (file dialog, menu, URL, clipboard, shell, reveal) are read from the headless runtime.\n\n");
+        Focus flags are excluded from the comparison (every focusable control flips them); focus counts only when it moves into a text field. Copy is recorded as the app renders it now (T110's approved rewrite is applied). Native-only inputs — argv forwarding and resize — stay in the L3 journeys in `headless_flows.rs`; the things a control asks the OS for (file dialog, menu, URL, clipboard, shell, reveal) are read from the headless runtime.\n\n");
     let mut checked = 0usize;
     let mut disabled = 0usize;
     let mut dead = vec![];
