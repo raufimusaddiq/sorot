@@ -180,6 +180,10 @@ impl FakeEngine {
 }
 
 impl Engine for FakeEngine {
+    fn call_log(&self) -> Vec<String> {
+        self.calls()
+    }
+
     fn health(&self) -> Result<Health> {
         self.enter("health".into(), "health")?;
         self.load("health", r#"{"status":"ok","data":{"healthy":true}}"#)

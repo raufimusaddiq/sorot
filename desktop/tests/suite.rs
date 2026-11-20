@@ -4,6 +4,7 @@
 mod support;
 
 mod a11y;
+mod clickthrough;
 mod app_screens;
 mod design_rules;
 mod general_screen;
