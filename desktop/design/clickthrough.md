@@ -439,7 +439,7 @@ Focus flags are excluded from the comparison (every focusable control flips them
 - `publish/schedule/year` → focus text field `publish/schedule/year`
 - `publish/schedule/hour` → focus text field `publish/schedule/hour`
 - `publish/schedule/minute` → focus text field `publish/schedule/minute`
-- `publish/schedule/now` → Jadwalkan of `publish/post`: disabled → disabled, Tanggal of `publish/schedule/day`: changed → value=20, Jam of `publish/schedule/hour`: changed → value=10, Menit of `publish/schedule/minute`: changed → value=6, Bulan of `publish/schedule/month`: changed → value=11, Tahun of `publish/schedule/year`: changed → value=2026, opened Jadwalkan (`role=label name=Jadwalkan`), closed Posting sekarang (`role=label name=Posting sekarang`)
+- `publish/schedule/now` → Jadwalkan of `publish/post`: disabled → disabled, Tanggal of `publish/schedule/day`: changed → value=15, Jam of `publish/schedule/hour`: changed → value=0, Menit of `publish/schedule/minute`: changed → value=0, Bulan of `publish/schedule/month`: changed → value=11, Tahun of `publish/schedule/year`: changed → value=2026, opened Jadwalkan (`role=label name=Jadwalkan`), closed Posting sekarang (`role=label name=Posting sekarang`)
 - `publish/account/tt` → @akunanda (TikTok, ruang kerja Utama) of `publish/account/tt`: checked → unchecked
 - `publish/account/yt` → Kanal Anda (YouTube, ruang kerja Utama) of `publish/account/yt`: checked → unchecked
 - `publish/write` → Engine::publish_draft(c1, tt,yt)
