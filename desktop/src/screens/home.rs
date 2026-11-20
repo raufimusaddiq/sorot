@@ -8,8 +8,10 @@ use rune::tok::type_;
 use rune::{El, FileDialogOptions, Key, KeyEvent, ScrollSpec, TextEdit, Tx, col, edit_access, row, text, text_input};
 use sorot_desktop_core::clips::Options;
 use sorot_desktop_core::model::{Job, JobPhase};
+use sorot_desktop_core::prefs::Action;
 
 use crate::app::{Cmd, Route, State};
+use crate::screens::panels::{Host, Page};
 use crate::engine::{EngineError, ImportRequest, Source};
 use crate::i18n::{Lang, tr, trf};
 use crate::ui::controls::{DISPLAY_SMALL, Pick, centered, dropdown, option_choices, page_head, pill, switch};
@@ -128,14 +130,45 @@ impl State {
         });
     }
 
-    /// Ctrl+O on Home chooses a file, Ctrl+. on a running job cancels it; the clips keys come last.
+    /// The stored keyboard map decides the keys, at the screen each action is meant for; a key no
+    /// action binds is nobody's.
     pub fn keys(&mut self, key: &KeyEvent, tx: &mut Tx) -> bool {
+        self.chord_action(key).is_some_and(|action| self.run_shortcut(action, tx))
+    }
+
+    /// The action the keyboard map in the preferences binds this press to, if any.
+    pub fn chord_action(&self, key: &KeyEvent) -> Option<Action> {
+        let pressed = match &key.key {
+            Key::Text(t) => t.chars().next()?,
+            Key::Command(c) => *c,
+            _ => return None,
+        };
+        Action::ALL.into_iter().find(|a| {
+            let c = self.panels.general.prefs.shortcuts.get(*a);
+            c.key.eq_ignore_ascii_case(&pressed) && c.primary == key.mods.cmd && c.shift == key.mods.shift
+        })
+    }
+
+    /// What a stored shortcut does, at the screen it is meant for; elsewhere it falls through.
+    fn run_shortcut(&mut self, action: Action, tx: &mut Tx) -> bool {
+        use Action::*;
+        let (home, clips) = (matches!(self.route, Route::Home), matches!(self.route, Route::Clips(_)));
         let running = self.job.detail.as_ref().is_some_and(|d| d.job.is_running());
-        match (&key.key, key.mods.cmd) {
-            (Key::Command('k'), true) => self.toggle_palette(),
-            (Key::Command('o'), true) if matches!(self.route, Route::Home) => self.choose_file(tx),
-            (Key::Command('.'), true) if matches!(self.route, Route::Job(_)) && running => self.cancel_shown_job(),
-            _ => return self.clips_key(key),
+        match action {
+            CommandPalette => self.toggle_palette(),
+            ImportFile if home => self.choose_file(tx),
+            PasteLink if home => self.import_link(),
+            CancelJob if running => self.cancel_shown_job(),
+            Settings => self.show(Page::General),
+            PlayPause if clips => self.toggle_play(),
+            NextClip if clips => self.move_selection(1),
+            PreviousClip if clips => self.move_selection(-1),
+            ExportClip if clips => self.export_selected(),
+            ShowInFolder if clips => match self.selected_clip().map(|c| c.id.clone()) {
+                Some(id) => self.reveal_or_save(&id, tx),
+                None => return false,
+            },
+            _ => return false,
         }
         true
     }

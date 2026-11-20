@@ -16,6 +16,7 @@ pub type Work = Box<dyn FnOnce(&dyn Engine) -> Apply + Send>;
 /// The state of every panel screen. The app holds one.
 #[derive(Default)]
 pub struct Panels {
+    pub general: settings::general::General,
     pub connections: settings::connections::Connections,
     pub generate: settings::generate::GenerateSettings,
     pub publish: publish::Publish,
@@ -30,6 +31,7 @@ pub struct Panels {
 /// The panel pages a tab or the rail can open.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
+    General,
     Connections,
     GenerateSettings,
     Learning,
@@ -55,6 +57,8 @@ pub trait Host: 'static {
     fn remember(&mut self, ids: &[String]);
     /// Opens a web address in the browser.
     fn open_url(&mut self, url: &str) -> Result<(), String>;
+    /// The preferences in `panels().general.prefs` changed: apply them and save them (a host with no store does nothing).
+    fn prefs_changed(&mut self) {}
     /// Goes to a page and reads what it shows.
     fn show(&mut self, page: Page);
     /// Shows a file in the system file manager (a host with none does nothing).

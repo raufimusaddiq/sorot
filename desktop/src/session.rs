@@ -28,6 +28,7 @@ impl State {
     pub fn view_memory(&self) -> ViewMemory {
         let (view, job) = match &self.route {
             Route::Job(id) => ("job", Some(id.clone())),
+            Route::General => ("general", None),
             Route::Connections => ("connections", None),
             Route::GenerateSettings => ("generate-settings", None),
             Route::Learning => ("learning", None),
@@ -57,6 +58,7 @@ impl State {
                     self.open_job(&id);
                 }
             }
+            "general" => self.show(Page::General),
             "connections" => self.show(Page::Connections),
             "generate-settings" => self.show(Page::GenerateSettings),
             "learning" => self.show(Page::Learning),

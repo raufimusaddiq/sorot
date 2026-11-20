@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use rune::{AppSpec, Cx, El, KeyEvent, Tx, col};
 use rune_fx::OneShots;
-use sorot_desktop_core::prefs::Theme;
+use sorot_desktop_core::prefs::{Preferences, Theme};
+
+const PREFS_KEY: &str = "preferences";
 use std::sync::atomic::{AtomicBool, Ordering};
 use sorot_desktop_core::close::{CloseAction, ClosePref, on_close};
 use sorot_desktop_core::engine_conn::{FailReason, State as ConnState};
@@ -63,6 +65,7 @@ pub enum Screen {
     Job,
     Clips,
     Editor,
+    General,
     Connections,
     GenerateSettings,
     Publish,
@@ -82,6 +85,7 @@ pub enum Route {
     Clips(String),
     /// A clip id.
     Editor(String),
+    General,
     Connections,
     GenerateSettings,
     /// A clip id.
@@ -477,6 +481,9 @@ pub struct State {
     bus: Option<Arc<dyn Bus>>,
     supervisor: Option<Arc<Mutex<Supervisor>>>,
     preview_cache: Option<Arc<Mutex<PreviewCache>>>,
+    prefs_store: Option<rune::prefs::Prefs>,
+    /// The language tag the OS is set to; `Language::System` follows it. Unset in tests.
+    os_locale: Option<String>,
 }
 
 impl State {
@@ -497,7 +504,7 @@ impl Default for State {
             welcome: None, workspace: None, close_pref: ClosePref::Ask, close_dialog: false, background_ok: false, idle_quit: false, quit_asked: false,
             route: Route::Home, home: Home::default(), job: JobScreen::default(), clips: ClipsScreen::default(), editor: Editor::default(), panels: Panels::default(),
             edit_options: None, music: vec![], preview: Box::new(NullPreview::default()), reveal: None, notifier: None, focused: true, notifications: true, remote: false,
-            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, native_popups: false, palette: Default::default(), focus_route: Route::Home, focus_clips: false, system_menu_bar: false, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, pending_view: None, opened_polled: 0.0, taskbar: None, taskbar_shown: crate::session::Progress::None, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None,
+            bursts: OneShots::new(1), cpu_renderer: false, lang: crate::i18n::Lang::default(), menu_open: None, native_popups: false, palette: Default::default(), focus_route: Route::Home, focus_clips: false, system_menu_bar: false, open_select: None, options_polled: -10.0, gpu_notice: false, now: 0.0, pending_view: None, opened_polled: 0.0, taskbar: None, taskbar_shown: crate::session::Progress::None, last_poll: 0.0, searched: false, data_dir: String::new(), config_dir: None, library: None, handle: None, bus: None, supervisor: None, preview_cache: None, prefs_store: None, os_locale: None,
         }
     }
 }
@@ -520,6 +527,34 @@ impl State {
     pub fn with_library(mut self, library: Arc<dyn Library>, config_dir: PathBuf, data_dir: String, saved: Option<Workspace>) -> Self {
         (self.library, self.config_dir, self.data_dir, self.workspace) = (Some(library), Some(config_dir), data_dir, saved);
         self
+    }
+
+    /// Keeps the preferences in `store` and starts from what it holds (a hand-edited keyboard map
+    /// that binds a chord twice goes back to the defaults).
+    pub fn with_preferences(mut self, store: rune::prefs::Prefs) -> Self {
+        let p = store.get::<Preferences>(PREFS_KEY).map(Preferences::checked).unwrap_or_default();
+        self.panels.general.load(p);
+        self.prefs_store = Some(store);
+        self.apply_prefs();
+        self
+    }
+
+    /// Tells the app what language the OS is set to.
+    pub fn with_os_locale(mut self, tag: Option<String>) -> Self {
+        self.os_locale = tag;
+        self
+    }
+
+    /// Moves the preferences in the General page into the fields the app reads.
+    fn apply_prefs(&mut self) {
+        let p = &self.panels.general.prefs;
+        (self.theme, self.lang, self.notifications, self.close_pref) = (p.theme, crate::screens::settings::general::lang_of(p.language, self.os_locale.as_deref()), p.notifications, p.close_behaviour.into());
+    }
+
+    /// Picks a theme from outside the General page (the View menu) and saves it.
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.panels.general.prefs.theme = theme;
+        self.prefs_changed();
     }
 
     /// What the OS gives the app: the file manager, notifications, the preview player.
@@ -570,6 +605,7 @@ impl State {
                 Route::Job(_) => Screen::Job,
                 Route::Clips(_) => Screen::Clips,
                 Route::Editor(_) => Screen::Editor,
+                Route::General => Screen::General,
                 Route::Connections => Screen::Connections,
                 Route::GenerateSettings => Screen::GenerateSettings,
                 Route::Publish(_) => Screen::Publish,
@@ -975,6 +1011,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         Screen::Job => shell::with_rail(s, job::view(s)),
         Screen::Clips => shell::with_rail(s, clips::view(s)),
         Screen::Editor => shell::with_rail(s, editor::view(s)),
+        Screen::General => shell::with_rail(s, crate::screens::settings::general::view(s)),
         Screen::Connections => shell::with_rail(s, connections::view(s)),
         Screen::GenerateSettings => shell::with_rail(s, generate::view(s)),
         Screen::Publish => shell::with_rail(s, publish::view(s)),
@@ -1081,9 +1118,23 @@ impl Host for State {
         self.reveal.as_ref().ok_or_else(|| "no browser to open it in".to_string())?.open_url(url)
     }
 
+    fn prefs_changed(&mut self) {
+        let before = self.lang;
+        self.apply_prefs();
+        // macOS draws the menu bar itself, in the language it was set in: setting it again moves the
+        // titles (the menu names stay the same, so the system keeps their place).
+        if self.lang != before && self.system_menu_bar && let Some(handle) = &self.handle {
+            let _ = handle.set_menu(crate::screens::menu_bar::native_items(self.lang));
+        }
+        if let Some(store) = &mut self.prefs_store {
+            let _ = store.set(PREFS_KEY, &self.panels.general.prefs);
+        }
+    }
+
     fn show(&mut self, page: crate::screens::panels::Page) {
         use crate::screens::panels::Page;
         match page {
+            Page::General => self.route = Route::General,
             Page::Connections => {
                 self.route = Route::Connections;
                 connections::open(self);
@@ -1285,7 +1336,8 @@ pub fn start_live(handle: rune::AppHandle<State>, live: Live) -> State {
     let background_ok = install_tray(&handle, tray.as_ref());
     let opener = handle.clone();
     notifier.on_click(Arc::new(move |job| opener.update(move |s: &mut State, _: &mut Tx| s.apply(Msg::OpenJob(job)))));
-    let mut state = State::live(bus, sup).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_taskbar(taskbar).with_view(view).with_handle(handle, background_ok);
+    let prefs = rune::prefs::Prefs::at(config_dir.join("preferences.json"));
+    let mut state = State::live(bus, sup).with_os_locale(crate::platform::locale::os_locale()).with_preferences(prefs).with_library(library, config_dir, data_dir, saved).with_platform(reveal, notifier, preview()).with_taskbar(taskbar).with_view(view).with_handle(handle, background_ok);
     state.native_popups = rune::popup_menu_supported();
     state.system_menu_bar = cfg!(target_os = "macos");
     state

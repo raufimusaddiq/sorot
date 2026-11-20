@@ -69,6 +69,8 @@ pub mod platform {
     #[cfg(windows)]
     #[path = "taskbar_windows.rs"]
     pub mod taskbar_windows;
+    #[path = "locale.rs"]
+    pub mod locale;
     #[path = "window_state.rs"]
     pub mod window_state;
     #[cfg(target_os = "macos")]

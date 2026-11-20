@@ -74,7 +74,7 @@ fn items_of(menu: Menu, clips: bool) -> Vec<(&'static str, &'static str, Act)> {
                 ("generate", "shell.generate", |s, _| s.show(Page::Generate)),
                 ("learning", "shell.learning", |s, _| s.show(Page::Learning)),
                 ("settings", "shell.settings", |s, _| s.show(Page::Connections)),
-                ("theme", "menu.theme", |s, _| s.theme = if s.dark() { Theme::Light } else { Theme::Dark }),
+                ("theme", "menu.theme", |s, _| s.set_theme(if s.dark() { Theme::Light } else { Theme::Dark })),
             ]);
             v
         }

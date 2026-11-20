@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use rune::tok::type_;
-use rune::{El, FileDialogOptions, GrowthSpec, Key, KeyEvent, ScrollSpec, Tx, col, row, text};
+use rune::{El, FileDialogOptions, GrowthSpec, ScrollSpec, Tx, col, row, text};
 use sorot_desktop_core::clips::ordered;
 use sorot_desktop_core::model::Clip;
 use sorot_desktop_core::toast::ToastKind;
@@ -201,21 +201,6 @@ impl State {
 
     pub fn clip_by_id(&self, id: &str) -> Option<&Clip> {
         self.clips.clips.iter().find(|c| c.id == id)
-    }
-
-    /// Keys nobody else took: J/K choose a clip, Space plays, Ctrl+E exports.
-    pub fn clips_key(&mut self, key: &KeyEvent) -> bool {
-        if !matches!(self.route, Route::Clips(_)) {
-            return false;
-        }
-        match (&key.key, key.mods.cmd) {
-            (Key::Text(t), false) if t.eq_ignore_ascii_case("j") => self.move_selection(1),
-            (Key::Text(t), false) if t.eq_ignore_ascii_case("k") => self.move_selection(-1),
-            (Key::Text(t), false) if t == " " => self.toggle_play(),
-            (Key::Command('e'), true) => self.export_selected(),
-            _ => return false,
-        }
-        true
     }
 }
 
