@@ -11,6 +11,7 @@ use sorot_desktop_core::prefs::Theme;
 use crate::app::State;
 use crate::i18n::{Lang, tr};
 use crate::screens::panels::{Host, Page};
+use crate::ui::focus;
 use crate::ui::kit::pal;
 
 /// The menus of the menu bar, left to right.
@@ -144,7 +145,7 @@ pub fn menu_list(s: &State) -> Option<El> {
     for (key, words, act) in menu_items(s, m) {
         let label = tr(s.lang, words);
         list = list.child(
-            col().key(format!("shell/menu/{}/{key}", m.id())).role("menuitem").label(label.clone()).focusable(true).px(10.0).py(8.0).radius(6.0)
+            col().key(focus::menu(m, key)).role("menuitem").label(label.clone()).focusable(true).px(10.0).py(8.0).radius(6.0)
                 .hover(p.text.alpha(0.08)).on_press_tx(move |s: &mut State, tx: &mut Tx| {
                     s.menu_open = None;
                     act(s, tx);

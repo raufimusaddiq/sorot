@@ -25,6 +25,7 @@ use crate::engine::generate as api;
 use crate::engine::generate::{Built, Detail, Estimate, Fact, Project};
 use crate::engine::{Engine, EngineError};
 use crate::screens::panels::{Host, Load, Page, Panels, answer, go};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, choice, heading, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -381,7 +382,7 @@ fn home<H: Host>(dark: bool, s: &Studio) -> El {
     let mut list = card(dark, "generate/projects", &t("projects.title"));
     for proj in &s.projects {
         let id = proj.id.clone();
-        list = list.child(choice(dark, &format!("generate/video/{}", proj.id), &proj.name(), s.selected.as_deref() == Some(&proj.id), move |h: &mut H| select(h, Some(id.clone()))));
+        list = list.child(choice(dark, &focus::gen_video(&proj.id), &proj.name(), s.selected.as_deref() == Some(&proj.id), move |h: &mut H| select(h, Some(id.clone()))));
     }
     list = list.child(btn(dark, "generate/new", &t("projects.new"), false, true, |h: &mut H| select(h, None)));
     let mut steps = card(dark, "generate/steps", &t("steps.title"));

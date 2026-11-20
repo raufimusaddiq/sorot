@@ -8,6 +8,7 @@ use crate::engine::types::{LoggedResult, Weights};
 use crate::screens::feedback;
 use crate::screens::panels::{Host, Load, answer, go};
 use crate::i18n::{Lang, tr, trf};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, heading, note, page};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -167,7 +168,7 @@ fn waiting_card<H: Host>(h: &H, l: Lang, s: &Learning) -> El {
         let (id, title) = (w.clip_id.clone(), w.title.clone());
         c = c.child(row().key(format!("learning/waiting/{}", w.clip_id)).role("listitem").label(w.title.as_str()).gap(10.0).items_center().w_full()
             .child(col().gap(2.0).grow(1.0).child(text(&w.title).font(type_::TITLE).color(p.text).wrap()).child(text(&w.video).font(type_::LABEL).color(p.muted).wrap()))
-            .child(btn(dark, format!("learning/log/{}", w.clip_id), &tr(l, "learning.log"), false, true, move |h: &mut H| feedback::open(h, &id, &title))));
+            .child(btn(dark, focus::polish_result(&w.clip_id), &tr(l, "learning.log"), false, true, move |h: &mut H| feedback::open(h, &id, &title))));
     }
     c
 }

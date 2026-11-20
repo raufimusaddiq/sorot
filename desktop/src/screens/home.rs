@@ -15,6 +15,7 @@ use crate::screens::panels::{Host, Page};
 use crate::engine::{EngineError, ImportRequest, Source};
 use crate::i18n::{Lang, tr, trf};
 use crate::ui::controls::{DISPLAY_SMALL, Pick, centered, dropdown, option_choices, page_head, pill, switch};
+use crate::ui::focus;
 use crate::ui::kit::{button, pal};
 use crate::ui::states::{Kind, state_block};
 
@@ -314,10 +315,10 @@ fn recent_row(s: &State, j: &Job) -> El {
     let name = video_name(s, &j.video_id);
     let status = tr(s.lang, &format!("status.{}", if phase == JobPhase::Interrupted { "FAILED" } else { j.status.as_str() }));
     let open = tr(s.lang, if phase == JobPhase::Completed { "home.open" } else { "home.open.job" });
-    row().key(format!("home/job/{}", j.id)).role("listitem").label(format!("{name}, {status}")).focusable(true).gap(12.0).px(16.0).py(14.0).items_center().w_full()
+    row().key(focus::home_job(&j.id)).role("listitem").label(format!("{name}, {status}")).focusable(true).gap(12.0).px(16.0).py(14.0).items_center().w_full()
         .fill(p.surface).border(1.0, p.divider).radius(6.0).hover(p.text.alpha(0.04)).on_press(move |s: &mut State| s.open_job(&id))
         .child(text(name).font(type_::BODY).color(p.text).truncate().grow(1.0).shrink())
-        .child(pill(format!("home/job/{}/status", j.id), &status, ink))
+        .child(pill(focus::home_job(&j.id) + "/status", &status, ink))
         .child(text(open).font(type_::LABEL).color(p.beam_text))
 }
 
@@ -332,11 +333,11 @@ fn interrupted_block(s: &State) -> Option<El> {
         let name = video_name(s, &j.video_id);
         any = true;
         // The row opens the job (the stage that stopped, the note) before Retry wipes it.
-        block = block.child(row().key(format!("home/interrupted/{}", j.id)).role("listitem").label(name.clone()).focusable(true).gap(12.0).px(16.0).py(14.0).items_center().w_full()
+        block = block.child(row().key(focus::home_interrupted(&j.id)).role("listitem").label(name.clone()).focusable(true).gap(12.0).px(16.0).py(14.0).items_center().w_full()
             .fill(p.surface).border(1.0, p.divider).radius(6.0).hover(p.text.alpha(0.04)).on_press(move |s: &mut State| s.open_job(&id))
             .child(text(name).font(type_::BODY).color(p.text).truncate().grow(1.0).shrink())
             .child(text(tr(s.lang, "home.open.job")).font(type_::LABEL).color(p.beam_text))
-            .child(button(s.dark(), format!("home/retry/{}", j.id), &tr(s.lang, "home.interrupted.retry"), true, move |s: &mut State| s.retry_interrupted(&retry_id))));
+            .child(button(s.dark(), focus::home_retry(&j.id), &tr(s.lang, "home.interrupted.retry"), true, move |s: &mut State| s.retry_interrupted(&retry_id))));
     }
     any.then_some(block)
 }

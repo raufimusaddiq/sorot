@@ -1051,7 +1051,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     }
     let root = root.child(body);
     let root = if let Some(palette) = palette::overlay(s) { root.child(palette) } else { root };
-    root.child(toast_stack(s.dark(), &s.toasts, cx))
+    root.child(toast_stack(s.dark(), &s.toasts, s, cx))
 }
 
 impl Host for State {

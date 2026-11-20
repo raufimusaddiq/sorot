@@ -15,6 +15,7 @@ use crate::screens::settings::commands::{self, CommandsCard};
 use crate::screens::settings::image::{self, ImageCard};
 use crate::screens::settings::voice::{self, VoiceCard};
 use crate::screens::settings::{KENARI_BASE_URL, Run, hint};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, choice, field, heading, note, page};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -241,13 +242,13 @@ fn models_card<H: Host>(h: &H, g: &GenerateSettings) -> El {
     }
     for (n, row_) in m.models.iter().enumerate() {
         let name = row_.model.clone();
-        let mut levels = row().gap(8.0).child(choice(dark, &format!("gen/model/{n}/auto"), &tr(l, "gen.models.auto"), row_.pin.is_none(), {
+        let mut levels = row().gap(8.0).child(choice(dark, &focus::gen_model(n, "auto"), &tr(l, "gen.models.auto"), row_.pin.is_none(), {
             let name = name.clone();
             move |h: &mut H| pin(h, &name, None)
         }));
         for lv in LEVELS {
             let name = name.clone();
-            levels = levels.child(choice(dark, &format!("gen/model/{n}/{lv}"), lv, row_.pin.as_deref() == Some(lv), move |h: &mut H| pin(h, &name, Some(lv))));
+            levels = levels.child(choice(dark, &focus::gen_model(n, lv), lv, row_.pin.as_deref() == Some(lv), move |h: &mut H| pin(h, &name, Some(lv))));
         }
         let proven = row_.proven.as_ref().map(|lv| trf(l, "gen.models.proven", &[("level", lv)])).unwrap_or_default();
         let mut block = col().key(format!("gen/model/{n}")).role("group").label(row_.model.as_str()).gap(6.0)

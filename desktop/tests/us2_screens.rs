@@ -476,6 +476,38 @@ fn a_toast_never_covers_or_moves_an_interactive_control() {
             rt.update(|s, _| s.toasts.clear());
             rt.frame(1.0 / 60.0);
             assert_eq!(rects(&rt), before, "{name} {theme:?}: controls stay put after the toast");
+            let derived: std::collections::HashSet<String> = sorot_desktop::ui::focus::keys(&rt.state).into_iter().collect();
+            for (key, _) in rects(&rt) {
+                let key = key.unwrap_or_default();
+                assert!(derived.contains(&key), "{name} {theme:?}: focusable {key:?} missing from the derived key set");
+            }
+        }
+    }
+}
+
+/// The derived set follows state ids, not fixture ids: rename every id a scene uses and every
+/// focusable key must still be in it, so a real job/clip/candidate/post cannot be missed.
+#[test]
+fn a_toast_sees_controls_with_ids_other_than_the_fixtures() {
+    for name in ["home-interrupted", "clips-ranked", "discover", "learning", "publish"] {
+        let mut state = State::default();
+        SCENES.iter().find(|(n, _)| *n == name).unwrap().1(&mut state);
+        let mut rt = runtime_of(state);
+        poke(&mut rt, |s| {
+            for j in &mut s.jobs { j.id = format!("real-{}", j.id); }
+            for c in &mut s.clips.clips { c.id = format!("real-{}", c.id); }
+            for c in &mut s.panels.discover.candidates { c.id = format!("real-{}", c.id); }
+            for w in &mut s.panels.learning.waiting { w.clip_id = format!("real-{}", w.clip_id); }
+            for p in &mut s.panels.publish.posts { p.id = format!("real-{}", p.id); }
+        });
+        rt.update(|s, _| s.apply(Msg::Toast(ToastKind::Done, "Terekspor. Berkasnya siap.".into())));
+        rt.frame(1.0 / 60.0);
+        rt.frame(1.0 / 60.0);
+        let derived: std::collections::HashSet<String> = sorot_desktop::ui::focus::keys(&rt.state).into_iter().collect();
+        let focusable: Vec<String> = rt.elements().into_iter().filter(|e| e.focusable).filter_map(|e| e.key).filter(|k| !k.starts_with("toast/")).collect();
+        assert!(!focusable.is_empty(), "{name}: the scene has controls");
+        for key in focusable {
+            assert!(derived.contains(&key), "{name}: focusable {key:?} missing after ids changed");
         }
     }
 }

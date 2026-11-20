@@ -14,6 +14,7 @@ use crate::engine::types::{DraftTarget, PublishDraft, SocialAccount, SocialPost}
 use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
 use crate::ui::datetime::{DateBoxes, picker};
+use crate::ui::focus;
 use crate::ui::form::{Tone, area, btn, card, choice, field, heading, note, page, toggle};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -304,7 +305,7 @@ fn accounts_card<H: Host>(dark: bool, l: Lang, s: &Publish) -> El {
             words.push_str(&format!(", {}", tr(l, "publish.cannot-video")));
         }
         let id = a.id.clone();
-        let mut line = toggle(dark, l, &format!("publish/account/{}", a.id), &words, s.selected.contains(&a.id), move |h: &mut H| select_account(h, &id));
+        let mut line = toggle(dark, l, &focus::publish_account(&a.id), &words, s.selected.contains(&a.id), move |h: &mut H| select_account(h, &id));
         if !a.supported || locked {
             line = line.disabled(true);
         }
@@ -315,7 +316,7 @@ fn accounts_card<H: Host>(dark: bool, l: Lang, s: &Publish) -> El {
 
 fn choices_block<H: Host>(dark: bool, l: Lang, i: usize, t: &DraftTarget, e: &TargetEdit) -> El {
     let p = pal(dark);
-    let k = |n: &str| format!("publish/{i}/{n}");
+    let k = |n: &str| focus::publish_target(i, n);
     let mut b = col().key(k("choices")).role("group").label(tr(l, "publish.choices.title")).gap(10.0).padding(16.0).w_full().fill(p.surface).border(1.0, p.beam).radius(10.0)
         .child(text(tr(l, "publish.choices.title")).font(type_::TITLE).color(p.text))
         .child(text(tr(l, "publish.choices.about")).font(type_::BODY).color(p.muted).wrap());
@@ -350,7 +351,7 @@ fn choices_block<H: Host>(dark: bool, l: Lang, i: usize, t: &DraftTarget, e: &Ta
 
 fn target_block<H: Host>(dark: bool, l: Lang, i: usize, t: &DraftTarget, e: &TargetEdit) -> El {
     let p = pal(dark);
-    let k = |n: &str| format!("publish/{i}/{n}");
+    let k = |n: &str| focus::publish_target(i, n);
     let by = tr(l, if t.copy_by == "llm" { "publish.by-llm" } else { "publish.by-template" });
     let mut b = col().key(k("target")).gap(12.0).w_full()
         .child(text(trf(l, "publish.copy-by", &[("by", &by)])).font(type_::LABEL).color(p.muted))
@@ -373,7 +374,7 @@ fn draft_view<H: Host>(dark: bool, l: Lang, s: &Publish, d: &PublishDraft) -> El
     }
     let mut tabs = row().gap(8.0);
     for (i, t) in d.targets.iter().enumerate() {
-        tabs = tabs.child(choice(dark, &format!("publish/tab/{i}"), &platform_name(l, &t.platform), s.tab == i, move |h: &mut H| h.panels_mut().publish.tab = i));
+        tabs = tabs.child(choice(dark, &focus::publish_tab(i), &platform_name(l, &t.platform), s.tab == i, move |h: &mut H| h.panels_mut().publish.tab = i));
     }
     c = c.child(tabs);
     let at = s.tab.min(d.targets.len().saturating_sub(1));
@@ -396,7 +397,7 @@ fn draft_view<H: Host>(dark: bool, l: Lang, s: &Publish, d: &PublishDraft) -> El
 
 fn post_row<H: Host>(dark: bool, l: Lang, post: &SocialPost, busy: bool) -> El {
     let p = pal(dark);
-    let k = |n: &str| format!("publish/post/{}/{n}", post.id);
+    let k = |n: &str| focus::publish_post(&post.id, n);
     let when = post.scheduled_at.as_deref().map(|w| trf(l, "publish.scheduled", &[("at", w)])).unwrap_or_default();
     let head = format!("{}{when}", post.status);
     let mut r = col().key(k("row")).role("listitem").label(head.as_str()).gap(4.0).padding(10.0).w_full().fill(p.raised).radius(6.0)

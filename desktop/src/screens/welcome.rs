@@ -7,6 +7,7 @@ use sorot_desktop_core::workspace::{Candidate, EngineKind, Source, Workspace};
 
 use crate::app::{Cmd, State};
 use crate::i18n::{tr, trf};
+use crate::ui::focus;
 use crate::ui::kit::{button, pal};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,9 +45,7 @@ pub fn workspace_for(how: How, from: &str, data_dir: &str) -> Workspace {
     Workspace { data_dir: dir.into(), source, adopted_from, engine: EngineKind::Local }
 }
 
-fn key(i: usize, name: &str) -> String {
-    if i == 0 { format!("welcome/{name}") } else { format!("welcome/{i}/{name}") }
-}
+fn key(i: usize, name: &str) -> String { focus::welcome(i, name) }
 
 fn candidate(s: &State, w: &Welcome, i: usize, c: &Candidate) -> El {
     let p = pal(s.dark());

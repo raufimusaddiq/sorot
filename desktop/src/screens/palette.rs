@@ -13,6 +13,7 @@ use sorot_desktop_core::palette_search::{Entry, rank};
 use crate::app::State;
 use crate::i18n::tr;
 use crate::screens::menu_bar::{Act, actions};
+use crate::ui::focus;
 use crate::ui::fx_moments::{Moment, slot};
 use crate::ui::kit::pal;
 
@@ -110,7 +111,7 @@ pub fn overlay(s: &State) -> Option<El> {
         list = list.child(text(tr(s.lang, "palette.empty")).key("palette/empty").role("status").font(type_::BODY).color(p.muted).padding(10.0));
     }
     for (i, (key, words, _)) in hits.iter().enumerate() {
-        let row_key = format!("palette/item/{key}");
+        let row_key = focus::palette(key);
         if i == at {
             field = field.active_descendant(row_key.clone());
         }

@@ -11,6 +11,7 @@ use crate::engine::types::{AutoRun, Candidate};
 use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
 use crate::ui::form::{Tone, btn, card, choice, field, heading, note, page, toggle};
+use crate::ui::focus;
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind as StateKind, state_block};
 
@@ -357,7 +358,7 @@ fn score_of(c: &Candidate) -> f64 {
 fn candidate_row<H: Host>(dark: bool, l: Lang, c: &Candidate, d: &Discover) -> El {
     let p = pal(dark);
     let (picked, busy) = (d.selected.contains(&c.id), d.busy);
-    let k = |n: &str| format!("discover/c/{}/{n}", c.id);
+    let k = |n: &str| focus::discover(&c.id, n);
     let views = c.view_count.map(|v| trf(l, "discover.views", &[("n", &v.to_string())])).unwrap_or_default();
     let facts = format!("{}, {}{views}, {}", c.channel, clock(c.duration), tr(l, &format!("discover.status.{}", c.status.to_lowercase())));
     let id = c.id.clone();
