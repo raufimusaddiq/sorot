@@ -42,14 +42,15 @@ type Loaded = (Vec<LoggedResult>, Weights, Vec<Waiting>);
 /// Reads the logged results, the scoring weights and the clips still waiting for results.
 pub fn open<H: Host>(h: &mut H) {
     h.panels_mut().learning.load = Load::Loading;
-    go(h, |e| {
+    let lang = h.lang();
+    go(h, move |e| {
         let all = e.feedback().and_then(|results| {
             let weights = e.weights()?;
             let mut waiting = vec![];
             for v in e.videos()? {
                 for c in e.clips(&v.id).unwrap_or_default() {
                     if c.export_path.is_some() && !results.iter().any(|r| r.clip_id == c.id) {
-                        let title = c.title.clone().or(c.text_content.clone()).unwrap_or_else(|| format!("Clip {}", c.rank_pos.unwrap_or(0)));
+                        let title = c.title.clone().or(c.text_content.clone()).unwrap_or_else(|| trf(lang, "learning.untitled-clip", &[("n", c.rank_pos.unwrap_or(0).to_string().as_str())]));
                         waiting.push(Waiting { clip_id: c.id, title, video: v.title.clone().or(v.source_url.clone()).unwrap_or_default(), score: c.score.unwrap_or(0.0) });
                     }
                 }
@@ -71,7 +72,7 @@ pub fn open<H: Host>(h: &mut H) {
 pub fn train<H: Host>(h: &mut H) {
     let l = &mut h.panels_mut().learning;
     (l.training, l.error, l.trained) = (true, None, false);
-    go(h, |e| {
+    go(h, move |e| {
         let r = e.train().and_then(|()| Ok((e.feedback()?, e.weights()?)));
         answer(r, |p, r| {
             let l = &mut p.learning;

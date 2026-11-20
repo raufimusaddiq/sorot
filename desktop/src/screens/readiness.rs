@@ -6,25 +6,26 @@ use sorot_desktop_core::model::ReadinessItem;
 use sorot_desktop_core::readiness::ItemState;
 
 use crate::app::{Cmd, State};
+use crate::i18n::{Lang, tr, trf};
 use crate::ui::kit::{button, pal};
 
-pub fn name(id: &str) -> &str {
-    match id {
-        "ffmpeg" => "ffmpeg",
-        "python" => "Python environment",
-        "whisperModel" => "Speech model (Whisper)",
-        "gpu" => "Graphics card",
-        "generateBrowser" => "Browser for Generate",
-        other => other,
-    }
+pub fn name(id: &str, lang: Lang) -> String {
+    let key = match id {
+        "python" => "readiness.name.python",
+        "whisperModel" => "readiness.name.whisperModel",
+        "gpu" => "readiness.name.gpu",
+        "generateBrowser" => "readiness.name.generateBrowser",
+        _ => return id.to_string(),
+    };
+    tr(lang, key)
 }
 
 /// What a failed fix means for the person, and whether another try can help.
-pub fn failure(reason: &str) -> String {
+pub fn failure(reason: &str, lang: Lang) -> String {
     match reason {
-        "offline" => "Needs internet once. Connect, then try again.".into(),
-        "checksum mismatch" => "The download was damaged (checksum mismatch). Try again.".into(),
-        other => format!("The fix failed: {other}. Try again."),
+        "offline" => tr(lang, "readiness.failure.offline"),
+        "checksum mismatch" => tr(lang, "readiness.failure.checksum"),
+        other => trf(lang, "readiness.failure.other", &[("other", other)]),
     }
 }
 
@@ -39,6 +40,7 @@ fn state_of(s: &State, item: &ReadinessItem) -> ItemState {
 
 fn tail(s: &State, item: &ReadinessItem) -> El {
     let p = pal(s.dark());
+    let l = s.lang;
     let id = item.id.clone();
     let status = |key: &str, words: String, color| text(words).key(format!("readiness/{id}/{key}")).font(type_::LABEL).color(color).wrap();
     let act = |key: &str, label: &str, primary: bool| {
@@ -46,19 +48,20 @@ fn tail(s: &State, item: &ReadinessItem) -> El {
         button(s.dark(), format!("readiness/{id}/{key}"), label, primary, move |s: &mut State| s.send(Cmd::FixReadiness(id.clone())))
     };
     match state_of(s, item) {
-        ItemState::Ok => status("status", "Ready".into(), p.pass),
+        ItemState::Ok => status("status", tr(l, "readiness.ready"), p.pass),
         ItemState::Fixing { percent } => {
-            let label = item.progress.as_ref().map_or("Working", |p| p.label.as_str());
+            let label = item.progress.as_ref().map_or_else(|| tr(l, "readiness.working"), |p| p.label.clone());
             status("progress", format!("{label} {percent}%"), p.text)
         }
-        ItemState::FixFailed { reason } => col().gap(6.0).items_end().child(status("status", failure(&reason), p.skip)).child(act("retry", "Retry", true)),
-        ItemState::Missing { fixable: true } => row().gap(10.0).items_center().child(status("status", "Not ready".into(), p.skip)).child(act("fix", "Fix", true)),
-        _ => status("status", "Needs attention".into(), p.skip),
+        ItemState::FixFailed { reason } => col().gap(6.0).items_end().child(status("status", failure(&reason, l), p.skip)).child(act("retry", &tr(l, "readiness.retry"), true)),
+        ItemState::Missing { fixable: true } => row().gap(10.0).items_center().child(status("status", tr(l, "readiness.not-ready"), p.skip)).child(act("fix", &tr(l, "readiness.fix"), true)),
+        _ => status("status", tr(l, "readiness.needs-attention"), p.skip),
     }
 }
 
 pub fn view(s: &State) -> El {
     let p = pal(s.dark());
+    let l = s.lang;
     let pending = s.readiness.iter().filter(|i| i.required && !i.ok).count();
     let mut card = col().key("readiness/items").w_full().fill(p.surface).border(1.0, p.divider).radius(10.0);
     for item in &s.readiness {
@@ -67,7 +70,7 @@ pub fn view(s: &State) -> El {
             row().key(format!("readiness/{id}")).gap(16.0).padding(16.0).items_center()
                 .child(
                     col().gap(2.0).grow(1.0)
-                        .child(text(name(id)).key(format!("readiness/{id}/name")).font(type_::TITLE).color(p.text))
+                        .child(text(name(id, l)).key(format!("readiness/{id}/name")).font(type_::TITLE).color(p.text))
                         .child(text(&item.detail).key(format!("readiness/{id}/detail")).font(type_::BODY).color(p.muted).wrap()),
                 )
                 .child(tail(s, item)),
@@ -75,17 +78,17 @@ pub fn view(s: &State) -> El {
     }
     let mut head = row().gap(16.0).items_center().w_full().child(
         col().gap(4.0).grow(1.0)
-            .child(text("Sorot needs a few things first").key("readiness/title").role("heading").level(1).font(type_::TITLE).color(p.text))
-            .child(text(format!("Sorot checks this machine before it clips. {pending} required item(s) are not ready.")).key("readiness/summary").font(type_::BODY).color(p.muted).wrap()),
+            .child(text(tr(l, "readiness.title")).key("readiness/title").role("heading").level(1).font(type_::TITLE).color(p.text))
+            .child(text(trf(l, "readiness.summary", &[("pending", pending.to_string().as_str())])).key("readiness/summary").font(type_::BODY).color(p.muted).wrap()),
     );
     if !fixable(s).is_empty() {
-        head = head.child(button(s.dark(), "readiness/fix-all", "Fix all", true, |s: &mut State| {
+        head = head.child(button(s.dark(), "readiness/fix-all", &tr(l, "readiness.fix-all"), true, |s: &mut State| {
             let ids = fixable(s);
             s.send(Cmd::FixAll(ids));
         }));
     }
     col().gap(20.0).padding(40.0).w_full().max_w(960.0).child(head).child(card)
-        .child(text("Each fix runs through the engine. Nothing changes outside the Sorot data folder.").key("readiness/footnote").font(type_::BODY).color(p.muted).wrap())
+        .child(text(tr(l, "readiness.footnote")).key("readiness/footnote").font(type_::BODY).color(p.muted).wrap())
 }
 
 #[cfg(test)]
@@ -94,8 +97,8 @@ mod tests {
 
     #[test]
     fn ids_are_named_in_plain_words() {
-        for (id, want) in [("ffmpeg", "ffmpeg"), ("python", "Python environment"), ("whisperModel", "Speech model (Whisper)"), ("gpu", "Graphics card"), ("generateBrowser", "Browser for Generate"), ("other", "other")] {
-            assert_eq!(name(id), want);
+        for (id, want) in [("ffmpeg", "ffmpeg"), ("python", "readiness.name.python"), ("whisperModel", "readiness.name.whisperModel"), ("gpu", "readiness.name.gpu"), ("generateBrowser", "readiness.name.generateBrowser"), ("other", "other")] {
+            assert_eq!(name(id, Lang::En), tr(Lang::En, want));
         }
     }
 }

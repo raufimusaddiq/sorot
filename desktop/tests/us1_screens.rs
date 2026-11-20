@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use rune::Runtime;
 use sorot_desktop::app::*;
+use sorot_desktop::i18n::Lang;
 use sorot_desktop::engine::sidecar::{LaunchConfig, Out, Sidecar};
 use sorot_desktop::engine::Engine;
 use sorot_desktop::library::ProcLibrary;
@@ -59,7 +60,7 @@ fn readiness_shows_each_state_and_asks_the_engine_for_the_fixes() {
         assert!(has(&rt, "readiness/whisperModel/progress") && !has(&rt, "readiness/whisperModel/retry"), "{reason}");
         poke(&mut rt, |s| s.send(Cmd::Refresh));
         assert_eq!(rt.state.item_states.iter().find(|(id, _)| id == "whisperModel").unwrap().1.state, ItemState::FixFailed { reason: reason.into() });
-        assert!(sorot_desktop::screens::readiness::failure(reason).contains(fragment));
+        assert!(sorot_desktop::screens::readiness::failure(reason, Lang::En).contains(fragment));
         click(&mut rt, "readiness/whisperModel/retry");
         assert!(fake.calls().contains(&"fix_readiness(whisperModel)".to_string()), "{reason}");
     }
@@ -140,7 +141,7 @@ fn welcome_handles_no_library_a_failed_search_and_a_failed_copy() {
 
     let (rt, _, dir) = welcome_state("failed-find", vec![], r#"{"status":"error","error":"no engine"}"#);
     assert!(rt.state.welcome.is_none() && sorot_desktop::workspace::load(&dir).is_none());
-    assert!(rt.state.toasts[0].toast.text.starts_with("Could not look for older libraries"));
+    assert!(rt.state.toasts[0].toast.text.starts_with("Tidak bisa mencari pustaka lama"));
 
     let failed = (Duration::from_secs(1), Out::Line(r#"{"status":"error","error":"disk full"}"#.into()));
     let (mut rt, _, dir) = welcome_state("failed-copy", vec![vec![failed]], FOUND);
@@ -337,7 +338,7 @@ fn library_work_reports_failed_keys_and_a_failed_save() {
     assert!(matches!(&msgs[..], [Msg::Toast(ToastKind::Failed, t), Msg::Workspace { .. }] if t.contains("locked")));
     std::fs::write(temp("work-file"), "x").unwrap();
     let msgs = library_work(&Broken, &temp("work-file"), "data", choose, &mut |_| {});
-    assert!(matches!(&msgs[..], [Msg::WelcomeFailed(t)] if t.contains("Could not save")));
+    assert!(matches!(&msgs[..], [Msg::WelcomeFailed(t)] if t.contains("Tidak bisa menyimpan pilihan")));
     assert!(library_work(&Broken, &dir, "data", Cmd::Refresh, &mut |_| {}).is_empty());
 }
 

@@ -325,7 +325,7 @@ never blocks; the diagnostic report contains no secret; interrupted jobs show Re
 
 ## Phase 10: Polish, parity release and cross-cutting
 
-- [ ] T109 [P] Fill `desktop/i18n/en.json` and `id.json` for every string in every screen; add a test in `desktop/tests/i18n.rs` asserting both catalogs have the same keys and no value contains an em dash (R-02)
+- [x] T109 [P] Fill `desktop/i18n/en.json` and `id.json` for every string in every screen; add a test in `desktop/tests/i18n.rs` asserting both catalogs have the same keys and no value contains an em dash (R-02)
 - [ ] T110 [P] Copy pass on all UI strings per antislop-copywriting (specific action labels such as "Potong video ini" / "Clip this video", no buzzwords, no "Get Started"); record the changes in `desktop/design/copy-review.md`
 - [ ] T111 Run `/test`; it must be OPEN: backend, cli, ai-pipeline, frontend, and desktop (clippy clean, ≥ 95% lines/functions, every Kani proof verified). Fix until OPEN
 - [ ] T112 Click-through script for R-35: `desktop/tests/clickthrough.rs` walks every scene's `--tree`, and for every interactive node generates a one-tap script (`tap` at its `key`, `mark` end). It runs each headless and records the tree diff and `FakeEngine` call log per control. A control whose tap changes neither is a dead control and fails the test (R-26). The test writes the element-by-element list to `desktop/design/clickthrough.md` (`clips/export -> Engine::export(c1), toast "Diekspor"`)
