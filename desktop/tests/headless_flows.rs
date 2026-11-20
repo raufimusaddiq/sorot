@@ -12,9 +12,9 @@ type Marks = &'static [(&'static str, &'static str, &'static str)];
 
 const FLOWS: &[Flow] = &[
     ("home-empty", None, &[("home/empty/cause", "@home.empty.cause")], &["home/empty"], None),
-    ("readiness-missing", None, &[("readiness/title", "Sorot needs a few things first"), ("readiness/whisperModel/progress", "Downloading 40%")], &["readiness/title", "readiness/ffmpeg/fix"], None),
+    ("readiness-missing", None, &[("readiness/title", "@readiness.title"), ("readiness/whisperModel/progress", "Downloading 40%")], &["readiness/title", "readiness/ffmpeg/fix"], None),
     ("engine-failed", None, &[("engine/failed/cause", "The engine stopped before it was ready.")], &["engine/failed", "engine/restart"], None),
-    ("engine-failed", Some("restart-engine"), &[("engine/starting/cause", "Starting the engine")], &["engine/starting"], None),
+    ("engine-failed", Some("restart-engine"), &[("engine/starting/cause", "@app.starting.cause")], &["engine/starting"], None),
     ("first-run", Some("us1-first-run"), &[("home/empty/cause", "@home.empty.cause")], &["home/empty", "shell/rail/home"], Some("adopted")),
 ];
 

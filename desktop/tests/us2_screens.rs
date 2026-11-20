@@ -410,7 +410,7 @@ fn export_then_reveal_locally_or_download_remotely() {
             rt.frame(1.0 / 60.0);
             assert!(fake.calls().contains(&"download_export(c2)".to_string()));
             assert!(reveal.shown.lock().unwrap().is_empty());
-            assert!(rt.state.toasts.last().unwrap().toast.text.starts_with("Saved to"));
+            assert!(rt.state.toasts.last().unwrap().toast.text.starts_with("Tersimpan di"));
             assert_eq!(std::fs::read_to_string(&dest).unwrap(), "fake-mp4");
             let _ = std::fs::remove_file(dest);
         } else {
@@ -422,7 +422,7 @@ fn export_then_reveal_locally_or_download_remotely() {
     let (mut rt, fake, _, _) = clips_rt();
     fake.fail_once("export", EngineError::Network("down".into()));
     click(&mut rt, "clips/export");
-    assert!(rt.state.clips.exporting.is_none() && rt.state.toasts.last().unwrap().toast.text.starts_with("Could not export"));
+    assert!(rt.state.clips.exporting.is_none() && rt.state.toasts.last().unwrap().toast.text.starts_with("Tidak bisa mengekspor"));
     let ctrl_e = KeyEvent { key: Key::Command('e'), mods: Mods { cmd: true, ..Mods::default() } };
     assert!(press(&mut rt, ctrl_e));
     assert!(has(&rt, "clips/reveal"));
@@ -538,7 +538,7 @@ fn navigation_buttons_and_a_cancelled_then_retried_job() {
     fake.fail_once("clips", EngineError::Network("down".into()));
     poke(&mut rt, |s| s.show_clips("vnew"));
     let texts: Vec<_> = rt.state.toasts.iter().map(|t| t.toast.text.clone()).collect();
-    assert!(texts.iter().any(|t| t.starts_with("Could not read the options")) && texts.iter().any(|t| t.starts_with("Could not read the clips")), "{texts:?}");
+    assert!(texts.iter().any(|t| t.starts_with("Tidak bisa membaca opsi")) && texts.iter().any(|t| t.starts_with("Tidak bisa membaca klip")), "{texts:?}");
 }
 
 /// The clips screen opens the publish panel and the results sheet for the chosen clip.

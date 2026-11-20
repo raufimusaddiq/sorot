@@ -201,41 +201,41 @@ pub fn execute(engine: &dyn Engine, cmd: Cmd) -> Vec<Msg> {
         },
         Cmd::LoadOptions => match engine.options() {
             Ok(options) => vec![Msg::Options { options, music: engine.music().unwrap_or_default() }],
-            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not read the options: {e}"))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.read-options", &[("e", e.to_string().as_str())]))],
         },
         Cmd::PollOptions => engine.options().map(|options| vec![Msg::Options { options, music: engine.music().unwrap_or_default() }]).unwrap_or_default(),
         Cmd::PollJob(id) => engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default(),
         Cmd::CancelJob(id) => match engine.cancel_job(&id) {
             Ok(_) => refresh(engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default()),
-            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not cancel: {e}"))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.cancel", &[("e", e.to_string().as_str())]))],
         },
         Cmd::RetryJob(id) => match engine.retry_job(&id) {
             Ok(_) => refresh(engine.job(&id).map(|d| vec![Msg::JobDetail(d)]).unwrap_or_default()),
-            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not retry: {e}"))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.retry", &[("e", e.to_string().as_str())]))],
         },
         Cmd::LoadClips(video_id) => match engine.clips(&video_id) {
             Ok(clips) => vec![Msg::Clips { video_id, clips }],
-            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not read the clips: {e}"))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.read-clips", &[("e", e.to_string().as_str())]))],
         },
         Cmd::Rerender { clip_id, delta } => match engine.rerender(&clip_id, &delta) {
             Ok(clip) => vec![Msg::Rerendered(Box::new(clip))],
-            Err(e) => vec![Msg::RerenderFailed(format!("Could not render again: {e}"))],
+            Err(e) => vec![Msg::RerenderFailed(crate::i18n::trf(crate::i18n::current(), "app.toast.render", &[("e", e.to_string().as_str())]))],
         },
         Cmd::Export(clip_id) => match engine.export(&clip_id) {
             Ok(path) => vec![Msg::Exported { clip_id, path }],
-            Err(e) => vec![Msg::ExportFailed(format!("Could not export: {e}"))],
+            Err(e) => vec![Msg::ExportFailed(crate::i18n::trf(crate::i18n::current(), "app.toast.export", &[("e", e.to_string().as_str())]))],
         },
         Cmd::DownloadExport { clip_id, dest } => match engine.download_export(&clip_id, &dest) {
-            Ok(_) => vec![Msg::Toast(ToastKind::Done, format!("Saved to {}", dest.display()))],
-            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not save the clip: {e}"))],
+            Ok(_) => vec![Msg::Toast(ToastKind::Done, crate::i18n::trf(crate::i18n::current(), "app.toast.saved-to", &[("path", dest.display().to_string().as_str())]))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.save-clip", &[("e", e.to_string().as_str())]))],
         },
         Cmd::FixAll(ids) => {
-            let failed = ids.iter().filter_map(|id| engine.fix_readiness(id).err().map(|e| Msg::Toast(ToastKind::Failed, format!("Could not fix {id}: {e}")))).collect();
+            let failed = ids.iter().filter_map(|id| engine.fix_readiness(id).err().map(|e| Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.fix", &[("id", id.as_str()), ("e", e.to_string().as_str())])))).collect();
             refresh(failed)
         }
         Cmd::FixReadiness(id) => match engine.fix_readiness(&id) {
-            Ok(_) => refresh(vec![Msg::Toast(ToastKind::Info, format!("Started: {id}"))]),
-            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not fix {id}: {e}"))],
+            Ok(_) => refresh(vec![Msg::Toast(ToastKind::Info, crate::i18n::trf(crate::i18n::current(), "app.toast.started", &[("id", id.to_string().as_str())]))]),
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.fix", &[("id", id.as_str()), ("e", e.to_string().as_str())]))],
         },
     }
 }
@@ -247,7 +247,7 @@ pub fn library_work(lib: &dyn Library, config: &Path, data_dir: &str, cmd: Cmd, 
     match cmd {
         Cmd::Find => match lib.find() {
             Ok(found) => vec![Msg::Candidates(rank_candidates(&found))],
-            Err(e) => vec![Msg::Toast(ToastKind::Failed, format!("Could not look for older libraries: {e}"))],
+            Err(e) => vec![Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.find-libraries", &[("e", e.to_string().as_str())]))],
         },
         Cmd::Choose { how, from, keys } => {
             let ws = workspace_for(how, &from, data_dir);
@@ -255,15 +255,15 @@ pub fn library_work(lib: &dyn Library, config: &Path, data_dir: &str, cmd: Cmd, 
             let skipped = match how {
                 How::Copy => match lib.copy(&from, data_dir, progress) {
                     Ok(skipped) => skipped,
-                    Err(e) => return failed(format!("Copying failed: {e}")),
+                    Err(e) => return failed(crate::i18n::trf(crate::i18n::current(), "app.toast.copy-failed", &[("e", e.to_string().as_str())])),
                 },
                 How::Use | How::Fresh => vec![],
             };
             if keys && let Err(e) = lib.import_keys(&from, &ws.data_dir) {
-                msgs.push(Msg::Toast(ToastKind::Failed, format!("The API keys were not brought over: {e}")));
+                msgs.push(Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.keys-not-brought", &[("e", e.to_string().as_str())])));
             }
             if let Err(e) = crate::workspace::save(config, &ws) {
-                return failed(format!("Could not save your choice: {e}"));
+                return failed(crate::i18n::trf(crate::i18n::current(), "app.toast.save-choice", &[("e", e.to_string().as_str())]));
             }
             msgs.push(Msg::Workspace { ws, skipped });
             msgs
@@ -313,16 +313,18 @@ pub fn http_engine(ready: &Ready, token: &str) -> Arc<dyn Engine> {
 }
 
 /// What a person reads when the engine cannot run.
-pub fn failure_text(reason: &FailReason, diagnostic: &str) -> String {
-    let what = match reason {
-        FailReason::ExitedBeforeReady => "The engine stopped before it was ready.",
-        FailReason::ExitedEarly => "The engine stopped right after it started.",
-        FailReason::StartTimeout => "The engine was not ready after 30 seconds.",
-        FailReason::EngineTooNew => "This engine is newer than the app. Update Sorot.",
-        FailReason::TooManyRestarts => "The engine keeps stopping.",
-        FailReason::Unauthorized => "The engine refused the app's connection token.",
+pub fn failure_text(reason: &FailReason, diagnostic: &str, lang: crate::i18n::Lang) -> String {
+    use crate::i18n::tr;
+    let key = match reason {
+        FailReason::ExitedBeforeReady => "app.failure.before-ready",
+        FailReason::ExitedEarly => "app.failure.early",
+        FailReason::StartTimeout => "app.failure.timeout",
+        FailReason::EngineTooNew => "app.failure.too-new",
+        FailReason::TooManyRestarts => "app.failure.restarting",
+        FailReason::Unauthorized => "app.failure.unauthorized",
     };
-    if diagnostic.is_empty() { what.to_string() } else { format!("{what}\n{diagnostic}") }
+    let what = tr(lang, key);
+    if diagnostic.is_empty() { what } else { format!("{what}\n{diagnostic}") }
 }
 
 impl Supervisor {
@@ -345,7 +347,7 @@ impl Supervisor {
             msgs.push(Msg::Conn(Conn::Ready));
         }
         if let ConnState::Failed(reason) = &self.sidecar.conn.state {
-            msgs.push(Msg::Conn(Conn::Failed(failure_text(reason, &self.sidecar.diagnostic()))));
+            msgs.push(Msg::Conn(Conn::Failed(failure_text(reason, &self.sidecar.diagnostic(), crate::i18n::current()))));
         }
         msgs
     }
@@ -708,8 +710,8 @@ impl State {
         let (Some(notifier), false, true) = (&self.notifier, self.focused, self.notifications) else { return };
         for j in now.iter().filter(|j| !j.is_running() && self.jobs.iter().any(|o| o.id == j.id && o.is_running())) {
             match j.phase() {
-                JobPhase::Completed => notifier.notify(&j.id, "Your clips are ready", "Open Sorot to see them ranked."),
-                JobPhase::Failed | JobPhase::Interrupted => notifier.notify(&j.id, "A job stopped", j.error_message.as_deref().unwrap_or("Open Sorot to retry it.")),
+                JobPhase::Completed => notifier.notify(&j.id, &crate::i18n::t("app.notify.ready.title"), &crate::i18n::t("app.notify.ready.body")),
+                JobPhase::Failed | JobPhase::Interrupted => notifier.notify(&j.id, &crate::i18n::t("app.notify.stopped.title"), j.error_message.as_deref().unwrap_or(&crate::i18n::t("app.notify.stopped.body"))),
                 _ => {}
             }
         }
@@ -801,7 +803,7 @@ impl State {
     pub fn open_externally(&mut self) {
         let Some(file) = self.clips.external.clone() else { return };
         if let Some(Err(e)) = self.reveal.as_ref().map(|r| r.open(&file)) {
-            self.clips.preview_error = Some(format!("Could not open your video player: {e}"));
+            self.clips.preview_error = Some(crate::i18n::trf(crate::i18n::current(), "app.preview-error", &[("e", e.to_string().as_str())]));
         }
     }
 
@@ -849,11 +851,11 @@ impl State {
             (Some(text), Some(dir)) => {
                 let path = dir.join("diagnostic-report.txt");
                 match std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, text)) {
-                    Ok(()) => Msg::Toast(ToastKind::Done, format!("Saved the report to {}", path.display())),
-                    Err(e) => Msg::Toast(ToastKind::Failed, format!("Could not save the report: {e}")),
+                    Ok(()) => Msg::Toast(ToastKind::Done, crate::i18n::trf(crate::i18n::current(), "app.toast.saved-report", &[("path", path.display().to_string().as_str())])),
+                    Err(e) => Msg::Toast(ToastKind::Failed, crate::i18n::trf(crate::i18n::current(), "app.toast.save-report", &[("e", e.to_string().as_str())])),
                 }
             }
-            _ => Msg::Toast(ToastKind::Failed, "There is no engine log to export yet.".into()),
+            _ => Msg::Toast(ToastKind::Failed, crate::i18n::t("app.toast.no-log")),
         };
         self.apply(toast);
     }
@@ -1020,10 +1022,14 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         Screen::Generate => shell::with_rail(s, crate::screens::generate::view(s)),
         screen => {
             let content = match screen {
-                Screen::Starting => state_block::<State>(s.dark(), "engine/starting", Kind::Loading, "Starting the engine", "This takes a few seconds the first time.", None),
+                Screen::Starting => {
+                    let (cause, next) = (crate::i18n::tr(s.lang, "app.starting.cause"), crate::i18n::tr(s.lang, "app.starting.next"));
+                    state_block::<State>(s.dark(), "engine/starting", Kind::Loading, &cause, &next, None)
+                }
                 Screen::EngineFailed => {
                     let Conn::Failed(why) = &s.conn else { unreachable!("EngineFailed needs Failed") };
-                    let (cause, rest) = why.split_once('\n').unwrap_or((why, "Restart it, or export a diagnostic report."));
+                    let rest = crate::i18n::tr(s.lang, "app.engine-failed.rest");
+                    let (cause, rest) = why.split_once('\n').unwrap_or((why, &rest));
                     state_block::<State>(s.dark(), "engine/failed", Kind::Error, cause, rest, None)
                 }
                 Screen::Welcome => welcome::view(s, s.welcome.as_ref().expect("Welcome needs its state")),

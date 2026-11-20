@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use rune::Runtime;
 use sorot_desktop::app::*;
+use sorot_desktop::i18n::{Lang, tr};
 use sorot_desktop::engine::sidecar::{LaunchConfig, Out, Sidecar};
 use sorot_desktop::engine::{Engine, EngineError};
 use sorot_desktop_core::handshake::Ready;
@@ -46,12 +47,12 @@ fn a_job_shows_on_home_and_a_fix_asks_the_engine_then_refreshes() {
     let mut rt = runtime_of(State::with_engine(fake.clone()));
     click(&mut rt, "readiness/ffmpeg/fix");
     assert_eq!(fake.calls(), ["jobs", "videos", "readiness", "fix_readiness(ffmpeg)", "jobs", "videos", "readiness"]);
-    assert_eq!(rt.state.toasts[0].toast.text, "Started: ffmpeg");
+    assert_eq!(rt.state.toasts[0].toast.text, tr(Lang::Id, "app.toast.started").replace("{id}", "ffmpeg"));
 
     fake.fail_once("fix_readiness", EngineError::Network("down".into()));
     rt.state.send(Cmd::FixReadiness("ffmpeg".into()));
     assert_eq!(rt.state.toasts[1].toast.kind, ToastKind::Failed);
-    assert!(rt.state.toasts[1].toast.text.starts_with("Could not fix ffmpeg"));
+    assert!(rt.state.toasts[1].toast.text.starts_with("Tidak bisa memperbaiki ffmpeg"));
 
     fake.fail_once("jobs", EngineError::Network("down".into()));
     rt.state.send(Cmd::Refresh);
@@ -155,7 +156,7 @@ fn the_supervisor_boots_polls_and_recovers_the_engine() {
     assert_eq!(summary(&msgs), ["engine", "Ready"]);
     fake.fail_once("jobs", EngineError::Unauthorized);
     let (msgs, _) = sup.tick();
-    assert!(matches!(&msgs[..], [Msg::Conn(Conn::Failed(t))] if t.contains("refused")));
+    assert!(matches!(&msgs[..], [Msg::Conn(Conn::Failed(t))] if t.contains(&tr(Lang::Id, "app.failure.unauthorized"))));
 
     spawn.queue(engine_script(&clock));
     assert_eq!(summary(&sup.user_restart()), ["engine", "Ready"]);
@@ -169,7 +170,7 @@ fn a_boot_that_fails_says_why() {
     spawn.queue(FakeProc::new(clock.clone(), vec![(Duration::from_secs(1), Out::Exited(1))], vec![]));
     let msgs = sup.boot();
     let [Msg::Conn(Conn::Failed(text))] = &msgs[..] else { panic!("{:?}", summary(&msgs)) };
-    assert!(text.starts_with("The engine stopped before it was ready."));
+    assert!(text.starts_with(&tr(Lang::Id, "app.failure.before-ready")));
     let reasons = [
         (sorot_desktop_core::engine_conn::FailReason::ExitedEarly, "right after"),
         (sorot_desktop_core::engine_conn::FailReason::StartTimeout, "30 seconds"),
@@ -177,7 +178,7 @@ fn a_boot_that_fails_says_why() {
         (sorot_desktop_core::engine_conn::FailReason::TooManyRestarts, "keeps stopping"),
     ];
     for (reason, part) in reasons {
-        assert!(failure_text(&reason, "stderr line").contains(part) && failure_text(&reason, "stderr line").ends_with("\nstderr line"));
+        assert!(failure_text(&reason, "stderr line", Lang::En).contains(part) && failure_text(&reason, "stderr line", Lang::En).ends_with("\nstderr line"));
     }
 }
 

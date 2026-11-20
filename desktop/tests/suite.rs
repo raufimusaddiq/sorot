@@ -10,6 +10,7 @@ mod general_screen;
 mod generate_screens;
 mod headless_flows;
 mod headless_run;
+mod i18n;
 mod motion;
 mod os_proc;
 mod panel_nav;
