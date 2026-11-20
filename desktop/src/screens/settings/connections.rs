@@ -14,6 +14,7 @@ use crate::engine::types::{ConnTest, KenariAccount, KenariModel};
 use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, Load, Page, answer, go};
 use crate::screens::settings::{KENARI_BASE_URL, KENARI_DEFAULT_MODEL, Mode, hint, mode_of, test_words, wrapped};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, choice, field, heading, note, page, toggle};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -291,11 +292,11 @@ fn account_block(dark: bool, l: Lang, a: &KenariAccount) -> El {
 /// The LLM card set up through Kenari: a model, one key, a try, then save.
 fn kenari_body<H: Host>(h: &H, l: Lang, c: &Connection) -> El {
     let (dark, st) = (h.dark(), &h.panels().connections.cards[0]);
-    let mut models = vec![choice(dark, "conn/llm/kenari/model/0", &tr(l, "conn.kenari.auto"), st.kenari_model == KENARI_DEFAULT_MODEL, |h: &mut H| pick_kenari_model(h, KENARI_DEFAULT_MODEL))];
+    let mut models = vec![choice(dark, &focus::conn_kenari_model(0), &tr(l, "conn.kenari.auto"), st.kenari_model == KENARI_DEFAULT_MODEL, |h: &mut H| pick_kenari_model(h, KENARI_DEFAULT_MODEL))];
     for (n, m) in st.kenari_models.iter().filter(|m| m.id != KENARI_DEFAULT_MODEL).enumerate() {
         let id = m.id.clone();
         let label = if m.free { trf(l, "conn.kenari.free", &[("id", &m.id)]) } else { m.id.clone() };
-        models.push(choice(dark, &format!("conn/llm/kenari/model/{}", n + 1), &label, st.kenari_model == m.id, move |h: &mut H| pick_kenari_model(h, &id)));
+        models.push(choice(dark, &focus::conn_kenari_model(n + 1), &label, st.kenari_model == m.id, move |h: &mut H| pick_kenari_model(h, &id)));
     }
     let saved_here = c.api_key_set && c.base_url.as_deref() == Some(KENARI_BASE_URL);
     let key_hint = if saved_here { trf(l, "conn.key-replace", &[("masked", &c.api_key)]) } else { "kn-…".to_string() };
@@ -322,7 +323,7 @@ fn one<H: Host>(h: &H, i: usize, c: &Connection) -> El {
     let (dark, l, kind) = (h.dark(), h.lang(), KINDS[i]);
     let p = pal(dark);
     let st = &h.panels().connections.cards[i];
-    let key = |n: &str| format!("conn/{kind}/{n}");
+    let key = |n: &str| focus::conn_field(kind, n);
     let (status, tone) = if c.active { (tr(l, "conn.ready"), p.pass) } else { (tr(l, "conn.off"), p.muted) };
     let name = title(l, kind);
     let mut body = card(dark, &key("card"), &name)

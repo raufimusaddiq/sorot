@@ -68,11 +68,11 @@ pub fn view(s: &State) -> El {
     for item in &s.readiness {
         let id = &item.id;
         card = card.child(
-            row().key(format!("readiness/{id}")).gap(16.0).padding(16.0).items_center()
+            row().key(focus::readiness(id, "")).gap(16.0).padding(16.0).items_center()
                 .child(
                     col().gap(2.0).grow(1.0)
-                        .child(text(name(id, l)).key(format!("readiness/{id}/name")).font(type_::TITLE).color(p.text))
-                        .child(text(&item.detail).key(format!("readiness/{id}/detail")).font(type_::BODY).color(p.muted).wrap()),
+                        .child(text(name(id, l)).key(focus::readiness(id, "name")).font(type_::TITLE).color(p.text))
+                        .child(text(&item.detail).key(focus::readiness(id, "detail")).font(type_::BODY).color(p.muted).wrap()),
                 )
                 .child(tail(s, item)),
         );

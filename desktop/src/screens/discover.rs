@@ -318,7 +318,7 @@ fn run_card(dark: bool, l: Lang, run: &AutoRun) -> Vec<El> {
     let from = run.steps.len().saturating_sub(STEPS_SHOWN);
     for (i, s) in run.steps.iter().enumerate().skip(from) {
         let arg = ["query", "video_id", "channel"].iter().find_map(|k| s.args.get(*k).and_then(|v| v.as_str())).unwrap_or("");
-        out.push(text(format!("{} {arg} \u{2192} {}", s.tool, s.result)).key(format!("discover/step/{i}")).font(type_::LABEL).color(p.muted).wrap());
+        out.push(text(format!("{} {arg} \u{2192} {}", s.tool, s.result)).key(focus::discover_step(i)).font(type_::LABEL).color(p.muted).wrap());
     }
     out
 }
@@ -327,7 +327,7 @@ fn finder<H: Host>(dark: bool, l: Lang, d: &Discover) -> El {
     let p = pal(dark);
     let mut modes = row().gap(8.0);
     for (m, key, label) in MODES {
-        modes = modes.child(choice(dark, &format!("discover/mode/{key}"), &tr(l, label), d.mode == m, move |h: &mut H| set_mode(h, m)));
+        modes = modes.child(choice(dark, &focus::discover_mode(key), &tr(l, label), d.mode == m, move |h: &mut H| set_mode(h, m)));
     }
     let input = match d.mode {
         Mode::Auto => field(dark, "discover/goal", &tr(l, "discover.goal"), &d.goal, &tr(l, "discover.goal-hint"), false, edit_access(|h: &mut H| &mut h.panels_mut().discover.goal)),
@@ -403,7 +403,7 @@ fn list_card<H: Host>(dark: bool, l: Lang, d: &Discover) -> El {
     let p = pal(dark);
     let mut filters = row().gap(8.0);
     for (f, key, label) in FILTERS {
-        filters = filters.child(choice(dark, &format!("discover/filter/{key}"), &tr(l, label), d.filter == f, move |h: &mut H| set_filter(h, f)));
+        filters = filters.child(choice(dark, &focus::discover_filter(key), &tr(l, label), d.filter == f, move |h: &mut H| set_filter(h, f)));
     }
     let mut c = card(dark, "discover/candidates", &trf(l, "discover.candidates", &[("n", &d.candidates.len().to_string())])).child(filters);
     if d.candidates.is_empty() {

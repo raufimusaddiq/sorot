@@ -144,8 +144,8 @@ fn results_card(dark: bool, l: Lang, s: &Learning) -> El {
     for r in &s.results {
         let score = r.viral_score.map_or(tr(l, "learning.no-score"), |v| format!("{:.0}%", v * 100.0));
         let title = r.title.clone().unwrap_or_else(|| r.clip_id.chars().take(8).collect());
-        let k = |n: &str| format!("learning/result/{}/{n}", r.clip_id);
-        c = c.child(row().key(format!("learning/result/{}", r.clip_id)).role("listitem").label(title.as_str()).gap(12.0).w_full()
+        let k = |n: &str| focus::learning_result(&r.clip_id, n);
+        c = c.child(row().key(focus::learning_result(&r.clip_id, "")).role("listitem").label(title.as_str()).gap(12.0).w_full()
             .child(text(&title).font(type_::BODY).color(p.text).wrap().grow(1.0))
             .child(cell(day(r.posted_at.as_deref()), 110.0, p.muted).key(k("posted")))
             .child(cell(count(r.views), 90.0, p.text).key(k("views")))
@@ -166,7 +166,7 @@ fn waiting_card<H: Host>(h: &H, l: Lang, s: &Learning) -> El {
     }
     for w in &s.waiting {
         let (id, title) = (w.clip_id.clone(), w.title.clone());
-        c = c.child(row().key(format!("learning/waiting/{}", w.clip_id)).role("listitem").label(w.title.as_str()).gap(10.0).items_center().w_full()
+        c = c.child(row().key(focus::learning_waiting(&w.clip_id)).role("listitem").label(w.title.as_str()).gap(10.0).items_center().w_full()
             .child(col().gap(2.0).grow(1.0).child(text(&w.title).font(type_::TITLE).color(p.text).wrap()).child(text(&w.video).font(type_::LABEL).color(p.muted).wrap()))
             .child(btn(dark, focus::polish_result(&w.clip_id), &tr(l, "learning.log"), false, true, move |h: &mut H| feedback::open(h, &id, &title))));
     }

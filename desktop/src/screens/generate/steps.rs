@@ -279,10 +279,10 @@ fn typed_line<H: Host>(dark: bool, i: usize, name: &str, key: &str, label: &str,
     let n = name.to_string();
     match r.typing.as_ref().filter(|(s, n)| *s == i && n == name) {
         Some(_) => row().gap(8.0).items_center().w_full()
-            .child(col().grow(1.0).child(field(dark, &format!("{key}/input"), label, &r.typed, "", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.recipes.typed))))
-            .child(btn(dark, format!("{key}/set"), &t("recipes.set"), true, true, move |h: &mut H| set_typed(h, list))),
+            .child(col().grow(1.0).child(field(dark, &focus::with_suffix(key, "input"), label, &r.typed, "", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.recipes.typed))))
+            .child(btn(dark, focus::with_suffix(key, "set"), &t("recipes.set"), true, true, move |h: &mut H| set_typed(h, list))),
         None => row().gap(8.0).items_center()
-            .child(btn(dark, format!("{key}/edit"), &tf("recipes.edit_setting", &[label, &now_text]), false, true, move |h: &mut H| type_in(h, i, &n, &now_text))),
+            .child(btn(dark, focus::with_suffix(key, "edit"), &tf("recipes.edit_setting", &[label, &now_text]), false, true, move |h: &mut H| type_in(h, i, &n, &now_text))),
     }
 }
 
@@ -314,11 +314,11 @@ fn own<H: Host>(dark: bool, i: usize, step: &Value, key: &str, r: &Recipes) -> E
     let id = step["id"].as_str().unwrap_or_default();
     let mode = step["prompt"]["mode"].as_str();
     let mut c = col().gap(8.0).w_full()
-        .child(typed_line::<H>(dark, i, "$id", &format!("{key}/id"), &t("recipes.id"), id.to_string(), false, r))
+        .child(typed_line::<H>(dark, i, "$id", &focus::with_suffix(key, "id"), &t("recipes.id"), id.to_string(), false, r))
         .child(text(t("recipes.prompt")).font(type_::LABEL).color(p.muted).wrap());
     let mut modes = row().gap(6.0).flex_wrap().w_full().items_center();
     for (m, word) in [(None, "recipes.prompt_none"), (Some("append"), "recipes.prompt_append"), (Some("replace"), "recipes.prompt_replace")] {
-        modes = modes.child(choice(dark, &format!("{key}/prompt/{}", m.unwrap_or("none")), &t(word), mode == m, move |h: &mut H| {
+        modes = modes.child(choice(dark, &focus::gen_recipe_step(i, &format!("prompt/{}", m.unwrap_or("none"))), &t(word), mode == m, move |h: &mut H| {
             at(h, i, move |s| {
                 let words = s["prompt"]["text"].as_str().unwrap_or_default().to_string();
                 put(s, "prompt", m.map(|m| serde_json::json!({ "mode": m, "text": words })));
@@ -327,7 +327,7 @@ fn own<H: Host>(dark: bool, i: usize, step: &Value, key: &str, r: &Recipes) -> E
     }
     c = c.child(modes);
     if mode.is_some() {
-        c = c.child(typed_line::<H>(dark, i, "$prompt", &format!("{key}/prompt/text"), &t("recipes.prompt_text"), step["prompt"]["text"].as_str().unwrap_or_default().to_string(), false, r));
+        c = c.child(typed_line::<H>(dark, i, "$prompt", &focus::gen_recipe_step(i, "prompt/text"), &t("recipes.prompt_text"), step["prompt"]["text"].as_str().unwrap_or_default().to_string(), false, r));
     }
     c
 }

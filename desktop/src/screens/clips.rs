@@ -216,7 +216,7 @@ impl ClipsScreen {
 
     /// Rows still moving at `now`, as `(rect now, start, points to travel)`; `rect_of` finds a row's presented rect by key.
     pub fn rank_blurs(&self, now: f32, rect_of: impl Fn(&str) -> Option<rune_fx::Rect>) -> Vec<(rune_fx::Rect, f32, f32)> {
-        self.moves.iter().filter(|(_, t0, _)| now - t0 < MOVE_LIFE).filter_map(|(id, t0, dy)| Some((rect_of(&format!("clips/row/{id}"))?, *t0, *dy))).collect()
+        self.moves.iter().filter(|(_, t0, _)| now - t0 < MOVE_LIFE).filter_map(|(id, t0, dy)| Some((rect_of(&focus::clips_row(id))?, *t0, *dy))).collect()
     }
 
     pub fn moving(&self, now: f32) -> bool {
@@ -316,7 +316,7 @@ pub fn view(s: &State) -> El {
         col().key("clips/scroll").scroll(ScrollSpec { stick_bottom: false }).w_full().grow(1.0).child(
             col().key("clips/list").role("list").label(tr(s.lang, "clips.list")).growth(GrowthSpec::default()).gap(8.0).virtual_rows(
                 visible.len(), 72.0,
-                |s: &State, i| format!("clips/row/{}", s.clips.clips[s.clips.visible()[i]].id).into(),
+                |s: &State, i| focus::clips_row(&s.clips.clips[s.clips.visible()[i]].id).into(),
                 |s: &State, i| row_of(s, s.clips.visible()[i]),
             ),
         )

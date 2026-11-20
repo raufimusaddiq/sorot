@@ -12,6 +12,7 @@ use sorot_desktop_core::prefs::{ACTIONS, Action, Chord, CloseBehaviour, Language
 
 use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, Page};
+use crate::ui::focus;
 use crate::ui::form::{card, choice, heading, page, toggle};
 use crate::ui::kit::pal;
 
@@ -115,7 +116,7 @@ pub fn view<H: Host>(h: &H) -> El {
     let picks = |key: &str, name: &str, items: Vec<Pick>| {
         let mut r = row().gap(8.0).flex_wrap();
         for (slug, label, on, set) in items {
-            r = r.child(choice(dark, &format!("general/{key}/{slug}"), &label, on, move |h: &mut H| edit(h, set)));
+            r = r.child(choice(dark, &focus::general_field(key, slug), &label, on, move |h: &mut H| edit(h, set)));
         }
         col().gap(6.0).child(text(name).font(type_::LABEL).color(p.muted)).child(r)
     };
@@ -145,7 +146,7 @@ pub fn view<H: Host>(h: &H) -> El {
         let i = action as usize;
         let name = t(&format!("general.action.{}", ACTION_KEYS[i]));
         let shortcuts = pf.shortcuts;
-        let recorder = ShortcutRecorder::new(format!("general/shortcut/{}", ACTION_KEYS[i]), &g.recorders[i], move |h: &mut H| &mut h.panels_mut().general.recorders[i])
+        let recorder = ShortcutRecorder::new(focus::general_shortcut(ACTION_KEYS[i]), &g.recorders[i], move |h: &mut H| &mut h.panels_mut().general.recorders[i])
             .label(name.clone())
             .allow_unmodified()
             .on_change(move |h: &mut H, next, _| rebind(h, action, next))

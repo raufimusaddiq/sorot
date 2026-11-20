@@ -109,7 +109,7 @@ impl State {
         }
         let items = menu_items(self, m);
         let menu = PopupMenu::new().items(items.iter().map(|(key, words, _)| PopupItem::new(*key, tr(self.lang, words))));
-        tx.popup_menu(menu, format!("shell/menu/{}", m.id()), move |s: &mut State, picked: Option<&str>, tx: &mut Tx| {
+        tx.popup_menu(menu, focus::shell_menu(m.id()), move |s: &mut State, picked: Option<&str>, tx: &mut Tx| {
             if let Some((_, _, act)) = picked.and_then(|key| menu_items(s, m).into_iter().find(|(k, ..)| *k == key)) {
                 act(s, tx);
             }
@@ -128,7 +128,7 @@ pub fn menu_bar(s: &State) -> El {
         let open = s.menu_open == Some(m);
         let label = tr(s.lang, &format!("menu.{}", m.id()));
         bar = bar.child(
-            col().key(format!("shell/menu/{}", m.id())).role("menuitem").label(label.clone()).focusable(true).px(12.0).py(6.0).radius(6.0)
+            col().key(focus::shell_menu(m.id())).role("menuitem").label(label.clone()).focusable(true).px(12.0).py(6.0).radius(6.0)
                 .fill(if open { p.raised } else { p.bg }).hover(p.text.alpha(0.08)).on_press_tx(move |s: &mut State, tx: &mut Tx| s.press_menu(m, tx))
                 .child(text(label).font(type_::LABEL).color(p.text)),
         );

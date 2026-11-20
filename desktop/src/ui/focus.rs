@@ -25,7 +25,7 @@ pub fn menu(m: Menu, k: &str) -> String { format!("shell/menu/{}/{k}", m.id()) }
 pub fn gen_cmd(i: usize, name: &str) -> String { format!("gen/cmd/{i}/{name}") }
 pub fn gen_model(i: usize, level: &str) -> String { format!("gen/model/{i}/{level}") }
 pub fn gen_video(id: &str) -> String { format!("generate/video/{id}") }
-pub fn readiness(id: &str, what: &str) -> String { format!("readiness/{id}/{what}") }
+pub fn readiness(id: &str, what: &str) -> String { if what.is_empty() { format!("readiness/{id}") } else { format!("readiness/{id}/{what}") } }
 pub fn publish_account(id: &str) -> String { format!("publish/account/{id}") }
 pub fn publish_tab(i: usize) -> String { format!("publish/tab/{i}") }
 pub fn publish_post(id: &str, what: &str) -> String { format!("publish/post/{id}/{what}") }
@@ -53,6 +53,26 @@ pub fn gen_recipes_check(i: usize, what: &str) -> String { format!("generate/rec
 pub fn gen_build_shot(id: &str) -> String { format!("generate/build/shot/{id}") }
 pub fn gen_step(key: &str, what: &str) -> String { if what.is_empty() { format!("generate/step/{key}") } else { format!("generate/step/{key}/{what}") } }
 pub fn gen_steptab(key: &str) -> String { format!("generate/steptab/{key}") }
+pub fn discover_step(i: usize) -> String { format!("discover/step/{i}") }
+pub fn discover_mode(key: &str) -> String { format!("discover/mode/{key}") }
+pub fn discover_filter(key: &str) -> String { format!("discover/filter/{key}") }
+pub fn learning_result(id: &str, what: &str) -> String { if what.is_empty() { format!("learning/result/{id}") } else { format!("learning/result/{id}/{what}") } }
+pub fn learning_waiting(id: &str) -> String { format!("learning/waiting/{id}") }
+pub fn feedback_field(name: &str) -> String { format!("feedback/{name}") }
+pub fn shell_menu(id: &str) -> String { format!("shell/menu/{id}") }
+pub fn conn_kenari_model(n: usize) -> String { format!("conn/llm/kenari/model/{n}") }
+pub fn conn_field(kind: &str, what: &str) -> String { format!("conn/{kind}/{what}") }
+pub fn gen_reason(i: usize) -> String { format!("gen/reason/{i}") }
+pub fn gen_model_group(n: usize) -> String { format!("gen/model/{n}") }
+pub fn gen_image_model(n: usize) -> String { format!("gen/image/kenari/model/{n}") }
+pub fn gen_image_field(name: &str) -> String { format!("gen/image/{name}") }
+pub fn gen_voice_engine(e: &str) -> String { format!("gen/voice/engine/{e}") }
+pub fn gen_voice_model(n: usize) -> String { format!("gen/voice/kenari/model/{n}") }
+pub fn gen_voice_voice(code: &str, what: &str) -> String { if what.is_empty() { format!("gen/voice/voice/{code}") } else { format!("gen/voice/voice/{code}/{what}") } }
+pub fn gen_field(name: &str) -> String { format!("gen/field/{name}") }
+pub fn general_field(key: &str, slug: &str) -> String { format!("general/{key}/{slug}") }
+pub fn general_shortcut(action: &str) -> String { format!("general/shortcut/{action}") }
+pub fn with_suffix(base: &str, what: &str) -> String { format!("{base}/{what}") }
 
 /// Fixed keys: every focusable element whose key does not carry an id or index from state.
 const STATIC: &[&str] = &[
