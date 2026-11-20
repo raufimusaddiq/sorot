@@ -129,7 +129,7 @@ fn a_shortcut_edit_is_saved_or_refused_inline() {
     let rows = [
         ("export", K::KeyU, shift, Some(Chord::new(true, true, 'u')), ""),
         ("export", K::KeyK, primary, None, taken),
-        ("export", K::KeyU, alt, None, "tidak bisa dipakai"),
+        ("export", K::KeyU, alt, None, "Sorot tidak bisa memakai kombinasi tombol ini."),
         ("export", K::Backspace, Mods::default(), None, "tidak bisa dihapus"),
     ];
     for (name, key, mods, saved, words) in rows {
