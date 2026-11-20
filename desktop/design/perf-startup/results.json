@@ -1,0 +1,94 @@
+{
+  "median": {
+    "frame_cpu_ms": 11.0201,
+    "gpu_init_ms": 306.1253,
+    "headless_ms": 323.5406,
+    "pixel_bytes": 12672000,
+    "readback_ms": 1.5447,
+    "runtime_ms": 1.4994000000000003,
+    "state_ms": 0.5322,
+    "process_ms": 336.16100000000006
+  },
+  "mad": {
+    "frame_cpu_ms": 0.27910000000000146,
+    "gpu_init_ms": 6.824400000000026,
+    "headless_ms": 7.151400000000024,
+    "pixel_bytes": 0,
+    "readback_ms": 0.07539999999999991,
+    "runtime_ms": 0.037299999999999445,
+    "state_ms": 0.015700000000000047,
+    "process_ms": 7.3189000000002125
+  },
+  "runs": [
+    {
+      "frame_cpu_ms": 11.349400000000001,
+      "gpu_init_ms": 306.1253,
+      "headless_ms": 323.5406,
+      "pixel_bytes": 12672000,
+      "readback_ms": 1.5593,
+      "runtime_ms": 1.4813,
+      "state_ms": 0.5111,
+      "process_ms": 336.16100000000006
+    },
+    {
+      "frame_cpu_ms": 10.3998,
+      "gpu_init_ms": 324.491,
+      "headless_ms": 340.76250000000005,
+      "pixel_bytes": 12672000,
+      "readback_ms": 1.4587999999999999,
+      "runtime_ms": 1.3019,
+      "state_ms": 0.5255000000000001,
+      "process_ms": 354.00260000000003
+    },
+    {
+      "frame_cpu_ms": 10.7086,
+      "gpu_init_ms": 310.63370000000003,
+      "headless_ms": 327.476,
+      "pixel_bytes": 12672000,
+      "readback_ms": 1.4693,
+      "runtime_ms": 1.5265,
+      "state_ms": 0.5505,
+      "process_ms": 340.43859999999995
+    },
+    {
+      "frame_cpu_ms": 10.9809,
+      "gpu_init_ms": 330.8544,
+      "headless_ms": 348.0808,
+      "pixel_bytes": 12672000,
+      "readback_ms": 1.692,
+      "runtime_ms": 1.3497,
+      "state_ms": 0.6442,
+      "process_ms": 360.84770000000003
+    },
+    {
+      "frame_cpu_ms": 11.0916,
+      "gpu_init_ms": 298.5604,
+      "headless_ms": 315.7667,
+      "pixel_bytes": 12672000,
+      "readback_ms": 1.6388,
+      "runtime_ms": 1.5366999999999997,
+      "state_ms": 0.5246,
+      "process_ms": 327.9303
+    },
+    {
+      "frame_cpu_ms": 11.0201,
+      "gpu_init_ms": 299.30089999999996,
+      "headless_ms": 316.38919999999996,
+      "pixel_bytes": 12672000,
+      "readback_ms": 1.5184,
+      "runtime_ms": 1.4994000000000003,
+      "state_ms": 0.5479,
+      "process_ms": 328.84209999999985
+    },
+    {
+      "frame_cpu_ms": 11.2992,
+      "gpu_init_ms": 300.2171,
+      "headless_ms": 318.1413,
+      "pixel_bytes": 12672000,
+      "readback_ms": 1.5447,
+      "runtime_ms": 2.0881,
+      "state_ms": 0.5322,
+      "process_ms": 331.5174000000002
+    }
+  ]
+}

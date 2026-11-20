@@ -112,3 +112,12 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Mirrors Rune 73b7dec's profile for --first-pixels startup timing.
+[profile.perf]
+inherits = "release"
+opt-level = 3
+codegen-units = 16
+lto = false
+debug = false
+incremental = false
