@@ -13,7 +13,7 @@ hardware is good enough for clipping (transcribe + render at a practical speed).
   working fully offline from cloud services, except optional integrations (Principle IV), video
   download, and first-run downloads of components the readiness check names.
 - Hosted mode is a deployment of the same engine, not a fork, used through the same desktop app
-  pointed at a remote engine. New work MUST NOT add assumptions that block it: no hard-coded
+  or web UI pointed at a remote engine. New work MUST NOT add assumptions that block it: no hard-coded
   `localhost` or absolute host paths, paths and limits come from config, long jobs stay queued
   and cancellable, and the app reaches the engine only over its defined connection (the HTTP
   API in `docs/api-spec.md`), never by reading engine files or the database directly.
@@ -56,7 +56,7 @@ the UI a thin client that a hosted engine can serve unchanged.
 
 - Every change MUST pass 100% of tests, keep line and function coverage at or above 95%, and
   have zero type errors in every touched package (backend, cli, ai-pipeline, desktop, and
-  frontend until it is removed). For `desktop`, zero type errors means `cargo check` and
+  frontend). For `desktop`, zero type errors means `cargo check` and
   `cargo clippy -- -D warnings` are clean.
 - `desktop` views and state MUST be tested headless (Rune runtime: state, element tree, scripted
   input, accessibility tree). OS shims that cannot run headless (file manager reveal, taskbar,
@@ -102,12 +102,15 @@ down with it.
   them.
 - The SQLite schema MUST auto-create and auto-migrate in `db.ts` and stay compatible with
   existing databases, including the Java-era schema.
-- The desktop app (`desktop/`, Rust on Rune pinned to an exact commit) is the user interface.
-  It MUST use only the engine's HTTP API and the files the API names (exports, previews), and
-  MUST work against a local or a remote engine.
-- Transition: the web UI (`frontend/`) stays a Next.js static export (no API routes, rewrites,
-  server actions, or `next/image` optimization), served same-origin, with fixes only, until the
-  first desktop release reaches full parity; that release removes it and its tests.
+- The desktop app (`desktop/`, Rust on Rune pinned to an exact commit) is the primary user
+  interface. It MUST use only the engine's HTTP API and the files the API names (exports,
+  previews), and MUST work against a local or a remote engine.
+- Sorot has three surfaces, all supported: the web UI (`frontend/`, a Next.js static export
+  served same-origin by the engine, no API routes, rewrites, server actions, or `next/image`
+  optimization), the native desktop app, and the CLI (`cli/`). The web UI is NOT retired when
+  the desktop app ships: it keeps its gate entry and its tests, and stays a first-class way to
+  use a local or hosted engine. New user-facing capability MUST reach the web UI and the
+  desktop app; a change that lands in only one of them MUST say why.
 - Breaking a contract (API shape, CLI flags, schema, script envelope) MUST be called out in the
   change and migrated in the same change.
 
@@ -127,7 +130,7 @@ Rationale: posting is outward-facing and irreversible; mistakes there cost the o
 
 ## Platform & Stack Constraints
 
-- Stack: Bun workspace (`backend/`, `cli/`, `frontend/` until removed) with one root lockfile,
+- Stack: Bun workspace (`backend/`, `cli/`, `frontend/`) with one root lockfile,
   Python 3 in `ai-pipeline/`, SQLite, Docker, and a Rust crate `desktop/` with its own
   `Cargo.lock`. Windows, macOS and Linux are first-class for the desktop app; Windows
   (PowerShell) and Linux stay first-class for scripts and Docker.
@@ -171,4 +174,4 @@ Rationale: posting is outward-facing and irreversible; mistakes there cost the o
 - Every review (`/review`, `/speckit-analyze`) MUST check compliance with these principles;
   added complexity MUST be justified against Principle I.
 
-**Version**: 3.0.0 | **Ratified**: 2026-10-31 | **Last Amended**: 2026-11-15
+**Version**: 3.1.0 | **Ratified**: 2026-10-31 | **Last Amended**: 2026-11-17

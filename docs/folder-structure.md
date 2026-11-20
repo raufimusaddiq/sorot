@@ -75,7 +75,7 @@ sorot/
 │   ├── src/                         #   screens, theme, FakeEngine, platform/ (thin OS shims, listed in coverage-exclude.txt)
 │   └── DESIGN.md · RUNE.md          #   design direction; Rune pin, patches, bump log
 │
-├── frontend/                        # Next.js static export (out/ served by backend); removed at the first desktop release
+├── frontend/                        # Next.js static export (out/ served by backend); a supported surface, kept
 │   ├── package.json
 │   ├── next.config.js
 │   ├── src/

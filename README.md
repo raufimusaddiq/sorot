@@ -358,7 +358,7 @@ Every clip gets a **title** (hook + hashtags, ≤ 100 chars) and a **description
 ├── ai-pipeline/    🐍 Python media scripts (transcribe, render, reframe, subtitle, …)
 ├── generator/      🎞️ Generate's tool bundle: HyperFrames, prompts, fonts, recipes, kit parts
 ├── desktop/        🖥️ native desktop app (Rust on Rune; planned, in progress)
-├── frontend/       ⚛️ Next.js UI (static export → frontend/out; removed at the first desktop release)
+├── frontend/       ⚛️ Next.js UI (static export → frontend/out; a supported surface, kept)
 ├── cli/            ⌨️ sorot client
 ├── scripts/        🛠️ install.sh (Linux) · install/start/stop/verify/e2e .ps1 (Windows)
 ├── docs/           📚 specs and guides

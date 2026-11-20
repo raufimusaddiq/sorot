@@ -13,10 +13,11 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
   Clip and Generate export responses carry the absolute `exportPath`. Docker and the CLI behave as before.
 
 ### Native desktop app (planned)
-- A native desktop app for Windows, macOS and Linux (Rust on Rune) is being built to replace the web UI. It talks to
-  the engine only over its HTTP API, so it can drive a local or a remote engine, and the engine will require a
-  connection token. The web UI keeps working, fixes only, until the desktop app reaches parity. Nothing changes for
-  existing installs yet. Spec: `specs/003-native-desktop-app/`; constitution v3.0.0.
+- A native desktop app for Windows, macOS and Linux (Rust on Rune) is being built beside the web UI and the CLI. It
+  talks to the engine only over its HTTP API, so it can drive a local or a remote engine, and the engine will require a
+  connection token. Sorot keeps three supported surfaces: the web UI, the desktop app and the CLI. The web UI is not
+  retired when the desktop app ships; it keeps its tests and its place in the gate. Nothing changes for existing
+  installs yet. Spec: `specs/003-native-desktop-app/`; constitution v3.1.0.
 
 ### Kenari as the default AI provider
 - [Kenari](https://kenari.id) is now the project's default LLM connection: paste one API key in

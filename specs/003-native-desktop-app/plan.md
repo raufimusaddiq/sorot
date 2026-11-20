@@ -6,9 +6,9 @@
 
 ## Summary
 
-Replace the Next.js web UI with a native desktop app for Windows, macOS and Linux, built on Rune,
-the GPU-rendered Rust UI framework the owner chose. The app ships at full parity (FR-020), and
-that release removes `frontend/` (FR-019).
+Add a native desktop app for Windows, macOS and Linux, built on Rune, the GPU-rendered Rust UI
+framework the owner chose, beside the existing web UI and CLI. The app ships at full parity
+(FR-020); `frontend/` stays a supported surface (FR-019).
 
 **Approach** (research R1): the app is a thin client of the existing engine HTTP API. It starts
 the engine (`bun build --compile` of `backend/`) as a child process on loopback, with a
@@ -86,9 +86,9 @@ Phase 1 design: unchanged.*
 |---|---|---|
 | I. Local-First, Host-Ready | The engine binds to loopback with a per-launch token. The app uses only the HTTP API, so a remote engine works unchanged (`Workspace.engine`). Clipping runs offline after the first-run downloads the readiness check names. No hard-coded host paths: everything comes from the launch env. Build order untouched. | PASS |
 | II. Language Boundaries | Rust holds only views, OS glue, engine start/stop and preview playback. Readiness logic, library discovery, copy and key import (engine startup commands `--find-libraries`, `--copy-library` and `--import-keys`), the disk-space preflight, and every pipeline or publish decision stay in TypeScript and Python. The app reads no engine files. No new Python. | PASS |
-| III. Test Gate | `desktop` joins the gate: headless tests against `FakeEngine`, 95% coverage, clippy clean. OS shims are excluded only by name and kept thin. Engine changes are covered with `createApp(config, deps)` fakes. `frontend/` keeps its gate until it is removed. | PASS |
+| III. Test Gate | `desktop` joins the gate: headless tests against `FakeEngine`, 95% coverage, clippy clean. OS shims are excluded only by name and kept thin. Engine changes are covered with `createApp(config, deps)` fakes. `frontend/` keeps its gate entry permanently (FR-019). | PASS |
 | IV. Optional AI, Rules Fallback | Clipping never checks AI. Generate shows as unavailable with a link to Settings. Keys stay in the SQLite `setting` table, masked, written only through the API, and the diagnostic report redacts them. | PASS |
-| V. Stable Contracts | No API shape changes, only additions: `exportPath`, readiness routes, 401 when a token is set. CamelCase types mirror `store.ts`. Schema unchanged. `frontend/` stays a static export with fixes only until the parity release removes it. | PASS |
+| V. Stable Contracts | No API shape changes, only additions: `exportPath`, readiness routes, 401 when a token is set. CamelCase types mirror `store.ts`. Schema unchanged. `frontend/` stays a static export and a supported surface (FR-019). | PASS |
 | VI. Safe Publishing | The publish screen keeps draft, then choices, then post, with the choices required and empty by default. Idempotency stays in the engine. | PASS |
 | Platform & Stack | Rune is pinned with its `[patch]` entries copied. Rune gaps are filled by listed modules (R4), and no feature is dropped on one OS silently. Installers come only from `release-desktop.yml`. Docker stays for the engine. | PASS |
 | Governance | The amendment needs `AGENTS.md`, `CLAUDE.md` and docs updates in the same change: Phase A, task A1. | PASS (tracked) |
@@ -177,7 +177,7 @@ cli/src/                        # CHANGED: --token / SOROT_TOKEN
 ├── ci.yml                      # CHANGED: desktop job on windows, macos, ubuntu (lavapipe)
 └── release-desktop.yml         # NEW: cargo-packager builds, signed latest.json
 
-frontend/                       # REMOVED in the parity release (FR-019); fixes only until then
+frontend/                       # KEPT: web UI, a supported surface (FR-019)
 ```
 
 **Structure Decision**: one new top-level crate `desktop/`, beside the Bun workspace, which it
@@ -215,8 +215,8 @@ Stories set the build order; the single release ships at full parity (FR-020).
 - **H. Parity release**:
   - the parity checklist (contracts/desktop-screens.md) is complete and quickstart 1-8 pass;
   - the antislop Delivery Gate report is attached;
-  - `frontend/` is removed, along with its gate entry, `STATIC_DIR` serving and the CORS rule
-    for `next dev`;
+  - `frontend/` stays: it keeps its gate entry, `STATIC_DIR` serving and the CORS rule for
+    `next dev` (FR-019);
   - the CHANGELOG is updated.
 
 ## Complexity Tracking

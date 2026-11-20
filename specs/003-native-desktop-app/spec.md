@@ -145,8 +145,8 @@ The app tells the user when a newer version is available, updates in a few click
 - **FR-016**: The app MUST check for updates, let the user install them without losing data, and never block use when an update is declined or unavailable.
 - **FR-017**: The app MUST survive a crash or forced quit: on the next launch jobs are shown as interrupted with a retry action, the library is intact, and the user can export a diagnostic report with secrets removed.
 - **FR-018**: All user-facing text MUST be available in Indonesian and English, with Indonesian input (including IME) working in every field.
-- **FR-019**: The existing browser UI MUST be retired once the native app reaches full parity: it keeps working unchanged (fixes only) until the native app's first release, and is removed in that release. Removing it requires amending constitution Principles I and V in the same change.
-- **FR-020**: The first release MUST include full parity with the current web UI (every capability in FR-003, user stories 1-5). Story priorities order the build, not separate releases; no partial native release replaces the web UI.
+- **FR-019**: The browser UI MUST remain a supported surface after the native app ships. Sorot has three surfaces: the web UI (`frontend/`, a Next.js static export served by the engine), the native desktop app (`desktop/`), and the CLI (`cli/`). The web UI keeps working unchanged (fixes only) until the native app's first release, and stays after it: it is not removed, and its tests stay in the gate. New user-facing capability MUST reach both the web UI and the native app.
+- **FR-020**: The first release MUST include full parity with the current web UI (every capability in FR-003, user stories 1-5). Story priorities order the build, not separate releases; no partial native release replaces the web UI, and the web UI is not retired by the release.
 - **FR-021**: The engine MUST stay reachable by the native app over a defined connection rather than only in-process, so a later hosted mode can point the same native app at a remote engine without another UI rewrite.
 
 ### Key Entities *(include if feature involves data)*
@@ -185,7 +185,7 @@ SC-003 and SC-007 are measured with real users after the build.
 - The app ships as a self-contained installer per OS; large components (speech models, GPU runtimes) may download on first run through the readiness check.
 - Target users stay owner-scale personal users; accounts, multi-user data isolation and billing remain out of scope.
 - Mobile platforms and a browser build of the app are out of scope for this feature.
-- Hosting the engine on a server stays a planned later step. With the web UI retired, a hosted engine will be used through the native app connecting to it remotely, and authentication and HTTPS for that stay as Principle I already requires. Connecting to a remote engine (picking one, storing its token) is out of scope for this feature; FR-021 only requires that the app reaches the engine through its API, so that later step needs no UI rewrite.
+- Hosting the engine on a server stays a planned later step. A hosted engine will be used through the native app or the web UI connecting to it remotely, and authentication and HTTPS for that stay as Principle I already requires. Connecting to a remote engine (picking one, storing its token) is out of scope for this feature; FR-021 only requires that the app reaches the engine through its API, so that later step needs no UI rewrite.
 - Constitution amendment (MAJOR, owner decision 2026-11-15, now v3.0.0): Principle V's static Next.js frontend rule is replaced by the native app; Principle I's "UI stays same-origin" becomes "the native app reaches the engine over a defined connection"; the stack constraints add the native app and its installers.
-- Until the first native release, the web UI and its tests stay as they are.
+- The web UI and its tests stay in the gate permanently (FR-019); the native app is added beside it, not in place of it.
 - Existing quality gates (full test pass, coverage, no type errors) continue to apply to the new work.
