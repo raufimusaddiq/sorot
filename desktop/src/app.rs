@@ -1039,7 +1039,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         }
     };
     let body = if s.close_dialog { col().grow(1.0).w_full().center().child(shell::close_dialog(s)) } else { body };
-    let mut root = col().w_full().h_full().fill(p.bg).child(menu_bar::menu_bar(s));
+    let mut root = col().key("app/root").w_full().h_full().fill(p.bg).child(menu_bar::menu_bar(s));
     if let Some(list) = menu_bar::menu_list(s) {
         root = root.child(list);
     }
@@ -1049,13 +1049,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     if let Some(notice) = shell::gpu_notice(s) {
         root = root.child(notice);
     }
-    let root = if s.toasts.is_empty() {
-        root.child(body)
-    } else {
-        // In-flow bottom lane: a toast reserves its own space, so it never sits on a control.
-        root.child(body.min_h(0.0)).child(toast_stack(s.dark(), &s.toasts).items_end().w_full())
-    };
-    if let Some(palette) = palette::overlay(s) { root.child(palette) } else { root }
+    let root = root.child(body);
+    let root = if let Some(palette) = palette::overlay(s) { root.child(palette) } else { root };
+    root.child(toast_stack(s.dark(), &s.toasts, cx))
 }
 
 impl Host for State {

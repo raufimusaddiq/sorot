@@ -25,16 +25,16 @@ pub fn title(lang: Lang, clip: &Clip) -> String {
 /// The 9:16 stage of a clip: the label, the sample caption while nothing plays, and (on the clips screen) the transport bar.
 /// `size` is the stage's fixed width and height; `None` fills the width it is given at 9:16.
 pub fn view(s: &State, clip: &Clip, size: Option<(f32, f32)>, transport: bool) -> El {
-    stage_of(s, &title(s.lang, clip), clip.duration_sec, size, transport, !s.toasts.is_empty())
+    stage_of(s, &title(s.lang, clip), clip.duration_sec, size, transport)
 }
 
 /// The stage and transport for whatever the player holds, filling its width: `label` names it, `length` is its
 /// length until the player knows its own.
 pub fn stage(s: &State, label: &str, length: f64) -> El {
-    stage_of(s, label, length, None, true, false)
+    stage_of(s, label, length, None, true)
 }
 
-fn stage_of(s: &State, label: &str, length: f64, size: Option<(f32, f32)>, transport: bool, compact: bool) -> El {
+fn stage_of(s: &State, label: &str, length: f64, size: Option<(f32, f32)>, transport: bool) -> El {
     let p = pal(s.dark());
     let state = s.preview.state();
     let note = match (&state, &s.clips.preview_error) {
@@ -57,12 +57,7 @@ fn stage_of(s: &State, label: &str, length: f64, size: Option<(f32, f32)>, trans
         .child(middle);
     face = match size {
         Some((w, h)) => face.w(w).h(h),
-        None => {
-            let face = face.w_full().aspect_ratio(9.0 / 16.0);
-            // ponytail: while the 60 pt toast lane is up, the stage is 360 instead of 9:16;
-            // upgrade if the preview must keep its aspect during the six-second toast.
-            if compact { face.h(360.0) } else { face }
-        },
+        None => face.w_full().aspect_ratio(9.0 / 16.0),
     };
     if transport {
         let total = s.preview.duration().unwrap_or(length).max(0.001);

@@ -9,6 +9,7 @@ use sorot_desktop::app::*;
 use sorot_desktop::engine::{EngineError, fake::stage_script};
 use sorot_desktop_core::model::{Job, JobDetail, JobStage};
 use sorot_desktop_core::prefs::Theme;
+use sorot_desktop_core::toast::ToastKind;
 use sorot_desktop::i18n::{Lang, tr, trf};
 use crate::support::*;
 
@@ -442,26 +443,39 @@ fn export_then_reveal_locally_or_download_remotely() {
     assert!(rt.state.toasts.last().unwrap().toast.text.contains("no file manager"));
 }
 
-/// A toast gets its own lane: on the clips screen after export it covers no interactive control.
+/// A toast is an overlay: on every scene, dark and light, it covers no interactive control and
+/// moves none when it arrives or leaves.
 #[test]
-fn the_export_toast_never_covers_an_interactive_control() {
-    for theme in [Theme::Dark, Theme::Light] {
-        let (mut rt, _, _, _) = clips_rt();
-        rt.update(move |s, _| s.theme = theme);
-        rt.frame(1.0 / 60.0);
-        settle(&mut rt, "clips/export");
-        click(&mut rt, "clips/export");
-        assert!(!rt.state.toasts.is_empty(), "an export announces itself");
-        let toast: Vec<_> = rt.elements().into_iter().filter(|e| e.key.as_deref().is_some_and(|k| k.starts_with("toast/"))).collect();
-        assert!(!toast.is_empty(), "the toast has a node");
-        let controls: Vec<_> = rt.elements().into_iter().filter(|e| e.focusable && e.key.as_deref().is_some_and(|k| !k.starts_with("toast/"))).collect();
-        assert!(!controls.is_empty());
-        for t in &toast {
-            for c in &controls {
-                let (a, b) = (t.rect, c.rect);
-                let hit = a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
-                assert!(!hit, "{theme:?}: toast {:?} covers control {:?}", t.key, c.key);
+fn a_toast_never_covers_or_moves_an_interactive_control() {
+    for (name, build) in SCENES {
+        for theme in [Theme::Dark, Theme::Light] {
+            let mut state = State::default();
+            build(&mut state);
+            state.theme = theme;
+            let mut rt = runtime_of(state);
+            let rects = |rt: &Runtime<State>| -> Vec<_> {
+                rt.elements().into_iter().filter(|e| e.focusable && e.key.as_deref().is_some_and(|k| !k.starts_with("toast/"))).map(|e| (e.key, e.rect)).collect()
+            };
+            let before = rects(&rt);
+            rt.update(|s, _| s.apply(Msg::Toast(ToastKind::Done, "Terekspor. Berkasnya siap.".into())));
+            rt.frame(1.0 / 60.0);
+            rt.frame(1.0 / 60.0);
+            assert!(!rt.state.toasts.is_empty(), "{name}: a toast announces itself");
+            let toast: Vec<_> = rt.elements().into_iter().filter(|e| e.key.as_deref().is_some_and(|k| k.starts_with("toast/") && k != "toast/stack")).collect();
+            assert!(!toast.is_empty(), "{name}: the toast has a node");
+            for t in &toast {
+                for (key, b) in &before {
+                    let a = t.rect;
+                    let overlap_x = (a[0] + a[2]).min(b[0] + b[2]) - a[0].max(b[0]);
+                    let overlap_y = (a[1] + a[3]).min(b[1] + b[3]) - a[1].max(b[1]);
+                    let hit = overlap_x > 0.0 && overlap_y > 0.0;
+                    assert!(!hit, "{name} {theme:?}: toast {:?} {:?} covers control {key:?} {b:?}", t.key, t.rect);
+                }
             }
+            assert_eq!(rects(&rt), before, "{name} {theme:?}: the toast does not shift controls");
+            rt.update(|s, _| s.toasts.clear());
+            rt.frame(1.0 / 60.0);
+            assert_eq!(rects(&rt), before, "{name} {theme:?}: controls stay put after the toast");
         }
     }
 }
