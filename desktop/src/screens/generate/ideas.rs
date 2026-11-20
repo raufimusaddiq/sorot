@@ -10,6 +10,7 @@ use crate::engine::generate::Idea;
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Studio, open_one, opened};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
+use crate::ui::focus;
 use crate::ui::form::{area, btn, card, choice, field};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -92,7 +93,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     if s.pipelines.len() > 1 {
         let mut pipes = row().gap(8.0).flex_wrap().w_full().items_center().child(text(t("ideas.pipeline")).font(type_::LABEL).color(p.muted));
         for (k, pl) in s.pipelines.iter().enumerate() {
-            pipes = pipes.child(choice(dark, &format!("generate/ideas/pipeline/{k}"), &pl.name, i.recipe == k, move |h: &mut H| h.panels_mut().studio.ideas.recipe = k));
+            pipes = pipes.child(choice(dark, &focus::gen_ideas_pipeline(k), &pl.name, i.recipe == k, move |h: &mut H| h.panels_mut().studio.ideas.recipe = k));
         }
         c = c.child(pipes);
     }
@@ -102,7 +103,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     }
     let mut cards = row().gap(16.0).w_full();
     for idea in &i.list {
-        let k = |n: &str| format!("generate/idea/{}/{n}", idea.id);
+        let k = |n: &str| focus::gen_idea(&idea.id, n);
         let (rid, did) = (idea.id.clone(), idea.id.clone());
         let mut actions = row().gap(8.0);
         if let Some(pid) = idea.project_id.clone() {

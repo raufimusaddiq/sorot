@@ -10,6 +10,7 @@ use crate::engine::generate::{Detail, Plan, PlanRow};
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Step, Studio, View, act};
 use crate::screens::panels::Host;
+use crate::ui::focus;
 use crate::ui::form::{Tone, area, btn, card, choice, field, note};
 use crate::ui::kit::pal;
 
@@ -137,22 +138,22 @@ fn shots<H: Host>(dark: bool, s: &Studio, draft: &Plan, approved: bool) -> El {
         let when: El = if approved {
             text(tf("plan.secs", &[&shot.duration_sec.to_string()])).font(type_::LABEL).color(p.muted)
         } else {
-            col().w(150.0).child(field(dark, &format!("generate/plan/shot/{i}/seconds"), &tf("plan.shot_seconds", &[&n]), &edit.seconds, "4", false, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].seconds)))
+            col().w(150.0).child(field(dark, &focus::gen_plan_shot(i, "seconds"), &tf("plan.shot_seconds", &[&n]), &edit.seconds, "4", false, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].seconds)))
         };
         let head = row().gap(12.0).items_center().w_full()
-            .child(col().grow(1.0).child(btn(dark, format!("generate/plan/shot/{i}/toggle"), &format!("{n}. {}", shot.purpose), open, true, move |h: &mut H| toggle(h, i))))
+            .child(col().grow(1.0).child(btn(dark, focus::gen_plan_shot(i, "toggle"), &format!("{n}. {}", shot.purpose), open, true, move |h: &mut H| toggle(h, i))))
             .child(when);
-        let mut sc = col().key(format!("generate/plan/shot/{i}")).role("group").label(format!("{n}. {}", shot.purpose)).gap(8.0).padding(8.0).w_full().border(1.0, p.divider).radius(8.0).child(head);
+        let mut sc = col().key(focus::gen_plan_shot(i, "")).role("group").label(format!("{n}. {}", shot.purpose)).gap(8.0).padding(8.0).w_full().border(1.0, p.divider).radius(8.0).child(head);
         if let Some(look) = shot.look_line().filter(|_| open) {
-            sc = sc.child(text(tf("plan.look", &[&look])).key(format!("generate/plan/shot/{i}/look")).font(type_::LABEL).color(p.muted).wrap());
+            sc = sc.child(text(tf("plan.look", &[&look])).key(focus::gen_plan_shot(i, "look")).font(type_::LABEL).color(p.muted).wrap());
         }
         if let (true, Some(level)) = (open, edit.level.as_deref()) {
             sc = sc.child(if approved {
-                text(tf("plan.level_is", &[level])).key(format!("generate/plan/shot/{i}/level")).font(type_::LABEL).color(p.muted)
+                text(tf("plan.level_is", &[level])).key(focus::gen_plan_shot(i, "level")).font(type_::LABEL).color(p.muted)
             } else {
                 let mut r = row().gap(6.0).flex_wrap().w_full().items_center().child(text(tf("plan.level", &[&n])).font(type_::LABEL).color(p.muted));
                 for l in LEVELS {
-                    r = r.child(choice(dark, &format!("generate/plan/shot/{i}/level/{l}"), &t(&format!("plan.level.{l}")), level == l, move |h: &mut H| set_level(h, i, l)));
+                    r = r.child(choice(dark, &focus::gen_plan_shot(i, &format!("level/{l}")), &t(&format!("plan.level.{l}")), level == l, move |h: &mut H| set_level(h, i, l)));
                 }
                 r
             });
@@ -164,11 +165,11 @@ fn shots<H: Host>(dark: bool, s: &Studio, draft: &Plan, approved: bool) -> El {
             }
         } else if open {
             for (k, tx) in shot.text.iter().enumerate() {
-                sc = sc.child(field(dark, &format!("generate/plan/shot/{i}/text/{k}"), &format!("{n} {}", tx.role), &edit.texts[k], "", false, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].texts[k])));
+                sc = sc.child(field(dark, &focus::gen_plan_shot(i, &format!("text/{k}")), &format!("{n} {}", tx.role), &edit.texts[k], "", false, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].texts[k])));
             }
             sc = sc
-                .child(area(dark, &format!("generate/plan/shot/{i}/visual"), &tf("plan.shot_see", &[&n]), &edit.visual, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].visual)))
-                .child(field(dark, &format!("generate/plan/shot/{i}/motion"), &tf("plan.shot_move", &[&n]), &edit.motion, "", false, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].motion)));
+                .child(area(dark, &focus::gen_plan_shot(i, "visual"), &tf("plan.shot_see", &[&n]), &edit.visual, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].visual)))
+                .child(field(dark, &focus::gen_plan_shot(i, "motion"), &tf("plan.shot_move", &[&n]), &edit.motion, "", false, edit_access(move |h: &mut H| &mut h.panels_mut().studio.plan.shots[i].motion)));
         }
         list = list.child(sc);
     }

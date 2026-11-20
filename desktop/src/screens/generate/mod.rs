@@ -371,7 +371,7 @@ fn nav<H: Host>(dark: bool, on: View) -> El {
 fn step_tabs<H: Host>(dark: bool, on: Step) -> El {
     let mut r = row().gap(8.0);
     for (step, key) in STEPS {
-        r = r.child(choice(dark, &format!("generate/steptab/{key}"), &t(&format!("step.{key}")), on == step, move |h: &mut H| go_view(h, View::Step(step))));
+        r = r.child(choice(dark, &focus::gen_steptab(key), &t(&format!("step.{key}")), on == step, move |h: &mut H| go_view(h, View::Step(step))));
     }
     r
 }
@@ -397,11 +397,11 @@ fn home<H: Host>(dark: bool, s: &Studio) -> El {
                 let step = *step;
                 let ink = if matches!(st, Stand::Waiting(_)) { p.beam_text } else if st == Stand::Failed { p.skip } else { p.muted };
                 steps = steps.child(
-                    row().key(format!("generate/step/{key}")).role("button").label(format!("{name}: {}", st.word())).focusable(true).gap(12.0).items_center().w_full().padding(10.0)
+                    row().key(focus::gen_step(key, "")).role("button").label(format!("{name}: {}", st.word())).focusable(true).gap(12.0).items_center().w_full().padding(10.0)
                         .on_press(move |h: &mut H| go_view(h, View::Step(step)))
                         .child(text((i + 1).to_string()).font(type_::LABEL).color(p.muted))
                         .child(text(name).font(type_::TITLE).color(p.text).grow(1.0))
-                        .child(text(st.word()).key(format!("generate/step/{key}/state")).font(type_::LABEL).color(ink)),
+                        .child(text(st.word()).key(focus::gen_step(key, "state")).font(type_::LABEL).color(ink)),
                 );
             }
         }
@@ -431,7 +431,7 @@ fn project_notes<H: Host>(dark: bool, s: &Studio) -> El {
 fn step_page<H: Host>(dark: bool, s: &Studio, step: Step) -> El {
     let key = STEPS.iter().find(|(st, _)| *st == step).map(|(_, k)| *k).unwrap_or("brief");
     let mut c = col().gap(16.0).w_full()
-        .child(heading(dark, &format!("generate/{key}/title"), &t(&format!("step.{key}")), &t(&format!("step.{key}.sub"))))
+        .child(heading(dark, &focus::gen_step_page(key, "title"), &t(&format!("step.{key}")), &t(&format!("step.{key}.sub"))))
         .child(step_tabs::<H>(dark, step))
         .child(project_notes::<H>(dark, s));
     let body = match (step, &s.detail) {

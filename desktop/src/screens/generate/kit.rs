@@ -13,6 +13,7 @@ use crate::engine::generate::KitPart;
 use crate::screens::generate::Studio;
 use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, btn_tx, card, heading, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -117,7 +118,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     }
     let mut grid = row().gap(16.0).w_full();
     for part in &k.parts {
-        let key = |n: &str| format!("generate/kit/{}/{n}", part.name);
+        let key = |n: &str| focus::kit_part(&part.name, n);
         let own = part.source == "user";
         let (a, b) = (part.name.clone(), part.name.clone());
         let mut actions = row().gap(8.0).child(btn(dark, key("export"), &t("kit.export"), false, !k.busy, move |h: &mut H| export(h, &a)));

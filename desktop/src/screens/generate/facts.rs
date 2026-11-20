@@ -10,6 +10,7 @@ use crate::engine::generate::Fact;
 use crate::screens::generate::Studio;
 use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, field, note};
 use crate::ui::kit::pal;
 
@@ -108,7 +109,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio, working: bool) -> El {
         c = c.child(text(t("facts.empty")).key("generate/facts/empty").font(type_::BODY).color(p.muted));
     }
     for fact in &f.list {
-        let k = |n: &str| format!("generate/fact/{}/{n}", fact.id);
+        let k = |n: &str| focus::gen_fact(&fact.id, n);
         let id = fact.id.clone();
         let value = fact.value.as_ref().map(|v| format!(" ({v})")).unwrap_or_default();
         let mut body = col().gap(2.0).grow(1.0).child(text(format!("{}{value}", fact.claim)).key(k("claim")).font(type_::TITLE).color(p.text).wrap());

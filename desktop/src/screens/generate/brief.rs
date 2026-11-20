@@ -10,6 +10,7 @@ use crate::engine::generate as api;
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Avail, Studio, act, opened, read};
 use crate::screens::panels::{Host, answer, go};
+use crate::ui::focus;
 use crate::ui::form::{Tone, area, btn, btn_tx, card, choice, field, note, toggle};
 use sorot_desktop_core::model::GenPreset;
 use crate::ui::kit::pal;
@@ -183,8 +184,8 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
                 let (id, name) = (a.id.clone(), a.name());
                 own = own.child(
                     row().gap(10.0).items_center().w_full()
-                        .child(text(format!("{name} · {}", t(&format!("brief.kind.{}", a.kind)))).key(format!("generate/asset/{}", a.id)).font(type_::BODY).color(p.text).grow(1.0))
-                        .child(btn(dark, format!("generate/asset/{}/remove", a.id), &tf("brief.remove", &[&name]), false, !s.busy, move |h: &mut H| remove_asset(h, &id))),
+                        .child(text(format!("{name} · {}", t(&format!("brief.kind.{}", a.kind)))).key(focus::gen_asset(&a.id, "")).font(type_::BODY).color(p.text).grow(1.0))
+                        .child(btn(dark, focus::gen_asset(&a.id, "remove"), &tf("brief.remove", &[&name]), false, !s.busy, move |h: &mut H| remove_asset(h, &id))),
                 );
             }
             c = c.child(own);
@@ -197,18 +198,18 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     };
     let mut formats = row().gap(8.0);
     for (i, name) in FORMATS.iter().enumerate() {
-        formats = formats.child(choice(dark, &format!("generate/brief/format/{i}"), name, f.format == i, move |h: &mut H| h.panels_mut().studio.brief.format = i));
+        formats = formats.child(choice(dark, &focus::gen_brief(i, "format"), name, f.format == i, move |h: &mut H| h.panels_mut().studio.brief.format = i));
     }
     let mut langs = row().gap(8.0);
     for (i, (_, key)) in LANGUAGES.iter().enumerate() {
-        langs = langs.child(choice(dark, &format!("generate/brief/language/{i}"), &t(key), f.language == i, move |h: &mut H| h.panels_mut().studio.brief.language = i));
+        langs = langs.child(choice(dark, &focus::gen_brief(i, "language"), &t(key), f.language == i, move |h: &mut H| h.panels_mut().studio.brief.language = i));
     }
     let mut presets_row = row().gap(8.0).flex_wrap().w_full().items_center();
     if !presets.is_empty() {
         presets_row = presets_row.child(choice(dark, "generate/brief/preset/none", &t("brief.preset_none"), f.preset.is_none(), |h: &mut H| h.panels_mut().studio.brief.preset = None));
         for (i, pr) in presets.iter().enumerate() {
             let secs = pr.target_sec;
-            presets_row = presets_row.child(choice(dark, &format!("generate/brief/preset/{i}"), &pr.label, f.preset == Some(i), move |h: &mut H| {
+            presets_row = presets_row.child(choice(dark, &focus::gen_brief(i, "preset"), &pr.label, f.preset == Some(i), move |h: &mut H| {
                 let b = &mut h.panels_mut().studio.brief;
                 (b.preset, b.length) = (Some(i), TextEdit::new(secs.to_string()));
             }));
@@ -219,8 +220,8 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         files = files.child(
             row().gap(10.0).items_center().w_full()
-                .child(text(format!("{name} · {}", t(&format!("brief.kind.{kind}")))).key(format!("generate/brief/file/{i}")).font(type_::BODY).color(p.text).grow(1.0))
-                .child(btn(dark, format!("generate/brief/file/{i}/remove"), &tf("brief.remove", &[&name]), false, true, move |h: &mut H| unpick(h, i))),
+                .child(text(format!("{name} · {}", t(&format!("brief.kind.{kind}")))).key(focus::gen_brief_file(i, "")).font(type_::BODY).color(p.text).grow(1.0))
+                .child(btn(dark, focus::gen_brief_file(i, "remove"), &tf("brief.remove", &[&name]), false, true, move |h: &mut H| unpick(h, i))),
         );
     }
     files = files.child(row().gap(10.0).child(btn_tx(dark, "generate/brief/logo", &t("brief.logo"), true, ask::<H>(true))).child(btn_tx(dark, "generate/brief/add", &t("brief.add"), true, ask::<H>(false))));
@@ -265,7 +266,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     if s.pipelines.len() > 1 {
         let mut pipes = row().gap(8.0).flex_wrap().w_full().items_center();
         for (i, pl) in s.pipelines.iter().enumerate() {
-            pipes = pipes.child(choice(dark, &format!("generate/brief/pipeline/{i}"), &pl.name, f.pipeline == i, move |h: &mut H| h.panels_mut().studio.brief.pipeline = i));
+            pipes = pipes.child(choice(dark, &focus::gen_brief(i, "pipeline"), &pl.name, f.pipeline == i, move |h: &mut H| h.panels_mut().studio.brief.pipeline = i));
         }
         right = right.child(text(t("brief.pipeline")).font(type_::LABEL).color(p.muted)).child(pipes);
     }

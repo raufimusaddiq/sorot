@@ -13,6 +13,7 @@ use crate::screens::generate::Studio;
 use crate::screens::generate::act;
 use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Panels, answer, go};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, note};
 use crate::ui::kit::pal;
 
@@ -127,8 +128,8 @@ fn log_card<H: Host>(dark: bool, s: &Studio) -> El {
                 let model = ev.model.as_ref().map(|m| format!(" · {m}")).unwrap_or_default();
                 let line = format!("{} · {}{secs}{model}", ev.kind, t(if ev.ok == 1 { "build.log.ok" } else { "build.log.failed" }));
                 let id = ev.id.clone();
-                let mut entry = col().key(format!("generate/log/{}", ev.id)).role("listitem").label(line.as_str()).gap(4.0).w_full().child(
-                    row().key(format!("generate/log/{}/open", ev.id)).role("button").label(line.as_str()).focusable(true).on_press(move |h: &mut H| open_event(h, &id))
+                let mut entry = col().key(focus::gen_log(&ev.id)).role("listitem").label(line.as_str()).gap(4.0).w_full().child(
+                    row().key(focus::gen_log_open(&ev.id)).role("button").label(line.as_str()).focusable(true).on_press(move |h: &mut H| open_event(h, &id))
                         .child(text(line).font(type_::LABEL).color(p.text).wrap()),
                 );
                 if b.expanded.as_deref() == Some(ev.id.as_str()) {
