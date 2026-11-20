@@ -9,9 +9,11 @@ use serde_json::{Value, json};
 use sorot_desktop::app::{Screen, State, view};
 use sorot_desktop::engine::fake::{FakeEngine, RecordReveal, scenes_dir};
 use sorot_desktop::engine::EngineError;
-use sorot_desktop::screens::generate::{t, tf};
+use sorot_desktop::screens::generate::{Step, View, t, tf};
 use sorot_desktop::screens::generate;
 use sorot_desktop::screens::panels::{Host, Page};
+use sorot_desktop_core::prefs::Theme;
+use crate::support::assert_focusable_in_derived;
 
 type Rt = Runtime<State>;
 
@@ -727,4 +729,60 @@ fn narration_needs_a_voice_engine_and_a_videos_own_files_can_be_removed() {
     assert!(has(&rt, "generate/brief/narration/needs"));
     click(&mut rt, "generate/brief/narration");
     assert_eq!(rt.state.panels.studio.brief.narration, None);
+}
+
+/// Every Generate sub-view with data — kit parts (incl. a user part), build events, recipes,
+/// facts, versions, a verdict finding and storylines — must expose every focusable key to the
+/// same derived set the toast uses, dark and light.
+#[test]
+fn every_generate_sub_view_is_visible_to_the_toast() {
+    let (mut rt, e) = lab("generate");
+    serve(&e, "GET /api/generate/versions/ver2", json!({
+        "version": ver("ver2", 2, "BUILT", json!({ "draftPath": "/drafts/ver2.mp4" })),
+        "verdicts": [
+            { "id": "a", "versionId": "ver2", "kind": "TECHNICAL", "status": "PASS", "findings": [], "judgedBy": "code" },
+            { "id": "b", "versionId": "ver2", "kind": "CREATIVE", "status": "REVIEW", "findings": [
+                { "id": "f1", "severity": "must-fix", "shotId": "s3", "fromSec": 4.2, "toSec": 5, "code": "text_over_object", "description": "Teks menimpa gambar", "state": "open" }
+            ], "judgedBy": "hakim" }
+        ]
+    }));
+    p1(&e, |d| {
+        d["project"]["status"] = json!("BUILT");
+        d["plans"][0]["approvedAt"] = json!("2026-11-14T10:00:00Z");
+        d["versions"] = json!([
+            ver("ver2", 2, "BUILT", json!({ "draftPath": "/drafts/ver2.mp4" })),
+            ver("ver1", 1, "BUILT", json!({ "planId": "pl0" }))
+        ]);
+    });
+    reread(&mut rt);
+    for (name, view) in [
+        ("brief", View::Step(Step::Brief)), ("ideas", View::Step(Step::Ideas)),
+        ("facts", View::Step(Step::Facts)), ("stories", View::Step(Step::Stories)),
+        ("plan", View::Step(Step::Plan)), ("build", View::Step(Step::Build)),
+        ("verdict", View::Step(Step::Verdict)), ("recipes", View::Recipes),
+        ("kit", View::Kit), ("versions", View::Versions),
+    ] {
+        rt.update(move |s, _| generate::go_view(s, view));
+        rt.frame(1.0 / 60.0);
+        let data_key = match name {
+            "kit" => Some("generate/kit/timeline/remove"),  // your own part, not a shipped one
+            "build" => Some("generate/log/e1/open"),        // the director's event
+            "verdict" => Some("generate/finding/f1/fix"),   // a finding
+            "versions" => Some("generate/version/ver2/restore"),
+            "facts" => Some("generate/facts/add"),
+            "stories" => Some("generate/story/0/pick"),
+            _ => None,
+        };
+        if let Some(key) = data_key {
+            assert!(has(&rt, key), "generate {name}: {key} did not render with data");
+        }
+        for theme in [Theme::Dark, Theme::Light] {
+            rt.update(move |s, _| {
+                s.panels.studio.view = view;
+                s.theme = theme;
+            });
+            rt.frame(1.0 / 60.0);
+            assert_focusable_in_derived(&rt, &format!("generate {name} {theme:?}"));
+        }
+    }
 }

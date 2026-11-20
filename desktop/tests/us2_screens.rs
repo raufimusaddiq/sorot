@@ -476,11 +476,7 @@ fn a_toast_never_covers_or_moves_an_interactive_control() {
             rt.update(|s, _| s.toasts.clear());
             rt.frame(1.0 / 60.0);
             assert_eq!(rects(&rt), before, "{name} {theme:?}: controls stay put after the toast");
-            let derived: std::collections::HashSet<String> = sorot_desktop::ui::focus::keys(&rt.state).into_iter().collect();
-            for (key, _) in rects(&rt) {
-                let key = key.unwrap_or_default();
-                assert!(derived.contains(&key), "{name} {theme:?}: focusable {key:?} missing from the derived key set");
-            }
+            assert_focusable_in_derived(&rt, &format!("{name} {theme:?}"));
         }
     }
 }
