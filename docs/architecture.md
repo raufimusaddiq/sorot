@@ -83,7 +83,7 @@ the pipeline falls back to rules and clips are posted by hand. Design:
 What is a model and what is a rule: [ai-audit.md](ai-audit.md).
 
 ### Desktop app (`desktop/`, planned, in progress)
-- The native UI for Windows, macOS and Linux, written in Rust on Rune (pinned to commit `73b7dec`). It replaces the
+- The native UI for Windows, macOS and Linux, written in Rust on Rune (pinned to commit `73b7dec`). It sits beside the
   web UI and reaches the engine only over the HTTP API and the files the API names, so the same app drives a local
   or a remote engine. Locally it starts the engine as a child process on loopback with a per-launch token.
 - Own Cargo workspace: `desktop/core` (pure logic, no Rune or OS dependencies, Kani-proved) and the app crate (screens,

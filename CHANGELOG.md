@@ -12,12 +12,18 @@ Each version is also a Docker image tag: `v1.0.0` → `ghcr.io/raufimusaddiq/sor
   parent's stdin closes and, as sole owner of the data folder, fail leftover jobs as `interrupted`.
   Clip and Generate export responses carry the absolute `exportPath`. Docker and the CLI behave as before.
 
-### Native desktop app (planned)
+### Native desktop app (release pending owner checks)
 - A native desktop app for Windows, macOS and Linux (Rust on Rune) is being built beside the web UI and the CLI. It
   talks to the engine only over its HTTP API, so it can drive a local or a remote engine, and the engine will require a
   connection token. Sorot keeps three supported surfaces: the web UI, the desktop app and the CLI. The web UI is not
   retired when the desktop app ships; it keeps its tests and its place in the gate. Nothing changes for existing
   installs yet. Spec: `specs/003-native-desktop-app/`; constitution v3.1.0.
+- The desktop branch adds the command palette, menu bar and keyboard shortcuts; restored window state and Open with
+  Sorot; Settings → General (language, theme, close behaviour, notifications, shortcut recorder); Indonesian and
+  English catalogues; a click-through report for every interactive control; and toast placement that never covers a
+  control. Palette, shortcuts, window state, file association and toast placement are native-shell work, so they have
+  no web-UI equivalent; the screen and settings changes reach both UIs as they land. The release still waits on the
+  owner's manual checks, recorded in `docs/journal/session-2026-11-20-desktop-us4-us6.md`.
 
 ### Kenari as the default AI provider
 - [Kenari](https://kenari.id) is now the project's default LLM connection: paste one API key in

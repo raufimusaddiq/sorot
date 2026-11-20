@@ -2,7 +2,7 @@
 
 **Sorot**: YouTube/local video → 9:16 short clips with auto-subtitles. Indonesian. Local-first, personal-use simple; host-ready (hosting planned once clipping hardware allows; principles in `.specify/memory/constitution.md`).
 
-**Stack**: Bun workspace: `backend/` Bun/TS (API, orchestration, scoring, discovery, LLM/Jev/Tebar; serves the UI) · `cli/` `sorot` (Bun) · `ai-pipeline/` Python 3, media/ML only · `desktop/` Rust, native UI on Rune (pinned `73b7dec`; own Cargo workspace with `desktop/core`; planned, in progress, spec `specs/003-native-desktop-app/`) · `frontend/` Next.js 14 static export (web UI, removed at the first desktop release) · SQLite · Docker. Specs in `docs/` (design of the creative loop: `docs/creative-loop.md`; API: `docs/api-spec.md`); history in `docs/journal/`.
+**Stack**: Bun workspace: `backend/` Bun/TS (API, orchestration, scoring, discovery, LLM/Jev/Tebar; serves the UI) · `cli/` `sorot` (Bun) · `ai-pipeline/` Python 3, media/ML only · `desktop/` Rust, native UI on Rune (pinned `73b7dec`; own Cargo workspace with `desktop/core`; planned, in progress, spec `specs/003-native-desktop-app/`) · `frontend/` Next.js 14 static export (web UI, a supported surface beside the desktop app) · SQLite · Docker. Specs in `docs/` (design of the creative loop: `docs/creative-loop.md`; API: `docs/api-spec.md`); history in `docs/journal/`.
 
 **Build order (strict, clipping)**: 1.Video → 2.Audio → 3.Transcribe → 4.Segment → 5.Score → 6.Render → 7.Subtitle → 8.Variation → 9.Analytics → 10.Preview → 11.Export
 
