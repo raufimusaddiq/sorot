@@ -145,11 +145,6 @@ pub trait Engine: Send + Sync {
     fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value>;
     /// `POST path` as multipart form data: the file in the field `file`, plus `fields`.
     fn upload(&self, path: &str, file: &Path, fields: &[(&str, &str)]) -> Result<Value>;
-    /// What a headless run asked the engine, in order. Only `FakeEngine` records; tests use it to
-    /// prove which control reached which engine route.
-    fn call_log(&self) -> Vec<String> {
-        Vec::new()
-    }
 }
 
 #[cfg(test)]
