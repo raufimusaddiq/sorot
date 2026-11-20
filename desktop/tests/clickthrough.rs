@@ -11,6 +11,16 @@ use sorot_desktop::engine::fake::{FakeEngine, RecordReveal};
 
 use crate::support::click;
 
+/// Fixed "now" for the report: `publish/schedule/now` and `feedback/posted/now` read these two
+/// boxes' clocks, and a wall clock would make the report differ on every run. Test-only; the app
+/// keeps its real clock (T-37).
+const NOW: i64 = 1_794_700_800;
+
+fn fixed_clock(state: &mut State) {
+    state.panels.publish.schedule.now = NOW;
+    state.panels.feedback.posted.now = NOW;
+}
+
 /// True no-ops, by `scene/key`, each with the one-line reason it is not dead. Listed explicitly
 /// (never by role) so adding a new one is a deliberate change to this file and to the report.
 const NO_OP: &[(&str, &str)] = &[
@@ -243,6 +253,7 @@ fn every_control_responds_to_one_tap() {
     for (scene, build) in SCENES {
         let mut state = State::default();
         build(&mut state);
+        fixed_clock(&mut state);
         let mut base = tall(state);
         for _ in 0..8 { base.frame(1.0 / 60.0); }
         let tree = base.accessibility_json();
@@ -255,6 +266,7 @@ fn every_control_responds_to_one_tap() {
             let reason = node["name"].as_str().unwrap_or("");
             let mut state = State::default();
             build(&mut state);
+            fixed_clock(&mut state);
             // Hold the concrete doubles: state stores them as trait objects, and the engine call
             // log and reveal log are FakeEngine/RecordReveal-only (no test API on the prod traits).
             let fake = Arc::new(FakeEngine::scene(scene));
