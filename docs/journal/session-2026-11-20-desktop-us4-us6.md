@@ -64,14 +64,14 @@ the run sheets (tasks.md top, plan.md B1-B4, spec.md SC-001/002/008/010).
 
 | Check | Status |
 |---|---|
-| B1 — Linux A/V preview sync and seek (quickstart 6) | not recorded |
-| B2 — compiled engine running HyperFrames with `BUN_BE_BUN` (R2) | not recorded |
-| B3 — installers building from `release-desktop.yml` (quickstart 3) | not recorded |
-| B4 — macOS open-documents handler (quickstart 3) | not recorded |
-| SC-001 — install to Home under 5 min on each OS, no terminal | not recorded |
-| SC-002 — window within 3 s of launch | not recorded (`--first-pixels` is not this) |
-| SC-008 — screen-reader passes on each OS | not recorded |
-| SC-010 — zero leftover processes after quit | not recorded (quickstart 7) |
+| B1: Linux A/V preview sync and seek (quickstart 6) | not recorded |
+| B2: compiled engine running HyperFrames with `BUN_BE_BUN` (R2) | not recorded |
+| B3: installers building from `release-desktop.yml` (quickstart 3) | not recorded |
+| B4: macOS open-documents handler (quickstart 3) | not recorded |
+| SC-001: install to Home under 5 min on each OS, no terminal | not recorded |
+| SC-002: window within 3 s of launch | not recorded (`--first-pixels` is not this) |
+| SC-008: screen-reader passes on each OS | not recorded |
+| SC-010: zero leftover processes after quit | not recorded (quickstart 7) |
 | Close while running re-shows the window via the dialog (Rune has no close veto) | not recorded |
 
 ## Left for the owner
