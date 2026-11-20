@@ -115,13 +115,20 @@ fn a_rebound_clip_chord_runs_its_action_and_the_chord_it_replaced_does_nothing()
 
 #[test]
 fn a_shortcut_edit_is_saved_or_refused_inline() {
-    let ctrl = Mods { ctrl: true, cmd: true, ..Mods::default() };
-    let shift = Mods { shift: true, ..ctrl };
-    let alt = Mods { alt: true, ..ctrl };
+    // The primary modifier as the shell reports it: Cmd alone on macOS, Ctrl elsewhere (where `cmd`
+    // rides along with `ctrl`). Ctrl on macOS is a different chord, which `chord_of` refuses.
+    let primary = if cfg!(target_os = "macos") {
+        Mods { cmd: true, ..Mods::default() }
+    } else {
+        Mods { ctrl: true, cmd: true, ..Mods::default() }
+    };
+    let shift = Mods { shift: true, ..primary };
+    let alt = Mods { alt: true, ..primary };
+    let taken = if cfg!(target_os = "macos") { "Cmd+K sudah dipakai untuk Palet perintah" } else { "Ctrl+K sudah dipakai untuk Palet perintah" };
     // (action, key pressed, modifiers, the chord it ends on or None when refused, words of the refusal)
     let rows = [
         ("export", K::KeyU, shift, Some(Chord::new(true, true, 'u')), ""),
-        ("export", K::KeyK, ctrl, None, "Ctrl+K sudah dipakai untuk Palet perintah"),
+        ("export", K::KeyK, primary, None, taken),
         ("export", K::KeyU, alt, None, "tidak bisa dipakai"),
         ("export", K::Backspace, Mods::default(), None, "tidak bisa dihapus"),
     ];
