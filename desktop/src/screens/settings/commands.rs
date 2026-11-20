@@ -10,6 +10,7 @@ use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::Host;
 use crate::screens::settings::generate::{GenerateSettings, save_to, test_kind};
 use crate::screens::settings::{Run, hint};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, field, note};
 
 pub struct Item {
@@ -105,7 +106,7 @@ pub fn view<H: Host>(h: &H, l: Lang, v: &CommandsView) -> El {
         b = b.child(note(dark, "gen/cmd/off", Tone::Plain, &tr(l, "cmd.off")));
     }
     for (i, it) in c.items.iter().enumerate() {
-        let k = |n: &str| format!("gen/cmd/{i}/{n}");
+        let k = |n: &str| focus::gen_cmd(i, n);
         let n = (i + 1).to_string();
         b = b.child(card(dark, &k("card"), &trf(l, "cmd.number", &[("n", &n)]))
             .child(field(dark, &k("name"), &tr(l, "cmd.name"), &it.name, "brand-check", false, edit_access(move |h: &mut H| &mut h.panels_mut().generate.commands.items[i].name)))

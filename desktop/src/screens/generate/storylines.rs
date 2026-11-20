@@ -9,6 +9,7 @@ use crate::engine::generate::Detail;
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Step, Studio, View, act};
 use crate::screens::panels::Host;
+use crate::ui::focus;
 use crate::ui::form::{btn, card, field};
 use crate::ui::kit::pal;
 
@@ -40,18 +41,18 @@ pub fn view<H: Host>(dark: bool, s: &Studio, d: &Detail) -> El {
     let mut cards = row().gap(16.0).w_full();
     for (i, st) in list.iter().enumerate() {
         let tags: Vec<String> = [(st.recommended, "stories.recommended"), (st.bold, "stories.bold"), (picked == Some(i), "stories.picked")].iter().filter(|(on, _)| *on).map(|(_, k)| t(k)).collect();
-        let mut c = card(dark, &format!("generate/story/{i}"), &st.title)
+        let mut c = card(dark, &focus::gen_story(i, ""), &st.title)
             .child(text(st.pitch.as_str()).font(type_::BODY).color(p.text).wrap())
             .child(text(tf("stories.opening", &[&st.opening])).font(type_::LABEL).color(p.muted).wrap())
             .child(text(tf("stories.beats", &[&st.beats.join(" → ")])).font(type_::LABEL).color(p.muted).wrap())
             .child(text(tf("stories.look", &[&st.look, &st.sound])).font(type_::LABEL).color(p.muted).wrap());
         if !tags.is_empty() {
-            c = c.child(text(tags.join(" · ")).key(format!("generate/story/{i}/tags")).font(type_::LABEL).color(p.beam_text));
+            c = c.child(text(tags.join(" · ")).key(focus::gen_story(i, "tags")).font(type_::LABEL).color(p.beam_text));
         }
         if !st.reason.is_empty() {
             c = c.child(text(st.reason.as_str()).font(type_::LABEL).color(p.muted).wrap());
         }
-        let pick_btn = btn(dark, format!("generate/story/{i}/pick"), &t("stories.pick"), i == 0, !s.busy, move |h: &mut H| pick(h, i));
+        let pick_btn = btn(dark, focus::gen_story(i, "pick"), &t("stories.pick"), i == 0, !s.busy, move |h: &mut H| pick(h, i));
         cards = cards.child(col().grow(if i == 0 { 2.0 } else { 1.0 }).child(c.child(pick_btn)));
     }
     col().gap(16.0).w_full().child(cards)

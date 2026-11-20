@@ -12,6 +12,7 @@ use crate::engine::generate::StepSpec;
 use crate::screens::generate::recipes::Recipes;
 use crate::screens::generate::{t, tf};
 use crate::screens::panels::Host;
+use crate::ui::focus;
 use crate::ui::form::{btn, choice, field, toggle};
 use crate::ui::kit::pal;
 
@@ -210,7 +211,7 @@ fn shown(v: &Value) -> String {
 fn control<H: Host>(dark: bool, i: usize, path: &[String], label: &str, f: &Value, now: Option<&Value>, r: &Recipes) -> El {
     let p = pal(dark);
     let name = path.join(".");
-    let key = format!("generate/recipes/step/{i}/with/{name}");
+    let key = focus::gen_recipe_with(i, &name, "");
     let kind = f["t"].as_str().unwrap_or_default();
     let label_text = text(label.to_string()).font(type_::LABEL).color(p.muted);
     match kind {
@@ -240,21 +241,21 @@ fn control<H: Host>(dark: bool, i: usize, path: &[String], label: &str, f: &Valu
                 let title = format!("{label} {}", k + 1);
                 let gone = sub.clone();
                 c = c.child(
-                    col().key(format!("{key}/{k}")).role("group").label(title.as_str()).gap(6.0).padding(8.0).w_full().border(1.0, p.divider).radius(8.0)
+                    col().key(focus::gen_recipe_with(i, &name, &k.to_string())).role("group").label(title.as_str()).gap(6.0).padding(8.0).w_full().border(1.0, p.divider).radius(8.0)
                         .child(control::<H>(dark, i, &sub, &title, &f["item"], Some(item), r))
-                        .child(btn(dark, format!("{key}/{k}/remove"), &tf("recipes.remove_item", &[&title]), false, true, move |h: &mut H| put_path(h, i, gone.clone(), None))),
+                        .child(btn(dark, focus::gen_recipe_with(i, &name, &format!("{k}/remove")), &tf("recipes.remove_item", &[&title]), false, true, move |h: &mut H| put_path(h, i, gone.clone(), None))),
                 );
             }
             let (here, room) = (path.to_vec(), items.len() < max);
             let mut all = items;
             all.push(blank(&f["item"]));
-            c.child(btn(dark, format!("{key}/add"), &tf("recipes.add_item", &[label]), false, room, move |h: &mut H| put_path(h, i, here.clone(), Some(Value::Array(all.clone())))))
+            c.child(btn(dark, focus::gen_recipe_with(i, &name, "add"), &tf("recipes.add_item", &[label]), false, room, move |h: &mut H| put_path(h, i, here.clone(), Some(Value::Array(all.clone())))))
         }
         "enum" => {
             let mut c = row().gap(6.0).flex_wrap().w_full().items_center().child(label_text);
             for v in f["values"].as_array().into_iter().flatten().filter_map(Value::as_str) {
                 let (at_path, v2) = (path.to_vec(), v.to_string());
-                c = c.child(choice(dark, &format!("{key}/{v}"), v, now.and_then(Value::as_str) == Some(v), move |h: &mut H| put_path(h, i, at_path.clone(), Some(Value::String(v2.clone())))));
+                c = c.child(choice(dark, &focus::gen_recipe_with(i, &name, v), v, now.and_then(Value::as_str) == Some(v), move |h: &mut H| put_path(h, i, at_path.clone(), Some(Value::String(v2.clone())))));
             }
             c
         }
@@ -263,9 +264,9 @@ fn control<H: Host>(dark: bool, i: usize, path: &[String], label: &str, f: &Valu
             let (f1, f2, p1, p2) = (f.clone(), f.clone(), path.to_vec(), path.to_vec());
             row().gap(8.0).items_center()
                 .child(label_text)
-                .child(mini(dark, format!("{key}/dec"), "−", &tf("recipes.less", &[&name]), false, true, move |h: &mut H| nudge(h, i, p1.clone(), &f1, value, false)))
-                .child(text(shown(&Value::from(value))).key(key.clone()).font(type_::BODY).color(p.text))
-                .child(mini(dark, format!("{key}/inc"), "+", &tf("recipes.more", &[&name]), false, true, move |h: &mut H| nudge(h, i, p2.clone(), &f2, value, true)))
+                .child(mini(dark, focus::gen_recipe_with(i, &name, "dec"), "−", &tf("recipes.less", &[&name]), false, true, move |h: &mut H| nudge(h, i, p1.clone(), &f1, value, false)))
+                .child(text(shown(&Value::from(value))).key(focus::gen_recipe_with(i, &name, "")).font(type_::BODY).color(p.text))
+                .child(mini(dark, focus::gen_recipe_with(i, &name, "inc"), "+", &tf("recipes.more", &[&name]), false, true, move |h: &mut H| nudge(h, i, p2.clone(), &f2, value, true)))
         }
         "str" | "strs" => typed_line::<H>(dark, i, &name, &key, label, now.map(shown).unwrap_or_default(), kind == "strs", r),
         _ => row().child(text(tf("recipes.in_json", &[&name])).key(key).font(type_::LABEL).color(p.muted).wrap()),
@@ -278,10 +279,10 @@ fn typed_line<H: Host>(dark: bool, i: usize, name: &str, key: &str, label: &str,
     let n = name.to_string();
     match r.typing.as_ref().filter(|(s, n)| *s == i && n == name) {
         Some(_) => row().gap(8.0).items_center().w_full()
-            .child(col().grow(1.0).child(field(dark, &format!("{key}/input"), label, &r.typed, "", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.recipes.typed))))
-            .child(btn(dark, format!("{key}/set"), &t("recipes.set"), true, true, move |h: &mut H| set_typed(h, list))),
+            .child(col().grow(1.0).child(field(dark, &focus::with_suffix(key, "input"), label, &r.typed, "", false, edit_access(|h: &mut H| &mut h.panels_mut().studio.recipes.typed))))
+            .child(btn(dark, focus::with_suffix(key, "set"), &t("recipes.set"), true, true, move |h: &mut H| set_typed(h, list))),
         None => row().gap(8.0).items_center()
-            .child(btn(dark, format!("{key}/edit"), &tf("recipes.edit_setting", &[label, &now_text]), false, true, move |h: &mut H| type_in(h, i, &n, &now_text))),
+            .child(btn(dark, focus::with_suffix(key, "edit"), &tf("recipes.edit_setting", &[label, &now_text]), false, true, move |h: &mut H| type_in(h, i, &n, &now_text))),
     }
 }
 
@@ -313,11 +314,11 @@ fn own<H: Host>(dark: bool, i: usize, step: &Value, key: &str, r: &Recipes) -> E
     let id = step["id"].as_str().unwrap_or_default();
     let mode = step["prompt"]["mode"].as_str();
     let mut c = col().gap(8.0).w_full()
-        .child(typed_line::<H>(dark, i, "$id", &format!("{key}/id"), &t("recipes.id"), id.to_string(), false, r))
+        .child(typed_line::<H>(dark, i, "$id", &focus::with_suffix(key, "id"), &t("recipes.id"), id.to_string(), false, r))
         .child(text(t("recipes.prompt")).font(type_::LABEL).color(p.muted).wrap());
     let mut modes = row().gap(6.0).flex_wrap().w_full().items_center();
     for (m, word) in [(None, "recipes.prompt_none"), (Some("append"), "recipes.prompt_append"), (Some("replace"), "recipes.prompt_replace")] {
-        modes = modes.child(choice(dark, &format!("{key}/prompt/{}", m.unwrap_or("none")), &t(word), mode == m, move |h: &mut H| {
+        modes = modes.child(choice(dark, &focus::gen_recipe_step(i, &format!("prompt/{}", m.unwrap_or("none"))), &t(word), mode == m, move |h: &mut H| {
             at(h, i, move |s| {
                 let words = s["prompt"]["text"].as_str().unwrap_or_default().to_string();
                 put(s, "prompt", m.map(|m| serde_json::json!({ "mode": m, "text": words })));
@@ -326,7 +327,7 @@ fn own<H: Host>(dark: bool, i: usize, step: &Value, key: &str, r: &Recipes) -> E
     }
     c = c.child(modes);
     if mode.is_some() {
-        c = c.child(typed_line::<H>(dark, i, "$prompt", &format!("{key}/prompt/text"), &t("recipes.prompt_text"), step["prompt"]["text"].as_str().unwrap_or_default().to_string(), false, r));
+        c = c.child(typed_line::<H>(dark, i, "$prompt", &focus::gen_recipe_step(i, "prompt/text"), &t("recipes.prompt_text"), step["prompt"]["text"].as_str().unwrap_or_default().to_string(), false, r));
     }
     c
 }
@@ -357,25 +358,25 @@ pub fn view<H: Host>(dark: bool, r: &Recipes) -> El {
         let named = s["id"].as_str().filter(|x| !x.is_empty()).unwrap_or(&kind).to_string();
         let gate = s["gate"].as_str().filter(|g| *g != "none").map(|g| format!(" · {}", tf("recipes.gate", &[g]))).unwrap_or_default();
         let title = format!("{}. {named}{gate}", i + 1);
-        let key = format!("generate/recipes/step/{i}");
+        let key = focus::gen_recipe_step(i, "");
         let is_open = r.open_step == Some(i);
         let head = row().gap(6.0).items_center().w_full()
-            .child(text(title.as_str()).key(format!("{key}/title")).font(type_::BODY).color(p.text).grow(1.0))
-            .child(mini(dark, format!("{key}/up"), "↑", &tf("recipes.up", &[&title]), false, i > 0, move |h: &mut H| shift(h, i, false)))
-            .child(mini(dark, format!("{key}/down"), "↓", &tf("recipes.down", &[&title]), false, i + 1 < steps.len(), move |h: &mut H| shift(h, i, true)))
-            .child(mini(dark, format!("{key}/open"), &t(if is_open { "recipes.close_short" } else { "recipes.open_short" }), &tf(if is_open { "recipes.close" } else { "recipes.open" }, &[&title]), is_open, true, move |h: &mut H| open(h, i)))
-            .child(mini(dark, format!("{key}/remove"), "×", &tf("recipes.remove", &[&title]), false, true, move |h: &mut H| remove(h, i)));
+            .child(text(title.as_str()).key(focus::gen_recipe_step(i, "title")).font(type_::BODY).color(p.text).grow(1.0))
+            .child(mini(dark, focus::gen_recipe_step(i, "up"), "↑", &tf("recipes.up", &[&title]), false, i > 0, move |h: &mut H| shift(h, i, false)))
+            .child(mini(dark, focus::gen_recipe_step(i, "down"), "↓", &tf("recipes.down", &[&title]), false, i + 1 < steps.len(), move |h: &mut H| shift(h, i, true)))
+            .child(mini(dark, focus::gen_recipe_step(i, "open"), &t(if is_open { "recipes.close_short" } else { "recipes.open_short" }), &tf(if is_open { "recipes.close" } else { "recipes.open" }, &[&title]), is_open, true, move |h: &mut H| open(h, i)))
+            .child(mini(dark, focus::gen_recipe_step(i, "remove"), "×", &tf("recipes.remove", &[&title]), false, true, move |h: &mut H| remove(h, i)));
         let mut card = col().key(key.clone()).role("group").label(title.as_str()).gap(8.0).padding(8.0).w_full().border(1.0, p.divider).radius(8.0).child(head);
         if let (true, Some(spec)) = (is_open, r.specs.iter().find(|x| x.kind == kind)) {
             let mut gates = row().gap(6.0).flex_wrap().w_full().items_center().child(text(t("recipes.gates")).font(type_::LABEL).color(p.muted));
             for g in ["none", "owner", "director"].into_iter().filter(|g| spec.gates.iter().any(|x| x == g)) {
                 let on = s["gate"].as_str().unwrap_or("none") == g;
-                gates = gates.child(choice(dark, &format!("{key}/gate/{g}"), g, on, move |h: &mut H| at(h, i, move |s| put(s, "gate", (g != "none").then(|| Value::String(g.into()))))));
+                gates = gates.child(choice(dark, &focus::gen_recipe_step(i, &format!("gate/{g}")), g, on, move |h: &mut H| at(h, i, move |s| put(s, "gate", (g != "none").then(|| Value::String(g.into()))))));
             }
             let mut when = row().gap(6.0).flex_wrap().w_full().items_center().child(text(t("recipes.when")).font(type_::LABEL).color(p.muted));
-            when = when.child(choice(dark, &format!("{key}/when/always"), &t("recipes.always"), s["when"].is_null(), move |h: &mut H| at(h, i, |s| put(s, "when", None))));
+            when = when.child(choice(dark, &focus::gen_recipe_step(i, "when/always"), &t("recipes.always"), s["when"].is_null(), move |h: &mut H| at(h, i, |s| put(s, "when", None))));
             for w in WHEN {
-                when = when.child(choice(dark, &format!("{key}/when/{w}"), w, s["when"].as_str() == Some(w), move |h: &mut H| at(h, i, move |s| put(s, "when", Some(Value::String(w.into()))))));
+                when = when.child(choice(dark, &focus::gen_recipe_step(i, &format!("when/{w}")), w, s["when"].as_str() == Some(w), move |h: &mut H| at(h, i, move |s| put(s, "when", Some(Value::String(w.into()))))));
             }
             card = card.child(own::<H>(dark, i, s, &key, r)).child(gates).child(when).child(settings::<H>(dark, i, spec, s, r));
         }
@@ -383,7 +384,7 @@ pub fn view<H: Host>(dark: bool, r: &Recipes) -> El {
     }
     let mut kinds = row().gap(6.0).flex_wrap().w_full().items_center().child(text(t("recipes.add_step")).font(type_::LABEL).color(p.muted));
     for (k, spec) in r.specs.iter().enumerate() {
-        kinds = kinds.child(choice(dark, &format!("generate/recipes/add/{}", spec.kind), &spec.kind, r.adding == k, move |h: &mut H| h.panels_mut().studio.recipes.adding = k));
+        kinds = kinds.child(choice(dark, &focus::gen_recipe_add(&spec.kind), &spec.kind, r.adding == k, move |h: &mut H| h.panels_mut().studio.recipes.adding = k));
     }
     c.child(kinds).child(btn(dark, "generate/recipes/add", &t("recipes.add"), false, !r.specs.is_empty(), add::<H>))
 }

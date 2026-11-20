@@ -71,6 +71,17 @@ pub fn press(rt: &mut Runtime<State>, chord: &str) {
     rt.frame(1.0 / 60.0);
 }
 
+/// The toast overlay's L2 gate: every focusable element's key must be derivable from state, so no
+/// control can sit outside `ui::focus::keys` and be covered by a toast.
+pub fn assert_focusable_in_derived(rt: &Runtime<State>, ctx: &str) {
+    let derived: std::collections::HashSet<String> = sorot_desktop::ui::focus::keys(&rt.state).into_iter().collect();
+    for e in rt.elements() {
+        if e.focusable && let Some(key) = e.key.as_deref() {
+            assert!(derived.contains(key), "{ctx}: focusable {key:?} missing from the derived key set");
+        }
+    }
+}
+
 /// Seconds of app time pass in 60 fps frames.
 pub fn advance(rt: &mut Runtime<State>, seconds: f64) {
     let mut t = 0.0;

@@ -8,6 +8,7 @@ use rune::{El, col, row, text};
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Step, Studio, View, act, go_view, poll};
 use crate::screens::panels::Host;
+use crate::ui::focus;
 use crate::ui::form::{btn, card, heading};
 use crate::ui::kit::pal;
 
@@ -31,7 +32,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
         Some(d) if !d.versions.is_empty() => {
             let shown = s.built.as_ref().map(|b| b.version.id.as_str());
             for v in &d.versions {
-                let k = |n: &str| format!("generate/version/{}/{n}", v.id);
+                let k = |n: &str| focus::gen_version(&v.id, n);
                 let mut line = tf("versions.version", &[&v.number.to_string()]);
                 line.push_str(&format!(" · {}", t(&format!("status.{}", v.status))));
                 if let Some(parent) = d.versions.iter().find(|x| Some(&x.id) == v.parent_version_id.as_ref()) {

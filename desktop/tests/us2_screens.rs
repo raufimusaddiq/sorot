@@ -8,6 +8,8 @@ use rune::{Key, KeyEvent, Mods, Runtime};
 use sorot_desktop::app::*;
 use sorot_desktop::engine::{EngineError, fake::stage_script};
 use sorot_desktop_core::model::{Job, JobDetail, JobStage};
+use sorot_desktop_core::prefs::Theme;
+use sorot_desktop_core::toast::ToastKind;
 use sorot_desktop::i18n::{Lang, tr, trf};
 use crate::support::*;
 
@@ -439,6 +441,71 @@ fn export_then_reveal_locally_or_download_remotely() {
     poke(&mut rt, |s| s.reveal = Some(Arc::new(Broken)));
     click(&mut rt, "clips/reveal");
     assert!(rt.state.toasts.last().unwrap().toast.text.contains("no file manager"));
+}
+
+/// A toast is an overlay: on every scene, dark and light, it covers no interactive control and
+/// moves none when it arrives or leaves.
+#[test]
+fn a_toast_never_covers_or_moves_an_interactive_control() {
+    for (name, build) in SCENES {
+        for theme in [Theme::Dark, Theme::Light] {
+            let mut state = State::default();
+            build(&mut state);
+            state.theme = theme;
+            let mut rt = runtime_of(state);
+            let rects = |rt: &Runtime<State>| -> Vec<_> {
+                rt.elements().into_iter().filter(|e| e.focusable && e.key.as_deref().is_some_and(|k| !k.starts_with("toast/"))).map(|e| (e.key, e.rect)).collect()
+            };
+            let before = rects(&rt);
+            rt.update(|s, _| s.apply(Msg::Toast(ToastKind::Done, "Terekspor. Berkasnya siap.".into())));
+            rt.frame(1.0 / 60.0);
+            rt.frame(1.0 / 60.0);
+            assert!(!rt.state.toasts.is_empty(), "{name}: a toast announces itself");
+            let toast: Vec<_> = rt.elements().into_iter().filter(|e| e.key.as_deref().is_some_and(|k| k.starts_with("toast/") && k != "toast/stack")).collect();
+            assert!(!toast.is_empty(), "{name}: the toast has a node");
+            for t in &toast {
+                for (key, b) in &before {
+                    let a = t.rect;
+                    let overlap_x = (a[0] + a[2]).min(b[0] + b[2]) - a[0].max(b[0]);
+                    let overlap_y = (a[1] + a[3]).min(b[1] + b[3]) - a[1].max(b[1]);
+                    let hit = overlap_x > 0.0 && overlap_y > 0.0;
+                    assert!(!hit, "{name} {theme:?}: toast {:?} {:?} covers control {key:?} {b:?}", t.key, t.rect);
+                }
+            }
+            assert_eq!(rects(&rt), before, "{name} {theme:?}: the toast does not shift controls");
+            rt.update(|s, _| s.toasts.clear());
+            rt.frame(1.0 / 60.0);
+            assert_eq!(rects(&rt), before, "{name} {theme:?}: controls stay put after the toast");
+            assert_focusable_in_derived(&rt, &format!("{name} {theme:?}"));
+        }
+    }
+}
+
+/// The derived set follows state ids, not fixture ids: rename every id a scene uses and every
+/// focusable key must still be in it, so a real job/clip/candidate/post cannot be missed.
+#[test]
+fn a_toast_sees_controls_with_ids_other_than_the_fixtures() {
+    for name in ["home-interrupted", "clips-ranked", "discover", "learning", "publish"] {
+        let mut state = State::default();
+        SCENES.iter().find(|(n, _)| *n == name).unwrap().1(&mut state);
+        let mut rt = runtime_of(state);
+        poke(&mut rt, |s| {
+            for j in &mut s.jobs { j.id = format!("real-{}", j.id); }
+            for c in &mut s.clips.clips { c.id = format!("real-{}", c.id); }
+            for c in &mut s.panels.discover.candidates { c.id = format!("real-{}", c.id); }
+            for w in &mut s.panels.learning.waiting { w.clip_id = format!("real-{}", w.clip_id); }
+            for p in &mut s.panels.publish.posts { p.id = format!("real-{}", p.id); }
+        });
+        rt.update(|s, _| s.apply(Msg::Toast(ToastKind::Done, "Terekspor. Berkasnya siap.".into())));
+        rt.frame(1.0 / 60.0);
+        rt.frame(1.0 / 60.0);
+        let derived: std::collections::HashSet<String> = sorot_desktop::ui::focus::keys(&rt.state).into_iter().collect();
+        let focusable: Vec<String> = rt.elements().into_iter().filter(|e| e.focusable).filter_map(|e| e.key).filter(|k| !k.starts_with("toast/")).collect();
+        assert!(!focusable.is_empty(), "{name}: the scene has controls");
+        for key in focusable {
+            assert!(derived.contains(&key), "{name}: focusable {key:?} missing after ids changed");
+        }
+    }
 }
 
 /// Notifications: only when the window is not in front and Preferences allows it.

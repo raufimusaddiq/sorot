@@ -12,6 +12,7 @@ use crate::i18n::{Lang, tr};
 use crate::screens::panels::{Host, answer, go};
 use crate::screens::settings::generate::{save_to, test_kind};
 use crate::screens::settings::{KENARI_BASE_URL, Mode, Run, hint, mode_of, wrapped};
+use crate::ui::focus;
 use crate::ui::form::{btn, card, choice, field, toggle};
 use crate::ui::kit::pal;
 
@@ -173,7 +174,7 @@ pub fn view<H: Host>(h: &H, l: Lang, v: &VoiceView) -> El {
         let name = e.clone();
         let blocked = e == "local" && !v.local_available;
         let label = if blocked { format!("{} ({})", tr(l, &format!("voice.engine.{e}")), tr(l, "voice.needs-gpu")) } else { tr(l, &format!("voice.engine.{e}")) };
-        let mut el = choice(dark, &format!("gen/voice/engine/{e}"), &label, v.engine == *e, move |h: &mut H| set_engine(h, &name));
+        let mut el = choice(dark, &focus::gen_voice_engine(e), &label, v.engine == *e, move |h: &mut H| set_engine(h, &name));
         if blocked {
             el = el.disabled(true);
         }
@@ -201,7 +202,7 @@ pub fn view<H: Host>(h: &H, l: Lang, v: &VoiceView) -> El {
         let mut models = vec![];
         for (n, m) in c.models.iter().enumerate() {
             let id = m.id.clone();
-            models.push(choice(dark, &format!("gen/voice/kenari/model/{n}"), &m.id, c.model == m.id, move |h: &mut H| pick_model(h, &id)));
+            models.push(choice(dark, &focus::gen_voice_model(n), &m.id, c.model == m.id, move |h: &mut H| pick_model(h, &id)));
         }
         if models.is_empty() {
             b = b.child(hint(dark, tr(l, "voice.loading-models")));
@@ -220,14 +221,14 @@ pub fn view<H: Host>(h: &H, l: Lang, v: &VoiceView) -> El {
         for (i, (code, name)) in LANGS.iter().enumerate() {
             let label = crate::i18n::trf(l, "voice.for", &[("lang", &tr(l, name))]);
             if kenari && !kenari_voices.is_empty() {
-                let mut options = vec![choice(dark, &format!("gen/voice/voice/{code}/default"), &tr(l, "voice.default"), c.voices[i].text.is_empty(), move |h: &mut H| pick_voice(h, i, ""))];
+                let mut options = vec![choice(dark, &focus::gen_voice_voice(code, "default"), &tr(l, "voice.default"), c.voices[i].text.is_empty(), move |h: &mut H| pick_voice(h, i, ""))];
                 for (j, voice) in kenari_voices.iter().enumerate() {
                     let id = voice.clone();
-                    options.push(choice(dark, &format!("gen/voice/voice/{code}/{j}"), voice, c.voices[i].text == *voice, move |h: &mut H| pick_voice(h, i, &id)));
+                    options.push(choice(dark, &focus::gen_voice_voice(code, &j.to_string()), voice, c.voices[i].text == *voice, move |h: &mut H| pick_voice(h, i, &id)));
                 }
                 b = b.child(text(label).font(type_::LABEL).color(p.muted)).child(wrapped(options));
             } else {
-                b = b.child(field(dark, &format!("gen/voice/voice/{code}"), &label, &c.voices[i], &tr(l, "voice.id-hint"), false, edit_access(move |h: &mut H| &mut h.panels_mut().generate.voice.voices[i])));
+                b = b.child(field(dark, &focus::gen_voice_voice(code, ""), &label, &c.voices[i], &tr(l, "voice.id-hint"), false, edit_access(move |h: &mut H| &mut h.panels_mut().generate.voice.voices[i])));
             }
         }
         b = b.child(row().gap(10.0)

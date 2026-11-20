@@ -13,6 +13,7 @@ use rune::tok::type_;
 use crate::engine::types::ConnTest;
 use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, Page};
+use crate::ui::focus;
 use crate::ui::form::{Tone, choice, note};
 use crate::ui::kit::pal;
 
@@ -55,13 +56,13 @@ impl Run {
     pub fn notes(&self, dark: bool, lang: Lang, prefix: &str) -> Vec<El> {
         let mut out = vec![];
         if let Some(why) = &self.error {
-            out.push(note(dark, &format!("{prefix}/error"), Tone::Bad, &trf(lang, "conn.not-saved", &[("why", why)])));
+            out.push(note(dark, &focus::with_suffix(prefix, "error"), Tone::Bad, &trf(lang, "conn.not-saved", &[("why", why)])));
         }
         if self.notice {
-            out.push(note(dark, &format!("{prefix}/notice"), Tone::Ok, &tr(lang, "conn.saved")));
+            out.push(note(dark, &focus::with_suffix(prefix, "notice"), Tone::Ok, &tr(lang, "conn.saved")));
         }
         if let Some(t) = &self.test {
-            out.push(note(dark, &format!("{prefix}/result"), if t.ok { Tone::Ok } else { Tone::Bad }, &test_words(lang, t)));
+            out.push(note(dark, &focus::with_suffix(prefix, "result"), if t.ok { Tone::Ok } else { Tone::Bad }, &test_words(lang, t)));
         }
         out
     }

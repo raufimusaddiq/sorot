@@ -11,6 +11,7 @@ use crate::engine::generate::{Checked, RecipeItem, StepSpec};
 use crate::screens::generate::{Studio, steps};
 use crate::screens::generate::{t, tf};
 use crate::screens::panels::{Host, Load, Panels, answer, go};
+use crate::ui::focus;
 use crate::ui::form::{Tone, area, btn, card, choice, field, heading, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -208,7 +209,7 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     let mut list = card(dark, "generate/recipes", &t("recipes.title"));
     for item in &r.items {
         let id = item.id.clone();
-        list = list.child(choice(dark, &format!("generate/recipe/{}", item.id), &label(item), r.selected.as_deref() == Some(&item.id), move |h: &mut H| choose(h, &id)));
+        list = list.child(choice(dark, &focus::gen_recipe(&item.id), &label(item), r.selected.as_deref() == Some(&item.id), move |h: &mut H| choose(h, &id)));
     }
     let mut detail = card(dark, "generate/recipes/detail", &r.current().map(|c| c.name.clone()).unwrap_or_default());
     if let Some(cur) = r.current() {
@@ -252,10 +253,10 @@ pub fn view<H: Host>(dark: bool, s: &Studio) -> El {
     }
     if let Some(checked) = &r.checked {
         for (i, why) in checked.errors.iter().enumerate() {
-            detail = detail.child(note(dark, &format!("generate/recipes/error/{i}"), Tone::Bad, why));
+            detail = detail.child(note(dark, &focus::gen_recipes_check(i, "error"), Tone::Bad, why));
         }
         for (i, why) in checked.warnings.iter().enumerate() {
-            detail = detail.child(note(dark, &format!("generate/recipes/warning/{i}"), Tone::Plain, &tf("recipes.warning", &[why])));
+            detail = detail.child(note(dark, &focus::gen_recipes_check(i, "warning"), Tone::Plain, &tf("recipes.warning", &[why])));
         }
         if checked.errors.is_empty() {
             detail = detail.child(note(dark, "generate/recipes/valid", Tone::Ok, &t("recipes.valid")));

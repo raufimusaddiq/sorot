@@ -10,6 +10,7 @@ use crate::engine::generate::{Detail, Finding, Verdict};
 use crate::screens::generate::{t, tf};
 use crate::screens::generate::{Studio, build};
 use crate::screens::panels::Host;
+use crate::ui::focus;
 use crate::ui::form::{Tone, area, btn, card, choice, note};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -42,7 +43,7 @@ fn one<H: Host>(dark: bool, kind: &str, v: Option<&Verdict>, version_id: &str, b
         Some(v) => format!("{name}: {}", v.status),
         None => format!("{name}: {}", t("verdict.not_judged")),
     };
-    let mut c = card(dark, &format!("generate/verdict/{lower}"), &head).child(text(t(&format!("verdict.{lower}.about"))).font(type_::LABEL).color(p.muted).wrap());
+    let mut c = card(dark, &focus::gen_verdict(&lower), &head).child(text(t(&format!("verdict.{lower}.about"))).font(type_::LABEL).color(p.muted).wrap());
     let Some(v) = v else { return c };
     c = c.child(text(tf("verdict.judged_by", &[&v.judged_by])).font(type_::LABEL).color(p.muted));
     let mut live: Vec<&Finding> = v.findings.iter().filter(|f| f.state != "kept").collect();
@@ -51,7 +52,7 @@ fn one<H: Host>(dark: bool, kind: &str, v: Option<&Verdict>, version_id: &str, b
         c = c.child(text(t("verdict.nothing")).font(type_::BODY).color(p.text));
     }
     for f in live {
-        let k = |n: &str| format!("generate/finding/{}/{n}", f.id);
+        let k = |n: &str| focus::gen_finding(&f.id, n);
         let at = place(f);
         let times = f.count.filter(|n| *n > 1).map(|n| format!(" ×{n}")).unwrap_or_default();
         let line = format!("{}{} {}{times}", f.severity, if at.is_empty() { String::new() } else { format!(" · {at}") }, f.description);
@@ -84,7 +85,7 @@ fn shot_choice<H: Host>(dark: bool, s: &Studio, d: &Detail) -> El {
     r = r.child(choice(dark, "generate/build/shot/any", &t("verdict.shot_any"), s.build.shot.is_none(), |h: &mut H| h.panels_mut().studio.build.shot = None));
     for shot in d.current_plan().map(|row| row.plan.shots.as_slice()).unwrap_or_default() {
         let id = shot.id.clone();
-        r = r.child(choice(dark, &format!("generate/build/shot/{}", shot.id), &shot.id, s.build.shot.as_deref() == Some(shot.id.as_str()), move |h: &mut H| h.panels_mut().studio.build.shot = Some(id.clone())));
+        r = r.child(choice(dark, &focus::gen_build_shot(&shot.id), &shot.id, s.build.shot.as_deref() == Some(shot.id.as_str()), move |h: &mut H| h.panels_mut().studio.build.shot = Some(id.clone())));
     }
     r
 }

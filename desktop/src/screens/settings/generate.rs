@@ -15,6 +15,7 @@ use crate::screens::settings::commands::{self, CommandsCard};
 use crate::screens::settings::image::{self, ImageCard};
 use crate::screens::settings::voice::{self, VoiceCard};
 use crate::screens::settings::{KENARI_BASE_URL, Run, hint};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, card, choice, field, heading, note, page};
 use crate::ui::kit::pal;
 use crate::ui::states::{Kind, state_block};
@@ -218,7 +219,7 @@ fn status_card<H: Host>(h: &H, g: &GenerateSettings) -> El {
     } else {
         c = c.child(note(dark, "gen/unavailable", Tone::Bad, &tr(l, "gen.status.unavailable")));
         for (i, why) in s.reasons.iter().enumerate() {
-            c = c.child(text(why).key(format!("gen/reason/{i}")).font(type_::BODY).color(p.muted).wrap());
+            c = c.child(text(why).key(focus::gen_reason(i)).font(type_::BODY).color(p.muted).wrap());
         }
     }
     let state = |on: bool| tr(l, if on { "gen.status.connected" } else { "gen.status.not-connected" });
@@ -241,16 +242,16 @@ fn models_card<H: Host>(h: &H, g: &GenerateSettings) -> El {
     }
     for (n, row_) in m.models.iter().enumerate() {
         let name = row_.model.clone();
-        let mut levels = row().gap(8.0).child(choice(dark, &format!("gen/model/{n}/auto"), &tr(l, "gen.models.auto"), row_.pin.is_none(), {
+        let mut levels = row().gap(8.0).child(choice(dark, &focus::gen_model(n, "auto"), &tr(l, "gen.models.auto"), row_.pin.is_none(), {
             let name = name.clone();
             move |h: &mut H| pin(h, &name, None)
         }));
         for lv in LEVELS {
             let name = name.clone();
-            levels = levels.child(choice(dark, &format!("gen/model/{n}/{lv}"), lv, row_.pin.as_deref() == Some(lv), move |h: &mut H| pin(h, &name, Some(lv))));
+            levels = levels.child(choice(dark, &focus::gen_model(n, lv), lv, row_.pin.as_deref() == Some(lv), move |h: &mut H| pin(h, &name, Some(lv))));
         }
         let proven = row_.proven.as_ref().map(|lv| trf(l, "gen.models.proven", &[("level", lv)])).unwrap_or_default();
-        let mut block = col().key(format!("gen/model/{n}")).role("group").label(row_.model.as_str()).gap(6.0)
+        let mut block = col().key(focus::gen_model_group(n)).role("group").label(row_.model.as_str()).gap(6.0)
             .child(text(&row_.model).font(type_::TITLE).color(p.text))
             .child(text(trf(l, "gen.models.auto-starts", &[("level", &row_.auto), ("proven", &proven)])).font(type_::BODY).color(p.muted))
             .child(levels);
@@ -285,7 +286,7 @@ fn budgets_card<H: Host>(h: &H, g: &GenerateSettings) -> El {
     let mut grid = col().gap(10.0).w_full();
     for (i, ((name, label, hint_), edit)) in FIELDS.iter().zip(&g.fields).enumerate() {
         let shown = if hint_.starts_with("gen.") { tr(l, hint_) } else { hint_.to_string() };
-        grid = grid.child(field(dark, &format!("gen/field/{name}"), &tr(l, label), edit, &shown, false, edit_access(move |h: &mut H| &mut h.panels_mut().generate.fields[i])));
+        grid = grid.child(field(dark, &focus::gen_field(name), &tr(l, label), edit, &shown, false, edit_access(move |h: &mut H| &mut h.panels_mut().generate.fields[i])));
     }
     c = c.child(grid).child(btn(dark, "gen/save", &tr(l, "conn.save"), true, !g.busy && !g.changes().is_empty(), save::<H>));
     if g.notice {

@@ -7,6 +7,7 @@ use sorot_desktop_core::readiness::ItemState;
 
 use crate::app::{Cmd, State};
 use crate::i18n::{Lang, tr, trf};
+use crate::ui::focus;
 use crate::ui::kit::{button, pal};
 
 pub fn name(id: &str, lang: Lang) -> String {
@@ -42,10 +43,10 @@ fn tail(s: &State, item: &ReadinessItem) -> El {
     let p = pal(s.dark());
     let l = s.lang;
     let id = item.id.clone();
-    let status = |key: &str, words: String, color| text(words).key(format!("readiness/{id}/{key}")).font(type_::LABEL).color(color).wrap();
+    let status = |key: &str, words: String, color| text(words).key(focus::readiness(&id, key)).font(type_::LABEL).color(color).wrap();
     let act = |key: &str, label: &str, primary: bool| {
         let id = id.clone();
-        button(s.dark(), format!("readiness/{id}/{key}"), label, primary, move |s: &mut State| s.send(Cmd::FixReadiness(id.clone())))
+        button(s.dark(), focus::readiness(&id, key), label, primary, move |s: &mut State| s.send(Cmd::FixReadiness(id.clone())))
     };
     match state_of(s, item) {
         ItemState::Ok => status("status", tr(l, "readiness.ready"), p.pass),
@@ -67,11 +68,11 @@ pub fn view(s: &State) -> El {
     for item in &s.readiness {
         let id = &item.id;
         card = card.child(
-            row().key(format!("readiness/{id}")).gap(16.0).padding(16.0).items_center()
+            row().key(focus::readiness(id, "")).gap(16.0).padding(16.0).items_center()
                 .child(
                     col().gap(2.0).grow(1.0)
-                        .child(text(name(id, l)).key(format!("readiness/{id}/name")).font(type_::TITLE).color(p.text))
-                        .child(text(&item.detail).key(format!("readiness/{id}/detail")).font(type_::BODY).color(p.muted).wrap()),
+                        .child(text(name(id, l)).key(focus::readiness(id, "name")).font(type_::TITLE).color(p.text))
+                        .child(text(&item.detail).key(focus::readiness(id, "detail")).font(type_::BODY).color(p.muted).wrap()),
                 )
                 .child(tail(s, item)),
         );

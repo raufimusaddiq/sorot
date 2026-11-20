@@ -12,6 +12,7 @@ use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, answer, go};
 use crate::screens::settings::generate::{GenerateSettings, save_to, test_kind};
 use crate::screens::settings::{KENARI_BASE_URL, KENARI_DEFAULT_IMAGE_MODEL, Mode, Run, hint, mode_of, wrapped};
+use crate::ui::focus;
 use crate::ui::form::{btn, card, choice, field, toggle};
 use crate::ui::kit::pal;
 
@@ -152,7 +153,7 @@ pub fn view<H: Host>(h: &H, l: Lang, v: &ImageView) -> El {
             for (n, m) in c.models.iter().filter(|m| m.id != KENARI_DEFAULT_IMAGE_MODEL).enumerate() {
                 let id = m.id.clone();
                 let label = if m.free { trf(l, "conn.kenari.free", &[("id", &m.id)]) } else { m.id.clone() };
-                models.push(choice(dark, &format!("gen/image/kenari/model/{}", n + 1), &label, c.model == m.id, move |h: &mut H| pick_model(h, &id)));
+                models.push(choice(dark, &focus::gen_image_model(n + 1), &label, c.model == m.id, move |h: &mut H| pick_model(h, &id)));
             }
             b = b.child(text(tr(l, "image.model")).font(type_::LABEL).color(p.muted)).child(wrapped(models));
         }
@@ -160,7 +161,7 @@ pub fn view<H: Host>(h: &H, l: Lang, v: &ImageView) -> El {
             if kenari && matches!(*name, "baseUrl" | "model") {
                 continue;
             }
-            b = b.child(field(dark, &format!("gen/image/{name}"), &tr(l, label), &c.fields[i], "", false, edit_access(move |h: &mut H| &mut h.panels_mut().generate.image.fields[i])));
+            b = b.child(field(dark, &focus::gen_image_field(name), &tr(l, label), &c.fields[i], "", false, edit_access(move |h: &mut H| &mut h.panels_mut().generate.image.fields[i])));
         }
         let key_hint = if v.api_key_set { trf(l, "conn.key-replace", &[("masked", &v.api_key)]) } else { tr(l, "conn.not-set") };
         b = b.child(field(dark, "gen/image/key", &tr(l, "conn.key"), &c.key, &key_hint, true, edit_access(|h: &mut H| &mut h.panels_mut().generate.image.key)))

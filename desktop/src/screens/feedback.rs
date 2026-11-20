@@ -10,6 +10,7 @@ use crate::engine::types::Metrics;
 use crate::i18n::{Lang, tr, trf};
 use crate::screens::panels::{Host, answer, go};
 use crate::ui::datetime::{DateBoxes, picker};
+use crate::ui::focus;
 use crate::ui::form::{Tone, btn, field, note};
 use crate::ui::kit::pal;
 
@@ -120,7 +121,7 @@ pub fn view<H: Host>(h: &H) -> El {
     let s = &h.panels().feedback;
     let mut numbers = row().gap(8.0).w_full();
     for (i, (name, label)) in METRICS.iter().enumerate() {
-        numbers = numbers.child(field(dark, &format!("feedback/{name}"), &tr(l, label), &s.numbers[i], "0", false, edit_access(move |h: &mut H| &mut h.panels_mut().feedback.numbers[i])));
+        numbers = numbers.child(field(dark, &focus::feedback_field(name), &tr(l, label), &s.numbers[i], "0", false, edit_access(move |h: &mut H| &mut h.panels_mut().feedback.numbers[i])));
     }
     let mut sheet = col().key("feedback/sheet").role("group").label(tr(l, "feedback.title")).gap(12.0).padding(16.0).w_full().fill(p.raised).radius(8.0)
         .child(text(trf(l, "feedback.for", &[("title", &s.title)])).key("feedback/for").font(type_::TITLE).color(p.text).wrap())

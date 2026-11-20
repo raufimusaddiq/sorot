@@ -13,6 +13,7 @@ use crate::i18n::{tr, trf};
 use crate::screens::{feedback, home};
 use crate::ui::clip_stage::{self, clock};
 use crate::ui::controls::{centered, link, link_tx, page_head, pill, score_bar};
+use crate::ui::focus;
 use crate::ui::fx_moments::{Moment, burst_life, rank_spring, slot};
 use crate::ui::kit::{button, pal};
 use crate::ui::score;
@@ -215,7 +216,7 @@ impl ClipsScreen {
 
     /// Rows still moving at `now`, as `(rect now, start, points to travel)`; `rect_of` finds a row's presented rect by key.
     pub fn rank_blurs(&self, now: f32, rect_of: impl Fn(&str) -> Option<rune_fx::Rect>) -> Vec<(rune_fx::Rect, f32, f32)> {
-        self.moves.iter().filter(|(_, t0, _)| now - t0 < MOVE_LIFE).filter_map(|(id, t0, dy)| Some((rect_of(&format!("clips/row/{id}"))?, *t0, *dy))).collect()
+        self.moves.iter().filter(|(_, t0, _)| now - t0 < MOVE_LIFE).filter_map(|(id, t0, dy)| Some((rect_of(&focus::clips_row(id))?, *t0, *dy))).collect()
     }
 
     pub fn moving(&self, now: f32) -> bool {
@@ -242,21 +243,21 @@ fn row_of(s: &State, i: usize) -> El {
     let thumb = col().w(40.0).h(48.0).radius(4.0).fill(p.bg).border(1.0, p.divider);
     let rank = clip.rank_pos.map_or("-".into(), |r| r.to_string());
     let inner = row().gap(16.0).px(16.0).items_center().w_full().grow(1.0)
-        .child(text(rank).key(format!("clips/row/{}/rank", clip.id)).font(type_::BODY).color(if chosen { p.beam_text } else { p.muted }).w(20.0))
+        .child(text(rank).key(focus::clips_row(&clip.id) + "/rank").font(type_::BODY).color(if chosen { p.beam_text } else { p.muted }).w(20.0))
         .child(thumb)
         .child(col().gap(2.0).grow(1.0).shrink()
-            .child(text(title.clone()).key(format!("clips/row/{}/title", clip.id)).font(type_::TITLE).color(ink).truncate())
+            .child(text(title.clone()).key(focus::clips_row(&clip.id) + "/title").font(type_::TITLE).color(ink).truncate())
             .child(text(when).font(type_::LABEL).color(p.muted)))
-        .child(pill(format!("clips/row/{}/verdict", clip.id), &word, score::verdict_ink(&p, verdict)))
+        .child(pill(focus::clips_row(&clip.id) + "/verdict", &word, score::verdict_ink(&p, verdict)))
         .child(score_bar(s.dark(), clip.score.unwrap_or(0.0)))
-        .child(text(score::score_text(s.lang, clip.score)).key(format!("clips/row/{}/score", clip.id)).font(type_::BODY).color(ink).w(36.0));
+        .child(text(score::score_text(s.lang, clip.score)).key(focus::clips_row(&clip.id) + "/score").font(type_::BODY).color(ink).w(36.0));
     // The chosen row carries a beam line along its top edge, fading to the right.
     let top = if chosen {
         col().w_full().h(2.0).fill(p.beam).linear_gradient(std::f32::consts::FRAC_PI_2, [(0.0, p.beam), (1.0, p.beam.alpha(0.0))])
     } else {
         col().w_full().h(2.0)
     };
-    col().key(format!("clips/row/{}", clip.id)).role("listitem").motion(rank_spring()).animate_layout().label(format!("{}. {title}, {word}", i + 1))
+    col().key(focus::clips_row(&clip.id)).role("listitem").motion(rank_spring()).animate_layout().label(format!("{}. {title}, {word}", i + 1))
         .focusable(true).w_full().h(72.0).radius(8.0).fill(if chosen { p.surface } else { p.bg }).hover(p.text.alpha(0.04))
         .on_press(move |s: &mut State| s.select_id(&id)).child(top).child(inner)
 }
@@ -268,7 +269,7 @@ fn tabs(s: &State) -> El {
         let on = s.clips.filter == f;
         let label = tr(s.lang, f.key());
         bar = bar.child(
-            col().key(format!("clips/tab/{}", f.id())).role("tab").label(label.clone()).checked(on).focusable(true).px(14.0).py(8.0).radius(6.0)
+            col().key(focus::clips_tab(f)).role("tab").label(label.clone()).checked(on).focusable(true).px(14.0).py(8.0).radius(6.0)
                 .border(1.0, if on { p.edge } else { p.bg }).fill(if on { p.raised } else { p.bg }).hover(p.text.alpha(0.06))
                 .on_press(move |s: &mut State| s.set_filter(f)).child(text(label).font(type_::LABEL).color(if on { p.text } else { p.muted })),
         );
@@ -315,17 +316,17 @@ pub fn view(s: &State) -> El {
         col().key("clips/scroll").scroll(ScrollSpec { stick_bottom: false }).w_full().grow(1.0).child(
             col().key("clips/list").role("list").label(tr(s.lang, "clips.list")).growth(GrowthSpec::default()).gap(8.0).virtual_rows(
                 visible.len(), 72.0,
-                |s: &State, i| format!("clips/row/{}", s.clips.clips[s.clips.visible()[i]].id).into(),
+                |s: &State, i| focus::clips_row(&s.clips.clips[s.clips.visible()[i]].id).into(),
                 |s: &State, i| row_of(s, s.clips.visible()[i]),
             ),
         )
     };
     // One slot after the rows, copying the frame drawn so far: the blur of rows that just moved reads it.
-    let mut left = col().gap(12.0).grow(1.0).max_w(1000.0).h_full().child(tabs(s)).child(list);
+    let mut left = col().gap(12.0).grow(1.0).min_h(0.0).max_w(1000.0).h_full().child(tabs(s)).child(list);
     if blur {
         left = left.child(slot(Moment::RankBlur, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)));
     }
-    let mut side = col().key("clips/side/scroll").scroll(ScrollSpec { stick_bottom: false }).grow(1.0).h_full().gap(16.0);
+    let mut side = col().key("clips/side/scroll").scroll(ScrollSpec { stick_bottom: false }).grow(1.0).min_h(0.0).h_full().gap(16.0);
     // The results sheet opens above the stage: it is what the person just asked for.
     if s.panels.feedback.clip_id.as_deref() == Some(clip.id.as_str()) {
         side = side.child(feedback::view(s));
