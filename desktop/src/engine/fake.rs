@@ -112,6 +112,12 @@ impl FakeEngine {
         }
     }
 
+    /// What a headless run asked the engine, in order. Tests use it to prove which control
+    /// reached which engine route. `FakeEngine`-only: production engines never record calls.
+    pub fn call_log(&self) -> Vec<String> {
+        self.calls()
+    }
+
     /// Answers come from `desktop/scenes/{scene}/{route}.json` (the engine's own payloads).
     pub fn scene(name: &str) -> Self {
         let dir = scenes_dir().join(name);
