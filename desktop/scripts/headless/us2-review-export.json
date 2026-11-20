@@ -1,10 +1,9 @@
 {"events": [
   {"t": 0.3, "type": "key", "name": "j"},
   {"t": 0.6, "type": "mark", "name": "review"},
-  {"t": 0.9, "type": "key", "name": " "},
+  {"t": 0.9, "type": "tap", "key": "clips/row/c3"},
   {"t": 1.4, "type": "mark", "name": "preview"},
   {"t": 1.7, "type": "tap", "key": "clips/export"},
   {"t": 2.4, "type": "mark", "name": "exported"},
-  {"t": 2.8, "type": "key", "name": "k"},
-  {"t": 3.2, "type": "mark", "name": "end"}
+  {"t": 3.0, "type": "mark", "name": "end"}
 ]}

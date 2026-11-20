@@ -1,4 +1,0 @@
-rune-first-pixels {"frame_cpu_ms":10.7086,"gpu_init_ms":310.63370000000003,"headless_ms":327.476,"pixel_bytes":12672000,"readback_ms":1.4693,"runtime_ms":1.5265,"state_ms":0.5505}
-rune: 1 frames in 0.02 s wall (66.4 frames/s)
-rune: 1 frames at 60 fps, gpu init 310.6 ms, first frame 10.71 ms, frame cpu mean 10.709 ms p50 10.709 p95 10.709 max 10.709, 716 instances
-rune: animating frames 0 (cpu p50 0.000 p95 0.000 ms), at-rest frames 0 (the window draws none; forced cpu p50 0.000 p95 0.000 ms), layout nodes 83, glyphs 627

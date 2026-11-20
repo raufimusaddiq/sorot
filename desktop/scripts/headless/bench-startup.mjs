@@ -26,7 +26,6 @@ for (let i = 0; i <= runsN; i++) {
   });
   const elapsed = performance.now() - start;
   await new Promise(resolve => p.on("close", resolve));
-  writeFileSync(join(out, `settings-${i}.log`), line + "\n" + stderr);
   if (!line.startsWith("rune-first-pixels ")) throw new Error(`${line}\n${stderr}`);
   const row = JSON.parse(line.slice("rune-first-pixels ".length));
   row.process_ms = elapsed;
