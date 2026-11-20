@@ -1049,9 +1049,13 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     if let Some(notice) = shell::gpu_notice(s) {
         root = root.child(notice);
     }
-    let root = root.child(body);
-    let root = if let Some(palette) = palette::overlay(s) { root.child(palette) } else { root };
-    root.child(toast_stack(s.dark(), &s.toasts).pin(Some(0.0), None, Some(0.0), Some(0.0)))
+    let root = if s.toasts.is_empty() {
+        root.child(body)
+    } else {
+        // In-flow bottom lane: a toast reserves its own space, so it never sits on a control.
+        root.child(body.min_h(0.0)).child(toast_stack(s.dark(), &s.toasts).items_end().w_full())
+    };
+    if let Some(palette) = palette::overlay(s) { root.child(palette) } else { root }
 }
 
 impl Host for State {

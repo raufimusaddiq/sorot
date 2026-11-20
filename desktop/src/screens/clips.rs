@@ -321,11 +321,11 @@ pub fn view(s: &State) -> El {
         )
     };
     // One slot after the rows, copying the frame drawn so far: the blur of rows that just moved reads it.
-    let mut left = col().gap(12.0).grow(1.0).max_w(1000.0).h_full().child(tabs(s)).child(list);
+    let mut left = col().gap(12.0).grow(1.0).min_h(0.0).max_w(1000.0).h_full().child(tabs(s)).child(list);
     if blur {
         left = left.child(slot(Moment::RankBlur, [0.0; 4]).pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)));
     }
-    let mut side = col().key("clips/side/scroll").scroll(ScrollSpec { stick_bottom: false }).grow(1.0).h_full().gap(16.0);
+    let mut side = col().key("clips/side/scroll").scroll(ScrollSpec { stick_bottom: false }).grow(1.0).min_h(0.0).h_full().gap(16.0);
     // The results sheet opens above the stage: it is what the person just asked for.
     if s.panels.feedback.clip_id.as_deref() == Some(clip.id.as_str()) {
         side = side.child(feedback::view(s));

@@ -8,6 +8,7 @@ use rune::{Key, KeyEvent, Mods, Runtime};
 use sorot_desktop::app::*;
 use sorot_desktop::engine::{EngineError, fake::stage_script};
 use sorot_desktop_core::model::{Job, JobDetail, JobStage};
+use sorot_desktop_core::prefs::Theme;
 use sorot_desktop::i18n::{Lang, tr, trf};
 use crate::support::*;
 
@@ -439,6 +440,30 @@ fn export_then_reveal_locally_or_download_remotely() {
     poke(&mut rt, |s| s.reveal = Some(Arc::new(Broken)));
     click(&mut rt, "clips/reveal");
     assert!(rt.state.toasts.last().unwrap().toast.text.contains("no file manager"));
+}
+
+/// A toast gets its own lane: on the clips screen after export it covers no interactive control.
+#[test]
+fn the_export_toast_never_covers_an_interactive_control() {
+    for theme in [Theme::Dark, Theme::Light] {
+        let (mut rt, _, _, _) = clips_rt();
+        rt.update(move |s, _| s.theme = theme);
+        rt.frame(1.0 / 60.0);
+        settle(&mut rt, "clips/export");
+        click(&mut rt, "clips/export");
+        assert!(!rt.state.toasts.is_empty(), "an export announces itself");
+        let toast: Vec<_> = rt.elements().into_iter().filter(|e| e.key.as_deref().is_some_and(|k| k.starts_with("toast/"))).collect();
+        assert!(!toast.is_empty(), "the toast has a node");
+        let controls: Vec<_> = rt.elements().into_iter().filter(|e| e.focusable && e.key.as_deref().is_some_and(|k| !k.starts_with("toast/"))).collect();
+        assert!(!controls.is_empty());
+        for t in &toast {
+            for c in &controls {
+                let (a, b) = (t.rect, c.rect);
+                let hit = a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
+                assert!(!hit, "{theme:?}: toast {:?} covers control {:?}", t.key, c.key);
+            }
+        }
+    }
 }
 
 /// Notifications: only when the window is not in front and Preferences allows it.
